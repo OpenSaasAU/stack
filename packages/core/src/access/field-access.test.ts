@@ -1,6 +1,9 @@
 import { describe, it, expect, expectTypeOf } from 'vitest'
 import {
   checkFieldAccess,
+  classifyRowIndependentCreateAccess,
+  classifyRowIndependentRead,
+  classifyRowIndependentWrite,
   filterWritableFields,
   isFieldReadableForPredicate,
 } from './field-access.js'
@@ -1160,5 +1163,45 @@ describe('filterWritableFields — gates caller input, not hook output (issue #1
     await expect(
       filterWritableFields({ authorId: 'u1' }, rels, 'create', { ...base, inputData: {} }),
     ).resolves.toEqual({ authorId: 'u1' })
+  })
+})
+
+describe('a rule that catches the poison on `item`', () => {
+  const swallows = ({ item }: { item?: Record<string, unknown> }): boolean => {
+    try {
+      return item?.ownerId !== 'x'
+    } catch {
+      return true
+    }
+  }
+
+  it('is row-dependent for a read', async () => {
+    await expect(
+      classifyRowIndependentRead({ read: swallows }, { session: null, context: nonSudoContext() }),
+    ).resolves.toBe('row-dependent')
+  })
+
+  it('is row-dependent for a write', async () => {
+    await expect(
+      classifyRowIndependentWrite({ update: swallows }, 'update', {
+        session: null,
+        context: nonSudoContext(),
+      }),
+    ).resolves.toBe('row-dependent')
+  })
+
+  it('is row-dependent for a create rule', async () => {
+    await expect(
+      classifyRowIndependentCreateAccess(swallows, { session: null, context: nonSudoContext() }),
+    ).resolves.toBe('row-dependent')
+  })
+
+  it('a rule that never touches `item` still answers', async () => {
+    await expect(
+      classifyRowIndependentRead(
+        { read: () => false },
+        { session: null, context: nonSudoContext() },
+      ),
+    ).resolves.toBe('deny')
   })
 })

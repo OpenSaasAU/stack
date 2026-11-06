@@ -9,9 +9,18 @@ import { getSyntheticFieldName } from '../fields/index.js'
 export interface RuleView {
   readonly removed: ReadonlySet<string>
   readonly declared: Readonly<Record<string, unknown>>
+  /**
+   * To-ones whose `null` stands for a row the session cannot see rather than no
+   * row at all. A hook is still owed that `null` (ADR-0058); a rule is not.
+   */
+  readonly scopedAway: ReadonlySet<string>
 }
 
-const EMPTY_RULE_VIEW: RuleView = Object.freeze({ removed: new Set<string>(), declared: {} })
+const EMPTY_RULE_VIEW: RuleView = Object.freeze({
+  removed: new Set<string>(),
+  declared: {},
+  scopedAway: new Set<string>(),
+})
 
 /** The {@link RuleView} of every row at one level, and of the levels beneath it. */
 export interface RuleViewTree {
@@ -73,7 +82,11 @@ interface RowScope {
 export interface RuleRow {
   /** The row under its {@link RuleView}, unguarded. Hooks read this; rules never do. */
   readonly item: Record<string, unknown>
-  readonly scope: RowScope
+  /** What a rule's guard stands in front of. */
+  readonly target: Record<string, unknown>
+  readonly fieldConfigs: Record<string, FieldConfig>
+  readonly config: OpenSaasConfig | undefined
+  readonly listKey: string | undefined
 }
 
 function viewedRow(row: Record<string, unknown>, view: RuleView): Record<string, unknown> {
@@ -96,11 +109,14 @@ export function ruleRowOf(
   config: OpenSaasConfig | undefined,
   listKey: string | undefined,
 ): RuleRow {
-  const relations =
-    config && listKey
-      ? (relationKeysByList(config).get(listKey) ?? NO_RELATIONS)
-      : relationKeysOfFields(fieldConfigs)
-  return { item: viewedRow(row, views.viewFor(row)), scope: { relations, config } }
+  const view = views.viewFor(row)
+  const item = viewedRow(row, view)
+  let target = item
+  if (view.scopedAway.size > 0) {
+    target = { ...item }
+    for (const key of view.scopedAway) delete target[key]
+  }
+  return { item, target, fieldConfigs, config, listKey }
 }
 
 function isPlainObject(value: object): value is Record<string, unknown> {
@@ -134,22 +150,23 @@ function scopeUnder(scope: RowScope, key: string | symbol): RowScope {
  * their own: a relation carrying a nested include is shaped, so it never reached
  * the rule.
  *
- * A key is withheld only while the value under it is `undefined`: `null` is a
- * relation that was fetched and found empty, and it is a real answer. Every way
- * of asking about a key has a trap here, and enumeration answers for all of them
- * at once: a spread copy would otherwise carry the row's absence out from under
- * the membrane, so a row withholding anything trips on `ownKeys`.
+ * A key is withheld only while the value under it is `undefined`. Every way of
+ * asking about a key has a trap here, and on the row a rule was handed
+ * enumeration answers for all of them at once: a spread copy would otherwise
+ * carry the row's absence out from under the membrane, so a `root` withholding
+ * anything trips on `ownKeys`. A `related` row does not: it never carries its
+ * own relations, whatever the caller asked, so its absence has nothing to say.
  */
 class Guard<T extends object> implements ProxyHandler<T> {
   constructor(
     private readonly evaluation: Evaluation,
     private readonly scope: RowScope,
-    private readonly isRow: boolean,
+    private readonly kind: 'root' | 'related' | 'array',
   ) {}
 
   private isWithheld(target: T, key: string | symbol): boolean {
     return (
-      this.isRow &&
+      this.kind !== 'array' &&
       typeof key === 'string' &&
       this.scope.relations.has(key) &&
       Reflect.get(target, key) === undefined
@@ -162,7 +179,7 @@ class Guard<T extends object> implements ProxyHandler<T> {
   }
 
   private guarded(key: string | symbol, value: unknown): unknown {
-    const scope = this.isRow ? scopeUnder(this.scope, key) : this.scope
+    const scope = this.kind === 'array' ? this.scope : scopeUnder(this.scope, key)
     return guardValue(value, scope, this.evaluation)
   }
 
@@ -181,7 +198,7 @@ class Guard<T extends object> implements ProxyHandler<T> {
   }
 
   ownKeys(target: T): (string | symbol)[] {
-    if (this.isRow) {
+    if (this.kind === 'root') {
       for (const key of this.scope.relations.keys()) {
         if (Reflect.get(target, key) === undefined) this.evaluation.tripped = true
       }
@@ -232,9 +249,9 @@ function guardValue(value: unknown, scope: RowScope, evaluation: Evaluation): un
   const known = guards.get(value)
   if (known !== undefined) return known
   let guarded: object | undefined
-  if (Array.isArray(value)) guarded = new Proxy(value, new Guard(evaluation, scope, false))
+  if (Array.isArray(value)) guarded = new Proxy(value, new Guard(evaluation, scope, 'array'))
   else if (value instanceof Date) guarded = new Date(value.getTime())
-  else if (isPlainObject(value)) guarded = new Proxy(value, new Guard(evaluation, scope, true))
+  else if (isPlainObject(value)) guarded = new Proxy(value, new Guard(evaluation, scope, 'related'))
   if (guarded === undefined) return value
   guards.set(value, guarded)
   return guarded
@@ -248,9 +265,14 @@ export function guardedRuleItem(row: RuleRow): {
   readonly item: Record<string, unknown>
   readonly tripped: () => boolean
 } {
+  const { target, fieldConfigs, config, listKey } = row
+  const relations =
+    config && listKey
+      ? (relationKeysByList(config).get(listKey) ?? NO_RELATIONS)
+      : relationKeysOfFields(fieldConfigs)
   const evaluation: Evaluation = { tripped: false }
   return {
-    item: new Proxy(row.item, new Guard(evaluation, row.scope, true)),
+    item: new Proxy(target, new Guard(evaluation, { relations, config }, 'root')),
     tripped: () => evaluation.tripped,
   }
 }

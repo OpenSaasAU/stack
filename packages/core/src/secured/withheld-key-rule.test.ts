@@ -228,6 +228,14 @@ const config: OpenSaasConfig = {
       fields: {
         name: text(),
         children: relationship({ ref: 'BrokenChild.parent', many: true }),
+        afterWithheld: text({
+          access: {
+            read: ({ item }) => {
+              if (item.children === undefined) throw new Error('a failure after the reach')
+              return true
+            },
+          },
+        }),
         ownBug: text({
           access: {
             read: ({ item }) => {
@@ -485,6 +493,51 @@ describe('a read rule that reaches for a key withheld from it', () => {
             expect(ticket.assigneeId).toBeNull()
           }
         }
+      },
+      BOOT,
+    )
+
+    const assignees = (tickets: unknown) =>
+      (tickets as Rows).map((ticket) => ticket.assigneeId !== null)
+
+    test(
+      'an un-included foreign key at depth two reads the rule view of its own level',
+      async () => {
+        const context = db.context({ userId: 'owner' })
+        const counted = await context.db.Project.include('tickets', (tickets) =>
+          tickets.orderBy({ name: 'asc' }).include('notes', noteCount),
+        ).all()
+        const delivered = await context.db.Project.include('tickets', (tickets) =>
+          tickets.orderBy({ name: 'asc' }).include('notes'),
+        ).all()
+
+        expect(assignees(delivered[0].tickets)).toEqual([true, false])
+        expect(assignees(counted[0].tickets)).toEqual([false, false])
+        expect((counted[0].tickets as Rows).map((ticket) => ticket.reviewerId)).toEqual([
+          null,
+          null,
+        ])
+      },
+      BOOT,
+    )
+
+    test(
+      'an un-included foreign key at depth three reads the rule view of its own level',
+      async () => {
+        const context = db.context({ userId: 'owner' })
+        const counted = await context.db.Org.include('projects', (projects) =>
+          projects.include('tickets', (tickets) =>
+            tickets.orderBy({ name: 'asc' }).include('notes', noteCount),
+          ),
+        ).all()
+        const delivered = await context.db.Org.include('projects', (projects) =>
+          projects.include('tickets', (tickets) =>
+            tickets.orderBy({ name: 'asc' }).include('notes'),
+          ),
+        ).all()
+
+        expect(assignees((delivered[0].projects as Rows)[0].tickets)).toEqual([true, false])
+        expect(assignees((counted[0].projects as Rows)[0].tickets)).toEqual([false, false])
       },
       BOOT,
     )
@@ -793,6 +846,20 @@ describe('a read rule that reaches for a key withheld from it', () => {
     )
 
     test(
+      "a select on it cannot narrow past the source field's rule",
+      async () => {
+        const rows = await db
+          .context({})
+          .db.Shelf.where({ name: { equals: 'mixed' } })
+          .include('from_Book_shelf', (books) => books.select('body'))
+          .all()
+
+        expect(rows[0].from_Book_shelf).toHaveLength(1)
+      },
+      BOOT,
+    )
+
+    test(
       "the source field's rule still filters the related rows one by one",
       async () => {
         const rows = await db
@@ -818,6 +885,28 @@ describe('a read rule that reaches for a key withheld from it', () => {
         const rows = await db.context({}).db.Box.include('from_Part_box').all()
 
         expect(rows[0].from_Part_box).toEqual([])
+      },
+      BOOT,
+    )
+
+    test(
+      "denies beside a count of what it reads, rather than deciding on the count's stand-in",
+      async () => {
+        const admin = db.context({}).sudo()
+        const box = await admin.db.Box.create({ data: { name: 'box' } })
+        await admin.db.Part.create({ data: { name: 'p', box: { connect: { id: box!.id } } } })
+
+        const rows = await db
+          .context({})
+          .db.Box.include('from_Part_box', (parts) => parts.include('tags', (tags) => tags.count()))
+          .all()
+        const delivered = await db
+          .context({})
+          .db.Box.include('from_Part_box', (parts) => parts.include('tags'))
+          .all()
+
+        expect(rows[0].from_Part_box).toEqual([])
+        expect(delivered[0].from_Part_box).toHaveLength(1)
       },
       BOOT,
     )
@@ -849,6 +938,19 @@ describe('a read rule that reaches for a key withheld from it', () => {
         await expect(db.context({}).db.Broken.select('name', 'ownBug').all()).rejects.toThrow(
           'a bug of the rule’s own',
         )
+      },
+      BOOT,
+    )
+
+    test(
+      'propagates anything but the TypeError a withheld key causes',
+      async () => {
+        const admin = db.context({}).sudo()
+        await admin.db.Broken.create({ data: { name: 'c', afterWithheld: 'x' } })
+
+        await expect(
+          db.context({}).db.Broken.select('name', 'afterWithheld').all(),
+        ).rejects.toThrow('a failure after the reach')
       },
       BOOT,
     )

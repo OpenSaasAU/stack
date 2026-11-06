@@ -125,8 +125,8 @@ function deriveResolveOutputContext(
  * never duplicated. Returns `{ readable: false }` when the field must be omitted
  * from the result.
  *
- * `ruleRow` is the row used to evaluate field access — the whole fetched row,
- * since a rule may reach anywhere in it. `hookItem` is the object passed
+ * `ruleRow` is the row used to evaluate field access: the fetched row under its
+ * `RuleView`, which a rule reads through a guard (ADR-0082). `hookItem` is the object passed
  * to the hook as `item`: exactly the field's own declared dependency set plus
  * the list's system fields, so a hook never sees another computed field's
  * resolved value and never sees what some other call site's projection

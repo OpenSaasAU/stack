@@ -100,11 +100,12 @@ function toRelationshipLabel(
 /**
  * Read a to-many relationship's access-scoped count off a fetched row. The
  * native count reducer puts the number at the relation's own key, in place of
- * its rows; a relation the session may not read is absent, which counts 0.
+ * its rows. A relation the session may not read is absent, and an unknown count
+ * is not a zero, so it stays `null` and the cell renders no number.
  */
-function readRelationshipCount(item: Record<string, unknown>, fieldName: string): number {
+function readRelationshipCount(item: Record<string, unknown>, fieldName: string): number | null {
   const value = item[fieldName]
-  return typeof value === 'number' ? value : 0
+  return typeof value === 'number' ? value : null
 }
 
 /**

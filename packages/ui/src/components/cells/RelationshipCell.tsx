@@ -47,12 +47,14 @@ function EmptyDash() {
  * Relationship Cell (issue #732). To-many renders the related COUNT — resolved
  * server-side by the secured read's own count reducer, so it only ever counts
  * rows the session may see; an array of refs is tolerated as a fallback (its
- * length is the count). To-one renders the related row's Item label, linked to
+ * length is the count), and a relation the read withheld has no count to show.
+ * To-one renders the related row's Item label, linked to
  * its edit page when the field's `ref` resolves a URL.
  */
 export function RelationshipCell({ value, field, basePath = '/admin' }: CellComponentProps) {
   if (field.many === true) {
-    const count = typeof value === 'number' ? value : Array.isArray(value) ? value.length : 0
+    const count = typeof value === 'number' ? value : Array.isArray(value) ? value.length : null
+    if (count === null) return <EmptyDash />
     return (
       <span data-slot="cell-relationship-count" className="tabular-nums">
         {count}

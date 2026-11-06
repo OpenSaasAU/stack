@@ -347,6 +347,8 @@ export interface IncludePlan {
    */
   readonly foreignKey?: string
   readonly predicates: readonly WherePlan[]
+  /** Whether the related list's `query` access can leave a row out for this session. */
+  readonly accessScoped: boolean
   /** Whether the caller's own refinement composed a predicate on this relation. */
   readonly callerRefined: boolean
   /**
@@ -723,6 +725,7 @@ async function resolveInclude(
     arity: target.arity,
     ...(target.foreignKey ? { foreignKey: target.foreignKey.name } : {}),
     predicates,
+    accessScoped: access.kind !== 'true',
     callerRefined: request.predicates.length > 0,
     callerShaped,
     ...(declaredFetch ? { declaredFetch } : {}),

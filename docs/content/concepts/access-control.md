@@ -173,41 +173,64 @@ did not arrive on the project.
 | `Array.isArray(item.notes)`           | `true`                   | Denies        |
 | `item.notes.length === 0`             | Decides                  | Denies        |
 
-A rule that never reads the relation is unaffected. `null` on an included to-one
-is a relation that was fetched and found empty, and so is `[]` on an unshaped
-to-many: both are real answers, and neither denies. Scalar columns are always
-there.
+A rule that never reads the relation is unaffected. A to-one with no foreign key
+set is `null`, and an unshaped to-many with no rows is `[]`: both are real
+answers. A `null` that stands for a row the session cannot see is not one, so an
+included to-one the related list's access left out is withheld as well. On the
+inverse side of a one-to-one there is no column to tell the two apart, so a rule
+reading it denies whenever the related list's access can leave a row out.
 
 So a count cannot open a rule, and neither can a `limit`. It also means a rule
 reading a relation denies on every read that does not bring the relation whole,
 including the rows it would have granted. The admin item view pages every
-Relationship table, so such a rule leaves that table empty.
+Relationship table, so such a rule leaves that table showing it can't be shown,
+and the list view shows no count for it.
 
-A rows-reading rule gets its rows from an unshaped `include()`, or from a computed
-field returned on the same read that declares the relation in `needs`. A rule that
-must answer on every read asks for itself, which costs a query per row:
+**A rule cannot depend on rows the session cannot see.** Every way of looking at a
+related row runs as the session: an `include()`, a declared dependency, a
+`context.db` read inside the rule, and a relation predicate in an Access Filter.
+The rule's `context` has no `sudo` and no `unsafe`. So where the related list is
+scoped, finding nothing proves nothing: a rule granting on "no private notes" passes
+for the session that cannot see the private note, and denies its author. Never
+grant on an absence there. Two shapes hold.
+
+**Grant on a row the session can see.** Hiding the row can then only deny, so the
+filter on the related list works with the rule rather than against it. This is the
+shape of [Cross-List Access Checks](#cross-list-access-checks).
+
+**Keep the fact in a column on the row.** A column reads the same for every
+session and on every read. Write it where the related row is written, and fail the
+write if it cannot be recorded, so the two cannot drift apart:
 
 ```typescript
 fields: {
-  summary: text({
-    access: {
-      read: async ({ item, context }) => {
-        const { hidden } = await context.db.Note.where({
-          ticketId: { equals: String(item.id) },
-          private: { equals: true },
-        }).aggregate((aggregate) => ({ hidden: aggregate.count() }))
-        return hidden === 0
-      },
-    },
-  }),
+  hasPrivateNote: checkbox(),
+  summary: text({ access: { read: ({ item }) => item.hasPrivateNote !== true } }),
 }
 ```
 
-`item` looks like a plain object, with two exceptions. Enumerating a row that
-withholds a relation (`Object.keys`, a spread, `JSON.stringify`) denies, because a
-copy would otherwise hide the absence from the check. Writing through `item`, at
-any depth, denies and changes nothing, so use `toSorted()` rather than `sort()` on
-a relation. See
+```typescript
+hooks: {
+  afterOperation: async (args) => {
+    if (args.operation === 'delete' || args.item.private !== true) return
+    const marked = await args.context.db.Ticket.update({
+      where: { id: args.item.ticketId },
+      data: { hasPrivateNote: true },
+    })
+    if (marked === null) throw new ValidationError(['The ticket could not be marked.'])
+  },
+}
+```
+
+The hook runs in the write's own transaction and as the session writing the note,
+so that session needs `update` access on the ticket, or the note is refused.
+
+`item` looks like a plain object, with two exceptions. Enumerating the row a rule
+was handed while it withholds a relation (`Object.keys`, a spread, `JSON.stringify`)
+denies, because a copy would otherwise hide the absence from the check. Writing
+through `item`, at any depth, denies and changes nothing, so use `toSorted()` rather
+than `sort()` on a relation. A rule that throws because of a withheld relation denies
+if the throw is the `TypeError` of reading it; any other error fails the read. See
 [ADR-0082](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0082-a-read-rule-that-reaches-for-a-withheld-key-denies.md).
 
 ## Access Functions

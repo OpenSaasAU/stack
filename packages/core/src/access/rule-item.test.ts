@@ -135,6 +135,21 @@ describe('a rule item on a row carrying every relation', () => {
     expect(tripped()).toBe(true)
   })
 
+  test('enumerating a related row decides nothing, reading its relation still does', () => {
+    const { item, tripped } = guarded({
+      id: 't1',
+      assignee: null,
+      notes: [{ id: 'n1', body: 'one' }],
+    })
+    const [note] = item.notes as Record<string, unknown>[]
+
+    expect({ ...note }).toEqual({ id: 'n1', body: 'one' })
+    expect(JSON.stringify(item.notes)).toBe('[{"id":"n1","body":"one"}]')
+    expect(tripped()).toBe(false)
+    expect('ticket' in note).toBe(false)
+    expect(tripped()).toBe(true)
+  })
+
   test('a relation key inside a JSON column is not a relation', () => {
     const { item, tripped } = guarded({ id: 't1', assignee: null, notes: [], meta: {} })
     expect((item.meta as Record<string, unknown>).notes).toBeUndefined()
@@ -215,6 +230,28 @@ describe('each evaluation has its own record', () => {
 
     expect(first.tripped()).toBe(true)
     expect(second.tripped()).toBe(false)
+  })
+})
+
+describe('a to-one the session cannot see', () => {
+  const scopedAway: RuleViewTree = {
+    viewFor: () => ({ removed: new Set(), declared: {}, scopedAway: new Set(['assignee']) }),
+    nested: {},
+  }
+
+  test('is withheld from a rule and stays null for a hook', () => {
+    const row = ruleRowOf(
+      { id: 't1', assignee: null, notes: [] },
+      scopedAway,
+      fields,
+      config,
+      'Ticket',
+    )
+    const { item, tripped } = guardedRuleItem(row)
+
+    expect(row.item.assignee).toBeNull()
+    expect(item.assignee).toBeUndefined()
+    expect(tripped()).toBe(true)
   })
 })
 

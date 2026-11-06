@@ -306,10 +306,8 @@ export interface ResolvedFieldsProjection {
   apply(query: SecuredQuery): SecuredQuery
   /**
    * The rows the engine returned, at the shape the tool advertises. A
-   * count-only relation is read as a paged rows branch beside the count, never
-   * as a bare `count()`, whose `[]` stand-in opens a rule of the
-   * `item.comments.length === 0` shape (`maskReductions` in
-   * `secured/read.ts`). This drops those rows.
+   * count-only relation is read as a paged rows branch beside the count, and
+   * this drops those rows.
    */
   toWire(rows: readonly OrmRow[]): OrmRow[]
 }

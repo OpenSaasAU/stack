@@ -1,5 +1,7 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import type { AccessContext, OpenSaasConfig } from '@opensaas/stack-core'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import * as React from 'react'
+import { render, screen } from '@testing-library/react'
+import type { OpenSaasConfig } from '@opensaas/stack-core'
 import { relationship, text } from '@opensaas/stack-core/fields'
 import { createTestContext, type TestContext } from '@opensaas/stack-core/testing'
 import {
@@ -7,7 +9,19 @@ import {
   readAccessScopedTotal,
   sectionRows,
 } from '../../src/components/ItemForm.js'
+import { RelationshipCell } from '../../src/components/cells/RelationshipCell.js'
+import { RelationshipTableClient } from '../../src/components/RelationshipTableClient.js'
 import { deriveItemViewLayout } from '../../src/lib/deriveItemView.js'
+
+vi.mock('next/navigation.js', () => ({
+  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+}))
+
+vi.mock('next/link.js', () => ({
+  default: ({ children, href }: { children: React.ReactNode; href: string }) => (
+    <a href={href}>{children}</a>
+  ),
+}))
 
 const OPEN = { query: () => true, create: () => true, update: () => true }
 
@@ -64,7 +78,7 @@ describe('the item view of a row whose rule reads a paged relation', () => {
     const layout = deriveItemViewLayout(config, 'Ticket')
     expect(layout.sections.map((section) => section.fieldName).sort()).toEqual(['logs', 'notes'])
 
-    const context = harness.context as unknown as AccessContext
+    const { context } = harness
     const ticket = await context.db.Ticket.create({ data: { name: 'one', summary: 'private' } })
     const connect = { ticket: { connect: { id: ticket?.id } } }
     await context.db.Log.create({ data: { body: 'a log', ...connect } })
@@ -83,5 +97,52 @@ describe('the item view of a row whose rule reads a paged relation', () => {
     expect(readAccessScopedTotal(itemData?.logs, 0)).toBe(0)
     expect(sectionRows(itemData?.notes)).toHaveLength(1)
     expect(readAccessScopedTotal(itemData?.notes, 0)).toBe(1)
+  })
+})
+
+describe('a relation the read withheld is not an empty one', () => {
+  const tableProps = {
+    title: 'Logs',
+    relatedUrlKey: 'log',
+    basePath: '/admin',
+    columns: ['body'],
+    fields: { body: { type: 'text' } },
+    rows: [],
+    count: 0,
+    total: 0,
+    sumColumns: [],
+    sums: {},
+    removeMode: null,
+    relatedListKey: 'Log',
+    parentId: 't1',
+    parentListKey: 'Ticket',
+    serverAction: async () => null,
+  }
+
+  it('renders no number in the list view cell, and a real zero as a zero', () => {
+    const field = { type: 'relationship', many: true }
+    const { container, rerender } = render(
+      <RelationshipCell value={null} field={field} fieldName="logs" />,
+    )
+    expect(container.querySelector('[data-slot="cell-relationship-count"]')).toBeNull()
+    expect(container.textContent).not.toContain('0')
+
+    rerender(<RelationshipCell value={0} field={field} fieldName="logs" />)
+    expect(container.querySelector('[data-slot="cell-relationship-count"]')?.textContent).toBe('0')
+  })
+
+  it('says the table cannot be shown, and claims no count', () => {
+    render(<RelationshipTableClient {...tableProps} unavailable />)
+
+    expect(screen.getByText("Logs can't be shown here.")).toBeTruthy()
+    expect(screen.queryByText(/No related/)).toBeNull()
+    expect(screen.queryByText(/Showing/)).toBeNull()
+  })
+
+  it('keeps the empty state for a relation that really is empty', () => {
+    render(<RelationshipTableClient {...tableProps} />)
+
+    expect(screen.getByText('No related logs yet.')).toBeTruthy()
+    expect(screen.getByText('Showing 0 of 0 rows')).toBeTruthy()
   })
 })

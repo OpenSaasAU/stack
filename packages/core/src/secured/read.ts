@@ -937,8 +937,8 @@ function assembleColumnFields(row: OrmRow, fieldConfigs: ListConfig<TypeInfo>['f
  *
  * The column is on the row regardless of `include` (ADR-0043), so it needs
  * its own visibility decision: the owning relationship field's own `read`
- * rule, evaluated per row against the RAW row (before Field Visibility
- * strips anything else), and the related list's own `query` access — `true`
+ * rule, evaluated per row against the row Field Visibility's rules see, and
+ * the related list's own `query` access — `true`
  * leaves the column as the plain pass-through value it already is, `false`
  * nulls it outright, and a filter is resolved with one batched existence
  * check per relation across the whole page, keyed off the column's own value
@@ -1342,6 +1342,12 @@ function isRowlessReduction(plan: IncludePlan): boolean {
   return plan.reduce !== undefined && !hasRowsBranch(plan) && plan.declaredRows === undefined
 }
 
+/** A to-one reading `null` for a row the session cannot see. Inverse sides cannot be told apart. */
+function isScopedAway(row: OrmRow, plan: IncludePlan): boolean {
+  if (plan.arity !== 'one' || row[plan.relation] !== null) return false
+  return plan.foreignKey === undefined ? plan.accessScoped : row[plan.foreignKey] !== null
+}
+
 function ruleViewFor(
   row: OrmRow,
   plans: readonly IncludePlan[],
@@ -1349,7 +1355,9 @@ function ruleViewFor(
 ): RuleView {
   const removed = new Set<string>()
   const declared: Record<string, unknown> = {}
+  const scopedAway = new Set<string>()
   for (const plan of plans) {
+    if (isScopedAway(row, plan)) scopedAway.add(plan.relation)
     const values = unshaped.get(plan.relation)
     const rows = values?.get(String(row['id']))
     if (rows !== undefined) declared[plan.relation] = rows
@@ -1357,7 +1365,7 @@ function ruleViewFor(
       removed.add(plan.relation)
     }
   }
-  return { removed, declared }
+  return { removed, declared, scopedAway }
 }
 
 /**

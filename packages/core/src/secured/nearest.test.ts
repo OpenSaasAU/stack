@@ -7,7 +7,7 @@ import type {
   VectorDistanceFunction,
 } from '../config/types.js'
 import type { Session } from '../access/types.js'
-import { relationship, text } from '../fields/index.js'
+import { checkbox, relationship, text } from '../fields/index.js'
 import { ValidationError } from '../hooks/index.js'
 import { withOrigin } from '../origin.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
@@ -112,6 +112,30 @@ const config: OpenSaasConfig = {
       access: {
         operation: { query: ({ session }) => ({ name: { equals: session?.userId ?? '' } }) },
       },
+    },
+    // A rule reading a relation decides on `nearest()` as on `all()` (ADR-0082).
+    Indexed: {
+      fields: {
+        title: text(),
+        blurb: text({
+          access: {
+            read: ({ item }) =>
+              !(item.marks as readonly { flagged: boolean }[] | undefined)?.some(
+                (mark) => mark.flagged,
+              ),
+          },
+        }),
+        marks: relationship({ ref: 'Mark.indexed', many: true }),
+        embedding: embedding(3, 'cosine'),
+      },
+      access: { operation: { query: () => true } },
+    },
+    Mark: {
+      fields: {
+        flagged: checkbox(),
+        indexed: relationship({ ref: 'Indexed.marks' }),
+      },
+      access: { operation: { query: () => true } },
     },
     // Declares no rule, so `query` is denied by default.
     Locked: {
@@ -420,6 +444,48 @@ describe.skipIf(!available)(
         // and the foreign key must not survive as the invisible row's id.
         expect(other.item.writer).toBeNull()
         expect(other.item.writerId).toBeNull()
+      })
+
+      describe('a rule reading a relation', () => {
+        const clean = '00000000-0000-7000-8000-000000000003'
+        const flagged = '00000000-0000-7000-8000-000000000004'
+
+        beforeEach(async () => {
+          await seed('Indexed', { id: clean, title: 'clean', blurb: 'B', embedding: [1, 0, 0] })
+          await seed('Indexed', {
+            id: flagged,
+            title: 'flagged',
+            blurb: 'B',
+            embedding: [0.99, 0.1, 0],
+          })
+          await seed('Mark', { flagged: false, indexedId: clean })
+          await seed('Mark', { flagged: true, indexedId: flagged })
+        })
+
+        test('decides on delivered rows', async () => {
+          const matches = await database
+            .context(mine)
+            .db.Indexed.include('marks')
+            .nearest('embedding', QUERY)
+
+          expect(titles(matches)).toEqual(['clean', 'flagged'])
+          expect(matches.map((match) => 'blurb' in match.item)).toEqual([true, false])
+        })
+
+        test('denies on a bare search', async () => {
+          const matches = await database.context(mine).db.Indexed.nearest('embedding', QUERY)
+
+          expect(matches.map((match) => 'blurb' in match.item)).toEqual([false, false])
+        })
+
+        test('denies beside a count of the relation', async () => {
+          const matches = await database
+            .context(mine)
+            .db.Indexed.include('marks', (marks) => marks.count())
+            .nearest('embedding', QUERY)
+
+          expect(matches.map((match) => 'blurb' in match.item)).toEqual([false, false])
+        })
       })
     })
 

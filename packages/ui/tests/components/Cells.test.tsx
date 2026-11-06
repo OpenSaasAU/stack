@@ -145,9 +145,10 @@ describe('RelationshipCell', () => {
     )
     expect(screen.getByRole('link', { name: 'user-3' })).toBeInTheDocument()
 
-    // A to-many that resolved to nothing counts as zero.
+    // A to-many the read withheld has no count, and that is not a zero.
     rerender(<RelationshipCell value={null} field={manyField} fieldName="posts" />)
-    expect(container.querySelector('[data-slot="cell-relationship-count"]')).toHaveTextContent('0')
+    expect(container.querySelector('[data-slot="cell-relationship-count"]')).toBeNull()
+    expect(screen.getByText('-')).toBeInTheDocument()
   })
 
   it('renders a to-many relationship as its access-visible count (issue #732)', () => {
