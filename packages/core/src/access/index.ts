@@ -27,9 +27,13 @@ export type { SyntheticReverseRelation } from './engine.js'
 // Canonical field-level access evaluation (shared by read and write paths).
 export {
   checkFieldAccess,
+  checkRowRead,
   filterWritableFields,
   isFieldReadableForPredicate,
 } from './field-access.js'
+// The `item` a `read` rule runs against (ADR-0082).
+export { NO_RULE_VIEWS, ruleRowOf } from './rule-item.js'
+export type { RuleView, RuleViewTree } from './rule-item.js'
 // Phase 2 — Field Visibility (post-query field stripping + resolveOutput).
 export { filterReadableFields } from './field-visibility.js'
 // Declared Dependencies — widening a read for the emitted `needs` sets

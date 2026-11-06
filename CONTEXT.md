@@ -38,6 +38,10 @@ _Avoid_: reverse relation, back-reference, implicit relation
 The second pass of a read, run on the returned rows. Removes fields the session cannot read and produces the value of every computed field the read is going to return — so a computed field on a Bare read arrives from here, not from the query. A field the read will not return does no work here at all — neither its read check nor its computation — so this phase costs what the read asked for rather than what the list happens to define. Running a hook extends the read's resolve chain, which bounds how far a hook-issued read may re-enter this phase.
 _Avoid_: result filter, output filter, field stripper
 
+**Withheld key**:
+A relation key of a row's list that holds no value under what a `read` rule is shown: the read never named it, the caller shaped it, or a count stands in for it. A rule that reaches for one denies, whatever it returns or throws. `null` is not withheld, because it is a relation that was fetched and found empty; a scalar column never is (ADR-0082).
+_Avoid_: missing relation, unloaded relation
+
 **Resolve chain**:
 The sequence of `resolveOutput` hooks a read has entered on the way to a value — a hook that issues its own read extends the chain with that read's hooks. A top-level read starts an empty chain, and each hook's chain is its own: two hooks running concurrently never see each other's. A chain may not repeat a (list, field) pair, because a hook that re-enters itself cannot terminate; that is refused loudly. Chain length is bounded separately, as a cost limit only.
 _Avoid_: hook chain (that is plugins composing hooks), resolveOutput depth, recursion depth

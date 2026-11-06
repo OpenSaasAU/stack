@@ -424,6 +424,12 @@ type FieldAccessBase<
   TCreateInput = Record<string, unknown>,
   TUpdateInput = Record<string, unknown>,
 > = {
+  /**
+   * Whether this session may read the field on this row. A rule that reaches
+   * for a relation the read did not deliver whole, enumerates a row withholding
+   * one, or writes through `item` denies, whatever it returns or throws. A rule
+   * that must answer on every read issues its own `context.db` read (ADR-0082).
+   */
   read?: (
     args: Extract<FieldAccessControlArgs<TItem, TCreateInput, TUpdateInput>, { operation: 'read' }>,
   ) => boolean | Promise<boolean>

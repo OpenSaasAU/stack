@@ -125,7 +125,7 @@ The stack's primary innovation is its access control engine that automatically s
 2. A read is **composed** on `context.db.<List>` — `context.db.Post.where({ published: true })` — and enforces nothing until a terminal runs it
 3. The terminal resolves operation-level access (may this session perform this action?)
 4. The access filter rides into the query as a second, engine-owned predicate the ORM ANDs natively — nobody hand-merges a `where`
-5. Field-level access strips what the session may not read, after the query
+5. Field-level access strips what the session may not read, after the query. A rule reaching for a relation the row does not carry denies (ADR-0082)
 6. A denied operation returns the empty value of the terminal's type (`null`, `[]`, `0`) rather than throwing — silent failure prevents information leakage
 
 **Access Control Types:**
@@ -1228,6 +1228,7 @@ These are decisions, not defects. `specs/prisma-8/architecture-spec.md` section 
 - `needs` outranks a read denial, so `needs: ['passwordHash']` is a real leak channel owned by whoever writes it
 - A `resolveOutput` hook reading an undeclared column breaks silently unless it is typed through `Lists.<List>.TypeInfo`, where it is a compile error
 - Every to-one read off an included row is a null check, `NOT NULL` column or not
+- A `read` rule that reaches for a relation the row does not carry denies, so a rule reading a relation grants only where the read delivers it whole. Enumerating such a row or writing through `item` denies too, and each rule evaluation pays for a `Proxy` (ADR-0082)
 - A secured read holds its whole result; bounding a large read is the caller's job
 - A row lock is two round trips, and `.forUpdate().all()` binds a bounded key set
 - Every root `update` and `delete` takes a row lock on its target and resolves it a second time before hooks run, an extra round trip per write (ADR-0078)

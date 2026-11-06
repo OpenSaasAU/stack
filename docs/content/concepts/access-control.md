@@ -147,6 +147,69 @@ field, from `session`, the fetched `item` and — on `create`/`update` — the
 defaulting to allow, so filter-returning helpers cannot be reused here.
 {% /callout %}
 
+### What a read rule sees
+
+A `read` rule runs on the row the read fetched, so a rule that asks about a
+relation depends on whether that relation arrived. The engine does not let the
+answer depend on what the caller happened to ask for: **a rule that reaches for a
+relation the row does not carry denies**, whatever it returns and whatever it
+throws.
+
+A relation is withheld from a rule when the read:
+
+- never named it, as on a bare read
+- narrowed it, with `where`, `limit`, `offset`, `orderBy`, `select` or a nested
+  `include`
+- reduced it to counts with no rows, through `count()` or a `combine` of counts
+
+The same rule holds one level down: `item.project.tickets` denies when `tickets`
+did not arrive on the project.
+
+| Rule                                  | Plain `include('notes')` | Not delivered |
+| ------------------------------------- | ------------------------ | ------------- |
+| `item.ownerId === session?.userId`    | Decides                  | Decides       |
+| `item.notes.every((n) => n.public)`   | Decides                  | Denies        |
+| `!item.notes?.some((n) => n.private)` | Decides                  | Denies        |
+| `Array.isArray(item.notes)`           | `true`                   | Denies        |
+| `item.notes.length === 0`             | Decides                  | Denies        |
+
+A rule that never reads the relation is unaffected. `null` on an included to-one
+is a relation that was fetched and found empty, and so is `[]` on an unshaped
+to-many: both are real answers, and neither denies. Scalar columns are always
+there.
+
+So a count cannot open a rule, and neither can a `limit`. It also means a rule
+reading a relation denies on every read that does not bring the relation whole,
+including the rows it would have granted. The admin item view pages every
+Relationship table, so such a rule leaves that table empty.
+
+A rows-reading rule gets its rows from an unshaped `include()`, or from a computed
+field returned on the same read that declares the relation in `needs`. A rule that
+must answer on every read asks for itself, which costs a query per row:
+
+```typescript
+fields: {
+  summary: text({
+    access: {
+      read: async ({ item, context }) => {
+        const { hidden } = await context.db.Note.where({
+          ticketId: { equals: String(item.id) },
+          private: { equals: true },
+        }).aggregate((aggregate) => ({ hidden: aggregate.count() }))
+        return hidden === 0
+      },
+    },
+  }),
+}
+```
+
+`item` looks like a plain object, with two exceptions. Enumerating a row that
+withholds a relation (`Object.keys`, a spread, `JSON.stringify`) denies, because a
+copy would otherwise hide the absence from the check. Writing through `item`, at
+any depth, denies and changes nothing, so use `toSorted()` rather than `sort()` on
+a relation. See
+[ADR-0082](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0082-a-read-rule-that-reaches-for-a-withheld-key-denies.md).
+
 ## Access Functions
 
 An operation-level rule is called with exactly three arguments. `session` is the

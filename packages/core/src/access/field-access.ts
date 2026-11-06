@@ -8,6 +8,7 @@ import { isComputedField } from '../config/field-kind.js'
 import { ValidationError } from '../hooks/index.js'
 import { InvalidFieldAccessResultError } from './errors.js'
 import { checkAccess, resolveSyntheticReverseRelation } from './engine.js'
+import { guardedRuleItem, type RuleRow } from './rule-item.js'
 import { shouldHaveForeignKey } from '../fields/index.js'
 import { isSystemFieldName } from './system-fields.js'
 
@@ -165,6 +166,33 @@ export async function checkFieldAccess(
   // available, so `create` (which has no `item` to evaluate a filter against)
   // needs no separate answer: neither operation ever honours a non-boolean.
   throw new InvalidFieldAccessResultError(operation, result)
+}
+
+/**
+ * A field's `read` rule answered for a fetched row. A rule that reaches for a
+ * relation the row does not carry, or writes through the row, denies whatever
+ * it returned and whatever it threw, so `item.logs.length` on a withheld
+ * relation is a denial rather than a `TypeError` (ADR-0082).
+ */
+export async function checkRowRead(
+  fieldAccess: FieldAccess | undefined,
+  args: {
+    session: Session | null
+    context: AccessContext & { _isSudo?: boolean }
+  },
+  row: RuleRow,
+): Promise<boolean> {
+  if (args.context._isSudo || !fieldAccess?.read) {
+    return await checkFieldAccess(fieldAccess, 'read', { ...args, item: row.item })
+  }
+  const { item, tripped } = guardedRuleItem(row)
+  try {
+    const readable = await checkFieldAccess(fieldAccess, 'read', { ...args, item })
+    return readable && !tripped()
+  } catch (err) {
+    if (err instanceof InvalidFieldAccessResultError || !tripped()) throw err
+    return false
+  }
 }
 
 /**

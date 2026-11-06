@@ -2,7 +2,8 @@ import type { Session, AccessContext } from './types.js'
 import type { OpenSaasConfig, FieldConfig, ListConfig } from '../config/types.js'
 import { isComputedField } from '../config/field-kind.js'
 import { getRelatedListConfig, resolveSyntheticReverseRelation } from './engine.js'
-import { checkFieldAccess } from './field-access.js'
+import { checkRowRead } from './field-access.js'
+import { NO_RULE_VIEWS, ruleRowOf, type RuleRow, type RuleViewTree } from './rule-item.js'
 import { RESOLVE_CHAIN_MAX_LENGTH } from './depth-limits.js'
 import { ResolveOutputCycleError } from './errors.js'
 import type {
@@ -61,22 +62,6 @@ import { buildDbDelegate } from '../context/index.js'
  * pass-through: `filtered[key] = value`, no field-level recursion, no
  * computed field run on the related rows.
  */
-
-/** What a level's `read` rules and hooks see in place of a caller-shaped relation. */
-export interface RuleView {
-  readonly removed: ReadonlySet<string>
-  readonly declared: Readonly<Record<string, unknown>>
-}
-
-const EMPTY_RULE_VIEW: RuleView = Object.freeze({ removed: new Set<string>(), declared: {} })
-
-/** The {@link RuleView} of every row at one level, and of the levels beneath it. */
-export interface RuleViewTree {
-  readonly viewFor: (row: Record<string, unknown>) => RuleView
-  readonly nested: Readonly<Record<string, RuleViewTree>>
-}
-
-const NO_RULE_VIEWS: RuleViewTree = Object.freeze({ viewFor: () => EMPTY_RULE_VIEW, nested: {} })
 
 type ResolveOutputHookRuntime = (args: {
   operation: 'query'
@@ -140,8 +125,8 @@ function deriveResolveOutputContext(
  * never duplicated. Returns `{ readable: false }` when the field must be omitted
  * from the result.
  *
- * `accessItem` is the row used to evaluate field access — the whole fetched
- * row, since a rule may reach anywhere in it. `hookItem` is the object passed
+ * `ruleRow` is the row used to evaluate field access — the whole fetched row,
+ * since a rule may reach anywhere in it. `hookItem` is the object passed
  * to the hook as `item`: exactly the field's own declared dependency set plus
  * the list's system fields, so a hook never sees another computed field's
  * resolved value and never sees what some other call site's projection
@@ -151,18 +136,15 @@ async function resolveReadableFieldValue(params: {
   fieldConfig: FieldConfig | undefined
   fieldName: string
   value: unknown
-  accessItem: Record<string, unknown>
+  ruleRow: RuleRow
   hookItem: Record<string, unknown>
   listKey: string | undefined
   args: FieldVisibilityArgs
   config: OpenSaasConfig | undefined
 }): Promise<{ readable: false } | { readable: true; value: unknown }> {
-  const { fieldConfig, fieldName, value, accessItem, hookItem, listKey, args, config } = params
+  const { fieldConfig, fieldName, value, ruleRow, hookItem, listKey, args, config } = params
 
-  const canRead = await checkFieldAccess(fieldConfig?.access, 'read', {
-    ...args,
-    item: accessItem,
-  })
+  const canRead = await checkRowRead(fieldConfig?.access, args, ruleRow)
 
   if (!canRead) {
     return { readable: false }
@@ -289,15 +271,8 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
    * exercising field access in isolation) has no table to read, so the whole
    * working row stands in — there is no declaration to honour there.
    */
-  const ruleView = ruleViews.viewFor(item)
-  const ruleItem: Record<string, unknown> =
-    ruleView.removed.size === 0 && Object.keys(ruleView.declared).length === 0
-      ? workingItem
-      : { ...workingItem }
-  if (ruleItem !== workingItem) {
-    for (const key of ruleView.removed) delete ruleItem[key]
-    Object.assign(ruleItem, ruleView.declared)
-  }
+  const ruleRow = ruleRowOf(workingItem, ruleViews, fieldConfigs, config, listKey)
+  const ruleItem = ruleRow.item
 
   const hookItemFor = (fieldName: string): Record<string, unknown> => {
     if (!config || !listKey) return ruleItem
@@ -361,10 +336,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
       let relatedConfig: { listName: string; listConfig: ListConfig<any> } | null = null
 
       if (isDeclaredRelationshipField) {
-        const canRead = await checkFieldAccess(fieldConfig?.access, 'read', {
-          ...args,
-          item: ruleItem,
-        })
+        const canRead = await checkRowRead(fieldConfig?.access, args, ruleRow)
 
         // A `read` denial hides the relation from the CALLER and nothing
         // else: it never reaches `filtered`, while `hookItemFor` still hands
@@ -403,10 +375,17 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
         if (Array.isArray(value)) {
           const allowed = await Promise.all(
             value.map((relatedItem) =>
-              checkFieldAccess(synthetic.sourceFieldConfig.access, 'read', {
-                ...args,
-                item: relatedItem,
-              }),
+              checkRowRead(
+                synthetic.sourceFieldConfig.access,
+                args,
+                ruleRowOf(
+                  relatedItem,
+                  ruleViews.nested[fieldName] ?? NO_RULE_VIEWS,
+                  synthetic.sourceListConfig.fields,
+                  config,
+                  synthetic.sourceListName,
+                ),
+              ),
             ),
           )
           const readable = value.filter((_, index) => allowed[index])
@@ -473,7 +452,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
       fieldConfig,
       fieldName,
       value,
-      accessItem: ruleItem,
+      ruleRow,
       hookItem: hookItemFor(fieldName),
       listKey,
       args,
@@ -526,7 +505,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
       fieldConfig,
       fieldName,
       value: undefined, // Virtual fields don't have a database value
-      accessItem: ruleItem,
+      ruleRow,
       hookItem: hookItemFor(fieldName),
       listKey,
       args,
