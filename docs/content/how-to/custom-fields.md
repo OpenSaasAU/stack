@@ -269,7 +269,6 @@ export function SlugField({
         <input
           id={id}
           type="text"
-          aria-label={`${label} hex value`}
           value={value || ''}
           onChange={(e) => {
             setIsAutoMode(false)

@@ -14,8 +14,9 @@ interface InvalidMark {
 
 const SYSTEM_FIELDS = ['id']
 
-const FOCUSABLE =
-  'input:not([type="hidden"]), select, textarea, button, a[href], [contenteditable="true"], [tabindex]'
+// Value controls only. A field's first button can be its Remove, which Enter would then press.
+const VALUE_CONTROLS =
+  'input:not([type="hidden"]), select, textarea, [contenteditable="true"], [role="textbox"], [role="combobox"]'
 
 function focusAndReveal(element: HTMLElement): boolean {
   element.focus({ preventScroll: true })
@@ -25,15 +26,12 @@ function focusAndReveal(element: HTMLElement): boolean {
   return true
 }
 
-/** The control a failed submit lands on inside a field: its invalid control, else its first. */
-function fieldFocusTarget(field: Element): HTMLElement | null {
-  const invalid = field.querySelector<HTMLElement>('[aria-invalid="true"]')
-  if (invalid) return invalid
-  return (
-    Array.from(field.querySelectorAll<HTMLElement>(FOCUSABLE)).find(
-      (element) => element.tabIndex >= 0 && element.getAttribute('aria-hidden') !== 'true',
-    ) ?? null
-  )
+/** What a failed submit may land on inside a field, best first: invalid controls, then value controls. */
+function fieldFocusCandidates(field: Element): HTMLElement[] {
+  return [
+    ...field.querySelectorAll<HTMLElement>('[aria-invalid="true"]'),
+    ...field.querySelectorAll<HTMLElement>(VALUE_CONTROLS),
+  ].filter((element) => element.tabIndex >= 0 && !element.closest('[hidden], [aria-hidden="true"]'))
 }
 
 /**
@@ -427,8 +425,7 @@ export function useItemForm({
     const firstWithError = Array.from(
       formRef.current?.querySelectorAll<HTMLElement>('[data-field-name]') ?? [],
     ).find((field) => field.dataset.fieldName && errors[field.dataset.fieldName])
-    const target = firstWithError && fieldFocusTarget(firstWithError)
-    if (target && focusAndReveal(target)) return
+    if (firstWithError && fieldFocusCandidates(firstWithError).some(focusAndReveal)) return
     if (errorBannerRef.current) focusAndReveal(errorBannerRef.current)
   }, [isPending, errors, generalError])
 

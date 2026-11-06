@@ -11,7 +11,6 @@ interface ComboboxNavigationValue {
   listRef: React.RefObject<HTMLDivElement | null>
   inputRef: React.RefObject<HTMLInputElement | null>
   activeId: string | null
-  setActiveId: (id: string | null) => void
   /** Bring `activeId` back in line with the options now rendered. */
   syncActive: () => void
   /** The next `syncActive` chooses again, even if the active option survived. */
@@ -97,7 +96,6 @@ function ComboboxNavigation({ children }: { children: React.ReactNode }) {
         listRef,
         inputRef,
         activeId,
-        setActiveId,
         syncActive,
         retarget: () => {
           shouldRetarget.current = true
@@ -215,10 +213,13 @@ const ComboboxSearch = React.forwardRef<
         move((options, current) => options[(current < 1 ? options.length : current) - 1])
         break
       case 'Home':
+        // With text in the box these keys belong to the caret, as the ARIA combobox pattern has it.
+        if (event.currentTarget.value !== '') break
         event.preventDefault()
-        move((options) => options[0])
+        move((options) => options.find((option) => option.dataset.auxiliary === undefined))
         break
       case 'End':
+        if (event.currentTarget.value !== '') break
         event.preventDefault()
         move((options) => options[options.length - 1])
         break
@@ -334,8 +335,8 @@ export interface ComboboxItemProps extends React.HTMLAttributes<HTMLDivElement> 
 }
 
 const ComboboxItem = React.forwardRef<HTMLDivElement, ComboboxItemProps>(
-  ({ className, children, selected, disabled, auxiliary, id, onPointerMove, ...props }, ref) => {
-    const { activeId, setActiveId } = useComboboxNavigation()
+  ({ className, children, selected, disabled, auxiliary, id, ...props }, ref) => {
+    const { activeId } = useComboboxNavigation()
     const generatedId = React.useId()
     const optionId = id ?? generatedId
 
@@ -358,10 +359,6 @@ const ComboboxItem = React.forwardRef<HTMLDivElement, ComboboxItemProps>(
           selected && 'pr-8 font-medium',
           className,
         )}
-        onPointerMove={(event) => {
-          onPointerMove?.(event)
-          if (!disabled) setActiveId(optionId)
-        }}
         {...props}
       >
         {selected && (

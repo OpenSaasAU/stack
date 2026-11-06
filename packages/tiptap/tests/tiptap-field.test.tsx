@@ -311,6 +311,16 @@ describe('TiptapField accessibility', () => {
     expect(getByRole('textbox', { name: 'Body' }).getAttribute('aria-multiline')).toBe('true')
   })
 
+  it('names a read-only editor by its label too, and says it is read-only', async () => {
+    const { container, getByRole } = render(
+      <TiptapField name="body" mode="read" value={null} onChange={() => {}} label="Body" />,
+    )
+    await mounted(container)
+
+    await waitFor(() => expect(getByRole('textbox', { name: 'Body' })).toBeTruthy())
+    expect(getByRole('textbox', { name: 'Body' }).getAttribute('aria-readonly')).toBe('true')
+  })
+
   it('marks the editor invalid and ties it to the error while there is one', async () => {
     const props = { name: 'body', value: null, onChange: () => {}, label: 'Body' }
     const { container, getByRole, rerender } = render(<TiptapField {...props} error="Required" />)

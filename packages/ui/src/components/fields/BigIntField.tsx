@@ -109,7 +109,9 @@ export function BigIntField({
       />
       {helpText && <FieldHelp id={fieldHelpId(id)}>{helpText}</FieldHelp>}
       {(parseError || error) && (
-        <FieldError id={fieldErrorId(id)}>{parseError || error}</FieldError>
+        <FieldError id={fieldErrorId(id)}>
+          {[parseError, error].filter(Boolean).join(' ')}
+        </FieldError>
       )}
     </FieldRoot>
   )

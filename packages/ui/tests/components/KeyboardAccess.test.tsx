@@ -3,6 +3,8 @@ import * as React from 'react'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { AdminFrame } from '../../src/components/AdminFrame.js'
+import { ConfirmDialog } from '../../src/components/ConfirmDialog.js'
+import { FilterBuilder } from '../../src/components/FilterBuilder.js'
 import { ItemFormClient, type ItemFormClientProps } from '../../src/components/ItemFormClient.js'
 import { ListViewClient } from '../../src/components/ListViewClient.js'
 import { RelationshipLinkControl } from '../../src/components/RelationshipLinkControl.js'
@@ -10,6 +12,7 @@ import { CalendarDayField } from '../../src/components/fields/CalendarDayField.j
 import { ComboboxField } from '../../src/components/fields/ComboboxField.js'
 import { FieldRenderer } from '../../src/components/fields/FieldRenderer.js'
 import { FileField } from '../../src/components/fields/FileField.js'
+import { ImageField } from '../../src/components/fields/ImageField.js'
 import { JsonField } from '../../src/components/fields/JsonField.js'
 import { PasswordField } from '../../src/components/fields/PasswordField.js'
 import { RelationshipManager } from '../../src/components/fields/RelationshipManager.js'
@@ -107,6 +110,27 @@ describe('the relationship picker by keyboard', () => {
     expect(activeOption()).toBe('Ada Lovelace')
     await user.keyboard('{End}')
     expect(activeOption()).toBe('Grace Hopper')
+    await user.keyboard('{Home}')
+    expect(activeOption()).toBe('Ada Lovelace')
+  })
+
+  it('leaves Home and End to the caret once there is text in the box', async () => {
+    const user = userEvent.setup()
+    renderPicker()
+    await openPicker(user)
+
+    await user.keyboard('a')
+    const input = screen.getByRole('combobox')
+    expect(fireEvent.keyDown(input, { key: 'Home' })).toBe(true)
+    expect(fireEvent.keyDown(input, { key: 'End' })).toBe(true)
+    expect(activeOption()).toBe('Ada Lovelace')
+  })
+
+  it('does not land Home on Clear selection', async () => {
+    const user = userEvent.setup()
+    renderPicker({ value: 'u3' })
+    await openPicker(user)
+
     await user.keyboard('{Home}')
     expect(activeOption()).toBe('Ada Lovelace')
   })
@@ -432,11 +456,108 @@ describe('a control tied to its label', () => {
     expect(screen.getByRole('button', { name: 'Secret Change Password' })).toHaveFocus()
   })
 
+  it.each([
+    ['file', FileField, 'Remove Document'],
+    ['image', ImageField, 'Remove Document'],
+  ])('keeps a %s field’s label and error on its file input, not Remove', (_, Field, removeName) => {
+    render(
+      <Field
+        name="doc"
+        id="f-doc"
+        label="Document"
+        value={{
+          url: '/a.png',
+          originalFilename: 'a.png',
+          filename: 'a.png',
+          size: 1,
+          mimeType: 'image/png',
+          width: 1,
+          height: 1,
+          storageProvider: 'local',
+          uploadedAt: '2026-11-06T00:00:00.000Z',
+        }}
+        onChange={noop}
+        error="Too large"
+      />,
+    )
+
+    const input = screen.getByLabelText('Document')
+    expect(input).toHaveAttribute('type', 'file')
+    expect(input).toHaveAttribute('aria-invalid', 'true')
+    expect(input).toHaveAccessibleDescription('Too large')
+    expect(screen.getByRole('button', { name: removeName })).not.toHaveAttribute('aria-invalid')
+  })
+
+  it('hands focus to the file input when Remove takes itself away', async () => {
+    function Harness() {
+      const [value, setValue] = React.useState<File | null>(new File(['x'], 'a.txt'))
+      return <FileField name="doc" label="Document" value={value} onChange={() => setValue(null)} />
+    }
+    const user = userEvent.setup()
+    render(<Harness />)
+
+    screen.getByRole('button', { name: 'Remove Document' }).focus()
+    await user.keyboard('{Enter}')
+    expect(screen.getByLabelText('Document')).toHaveFocus()
+  })
+
   it('names the file field’s remove button', () => {
     render(
       <FileField name="doc" label="Document" value={new File(['x'], 'a.txt')} onChange={noop} />,
     )
     expect(screen.getByRole('button', { name: 'Remove Document' })).toBeInTheDocument()
+  })
+
+  it('keeps focus on the page when a clear button removes itself', async () => {
+    const user = userEvent.setup()
+    render(
+      <>
+        <SearchBar defaultValue="hello" onClear={noop} />
+        <FilterBuilder suggestions={[]} defaultValue="world" onApply={noop} />
+      </>,
+    )
+
+    const [searchBox, filterBox] = screen.getAllByRole('textbox', { name: 'Search' })
+    screen.getByRole('button', { name: 'Clear search' }).focus()
+    await user.keyboard('{Enter}')
+    expect(searchBox).toHaveFocus()
+
+    screen.getByRole('button', { name: 'Clear filter text' }).focus()
+    await user.keyboard('{Enter}')
+    expect(filterBox).toHaveFocus()
+  })
+
+  it.each([
+    ['Cancel', () => screen.getByRole('button', { name: 'Keep it' }).click()],
+    ['Escape', () => fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })],
+  ])('gives focus back to the opener after a confirm dialog closes by %s', async (_, close) => {
+    function Harness() {
+      const [open, setOpen] = React.useState(false)
+      return (
+        <>
+          <button onClick={() => setOpen(true)}>Delete it</button>
+          <ConfirmDialog
+            isOpen={open}
+            title="Sure?"
+            message="Really?"
+            cancelLabel="Keep it"
+            onConfirm={noop}
+            onCancel={() => setOpen(false)}
+          />
+        </>
+      )
+    }
+    const user = userEvent.setup()
+    render(<Harness />)
+
+    const opener = screen.getByRole('button', { name: 'Delete it' })
+    opener.focus()
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Keep it' })).toBeVisible())
+
+    close()
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    await waitFor(() => expect(opener).toHaveFocus())
   })
 
   it('names the search bar’s input and its clear button', async () => {
@@ -639,6 +760,94 @@ describe('after a failed submit', () => {
     await submit(user)
 
     await waitFor(() => expect(screen.getByRole('textbox', { name: 'Custom' })).toHaveFocus())
+  })
+
+  it('prefers the invalid control over the first one in a field', async () => {
+    const user = userEvent.setup()
+    const Pair = () => (
+      <>
+        <input aria-label="First" />
+        <input aria-label="Second" aria-invalid="true" />
+      </>
+    )
+    render(
+      <ItemFormClient
+        {...formProps({ success: false, error: 'Nope', fieldErrors: { custom: 'Bad' } })}
+        fields={{ ...fields, custom: { type: 'text', ui: { component: Pair } } }}
+      />,
+    )
+
+    await submit(user)
+
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Second' })).toHaveFocus())
+  })
+
+  it('skips disabled and hidden controls for the next one in the field', async () => {
+    const user = userEvent.setup()
+    const Crowded = () => (
+      <>
+        <input aria-label="Disabled" aria-invalid="true" disabled />
+        <input aria-label="Out of the tab order" aria-invalid="true" tabIndex={-1} />
+        <div hidden>
+          <input aria-label="Hidden" aria-invalid="true" />
+        </div>
+        <input aria-label="Usable" />
+      </>
+    )
+    render(
+      <ItemFormClient
+        {...formProps({ success: false, error: 'Nope', fieldErrors: { custom: 'Bad' } })}
+        fields={{ ...fields, custom: { type: 'text', ui: { component: Crowded } } }}
+      />,
+    )
+
+    await submit(user)
+
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Usable' })).toHaveFocus())
+  })
+
+  it('never lands on a button a field did not mark invalid, which may be its Remove', async () => {
+    const user = userEvent.setup()
+    const OnlyRemove = () => <button type="button">Remove</button>
+    render(
+      <ItemFormClient
+        {...formProps({ success: false, error: 'Nope', fieldErrors: { custom: 'Bad' } })}
+        fields={{ ...fields, custom: { type: 'text', ui: { component: OnlyRemove } } }}
+      />,
+    )
+
+    await submit(user)
+
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveFocus())
+  })
+
+  it('lands on a file field’s input, never its Remove button', async () => {
+    const user = userEvent.setup()
+    const upload = new File(['x'], 'a.txt')
+    render(
+      <ItemFormClient
+        {...formProps({ success: false, error: 'Nope', fieldErrors: { doc: 'Too large' } })}
+        fields={{ ...fields, doc: { type: 'file' } }}
+        initialData={{ title: 'Hello', summary: 'Old', doc: upload }}
+      />,
+    )
+
+    await submit(user)
+
+    const input = screen.getByLabelText('Doc')
+    await waitFor(() => expect(input).toHaveFocus())
+    expect(input).toHaveAttribute('type', 'file')
+  })
+
+  it('shows a server error beside an unparseable draft', async () => {
+    const user = userEvent.setup()
+    render(<JsonField name="meta" value={null} onChange={() => {}} label="Meta" error="Taken" />)
+
+    const meta = screen.getByLabelText('Meta')
+    await user.click(meta)
+    await user.paste('{oops')
+
+    expect(meta).toHaveAccessibleDescription(/Invalid JSON.*Taken/)
   })
 
   it('leaves a refused submit to the field that refused it', async () => {

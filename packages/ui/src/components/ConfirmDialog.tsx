@@ -1,5 +1,6 @@
 'use client'
 
+import { useRef } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -31,9 +32,18 @@ export function ConfirmDialog({
   onCancel,
   variant = 'danger',
 }: ConfirmDialogProps) {
+  const opener = useRef<HTMLElement | null>(null)
+
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onCancel()}>
-      <DialogContent>
+      {/* Callers open this from state, so Radix has no trigger to give focus back to. */}
+      <DialogContent
+        onOpenAutoFocus={() => {
+          opener.current =
+            document.activeElement instanceof HTMLElement ? document.activeElement : null
+        }}
+        onCloseAutoFocus={() => opener.current?.focus()}
+      >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{message}</DialogDescription>

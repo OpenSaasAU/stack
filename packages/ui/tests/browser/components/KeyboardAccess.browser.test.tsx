@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as React from 'react'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { page, userEvent } from 'vitest/browser'
 import prebuiltStylesheet from '../../../dist/styles/globals.css?raw'
 import { AdminFrame } from '../../../src/components/AdminFrame.js'
@@ -71,6 +71,80 @@ describe('keyboard access under the prebuilt stylesheet', () => {
     expect(option.bottom).toBeLessThanOrEqual(list.bottom + 1)
     expect(option.top).toBeGreaterThanOrEqual(list.top)
     expect(window.scrollY).toBe(200)
+  })
+
+  it('leaves the list and the keyboard ring alone under a moving pointer', async () => {
+    render(<ComboboxField name="tag" value={null} onChange={() => {}} label="Tag" items={items} />)
+
+    screen.getByRole('button', { name: /^Tag/ }).focus()
+    await userEvent.keyboard('{Enter}')
+    await waitFor(() => expect(screen.getByRole('combobox')).toHaveFocus())
+
+    const list = screen.getByRole('listbox')
+    const clipped = screen
+      .getAllByRole('option')
+      .find((option) => option.getBoundingClientRect().bottom > list.getBoundingClientRect().bottom)
+    if (!clipped) throw new Error('No clipped option')
+    fireEvent.pointerMove(clipped)
+    await userEvent.hover(screen.getByRole('option', { name: 'Tag 2' }))
+
+    expect(list.scrollTop).toBe(0)
+    expect(clipped).not.toHaveAttribute('data-active')
+    expect(screen.getByRole('option', { name: 'Tag 2' })).not.toHaveAttribute('data-active')
+    expect(requireActiveOption()).toHaveTextContent('Tag 0')
+  })
+
+  describe('a date inside the create drawer', () => {
+    const openDrawer = async () => {
+      render(
+        <RelationshipCreateDrawer
+          relatedListKey="Post"
+          title="Post"
+          fields={{ publishedAt: { type: 'timestamp' }, birthday: { type: 'calendarDay' } }}
+          parentId="u1"
+          basePath="/admin"
+          serverAction={vi.fn()}
+        />,
+      )
+      await userEvent.click(screen.getByRole('button', { name: '+ Add Post' }))
+      await screen.findByRole('dialog', { name: 'Add Post' })
+    }
+
+    const midMonth = () =>
+      screen.getByRole('button', {
+        name: new RegExp(`${new Date().toLocaleString('en', { month: 'long' })} 15th`),
+      })
+
+    it('sets a timestamp() value from a real click on a day', async () => {
+      await openDrawer()
+
+      await userEvent.click(screen.getByRole('button', { name: /^Published At/ }))
+      const day = midMonth()
+      expect(getComputedStyle(day).pointerEvents).not.toBe('none')
+      await userEvent.click(day)
+      await userEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+
+      await waitFor(() =>
+        expect(
+          screen.getByRole('button', { name: /^Published At \d{2}\/\d{2}\/\d{4}/ }),
+        ).toBeVisible(),
+      )
+      expect(screen.getByRole('dialog', { name: 'Add Post' })).toBeVisible()
+    })
+
+    it('sets a calendarDay() value from a real click on a day', async () => {
+      await openDrawer()
+
+      await userEvent.click(screen.getByRole('button', { name: /^Birthday/ }))
+      const day = midMonth()
+      expect(getComputedStyle(day).pointerEvents).not.toBe('none')
+      await userEvent.click(day)
+
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: /^Birthday \d{2}\/\d{2}\/\d{4}/ })).toBeVisible(),
+      )
+      expect(screen.getByRole('dialog', { name: 'Add Post' })).toBeVisible()
+    })
   })
 
   it('works inside a modal dialog, where Escape closes only the picker', async () => {

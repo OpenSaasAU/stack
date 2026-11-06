@@ -123,6 +123,7 @@ export function FilterBuilder({
   // (via a `key` on the applied query) when the URL changes, so the builder
   // always reflects the active filter without an effect-driven prop copy.
   const [state, setState] = React.useState(() => queryToState(defaultValue, suggestions))
+  const searchRef = React.useRef<HTMLInputElement>(null)
 
   const suggestionByField = React.useMemo(
     () => new Map(suggestions.map((s) => [s.field, s])),
@@ -298,6 +299,7 @@ export function FilterBuilder({
       >
         <div className="relative min-w-[12rem] flex-1">
           <Input
+            ref={searchRef}
             data-slot="filter-builder-search"
             aria-label="Search"
             type="text"
@@ -311,7 +313,10 @@ export function FilterBuilder({
               type="button"
               data-slot="filter-builder-search-clear"
               aria-label="Clear filter text"
-              onClick={() => setState((prev) => ({ ...prev, freeText: '' }))}
+              onClick={() => {
+                searchRef.current?.focus()
+                setState((prev) => ({ ...prev, freeText: '' }))
+              }}
               className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground max-md:right-0 max-md:p-3"
             >
               <X className="h-4 w-4" aria-hidden="true" />

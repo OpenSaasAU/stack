@@ -14,6 +14,7 @@ import {
   fieldErrorId,
   fieldHelpId,
 } from './field-shell.js'
+import { FileReplaceInput } from './FileField.js'
 import Image from 'next/image.js'
 
 export interface ImageFieldProps {
@@ -53,6 +54,8 @@ export function ImageField({
   previewSize = 200,
 }: ImageFieldProps) {
   const [isDragOver, setIsDragOver] = useState(false)
+  // Choosing or removing an image swaps the focused input for another.
+  const [focusInput, setFocusInput] = useState(false)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
 
   const handleFileSelect = useCallback(
@@ -103,6 +106,7 @@ export function ImageField({
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = Array.from(e.target.files || [])
       if (files.length > 0) {
+        setFocusInput(true)
         handleFileSelect(files[0])
       }
     },
@@ -110,6 +114,7 @@ export function ImageField({
   )
 
   const handleRemove = useCallback(() => {
+    setFocusInput(true)
     onChange(null)
     setPreviewUrl(null)
   }, [onChange])
@@ -225,11 +230,22 @@ export function ImageField({
                 aria-label={`Remove ${label ?? 'image'}`}
                 onClick={handleRemove}
                 disabled={disabled}
-                {...describeField(id, { error, helpText })}
               >
                 <X aria-hidden="true" className="h-3 w-3" />
               </Button>
             </div>
+          </div>
+
+          <div>
+            <FileReplaceInput
+              id={id}
+              label={label}
+              accept="image/*"
+              autoFocus={focusInput}
+              disabled={disabled}
+              onChange={handleInputChange}
+              {...describeField(id, { error, helpText })}
+            />
           </div>
 
           {isFile && (
@@ -283,7 +299,7 @@ export function ImageField({
           <div
             className={`
               relative border-2 border-dashed rounded-md p-6
-              transition-colors cursor-pointer
+              transition-colors cursor-pointer focus-within:ring-2 focus-within:ring-ring
               ${isDragOver ? 'border-primary bg-primary/5' : 'border-muted-foreground/25'}
               ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:border-primary hover:bg-primary/5'}
             `}
@@ -295,6 +311,8 @@ export function ImageField({
               id={id}
               type="file"
               accept="image/*"
+              aria-label={label ? undefined : placeholder}
+              autoFocus={focusInput}
               onChange={handleInputChange}
               disabled={disabled}
               {...describeField(id, { error, helpText })}

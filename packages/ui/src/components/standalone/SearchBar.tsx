@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Input } from '../../primitives/input.js'
 import { Button } from '../../primitives/button.js'
 import { Card } from '../../primitives/card.js'
@@ -66,6 +66,7 @@ export function SearchBar({
   const router = useRouter()
   const pathname = usePathname()
   const [searchInput, setSearchInput] = useState(defaultValue)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -74,6 +75,7 @@ export function SearchBar({
   }
 
   const handleClear = () => {
+    inputRef.current?.focus()
     setSearchInput('')
     onClear?.()
   }
@@ -87,6 +89,7 @@ export function SearchBar({
       >
         <div className={cn('flex-1 relative', classNames?.inputWrapper)}>
           <Input
+            ref={inputRef}
             type="text"
             aria-label={searchLabel}
             value={searchInput}

@@ -139,6 +139,8 @@ export function JsonEditor({
           <div className="text-xs font-medium text-muted-foreground">Editor</div>
           <Textarea
             ref={textareaRef}
+            aria-invalid={error || parseError ? true : undefined}
+            aria-describedby={error || parseError ? `${id}-error` : undefined}
             id={id}
             name={name}
             value={displayValue}
@@ -153,8 +155,11 @@ export function JsonEditor({
               (error || parseError) && 'border-destructive',
             )}
           />
-          {parseError && <p className="text-xs text-destructive">{parseError}</p>}
-          {error && <p className="text-xs text-destructive">{error}</p>}
+          {(error || parseError) && (
+            <p id={`${id}-error`} className="text-xs text-destructive">
+              {[parseError, error].filter(Boolean).join(' ')}
+            </p>
+          )}
         </div>
 
         {/* Preview panel */}

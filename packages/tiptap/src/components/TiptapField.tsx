@@ -114,11 +114,12 @@ export function TiptapField({
           'aria-multiline': 'true',
           'aria-labelledby': labelId,
           ...(required ? { 'aria-required': 'true' } : {}),
+          ...(isEditable ? {} : { 'aria-readonly': 'true' }),
           ...(error ? { 'aria-invalid': 'true', 'aria-describedby': errorId } : {}),
         },
       },
     })
-  }, [editor, labelId, errorId, required, error])
+  }, [editor, labelId, errorId, required, error, isEditable])
 
   useEffect(() => {
     if (!editor) return
@@ -131,7 +132,9 @@ export function TiptapField({
   if (mode === 'read') {
     return (
       <div className="space-y-2">
-        <label className="text-sm font-medium text-foreground">{label}</label>
+        <label id={labelId} className="text-sm font-medium text-foreground">
+          {label}
+        </label>
         <div className="tiptap-read-only">
           <EditorContent editor={editor} />
         </div>
