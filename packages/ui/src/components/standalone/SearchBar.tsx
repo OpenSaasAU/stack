@@ -88,6 +88,7 @@ export function SearchBar({
         <div className={cn('flex-1 relative', classNames?.inputWrapper)}>
           <Input
             type="text"
+            aria-label={searchLabel}
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             placeholder={placeholder}
@@ -97,13 +98,14 @@ export function SearchBar({
             <button
               type="button"
               data-slot="search-bar-clear"
+              aria-label="Clear search"
               onClick={handleClear}
               className={cn(
                 'absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground',
                 classNames?.clearButton,
               )}
             >
-              ✕
+              <span aria-hidden="true">✕</span>
             </button>
           )}
         </div>

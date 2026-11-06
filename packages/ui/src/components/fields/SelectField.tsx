@@ -10,10 +10,21 @@ import {
   SelectValue,
 } from '../../primitives/select.js'
 import { cn } from '../../lib/utils.js'
-import { FieldRoot, FieldLabel, FieldHelp, FieldError, FieldReadValue } from './field-shell.js'
+import {
+  FieldRoot,
+  FieldLabel,
+  FieldHelp,
+  FieldError,
+  FieldReadValue,
+  describeField,
+  fieldErrorId,
+  fieldHelpId,
+} from './field-shell.js'
 
 export interface SelectFieldProps {
   name: string
+  /** The control's DOM id. `FieldRenderer` supplies one unique to the form. Defaults to `name`. */
+  id?: string
   value: string | null
   onChange: (value: string | null) => void
   label: string
@@ -29,6 +40,7 @@ export interface SelectFieldProps {
 
 export function SelectField({
   name,
+  id = name,
   value,
   onChange,
   label,
@@ -54,7 +66,7 @@ export function SelectField({
 
   return (
     <FieldRoot>
-      <FieldLabel htmlFor={name} required={required}>
+      <FieldLabel htmlFor={id} required={required}>
         {label}
       </FieldLabel>
       <div className="flex items-center gap-2">
@@ -65,7 +77,12 @@ export function SelectField({
           disabled={disabled}
           required={required}
         >
-          <SelectTrigger ref={triggerRef} id={name} className={cn(error && 'border-destructive')}>
+          <SelectTrigger
+            ref={triggerRef}
+            id={id}
+            className={cn(error && 'border-destructive')}
+            {...describeField(id, { error, helpText })}
+          >
             <SelectValue placeholder="Select an option..." />
           </SelectTrigger>
           <SelectContent>
@@ -93,8 +110,8 @@ export function SelectField({
           </Button>
         )}
       </div>
-      {helpText && <FieldHelp>{helpText}</FieldHelp>}
-      {error && <FieldError>{error}</FieldError>}
+      {helpText && <FieldHelp id={fieldHelpId(id)}>{helpText}</FieldHelp>}
+      {error && <FieldError id={fieldErrorId(id)}>{error}</FieldError>}
     </FieldRoot>
   )
 }

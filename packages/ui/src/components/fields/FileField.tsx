@@ -5,10 +5,20 @@ import type { FileMetadata } from '@opensaas/stack-core/internal'
 import { Button } from '../../primitives/button.js'
 import { Input } from '../../primitives/input.js'
 import { Upload, X, File, Check } from 'lucide-react'
-import { FieldRoot, FieldLabel, FieldHelp, FieldError } from './field-shell.js'
+import {
+  FieldRoot,
+  FieldLabel,
+  FieldHelp,
+  FieldError,
+  describeField,
+  fieldErrorId,
+  fieldHelpId,
+} from './field-shell.js'
 
 export interface FileFieldProps {
   name: string
+  /** The control's DOM id. `FieldRenderer` supplies one unique to the form. Defaults to `name`. */
+  id?: string
   value: File | FileMetadata | null
   onChange: (value: File | FileMetadata | null) => void
   label?: string
@@ -26,6 +36,7 @@ export interface FileFieldProps {
  */
 export function FileField({
   name,
+  id = name,
   value,
   onChange,
   label,
@@ -95,11 +106,7 @@ export function FileField({
   if (mode === 'read') {
     return (
       <FieldRoot mode="read">
-        {label && (
-          <FieldLabel htmlFor={name} required={required}>
-            {label}
-          </FieldLabel>
-        )}
+        {label && <FieldLabel required={required}>{label}</FieldLabel>}
         {isFileMetadata ? (
           <div className="flex items-center gap-2 p-3 border rounded-md bg-muted">
             <File className="h-4 w-4" />
@@ -132,7 +139,7 @@ export function FileField({
   return (
     <FieldRoot>
       {label && (
-        <FieldLabel htmlFor={name} required={required}>
+        <FieldLabel htmlFor={id} required={required}>
           {label}
         </FieldLabel>
       )}
@@ -166,10 +173,12 @@ export function FileField({
             type="button"
             variant="ghost"
             size="sm"
+            aria-label={`Remove ${label ?? 'file'}`}
             onClick={handleRemove}
             disabled={disabled}
+            {...describeField(id, { error, helpText })}
           >
-            <X className="h-4 w-4" />
+            <X aria-hidden="true" className="h-4 w-4" />
           </Button>
         </div>
       ) : (
@@ -186,10 +195,11 @@ export function FileField({
             onDrop={handleDrop}
           >
             <Input
-              id={name}
+              id={id}
               type="file"
               onChange={handleInputChange}
               disabled={disabled}
+              {...describeField(id, { error, helpText })}
               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
             />
 
@@ -201,8 +211,8 @@ export function FileField({
         </>
       )}
 
-      {helpText && <FieldHelp>{helpText}</FieldHelp>}
-      {error && <FieldError>{error}</FieldError>}
+      {helpText && <FieldHelp id={fieldHelpId(id)}>{helpText}</FieldHelp>}
+      {error && <FieldError id={fieldErrorId(id)}>{error}</FieldError>}
     </FieldRoot>
   )
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ListViewClient } from '../../src/components/ListViewClient.js'
 import { STICKY_ACTIONS_CELL } from '../../src/lib/tableClasses.js'
@@ -110,7 +110,7 @@ describe('ListViewClient', () => {
       // Numeric header content is right-justified.
       const headers = container.querySelectorAll('[data-slot="table-head"]')
       const viewsHeader = Array.from(headers).find((h) => h.textContent?.includes('Views'))
-      expect(viewsHeader?.querySelector('div')).toHaveClass('text-right')
+      expect(viewsHeader?.querySelector('button')).toHaveClass('text-right')
 
       // Every numeric body cell is right-aligned; the text column is not.
       const bodyRows = container.querySelectorAll(
@@ -151,15 +151,14 @@ describe('ListViewClient', () => {
     it('sorts a sortable column on click, and marks it clickable', () => {
       render(<ListViewClient {...defaultProps} />)
 
-      expect(header('Title')).toHaveClass('cursor-pointer')
-      fireEvent.click(header('Title'))
+      fireEvent.click(within(header('Title')).getByRole('button', { name: 'Title' }))
       expect(mockPush).toHaveBeenCalledWith('/admin/post?sort=title%3Aasc&page=1')
     })
 
     it('offers nothing on a column the server says cannot sort', () => {
       render(<ListViewClient {...defaultProps} />)
 
-      expect(header('Status')).not.toHaveClass('cursor-pointer')
+      expect(within(header('Status')).queryByRole('button')).not.toBeInTheDocument()
       fireEvent.click(header('Status'))
       expect(mockPush).not.toHaveBeenCalled()
     })
@@ -167,7 +166,7 @@ describe('ListViewClient', () => {
     it('offers nothing on a column the server said nothing about', () => {
       render(<ListViewClient {...defaultProps} sortableFields={{}} />)
 
-      expect(header('Title')).not.toHaveClass('cursor-pointer')
+      expect(within(header('Title')).queryByRole('button')).not.toBeInTheDocument()
       fireEvent.click(header('Title'))
       expect(mockPush).not.toHaveBeenCalled()
     })

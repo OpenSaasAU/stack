@@ -68,12 +68,19 @@ export function Calendar({ selected, onSelect, disabled, className }: CalendarPr
         <Button
           variant="outline"
           size="icon"
+          aria-label="Previous month"
           onClick={handlePrevMonth}
           disabled={disabled}
           type="button"
           className="h-8 w-8"
         >
-          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg
+            aria-hidden="true"
+            className="h-4 w-4"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -98,12 +105,19 @@ export function Calendar({ selected, onSelect, disabled, className }: CalendarPr
         <Button
           variant="outline"
           size="icon"
+          aria-label="Next month"
           onClick={handleNextMonth}
           disabled={disabled}
           type="button"
           className="h-8 w-8"
         >
-          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg
+            aria-hidden="true"
+            className="h-4 w-4"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
           </svg>
         </Button>
@@ -132,6 +146,9 @@ export function Calendar({ selected, onSelect, disabled, className }: CalendarPr
                     <Button
                       variant="ghost"
                       type="button"
+                      aria-label={format(day, 'PPPP')}
+                      aria-pressed={isSelected === true}
+                      aria-current={isDayToday ? 'date' : undefined}
                       onClick={() => {
                         if (onSelect && !disabled) {
                           onSelect(day)

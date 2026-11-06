@@ -42,6 +42,7 @@ export function TimePicker({ value, onChange, disabled, className }: TimePickerP
       <div className="flex items-center">
         <Input
           type="number"
+          aria-label="Hours"
           min={0}
           max={23}
           value={hours.toString().padStart(2, '0')}
@@ -49,9 +50,12 @@ export function TimePicker({ value, onChange, disabled, className }: TimePickerP
           disabled={disabled}
           className="w-14 text-center"
         />
-        <span className="mx-1 text-lg">:</span>
+        <span aria-hidden="true" className="mx-1 text-lg">
+          :
+        </span>
         <Input
           type="number"
+          aria-label="Minutes"
           min={0}
           max={59}
           value={minutes.toString().padStart(2, '0')}

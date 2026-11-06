@@ -76,6 +76,8 @@ export function ItemCreateForm<TData = Record<string, unknown>>({
     handleFieldChange,
     handleSubmit,
     validity,
+    formRef,
+    errorBannerRef,
   } = useItemForm({
     fields: serializedFields,
     mode: 'create',
@@ -90,15 +92,19 @@ export function ItemCreateForm<TData = Record<string, unknown>>({
 
   return (
     <form
+      ref={formRef}
       data-slot="item-create-form"
       onSubmit={handleSubmit}
       className={cn(className, classNames?.root)}
     >
       {generalError && (
         <div
+          ref={errorBannerRef}
+          role="alert"
+          tabIndex={-1}
           data-slot="form-error"
           className={cn(
-            'bg-destructive/10 border border-destructive text-destructive rounded-lg p-4 mb-6',
+            'bg-destructive/10 border border-destructive text-destructive rounded-lg p-4 mb-6 outline-none',
             classNames?.error,
           )}
         >

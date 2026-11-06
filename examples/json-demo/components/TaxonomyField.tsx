@@ -21,6 +21,7 @@ interface TaxonomyItem {
 
 export interface TaxonomyFieldProps {
   name: string
+  id?: string
   value: unknown
   onChange: (value: unknown) => void
   label: string
@@ -33,6 +34,7 @@ export interface TaxonomyFieldProps {
 
 export function TaxonomyField({
   name,
+  id = name,
   value,
   onChange,
   label,
@@ -122,7 +124,7 @@ export function TaxonomyField({
 
   return (
     <div className="space-y-3">
-      <Label htmlFor={name}>
+      <Label htmlFor={id}>
         {label}
         {required && <span className="text-destructive ml-1">*</span>}
       </Label>

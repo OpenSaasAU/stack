@@ -25,6 +25,11 @@ export {
   FieldError,
   FieldWarning,
   FieldReadValue,
+  describeField,
+  fieldErrorId,
+  fieldHelpId,
+  fieldLabelId,
+  fieldValueId,
 } from './field-shell.js'
 export type { FieldRootProps, FieldLabelProps } from './field-shell.js'
 

@@ -5,11 +5,21 @@ import type { ImageMetadata } from '@opensaas/stack-core/internal'
 import { Button } from '../../primitives/button.js'
 import { Input } from '../../primitives/input.js'
 import { Upload, X, Eye, ImageIcon } from 'lucide-react'
-import { FieldRoot, FieldLabel, FieldHelp, FieldError } from './field-shell.js'
+import {
+  FieldRoot,
+  FieldLabel,
+  FieldHelp,
+  FieldError,
+  describeField,
+  fieldErrorId,
+  fieldHelpId,
+} from './field-shell.js'
 import Image from 'next/image.js'
 
 export interface ImageFieldProps {
   name: string
+  /** The control's DOM id. `FieldRenderer` supplies one unique to the form. Defaults to `name`. */
+  id?: string
   value: File | ImageMetadata | null
   onChange: (value: File | ImageMetadata | null) => void
   label?: string
@@ -29,6 +39,7 @@ export interface ImageFieldProps {
  */
 export function ImageField({
   name,
+  id = name,
   value,
   onChange,
   label,
@@ -114,11 +125,7 @@ export function ImageField({
   if (mode === 'read') {
     return (
       <FieldRoot mode="read">
-        {label && (
-          <FieldLabel htmlFor={name} required={required}>
-            {label}
-          </FieldLabel>
-        )}
+        {label && <FieldLabel required={required}>{label}</FieldLabel>}
         {isImageMetadata ? (
           <div className="space-y-2">
             <div className="relative inline-block">
@@ -178,7 +185,7 @@ export function ImageField({
   return (
     <FieldRoot>
       {label && (
-        <FieldLabel htmlFor={name} required={required}>
+        <FieldLabel htmlFor={id} required={required}>
           {label}
         </FieldLabel>
       )}
@@ -197,27 +204,30 @@ export function ImageField({
                 maxHeight: `${previewSize}px`,
               }}
             />
-            <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
               {isImageMetadata && (
                 <Button
                   type="button"
                   variant="secondary"
                   size="sm"
+                  aria-label={`View ${label ?? 'image'}`}
                   onClick={() =>
                     window.open((value as ImageMetadata).url, '_blank', 'noopener,noreferrer')
                   }
                 >
-                  <Eye className="h-3 w-3" />
+                  <Eye aria-hidden="true" className="h-3 w-3" />
                 </Button>
               )}
               <Button
                 type="button"
                 variant="destructive"
                 size="sm"
+                aria-label={`Remove ${label ?? 'image'}`}
                 onClick={handleRemove}
                 disabled={disabled}
+                {...describeField(id, { error, helpText })}
               >
-                <X className="h-3 w-3" />
+                <X aria-hidden="true" className="h-3 w-3" />
               </Button>
             </div>
           </div>
@@ -282,11 +292,12 @@ export function ImageField({
             onDrop={handleDrop}
           >
             <Input
-              id={name}
+              id={id}
               type="file"
               accept="image/*"
               onChange={handleInputChange}
               disabled={disabled}
+              {...describeField(id, { error, helpText })}
               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
             />
 
@@ -302,8 +313,8 @@ export function ImageField({
         </>
       )}
 
-      {helpText && <FieldHelp>{helpText}</FieldHelp>}
-      {error && <FieldError>{error}</FieldError>}
+      {helpText && <FieldHelp id={fieldHelpId(id)}>{helpText}</FieldHelp>}
+      {error && <FieldError id={fieldErrorId(id)}>{error}</FieldError>}
     </FieldRoot>
   )
 }

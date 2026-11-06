@@ -12,6 +12,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  TableSortButton,
 } from '../primitives/table.js'
 import { Button } from '../primitives/button.js'
 import { Checkbox } from '../primitives/checkbox.js'
@@ -131,6 +132,8 @@ export interface ListViewClientProps {
    * cell override on that field still wins.
    */
   avatarColumn?: string
+  /** The column holding each row's Item label, which names the row's checkbox. */
+  labelColumn?: string
   /**
    * Serialisable metadata for the list's custom Bulk actions (issue #736), in
    * declaration order. Carries only `key`/`label`/`variant`/`destructive` — the
@@ -161,6 +164,7 @@ export function ListViewClient({
   canDelete = false,
   canCreate = true,
   avatarColumn,
+  labelColumn,
   bulkActions = [],
 }: ListViewClientProps) {
   const router = useRouter()
@@ -306,6 +310,12 @@ export function ListViewClient({
     router.push(buildPaginationUrl(1))
   }
 
+  const rowName = (item: Record<string, unknown>, index: number) => {
+    const label = labelColumn && labelColumn !== 'id' ? item[labelColumn] : undefined
+    const hasLabel = typeof label === 'number' || (typeof label === 'string' && label.trim() !== '')
+    return hasLabel ? String(label) : `row ${(page - 1) * pageSize + index + 1}`
+  }
+
   /** Resolves a column's field config: the explicit `fields` entry, or a synthesised fallback (see `fields` prop) plus the relationship ref. */
   const columnField = (column: string): SerializableFieldConfig => {
     if (fields?.[column]) return fields[column]
@@ -406,11 +416,7 @@ export function ListViewClient({
                 return (
                   <TableHead
                     key={column}
-                    className={cn(
-                      'transition-colors',
-                      sortable && 'cursor-pointer hover:bg-muted/70',
-                    )}
-                    onClick={sortable ? () => handleSort(column) : undefined}
+                    className={cn(sortable && 'p-0')}
                     aria-sort={
                       sortable && sortBy === column
                         ? sortOrder === 'asc'
@@ -419,17 +425,24 @@ export function ListViewClient({
                         : undefined
                     }
                   >
-                    <div
-                      className={cn(
-                        'flex items-center space-x-1',
-                        numeric && 'justify-end text-right',
-                      )}
-                    >
-                      <span>{formatFieldName(column)}</span>
-                      {sortable && sortBy === column && (
-                        <span className="text-primary">{sortOrder === 'asc' ? '↑' : '↓'}</span>
-                      )}
-                    </div>
+                    {sortable ? (
+                      <TableSortButton
+                        numeric={numeric}
+                        direction={sortBy === column ? sortOrder : undefined}
+                        onClick={() => handleSort(column)}
+                      >
+                        {formatFieldName(column)}
+                      </TableSortButton>
+                    ) : (
+                      <div
+                        className={cn(
+                          'flex items-center space-x-1',
+                          numeric && 'justify-end text-right',
+                        )}
+                      >
+                        <span>{formatFieldName(column)}</span>
+                      </div>
+                    )}
                   </TableHead>
                 )
               })}
@@ -485,7 +498,7 @@ export function ListViewClient({
                 </TableCell>
               </TableRow>
             ) : (
-              items.map((item) => {
+              items.map((item, index) => {
                 const rowId = String(item.id)
                 return (
                   <TableRow
@@ -495,7 +508,7 @@ export function ListViewClient({
                     {selectionEnabled && (
                       <TableCell data-slot="selection-cell" className="w-10">
                         <Checkbox
-                          aria-label={`Select row ${rowId}`}
+                          aria-label={`Select ${rowName(item, index)}`}
                           checked={selection.isSelected(rowId)}
                           onCheckedChange={() => handleToggle(rowId)}
                         />

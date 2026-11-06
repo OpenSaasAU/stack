@@ -299,3 +299,28 @@ describe('TiptapField feature set', () => {
     expect(JSON.stringify(editor.getJSON())).toContain('https://a.test')
   })
 })
+
+describe('TiptapField accessibility', () => {
+  it('names the editor by its label', async () => {
+    const { container, getByRole } = render(
+      <TiptapField name="body" id="f-body" value={null} onChange={() => {}} label="Body" />,
+    )
+    await mounted(container)
+
+    await waitFor(() => expect(getByRole('textbox', { name: 'Body' })).toBeTruthy())
+    expect(getByRole('textbox', { name: 'Body' }).getAttribute('aria-multiline')).toBe('true')
+  })
+
+  it('marks the editor invalid and ties it to the error while there is one', async () => {
+    const props = { name: 'body', value: null, onChange: () => {}, label: 'Body' }
+    const { container, getByRole, rerender } = render(<TiptapField {...props} error="Required" />)
+    await mounted(container)
+
+    await waitFor(() => expect(getByRole('textbox').getAttribute('aria-invalid')).toBe('true'))
+    const describedBy = getByRole('textbox').getAttribute('aria-describedby')
+    expect(describedBy && document.getElementById(describedBy)?.textContent).toBe('Required')
+
+    rerender(<TiptapField {...props} />)
+    await waitFor(() => expect(getByRole('textbox').hasAttribute('aria-invalid')).toBe(false))
+  })
+})

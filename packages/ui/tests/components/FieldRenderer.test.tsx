@@ -161,7 +161,7 @@ describe('FieldRenderer read-only fields', () => {
 
     expect(screen.getByText('engineering')).toBeInTheDocument()
     expect(screen.queryByText('Connect Existing')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Remove' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Remove/ })).not.toBeInTheDocument()
     expect(findHelp(container)).toHaveTextContent(reason)
   })
 
@@ -186,6 +186,6 @@ describe('FieldRenderer read-only fields', () => {
     )
 
     expect(screen.getByText('Connect Existing')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Remove' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Remove/ })).toBeInTheDocument()
   })
 })

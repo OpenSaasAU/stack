@@ -7,7 +7,14 @@ import { Button } from './button.js'
 import { Popover, PopoverContent, PopoverTrigger } from './popover.js'
 import { Calendar } from './calendar.js'
 
-export interface DatePickerProps {
+export interface DatePickerProps extends Pick<
+  React.ComponentProps<typeof Button>,
+  'id' | 'aria-describedby' | 'aria-invalid'
+> {
+  /** The `id` of the visible label. With `id`, it joins the shown value to name the button. */
+  labelId?: string
+  /** Names the popover, for a screen reader. */
+  label?: string
   value?: Date | null
   onChange?: (date: Date | null) => void
   disabled?: boolean
@@ -25,7 +32,11 @@ export function DatePicker({
   onChange,
   disabled,
   className,
+  label,
+  labelId,
+  id,
   placeholder = 'Pick a date',
+  ...triggerProps
 }: DatePickerProps) {
   const [open, setOpen] = React.useState(false)
 
@@ -46,13 +57,22 @@ export function DatePicker({
           variant="outline"
           type="button"
           disabled={disabled}
+          id={id}
+          aria-labelledby={labelId && id ? `${labelId} ${id}-value` : undefined}
+          {...triggerProps}
           className={cn(
             'w-full justify-start text-left font-normal',
             !value && 'text-muted-foreground',
             className,
           )}
         >
-          <svg className="mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg
+            aria-hidden="true"
+            className="mr-2 h-4 w-4"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -60,10 +80,14 @@ export function DatePicker({
               d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
             />
           </svg>
-          {value ? format(value, 'dd/MM/yyyy') : <span>{placeholder}</span>}
+          <span id={id && `${id}-value`}>{value ? format(value, 'dd/MM/yyyy') : placeholder}</span>
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-auto p-0" align="start">
+      <PopoverContent
+        className="w-auto p-0"
+        align="start"
+        aria-label={label ? `${label}: choose date` : 'Choose date'}
+      >
         <div data-slot="date-picker" className="space-y-4 p-2 md:p-4">
           <Calendar selected={value || undefined} onSelect={handleSelect} disabled={disabled} />
 

@@ -8,6 +8,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from '../primitives/dialog.js'
 import { Button } from '../primitives/button.js'
 import { LoadingSpinner } from './LoadingSpinner.js'
@@ -131,6 +132,8 @@ function RelationshipCreateForm({
     handleFieldChange,
     handleSubmit,
     validity,
+    formRef,
+    errorBannerRef,
   } = useItemForm({
     fields,
     mode: 'create',
@@ -156,12 +159,19 @@ function RelationshipCreateForm({
   })
 
   return (
-    <form data-slot="relationship-create-form" onSubmit={handleSubmit} className="space-y-6">
+    <form
+      ref={formRef}
+      data-slot="relationship-create-form"
+      onSubmit={handleSubmit}
+      className="space-y-6"
+    >
       {generalError && (
         <div
+          ref={errorBannerRef}
           role="alert"
+          tabIndex={-1}
           data-slot="relationship-create-error"
-          className="rounded-lg border border-destructive bg-destructive/10 p-4 text-sm font-medium text-destructive"
+          className="rounded-lg border border-destructive bg-destructive/10 p-4 text-sm font-medium text-destructive outline-none"
         >
           {generalError}
         </div>
@@ -237,50 +247,44 @@ export function RelationshipCreateDrawer({
   const [open, setOpen] = React.useState(false)
 
   return (
-    <>
-      <Button
-        type="button"
-        variant="secondary"
-        size="sm"
-        data-slot="relationship-table-add"
-        onClick={() => setOpen(true)}
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button type="button" variant="secondary" size="sm" data-slot="relationship-table-add">
+          + Add {title}
+        </Button>
+      </DialogTrigger>
+
+      <DialogContent
+        data-slot="relationship-create-drawer"
+        className="left-auto right-0 top-0 h-full max-h-none w-full max-w-md translate-x-0 max-md:max-h-none max-md:w-full translate-y-0 gap-6 overflow-y-auto rounded-none border-l"
       >
-        + Add {title}
-      </Button>
+        <DialogHeader>
+          <DialogTitle>Add {title}</DialogTitle>
+          <DialogDescription>
+            Create a new {title.toLowerCase()} linked to this record.
+          </DialogDescription>
+        </DialogHeader>
 
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent
-          data-slot="relationship-create-drawer"
-          className="left-auto right-0 top-0 h-full max-h-none w-full max-w-md translate-x-0 max-md:max-h-none max-md:w-full translate-y-0 gap-6 overflow-y-auto rounded-none border-l"
-        >
-          <DialogHeader>
-            <DialogTitle>Add {title}</DialogTitle>
-            <DialogDescription>
-              Create a new {title.toLowerCase()} linked to this record.
-            </DialogDescription>
-          </DialogHeader>
-
-          <RelationshipCreateForm
-            relatedListKey={relatedListKey}
-            fields={fields}
-            relationshipData={relationshipData}
-            backReferenceField={backReferenceField}
-            parentId={parentId}
-            basePath={basePath}
-            serverAction={serverAction}
-            onCreated={(row) => {
-              // In-place: close the drawer, show the row immediately (its
-              // visibility does not depend on the refresh below observing the
-              // write — see onRowCreated's doc), and refresh to reconcile
-              // hook-computed values and the footer's total.
-              setOpen(false)
-              onRowCreated?.(row)
-              router.refresh()
-            }}
-            onCancel={() => setOpen(false)}
-          />
-        </DialogContent>
-      </Dialog>
-    </>
+        <RelationshipCreateForm
+          relatedListKey={relatedListKey}
+          fields={fields}
+          relationshipData={relationshipData}
+          backReferenceField={backReferenceField}
+          parentId={parentId}
+          basePath={basePath}
+          serverAction={serverAction}
+          onCreated={(row) => {
+            // In-place: close the drawer, show the row immediately (its
+            // visibility does not depend on the refresh below observing the
+            // write — see onRowCreated's doc), and refresh to reconcile
+            // hook-computed values and the footer's total.
+            setOpen(false)
+            onRowCreated?.(row)
+            router.refresh()
+          }}
+          onCancel={() => setOpen(false)}
+        />
+      </DialogContent>
+    </Dialog>
   )
 }

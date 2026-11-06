@@ -5,6 +5,7 @@ import { cn } from '@opensaas/stack-ui/lib/utils'
 
 export interface SlugFieldProps {
   name: string
+  id?: string
   value: string
   onChange: (value: string) => void
   label: string
@@ -21,6 +22,7 @@ export interface SlugFieldProps {
  */
 export function SlugField({
   name,
+  id = name,
   value,
   onChange,
   label,
@@ -61,14 +63,14 @@ export function SlugField({
 
   return (
     <div className="space-y-2">
-      <label htmlFor={name} className="text-sm font-medium text-foreground flex items-center gap-1">
+      <label htmlFor={id} className="text-sm font-medium text-foreground flex items-center gap-1">
         {label}
         {required && <span className="text-destructive">*</span>}
       </label>
       <div className="flex items-center gap-2">
         <span className="text-sm text-muted-foreground">/</span>
         <input
-          id={name}
+          id={id}
           type="text"
           value={value || ''}
           onChange={(e) => {

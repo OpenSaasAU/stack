@@ -3,10 +3,21 @@
 import { Input } from '../../primitives/input.js'
 import { Textarea } from '../../primitives/textarea.js'
 import { cn } from '../../lib/utils.js'
-import { FieldRoot, FieldLabel, FieldHelp, FieldError, FieldReadValue } from './field-shell.js'
+import {
+  FieldRoot,
+  FieldLabel,
+  FieldHelp,
+  FieldError,
+  FieldReadValue,
+  describeField,
+  fieldErrorId,
+  fieldHelpId,
+} from './field-shell.js'
 
 interface TextFieldBaseProps {
   name: string
+  /** The control's DOM id. `FieldRenderer` supplies one unique to the form. Defaults to `name`. */
+  id?: string
   value: string | null
   label: string
   placeholder?: string
@@ -30,6 +41,7 @@ export type TextFieldProps = TextFieldBaseProps &
 
 export function TextField({
   name,
+  id = name,
   value,
   onChange,
   label,
@@ -62,11 +74,11 @@ export function TextField({
 
   return (
     <FieldRoot>
-      <FieldLabel htmlFor={name} required={required}>
+      <FieldLabel htmlFor={id} required={required}>
         {label}
       </FieldLabel>
       <InputComponent
-        id={name}
+        id={id}
         name={name}
         type={displayMode === 'input' ? 'text' : undefined}
         value={value || ''}
@@ -75,9 +87,10 @@ export function TextField({
         disabled={disabled}
         required={required}
         className={cn(error && 'border-destructive')}
+        {...describeField(id, { error, helpText })}
       />
-      {helpText && <FieldHelp>{helpText}</FieldHelp>}
-      {error && <FieldError>{error}</FieldError>}
+      {helpText && <FieldHelp id={fieldHelpId(id)}>{helpText}</FieldHelp>}
+      {error && <FieldError id={fieldErrorId(id)}>{error}</FieldError>}
     </FieldRoot>
   )
 }

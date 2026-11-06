@@ -197,7 +197,7 @@ async function ItemViewLayoutView({
     return (
       <div className="p-4 md:p-8">
         <div className="bg-destructive/10 border border-destructive text-destructive rounded-lg p-6">
-          <h2 className="text-lg font-semibold mb-2">Item not found</h2>
+          <h1 className="text-lg font-semibold mb-2">Item not found</h1>
           <p>
             The item you&apos;re trying to edit doesn&apos;t exist or you don&apos;t have access to
             it.
@@ -323,7 +323,7 @@ export async function ItemForm({
     return (
       <div className="p-4 md:p-8">
         <div className="bg-destructive/10 border border-destructive text-destructive rounded-lg p-6">
-          <h2 className="text-lg font-semibold mb-2">List not found</h2>
+          <h1 className="text-lg font-semibold mb-2">List not found</h1>
           <p>The list &quot;{listKey}&quot; does not exist in your configuration.</p>
         </div>
       </div>
@@ -369,7 +369,7 @@ export async function ItemForm({
       return (
         <div className="p-4 md:p-8">
           <div className="bg-destructive/10 border border-destructive text-destructive rounded-lg p-6">
-            <h2 className="text-lg font-semibold mb-2">Item not found</h2>
+            <h1 className="text-lg font-semibold mb-2">Item not found</h1>
             <p>
               The item you&apos;re trying to edit doesn&apos;t exist or you don&apos;t have access
               to it.

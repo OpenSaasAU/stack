@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useRef, useState, useTransition } from 'react'
+import { useEffect, useMemo, useRef, useState, useTransition, type RefObject } from 'react'
 import type { FieldFocusTarget, FieldValidityChannel } from './fieldValidity.js'
 import type { SerializableFieldConfig } from './serializeFieldConfig.js'
 
@@ -13,6 +13,28 @@ interface InvalidMark {
 }
 
 const SYSTEM_FIELDS = ['id']
+
+const FOCUSABLE =
+  'input:not([type="hidden"]), select, textarea, button, a[href], [contenteditable="true"], [tabindex]'
+
+function focusAndReveal(element: HTMLElement): boolean {
+  element.focus({ preventScroll: true })
+  if (document.activeElement !== element) return false
+  // Centred, so neither the sticky top bar nor the scroller's edge hides it or its label.
+  element.scrollIntoView({ block: 'center' })
+  return true
+}
+
+/** The control a failed submit lands on inside a field: its invalid control, else its first. */
+function fieldFocusTarget(field: Element): HTMLElement | null {
+  const invalid = field.querySelector<HTMLElement>('[aria-invalid="true"]')
+  if (invalid) return invalid
+  return (
+    Array.from(field.querySelectorAll<HTMLElement>(FOCUSABLE)).find(
+      (element) => element.tabIndex >= 0 && element.getAttribute('aria-hidden') !== 'true',
+    ) ?? null
+  )
+}
 
 /**
  * A to-many selection reached the submit transform from a control that never
@@ -353,6 +375,10 @@ export interface UseItemFormResult {
   setGeneralError: (message: string | null) => void
   /** Provide through `FieldValidityContext` around the rendered fields. */
   validity: FieldValidityChannel
+  /** Attach to the `<form>`, so a failed submit can find the first field with an error. */
+  formRef: RefObject<HTMLFormElement | null>
+  /** Attach to the element showing `generalError`, with `tabIndex={-1}`. */
+  errorBannerRef: RefObject<HTMLDivElement | null>
 }
 
 /**
@@ -376,13 +402,35 @@ export function useItemForm({
   const [isPending, startTransition] = useTransition()
   const [formData, setFormData] = useState<Record<string, unknown>>(initialData)
   const [errors, setErrors] = useState<Record<string, string>>({})
-  const [generalError, setGeneralError] = useState<string | null>(null)
+  const [generalError, setBannerError] = useState<string | null>(null)
   // What the edges are diffed against. It advances to whatever the writes
   // actually persisted, so a second submit after a partial denial retries only
   // the edges that are still outstanding rather than the ones already stored.
   const edgeBaseline = useRef<Record<string, unknown>>(initialData)
   const scalarBaseline = useRef<Record<string, unknown> | null>(null)
   const invalidMarks = useRef(new Set<InvalidMark>())
+  const formRef = useRef<HTMLFormElement>(null)
+  const errorBannerRef = useRef<HTMLDivElement>(null)
+  const focusPending = useRef(false)
+
+  const setGeneralError = (message: string | null) => {
+    focusPending.current = message !== null
+    setBannerError(message)
+  }
+
+  // Waits on `isPending` because the controls stay disabled, and so unfocusable,
+  // until the transition settles.
+  useEffect(() => {
+    if (isPending || !focusPending.current) return
+    focusPending.current = false
+
+    const firstWithError = Array.from(
+      formRef.current?.querySelectorAll<HTMLElement>('[data-field-name]') ?? [],
+    ).find((field) => field.dataset.fieldName && errors[field.dataset.fieldName])
+    const target = firstWithError && fieldFocusTarget(firstWithError)
+    if (target && focusAndReveal(target)) return
+    if (errorBannerRef.current) focusAndReveal(errorBannerRef.current)
+  }, [isPending, errors, generalError])
 
   const validity = useMemo<FieldValidityChannel>(
     () => ({
@@ -431,7 +479,7 @@ export function useItemForm({
     }
 
     setErrors({})
-    setGeneralError(null)
+    setBannerError(null)
 
     startTransition(async () => {
       // Set once the edges have landed. They are writes against another list
@@ -507,5 +555,7 @@ export function useItemForm({
     handleSubmit,
     setGeneralError,
     validity,
+    formRef,
+    errorBannerRef,
   }
 }
