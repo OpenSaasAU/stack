@@ -139,6 +139,7 @@ export function ItemFormClient({
   return (
     <form
       ref={formRef}
+      noValidate
       onSubmit={(event) => (readOnly ? event.preventDefault() : handleSubmit(event))}
       className="space-y-6"
     >

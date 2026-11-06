@@ -161,6 +161,7 @@ function RelationshipCreateForm({
   return (
     <form
       ref={formRef}
+      noValidate
       data-slot="relationship-create-form"
       onSubmit={handleSubmit}
       className="space-y-6"

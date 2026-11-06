@@ -602,6 +602,8 @@ from `@opensaas/stack-ui`.
 
 A field holding input it can't commit calls `useFieldValidity(name, invalid, focusTarget)`, exported from `@opensaas/stack-ui` and `@opensaas/stack-ui/fields`, and the item forms refuse to submit until it clears. See the custom fields how-to.
 
+Every item form sets `noValidate` and reads the browser's constraint check itself, so a failed submit puts the message on the field through its `error` prop and focuses the first field with an error, in declaration order.
+
 ### Example Usage
 
 A `SelectField` clears to `null` rather than to an empty string, so its state has

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useTransition, type RefObject } from 'react'
 import type { FieldFocusTarget, FieldValidityChannel } from './fieldValidity.js'
 import type { SerializableFieldConfig } from './serializeFieldConfig.js'
+import { formatFieldName } from './utils.js'
 
 export type ItemFormAction = 'create' | 'update'
 
@@ -32,6 +33,37 @@ function fieldFocusCandidates(field: Element): HTMLElement[] {
     ...field.querySelectorAll<HTMLElement>('[aria-invalid="true"]'),
     ...field.querySelectorAll<HTMLElement>(VALUE_CONTROLS),
   ].filter((element) => element.tabIndex >= 0 && !element.closest('[hidden], [aria-hidden="true"]'))
+}
+
+type ConstrainedControl = Element &
+  Pick<HTMLInputElement, 'willValidate' | 'validity' | 'validationMessage'>
+
+function isConstrainedControl(element: Element): element is ConstrainedControl {
+  return 'validity' in element
+}
+
+/**
+ * The message for each field holding a control the browser's constraint
+ * validation refuses. This reads the constraints a control declares (`required`,
+ * `min`, a number input's unparseable text), so a field needs no check of its
+ * own, and the hidden select Radix renders counts for its trigger.
+ */
+function readConstraintErrors(
+  form: HTMLFormElement,
+  fields: Record<string, SerializableFieldConfig>,
+  skip: Set<string>,
+): Record<string, string> {
+  const refused: Record<string, string> = {}
+  for (const control of Array.from(form.elements)) {
+    if (!isConstrainedControl(control) || !control.willValidate || control.validity.valid) continue
+    const fieldName = control.closest<HTMLElement>('[data-field-name]')?.dataset.fieldName
+    if (!fieldName || skip.has(fieldName) || fieldName in refused) continue
+    const label = fields[fieldName]?.label ?? formatFieldName(fieldName)
+    refused[fieldName] = control.validity.valueMissing
+      ? `${label} is required`
+      : control.validationMessage || `${label} is invalid`
+  }
+  return refused
 }
 
 /**
@@ -373,7 +405,11 @@ export interface UseItemFormResult {
   setGeneralError: (message: string | null) => void
   /** Provide through `FieldValidityContext` around the rendered fields. */
   validity: FieldValidityChannel
-  /** Attach to the `<form>`, so a failed submit can find the first field with an error. */
+  /**
+   * Attach to the `<form>`, which must also set `noValidate`: the browser's own
+   * check would stop the submit before this engine sees it, and focus a control
+   * that can show no error.
+   */
   formRef: RefObject<HTMLFormElement | null>
   /** Attach to the element showing `generalError`, with `tabIndex={-1}`. */
   errorBannerRef: RefObject<HTMLDivElement | null>
@@ -466,12 +502,17 @@ export function useItemForm({
     e.preventDefault()
 
     const marks = [...invalidMarks.current]
-    if (marks.length > 0) {
-      const [firstDeclared = marks[0]] = Object.keys(fields).flatMap((name) =>
-        marks.filter((mark) => mark.fieldName === name),
-      )
+    const marked = new Set(marks.map((mark) => mark.fieldName))
+    const refused = formRef.current ? readConstraintErrors(formRef.current, fields, marked) : {}
+    if (marks.length > 0 || Object.keys(refused).length > 0) {
       for (const mark of marks) mark.onRefused()
-      firstDeclared.focusTarget.current?.focus()
+      setErrors((prev) => ({ ...prev, ...refused }))
+
+      const firstField = Object.keys(fields).find((name) => marked.has(name) || name in refused)
+      const firstMark =
+        firstField === undefined ? marks[0] : marks.find((mark) => mark.fieldName === firstField)
+      if (firstMark) firstMark.focusTarget.current?.focus()
+      else focusPending.current = true
       return
     }
 
