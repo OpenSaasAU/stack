@@ -7,6 +7,7 @@ import { ItemFormClient, type ItemFormClientProps } from '../../../src/component
 import { RelationshipCreateDrawer } from '../../../src/components/RelationshipCreateDrawer.js'
 import { ItemCreateForm } from '../../../src/components/standalone/ItemCreateForm.js'
 import { ItemEditForm } from '../../../src/components/standalone/ItemEditForm.js'
+import { Dialog, DialogContent, DialogTitle } from '../../../src/primitives/dialog.js'
 import type { SerializableFieldConfig } from '../../../src/lib/serializeFieldConfig.js'
 
 vi.mock('next/navigation.js', () => ({
@@ -35,7 +36,7 @@ const status = {
   ],
 } satisfies SerializableFieldConfig
 
-const serverAction = vi.fn(async () => ({ success: true, data: { id: 'p1' } }))
+const serverAction = vi.fn(async (): Promise<unknown> => ({ success: true, data: { id: 'p1' } }))
 
 function createProps(fields: Record<string, SerializableFieldConfig>): ItemFormClientProps {
   return {
@@ -374,5 +375,331 @@ describe('every form that submits', () => {
 
     await expectFocusOnError(/Title/, 'Title is required')
     expect(onSubmit).not.toHaveBeenCalled()
+  })
+})
+
+describe('a form portalled out of a field', () => {
+  const nestedAction = vi.fn(async () => ({ created: true, item: { id: 'n1' } }))
+  beforeEach(() => nestedAction.mockClear())
+
+  function DrawerField() {
+    return (
+      <RelationshipCreateDrawer
+        relatedListKey="Tag"
+        title="Tag"
+        fields={{ name: { type: 'text', ...required } }}
+        backReferenceField="post"
+        parentId="p1"
+        basePath="/admin"
+        serverAction={nestedAction}
+      />
+    )
+  }
+
+  const openDrawer = async () => {
+    render(
+      <ItemFormClient
+        {...createProps({ tags: { type: 'text', ui: { component: DrawerField } } })}
+      />,
+    )
+    await userEvent.click(screen.getByRole('button', { name: '+ Add Tag' }))
+    return screen.findByRole('dialog', { name: 'Add Tag' })
+  }
+
+  it('does not submit the form around it when it is refused', async () => {
+    const dialog = await openDrawer()
+
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Create' }))
+
+    await expectFocusOnError(/Name/, 'Name is required')
+    expect(nestedAction).not.toHaveBeenCalled()
+    expect(serverAction).not.toHaveBeenCalled()
+  })
+
+  it('does not submit the form around it when it is valid', async () => {
+    const dialog = await openDrawer()
+
+    await userEvent.type(within(dialog).getByLabelText(/Name/), 'News')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Create' }))
+
+    await waitFor(() => expect(nestedAction).toHaveBeenCalledTimes(1))
+    expect(serverAction).not.toHaveBeenCalled()
+  })
+
+  it('does not mark the required fields of the form around it', async () => {
+    const onSubmit = vi.fn(async () => ({ success: true }))
+    function DialogField() {
+      return (
+        <Dialog open>
+          <DialogContent>
+            <DialogTitle>Nested</DialogTitle>
+            <ItemCreateForm
+              fields={{ name: text({ validation: { isRequired: true } }) }}
+              onSubmit={onSubmit}
+              submitLabel="Add"
+            />
+          </DialogContent>
+        </Dialog>
+      )
+    }
+    render(
+      <ItemFormClient
+        {...createProps({
+          title: { type: 'text', ...required },
+          nested: { type: 'text', ui: { component: DialogField } },
+        })}
+      />,
+    )
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Add' }))
+
+    await waitFor(() => expect(screen.getByText('Name is required')).toBeInTheDocument())
+    expect(screen.queryByText('Title is required')).toBeNull()
+    expect(serverAction).not.toHaveBeenCalled()
+  })
+})
+
+describe('a field shows the one error that is still true', () => {
+  it('drops "required" from a decimal once it holds text that does not parse', async () => {
+    render(<ItemFormClient {...createProps({ price: { type: 'decimal', ...required } })} />)
+    await submit()
+    await expectFocusOnError(/Price/, 'Price is required')
+
+    await userEvent.type(screen.getByLabelText(/Price/), 'abc')
+    await waitFor(() => expect(screen.queryByText(/is required/)).toBeNull())
+    await submit()
+
+    await expectFocusOnError(/Price/, 'Price must be a decimal value')
+  })
+
+  it('drops "required" from JSON once it holds text that does not parse', async () => {
+    render(<ItemFormClient {...createProps({ data: { type: 'json', ...required } })} />)
+    await submit()
+    await expectFocusOnError(/Data/, 'Data is required')
+
+    await userEvent.click(screen.getByLabelText(/Data/))
+    await userEvent.keyboard('nope')
+    await submit()
+
+    await waitFor(() => expect(screen.getByLabelText(/Data/)).toHaveFocus())
+    expect(screen.queryByText(/is required/)).toBeNull()
+  })
+
+  it('drops a server error when the field turns unparseable without calling onChange', async () => {
+    serverAction.mockResolvedValueOnce({
+      success: false,
+      error: 'Validation failed',
+      fieldErrors: { price: 'Price is too high' },
+    })
+    render(<ItemFormClient {...createProps({ price: { type: 'decimal' } })} />)
+    await userEvent.type(screen.getByLabelText('Price'), '9')
+    await submit()
+    await expectFocusOnError(/Price/, 'Price is too high')
+
+    await userEvent.type(screen.getByLabelText('Price'), 'x')
+
+    await waitFor(() => expect(screen.queryByText('Price is too high')).toBeNull())
+    expect(screen.getByText('Price must be a decimal value')).toBeInTheDocument()
+  })
+
+  it('moves on from a number whose bad text was deleted, to what still blocks', async () => {
+    render(
+      <ItemFormClient
+        {...createProps({ views: { type: 'integer' }, title: { type: 'text', ...required } })}
+      />,
+    )
+    await userEvent.type(screen.getByLabelText('Views'), 'e')
+    await submit()
+    await expectFocusOnError(/Views/, /number/i)
+
+    await userEvent.click(screen.getByLabelText('Views'))
+    await userEvent.keyboard('{Backspace}')
+    await submit()
+
+    await expectFocusOnError(/Title/, 'Title is required')
+    expect(screen.getByLabelText('Views')).not.toHaveAttribute('aria-invalid')
+  })
+
+  it('keeps a server error the user has not answered when another field is refused', async () => {
+    serverAction.mockResolvedValueOnce({
+      success: false,
+      error: 'Validation failed',
+      fieldErrors: { slug: 'Slug is taken' },
+    })
+    render(
+      <ItemFormClient
+        {...createProps({ slug: { type: 'text' }, title: { type: 'text', ...required } })}
+      />,
+    )
+    await userEvent.type(screen.getByLabelText(/Title/), 'Hello')
+    await submit()
+    await expectFocusOnError(/Slug/, 'Slug is taken')
+
+    await userEvent.clear(screen.getByLabelText(/Title/))
+    await submit()
+
+    await waitFor(() => expect(screen.getByText('Title is required')).toBeInTheDocument())
+    expect(screen.getByText('Slug is taken')).toBeInTheDocument()
+    expect(serverAction).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('the message names what is wrong', () => {
+  it('says a required number holding unparseable text is not a number', async () => {
+    render(<ItemFormClient {...createProps({ qty: { type: 'integer', ...required } })} />)
+
+    await userEvent.type(screen.getByLabelText(/Qty/), '1e')
+    await submit()
+
+    await expectFocusOnError(/Qty/, /number/i)
+    expect(screen.queryByText('Qty is required')).toBeNull()
+    expect(serverAction).not.toHaveBeenCalled()
+  })
+
+  it('uses the label the field shows, ui.label first', async () => {
+    render(
+      <ItemFormClient
+        {...createProps({
+          b: { type: 'text', label: 'Config Label', ui: { label: 'UI Label' }, ...required },
+          c: { type: 'text', label: 'Config Label', ...required },
+        })}
+      />,
+    )
+
+    await submit()
+
+    await expectFocusOnError(/UI Label/, 'UI Label is required')
+    expect(screen.getByText('Config Label is required')).toBeInTheDocument()
+  })
+
+  it('refuses a required field whose name is on Object.prototype', async () => {
+    render(<ItemFormClient {...createProps({ constructor: { type: 'text', ...required } })} />)
+
+    await submit()
+
+    await expectFocusOnError(/Constructor/, 'Constructor is required')
+    expect(serverAction).not.toHaveBeenCalled()
+  })
+})
+
+describe('an optional field whose name is on Object.prototype', () => {
+  it('has no error until it is given one', async () => {
+    render(<ItemFormClient {...createProps({ constructor: { type: 'text' } })} />)
+
+    expect(screen.getByLabelText('Constructor')).not.toHaveAttribute('aria-invalid')
+  })
+})
+
+describe('a field with more than one input', () => {
+  function TwoInputs({ id, error, both }: { id: string; error?: string; both?: boolean }) {
+    return (
+      <>
+        <input aria-label="First" required={both} />
+        <input aria-label="Second" id={id} required />
+        {error && <p>{error}</p>}
+      </>
+    )
+  }
+
+  it('focuses the input that was refused, not the first', async () => {
+    render(
+      <ItemFormClient {...createProps({ pair: { type: 'text', ui: { component: TwoInputs } } })} />,
+    )
+
+    await submit()
+
+    await waitFor(() => expect(screen.getByLabelText('Second')).toHaveFocus())
+  })
+
+  it('focuses the first refused input when two are', async () => {
+    render(
+      <ItemFormClient
+        {...createProps({ pair: { type: 'text', ui: { component: TwoInputs, both: true } } })}
+      />,
+    )
+
+    await submit()
+
+    await waitFor(() => expect(screen.getByLabelText('First')).toHaveFocus())
+  })
+})
+
+describe('a third-party control', () => {
+  function SilentField({
+    id,
+    value,
+    onChange,
+  }: {
+    id: string
+    value?: string
+    onChange: (value: string) => void
+  }) {
+    return (
+      <>
+        <label htmlFor={id}>Nickname</label>
+        <input
+          id={id}
+          type="email"
+          required
+          value={value ?? ''}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      </>
+    )
+  }
+
+  const props = createProps({ nickname: { type: 'text', ui: { component: SilentField } } })
+
+  it('still explains a refusal in the banner when it ignores `error`', async () => {
+    render(<ItemFormClient {...props} />)
+
+    await submit()
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Nickname is required')
+    expect(screen.getByLabelText('Nickname')).toHaveFocus()
+    expect(serverAction).not.toHaveBeenCalled()
+  })
+
+  it('names the field when the browser message does not', async () => {
+    render(<ItemFormClient {...props} />)
+
+    await userEvent.type(screen.getByLabelText('Nickname'), 'x')
+    await submit()
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/^Nickname: .*@/)
+  })
+
+  it('takes the banner away once the field changes', async () => {
+    render(<ItemFormClient {...props} />)
+    await submit()
+    await screen.findByRole('alert')
+
+    await userEvent.type(screen.getByLabelText('Nickname'), 'a')
+
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+  })
+
+  it('leaves the banner out when the field shows the message itself', async () => {
+    render(<ItemFormClient {...createProps({ title: { type: 'text', ...required } })} />)
+
+    await submit()
+
+    await expectFocusOnError(/Title/, 'Title is required')
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('is not refused while disabled, as the browser would not refuse it', async () => {
+    function DisabledField({ id }: { id: string }) {
+      return <input id={id} aria-label="Locked" type="number" max={5} defaultValue={9} disabled />
+    }
+    render(
+      <ItemFormClient
+        {...createProps({ locked: { type: 'text', ui: { component: DisabledField } } })}
+      />,
+    )
+
+    await submit()
+
+    await waitFor(() => expect(serverAction).toHaveBeenCalledTimes(1))
   })
 })

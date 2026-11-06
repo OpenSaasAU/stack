@@ -140,7 +140,11 @@ export function ItemFormClient({
     <form
       ref={formRef}
       noValidate
-      onSubmit={(event) => (readOnly ? event.preventDefault() : handleSubmit(event))}
+      onSubmit={(event) => {
+        if (!readOnly) return handleSubmit(event)
+        event.preventDefault()
+        event.stopPropagation()
+      }}
       className="space-y-6"
     >
       {generalError && (

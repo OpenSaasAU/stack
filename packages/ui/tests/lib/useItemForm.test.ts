@@ -205,7 +205,7 @@ describe('useItemForm handleFieldChange', () => {
     expect(result.current.formData).toEqual({ title: 'Hi', tags: ['stored'] })
 
     await act(async () => {
-      result.current.handleSubmit({ preventDefault: () => {} })
+      result.current.handleSubmit({ preventDefault: () => {}, stopPropagation: () => {} })
     })
 
     expect(submitted).toEqual([{ title: 'Hi' }])
@@ -285,7 +285,7 @@ describe('a record update that fails after its edges landed', () => {
       result.current.handleFieldChange('title', 'Hi')
     })
     await act(async () => {
-      result.current.handleSubmit({ preventDefault: () => {} })
+      result.current.handleSubmit({ preventDefault: () => {}, stopPropagation: () => {} })
     })
 
     expect(result.current.generalError).toBe(`${PARTIAL_SAVE_PREFIX} Access denied`)
@@ -306,7 +306,7 @@ describe('a record update that fails after its edges landed', () => {
       result.current.handleFieldChange('title', 'Hi')
     })
     await act(async () => {
-      result.current.handleSubmit({ preventDefault: () => {} })
+      result.current.handleSubmit({ preventDefault: () => {}, stopPropagation: () => {} })
     })
 
     expect(result.current.generalError).toBe('Access denied')
@@ -332,7 +332,7 @@ describe('a record update that fails after its edges landed', () => {
       result.current.handleFieldChange('title', 'Hi')
     })
     await act(async () => {
-      result.current.handleSubmit({ preventDefault: () => {} })
+      result.current.handleSubmit({ preventDefault: () => {}, stopPropagation: () => {} })
     })
 
     expect(result.current.generalError).toBe(`${PARTIAL_SAVE_PREFIX} Network down`)
@@ -352,7 +352,7 @@ describe('useItemForm update sends only changed fields', () => {
     )
     act(() => result.current.handleFieldChange('author', ''))
     await act(async () => {
-      result.current.handleSubmit({ preventDefault: () => {} })
+      result.current.handleSubmit({ preventDefault: () => {}, stopPropagation: () => {} })
     })
     expect(onSubmit).toHaveBeenCalledWith({ author: null }, 'update')
   })
@@ -381,7 +381,7 @@ describe('useItemForm update sends only changed fields', () => {
     )
     act(() => result.current.handleFieldChange('posts', ['p1']))
     await act(async () => {
-      result.current.handleSubmit({ preventDefault: () => {} })
+      result.current.handleSubmit({ preventDefault: () => {}, stopPropagation: () => {} })
     })
     expect(onEdgeWrites).toHaveBeenCalledTimes(1)
     expect(onSubmit).not.toHaveBeenCalled()
@@ -398,7 +398,7 @@ describe('useItemForm update sends only changed fields', () => {
   }
   const submit = (result: { current: ReturnType<typeof useItemForm> }) =>
     act(async () => {
-      result.current.handleSubmit({ preventDefault: () => {} })
+      result.current.handleSubmit({ preventDefault: () => {}, stopPropagation: () => {} })
     })
 
   it('sends exactly the edited field', async () => {
@@ -475,7 +475,7 @@ describe('useItemForm update sends only changed fields', () => {
 })
 
 describe('useItemForm with an invalid field', () => {
-  const submit = { preventDefault: () => {} }
+  const submit = { preventDefault: () => {}, stopPropagation: () => {} }
   const focusTarget = () => ({ current: { focus: vi.fn() } })
   const noop = () => {}
 
@@ -514,7 +514,7 @@ describe('useItemForm with an invalid field', () => {
     onEdgeWrites.mockClear()
 
     const target = focusTarget()
-    act(() => void result.current.validity.markInvalid('title', target, noop))
+    act(() => void result.current.validity.markInvalid('posts', target, noop))
     await act(async () => result.current.handleSubmit(submit))
 
     expect(onEdgeWrites).not.toHaveBeenCalled()

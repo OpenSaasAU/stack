@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useTransition, type RefObject } from 'react'
 import type { FieldFocusTarget, FieldValidityChannel } from './fieldValidity.js'
 import type { SerializableFieldConfig } from './serializeFieldConfig.js'
-import { formatFieldName } from './utils.js'
+import { resolveFieldLabel } from './utils.js'
 
 export type ItemFormAction = 'create' | 'update'
 
@@ -27,9 +27,13 @@ function focusAndReveal(element: HTMLElement): boolean {
   return true
 }
 
-/** What a failed submit may land on inside a field, best first: invalid controls, then value controls. */
-function fieldFocusCandidates(field: Element): HTMLElement[] {
+/**
+ * What a failed submit may land on inside a field, best first: the control the
+ * browser refused, invalid controls, then value controls.
+ */
+function fieldFocusCandidates(field: Element, refusedControl?: Element): HTMLElement[] {
   return [
+    ...(refusedControl instanceof HTMLElement ? [refusedControl] : []),
     ...field.querySelectorAll<HTMLElement>('[aria-invalid="true"]'),
     ...field.querySelectorAll<HTMLElement>(VALUE_CONTROLS),
   ].filter((element) => element.tabIndex >= 0 && !element.closest('[hidden], [aria-hidden="true"]'))
@@ -42,28 +46,47 @@ function isConstrainedControl(element: Element): element is ConstrainedControl {
   return 'validity' in element
 }
 
+interface ConstraintError {
+  message: string
+  control: Element
+}
+
 /**
- * The message for each field holding a control the browser's constraint
- * validation refuses. This reads the constraints a control declares (`required`,
- * `min`, a number input's unparseable text), so a field needs no check of its
- * own, and the hidden select Radix renders counts for its trigger.
+ * The first control the browser's constraint validation refuses in each field.
+ * This reads the constraints a control declares (`required`, `min`, a number
+ * input's unparseable text), so a field needs no check of its own, and the
+ * hidden select Radix renders counts for its trigger.
  */
 function readConstraintErrors(
   form: HTMLFormElement,
   fields: Record<string, SerializableFieldConfig>,
   skip: Set<string>,
-): Record<string, string> {
-  const refused: Record<string, string> = {}
+): Map<string, ConstraintError> {
+  const refused = new Map<string, ConstraintError>()
   for (const control of Array.from(form.elements)) {
     if (!isConstrainedControl(control) || !control.willValidate || control.validity.valid) continue
     const fieldName = control.closest<HTMLElement>('[data-field-name]')?.dataset.fieldName
-    if (!fieldName || skip.has(fieldName) || fieldName in refused) continue
-    const label = fields[fieldName]?.label ?? formatFieldName(fieldName)
-    refused[fieldName] = control.validity.valueMissing
+    if (!fieldName || skip.has(fieldName) || refused.has(fieldName)) continue
+    const label = resolveFieldLabel(fieldName, fields[fieldName])
+    // Chrome sets `valueMissing` too when a number input holds text it can't parse.
+    const isEmpty = control.validity.valueMissing && !control.validity.badInput
+    const message = isEmpty
       ? `${label} is required`
       : control.validationMessage || `${label} is invalid`
+    refused.set(fieldName, { message, control })
   }
   return refused
+}
+
+function fieldElements(form: HTMLFormElement | null): HTMLElement[] {
+  return Array.from(form?.querySelectorAll<HTMLElement>('[data-field-name]') ?? [])
+}
+
+function withoutKey<TValue>(map: Map<string, TValue>, key: string): Map<string, TValue> {
+  if (!map.has(key)) return map
+  const next = new Map(map)
+  next.delete(key)
+  return next
 }
 
 /**
@@ -394,6 +417,12 @@ export interface UseItemFormOptions {
   errorFallback?: string
 }
 
+/** The parts of a submit event the engine acts on. */
+export interface ItemFormSubmitEvent {
+  preventDefault: () => void
+  stopPropagation: () => void
+}
+
 export interface UseItemFormResult {
   formData: Record<string, unknown>
   errors: Record<string, string>
@@ -401,7 +430,7 @@ export interface UseItemFormResult {
   isPending: boolean
   editableFields: Array<[string, SerializableFieldConfig]>
   handleFieldChange: (fieldName: string, value: unknown) => void
-  handleSubmit: (e: { preventDefault: () => void }) => void
+  handleSubmit: (e: ItemFormSubmitEvent) => void
   setGeneralError: (message: string | null) => void
   /** Provide through `FieldValidityContext` around the rendered fields. */
   validity: FieldValidityChannel
@@ -435,8 +464,10 @@ export function useItemForm({
 }: UseItemFormOptions): UseItemFormResult {
   const [isPending, startTransition] = useTransition()
   const [formData, setFormData] = useState<Record<string, unknown>>(initialData)
-  const [errors, setErrors] = useState<Record<string, string>>({})
-  const [generalError, setBannerError] = useState<string | null>(null)
+  const [serverErrors, setServerErrors] = useState<Map<string, string>>(new Map())
+  const [constraintErrors, setConstraintErrors] = useState<Map<string, string>>(new Map())
+  const [bannerError, setBannerError] = useState<string | null>(null)
+  const [unshownErrors, setUnshownErrors] = useState<string | null>(null)
   // What the edges are diffed against. It advances to whatever the writes
   // actually persisted, so a second submit after a partial denial retries only
   // the edges that are still outstanding rather than the ones already stored.
@@ -446,6 +477,16 @@ export function useItemForm({
   const formRef = useRef<HTMLFormElement>(null)
   const errorBannerRef = useRef<HTMLDivElement>(null)
   const focusPending = useRef(false)
+  const refusedControls = useRef(new Map<string, Element>())
+
+  const errors = useMemo(() => {
+    // No prototype, so looking up a field named `constructor` finds only its error.
+    const merged: Record<string, string> = Object.create(null)
+    for (const [fieldName, message] of [...serverErrors, ...constraintErrors]) {
+      merged[fieldName] = message
+    }
+    return merged
+  }, [serverErrors, constraintErrors])
 
   const setGeneralError = (message: string | null) => {
     focusPending.current = message !== null
@@ -458,18 +499,35 @@ export function useItemForm({
     if (isPending || !focusPending.current) return
     focusPending.current = false
 
-    const firstWithError = Array.from(
-      formRef.current?.querySelectorAll<HTMLElement>('[data-field-name]') ?? [],
-    ).find((field) => field.dataset.fieldName && errors[field.dataset.fieldName])
-    if (firstWithError && fieldFocusCandidates(firstWithError).some(focusAndReveal)) return
+    const firstWithError = fieldElements(formRef.current).find(
+      (field) => field.dataset.fieldName && errors[field.dataset.fieldName],
+    )
+    const refusedControl = refusedControls.current.get(firstWithError?.dataset.fieldName ?? '')
+    if (firstWithError && fieldFocusCandidates(firstWithError, refusedControl).some(focusAndReveal))
+      return
     if (errorBannerRef.current) focusAndReveal(errorBannerRef.current)
-  }, [isPending, errors, generalError])
+  }, [isPending, errors, bannerError])
+
+  // A field that ignores its `error` prop must not refuse in silence.
+  useEffect(() => {
+    const fieldsOnScreen = fieldElements(formRef.current)
+    const unshown = [...constraintErrors].flatMap(([fieldName, message]) => {
+      const field = fieldsOnScreen.find((element) => element.dataset.fieldName === fieldName)
+      if (field?.textContent?.includes(message)) return []
+      const label = resolveFieldLabel(fieldName, fields[fieldName])
+      return [message.includes(label) ? message : `${label}: ${message}`]
+    })
+    setUnshownErrors(unshown.join(' ') || null)
+  }, [constraintErrors, fields])
 
   const validity = useMemo<FieldValidityChannel>(
     () => ({
       markInvalid: (fieldName, focusTarget, onRefused) => {
         const mark = { fieldName, focusTarget, onRefused }
         invalidMarks.current.add(mark)
+        // The mark's own message takes over, and a parsing field may never call `onChange`.
+        setServerErrors((prev) => withoutKey(prev, fieldName))
+        setConstraintErrors((prev) => withoutKey(prev, fieldName))
         return () => {
           invalidMarks.current.delete(mark)
         }
@@ -489,26 +547,27 @@ export function useItemForm({
     if (fieldConfig?.readOnly || fieldConfig?.virtual) return
 
     setFormData((prev) => ({ ...prev, [fieldName]: value }))
-    if (errors[fieldName]) {
-      setErrors((prev) => {
-        const next = { ...prev }
-        delete next[fieldName]
-        return next
-      })
-    }
+    setServerErrors((prev) => withoutKey(prev, fieldName))
+    setConstraintErrors((prev) => withoutKey(prev, fieldName))
   }
 
-  const handleSubmit = (e: { preventDefault: () => void }) => {
+  const handleSubmit = (e: ItemFormSubmitEvent) => {
     e.preventDefault()
+    // React bubbles `submit` through portals, so a form portalled out of a field reaches the form around it.
+    e.stopPropagation()
 
     const marks = [...invalidMarks.current]
     const marked = new Set(marks.map((mark) => mark.fieldName))
-    const refused = formRef.current ? readConstraintErrors(formRef.current, fields, marked) : {}
-    if (marks.length > 0 || Object.keys(refused).length > 0) {
-      for (const mark of marks) mark.onRefused()
-      setErrors((prev) => ({ ...prev, ...refused }))
+    const refused = formRef.current
+      ? readConstraintErrors(formRef.current, fields, marked)
+      : new Map<string, ConstraintError>()
+    setConstraintErrors(new Map([...refused].map(([name, { message }]) => [name, message])))
+    refusedControls.current = new Map([...refused].map(([name, { control }]) => [name, control]))
 
-      const firstField = Object.keys(fields).find((name) => marked.has(name) || name in refused)
+    if (marks.length > 0 || refused.size > 0) {
+      for (const mark of marks) mark.onRefused()
+
+      const firstField = Object.keys(fields).find((name) => marked.has(name) || refused.has(name))
       const firstMark =
         firstField === undefined ? marks[0] : marks.find((mark) => mark.fieldName === firstField)
       if (firstMark) firstMark.focusTarget.current?.focus()
@@ -516,7 +575,7 @@ export function useItemForm({
       return
     }
 
-    setErrors({})
+    setServerErrors(new Map())
     setBannerError(null)
 
     startTransition(async () => {
@@ -572,7 +631,7 @@ export function useItemForm({
         const result = await onSubmit(data, mode)
         // void result → adapter handles its own success/navigation.
         if (result && result.success === false) {
-          if (result.fieldErrors) setErrors(result.fieldErrors)
+          if (result.fieldErrors) setServerErrors(new Map(Object.entries(result.fieldErrors)))
           report(result.error || errorFallback)
         } else if (mode === 'update') {
           scalarBaseline.current = { ...scalarBaseline.current, ...data }
@@ -586,7 +645,7 @@ export function useItemForm({
   return {
     formData,
     errors,
-    generalError,
+    generalError: [bannerError, unshownErrors].filter(Boolean).join(' ') || null,
     isPending,
     editableFields: getEditableFields(fields, mode),
     handleFieldChange,
