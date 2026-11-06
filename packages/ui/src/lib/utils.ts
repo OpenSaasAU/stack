@@ -20,6 +20,16 @@ export function formatFieldName(name: string): string {
     .trim()
 }
 
+/** The label a form shows for a field: `ui.label`, then `label`, then its formatted name. */
+export function resolveFieldLabel(
+  fieldName: string,
+  fieldConfig?: { label?: string; ui?: { [key: string]: unknown } },
+): string {
+  const uiLabel = fieldConfig?.ui?.label
+  if (typeof uiLabel === 'string' && uiLabel) return uiLabel
+  return fieldConfig?.label || formatFieldName(fieldName)
+}
+
 /**
  * Field types whose values are numeric. Numeric columns render right-aligned
  * with tabular numerals so digits line up down the column (issue #710).

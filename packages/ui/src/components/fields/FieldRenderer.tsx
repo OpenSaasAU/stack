@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { getFieldComponent } from './registry.js'
-import { formatFieldName } from '../../lib/utils.js'
+import { resolveFieldLabel } from '../../lib/utils.js'
 import { getUrlKey } from '@opensaas/stack-core'
 import type { SerializableFieldConfig } from '../../lib/serializeFieldConfig.js'
 import type { ServerActionInput } from '../../server/types.js'
@@ -42,7 +42,7 @@ function FieldRendererInner({
 }: FieldRendererProps & { Component: React.ComponentType<any> }) {
   // A create drawer can sit over a form holding a field of the same name.
   const id = `${React.useId()}-${fieldName}`
-  const label = (fieldConfig as Record<string, unknown>).label || formatFieldName(fieldName)
+  const label = resolveFieldLabel(fieldName, fieldConfig)
   const isRequired =
     (fieldConfig as Record<string, unknown>).validation &&
     typeof (fieldConfig as Record<string, unknown>).validation === 'object' &&
@@ -143,7 +143,7 @@ function buildFallbackUIProps(
 export function FieldRenderer(props: FieldRendererProps) {
   const { fieldName, fieldConfig, mode = 'edit' } = props
 
-  const label = (fieldConfig as Record<string, unknown>).label || formatFieldName(fieldName)
+  const label = resolveFieldLabel(fieldName, fieldConfig)
 
   if (mode === 'edit' && fieldName === 'id') {
     return null

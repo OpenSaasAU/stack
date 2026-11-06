@@ -362,6 +362,10 @@ Anything else in a field's `ui` config is passed through to the component as an 
 4. **Show required indicator** - Mark required fields visually
 5. **Accept custom options** - Support additional UI options from config
 
+### Native Constraints
+
+The item forms set `noValidate` and run the browser's constraint check themselves, so a constraint your control declares (`required`, `min`, `pattern`, `type="email"`) still refuses the submit. The form passes the message to your component as `error` and focuses the refused control, so render `error` and tie it to that control. A field that doesn't show the message gets it in the form's banner instead. A `required` control that's empty reads `<Label> is required`. Any other failure reads the browser's own message, including a number input holding text it can't parse.
+
 ### Refusing a Submit While the Input Can't Be Committed
 
 A field that parses what the user types can hold text it has no value for: half-typed JSON, say. `onChange` has nothing to send, so without more the form would save the old value and report success. Call `useFieldValidity` from `@opensaas/stack-ui/fields` to stop the submit:

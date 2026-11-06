@@ -93,6 +93,7 @@ export function ItemCreateForm<TData = Record<string, unknown>>({
   return (
     <form
       ref={formRef}
+      noValidate
       data-slot="item-create-form"
       onSubmit={handleSubmit}
       className={cn(className, classNames?.root)}
