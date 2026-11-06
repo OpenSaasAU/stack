@@ -11,8 +11,12 @@ import {
   OrphanExtensionSpaceError,
 } from './extension-spaces.js'
 
-const PGVECTOR_HASH = '4a96b488a4ce92b434e5f7d6607b6435c0955f0d36b0018077045787764240e6'
-const PGVECTOR_PACKAGE = '20260601T0000_install_vector_extension'
+const PGVECTOR_HASH = '698fc52f21eb891517203ef4b229823d17c49c3f802e2374be292a9b6a560c97'
+const PGVECTOR_PACKAGES = [
+  '20260601T0000_install_vector_extension',
+  '20261029T1342_declare_vector_extension',
+  '20261029T1342_create_vector_extension',
+]
 
 // The scratch projects live inside the package so node resolution walks up to
 // its node_modules and finds the declared packs.
@@ -101,12 +105,16 @@ describe('seedExtensionContractSpaces', () => {
         pack: 'pgvector',
         spaceId: 'pgvector',
         action: 'updated',
-        migrationDirs: [PGVECTOR_PACKAGE],
+        migrationDirs: PGVECTOR_PACKAGES,
       },
     ])
     expect(readSpaceFiles(cwd)).toEqual([
-      path.join('pgvector', PGVECTOR_PACKAGE, 'migration.json'),
-      path.join('pgvector', PGVECTOR_PACKAGE, 'ops.json'),
+      ...[...PGVECTOR_PACKAGES]
+        .sort()
+        .flatMap((dir) => [
+          path.join('pgvector', dir, 'migration.json'),
+          path.join('pgvector', dir, 'ops.json'),
+        ]),
       path.join('pgvector', 'refs', 'head.json'),
       path.join('snapshots', PGVECTOR_HASH, 'contract.d.ts'),
       path.join('snapshots', PGVECTOR_HASH, 'contract.json'),
@@ -122,7 +130,7 @@ describe('seedExtensionContractSpaces', () => {
       fs.readFileSync(path.join(cwd, 'migrations/pgvector/refs/head.json'), 'utf-8'),
     )
     expect(head.hash).toBe(PGVECTOR_HASH)
-    expect(head.invariants).toEqual(['pgvector:install-vector-v1'])
+    expect(head.invariants).toEqual([])
   })
 
   // The load-bearing property: `generate` runs on every build, so a second run
