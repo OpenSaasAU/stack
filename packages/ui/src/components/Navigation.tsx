@@ -7,6 +7,8 @@ import { Badge } from '../primitives/badge.js'
 import { UserMenu } from './UserMenu.js'
 import { ThemeToggle } from './ThemeToggle.js'
 
+export const ADMIN_WORDMARK = 'OpenSaas Admin'
+
 export interface NavigationProps {
   context: AnyStackContext
   config: OpenSaasConfig
@@ -75,7 +77,7 @@ export function NavLink({ href, active = false, icon, count, children }: NavLink
       data-slot="nav-link"
       data-active={active ? '' : undefined}
       className={cn(
-        'group flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+        'group flex items-center gap-2 rounded-md px-3 py-2 text-sm max-md:py-3 font-medium transition-colors',
         active
           ? 'bg-primary text-primary-foreground shadow-sm'
           : 'text-foreground hover:bg-accent hover:text-accent-foreground',
@@ -121,12 +123,12 @@ export function Navigation({
   const singletons = allLists.filter((listKey) => config.lists[listKey]?.isSingleton)
 
   return (
-    <nav className="sticky top-0 flex h-screen w-64 flex-col border-r border-border bg-card">
+    <nav className="sticky top-0 flex h-dvh w-64 flex-col border-r border-border bg-card">
       {/* Solid wordmark — same gradient-reservation rule as NavLink's active state. */}
       <div className="border-b border-border p-6">
         <Link href={basePath} className="block">
           <h1 className="font-heading text-xl font-bold tracking-tight text-foreground">
-            OpenSaas Admin
+            {ADMIN_WORDMARK}
           </h1>
         </Link>
       </div>

@@ -1,4 +1,7 @@
 @import 'tailwindcss';
+@source not '../../tests';
+/* Apps with no Tailwind of their own use these (sign-in pages, for one), and nothing in `src` generates them. */
+@source inline('contents flex-row gap-8 h-screen max-h-96 min-h-screen mt-8 pointer-events-none pt-2 shadow');
 
 /*
  * Theme token contract — the single source of truth for the admin UI's visual

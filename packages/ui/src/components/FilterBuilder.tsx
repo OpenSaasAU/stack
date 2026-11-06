@@ -30,7 +30,7 @@ const OPERATOR_LABELS: Record<FilterOperator, string> = {
  * theme tokens only.
  */
 const NATIVE_CONTROL_CLASS =
-  'h-10 rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50'
+  'h-10 rounded-md max-md:max-w-full border border-input bg-background px-3 py-2 text-sm text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50'
 
 /**
  * Per-part `classNames` slots for {@link FilterBuilder}. Each merges onto its
@@ -312,7 +312,7 @@ export function FilterBuilder({
               data-slot="filter-builder-search-clear"
               aria-label="Clear filter text"
               onClick={() => setState((prev) => ({ ...prev, freeText: '' }))}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground max-md:right-0 max-md:p-3"
             >
               <X className="h-4 w-4" aria-hidden="true" />
             </button>

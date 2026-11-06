@@ -1,4 +1,5 @@
 import { cn } from '../lib/utils.js'
+import { AdminFrame } from './AdminFrame.js'
 
 export interface SkeletonLoaderProps {
   className?: string
@@ -66,7 +67,7 @@ export function TableSkeleton({ rows = 5, columns = 4 }: { rows?: number; column
 
 export function FormSkeleton({ fields = 4 }: { fields?: number }) {
   return (
-    <div className="bg-card border border-border rounded-lg p-6">
+    <div className="bg-card border border-border rounded-lg p-4 md:p-6">
       <div className="space-y-6">
         {Array.from({ length: fields }).map((_, i) => (
           <div key={i} className="space-y-2">
@@ -108,7 +109,7 @@ export function PageHeaderSkeleton({ action = true }: { action?: boolean }) {
  */
 export function ListViewSkeleton({ rows = 6, columns = 4 }: { rows?: number; columns?: number }) {
   return (
-    <div data-slot="list-view-skeleton" className="p-8">
+    <div data-slot="list-view-skeleton" className="p-4 md:p-8">
       <PageHeaderSkeleton />
       <div className="space-y-4">
         <SkeletonLoader variant="rectangular" className="h-16 w-full" />
@@ -124,7 +125,7 @@ export function ListViewSkeleton({ rows = 6, columns = 4 }: { rows?: number; col
  */
 export function ItemFormSkeleton({ fields = 5 }: { fields?: number }) {
   return (
-    <div data-slot="item-form-skeleton" className="p-8 max-w-4xl">
+    <div data-slot="item-form-skeleton" className="max-w-4xl p-4 md:p-8">
       <PageHeaderSkeleton action={false} />
       <FormSkeleton fields={fields} />
     </div>
@@ -137,7 +138,7 @@ export function ItemFormSkeleton({ fields = 5 }: { fields?: number }) {
  */
 export function DashboardSkeleton({ cards = 6 }: { cards?: number }) {
   return (
-    <div data-slot="dashboard-skeleton" className="p-8">
+    <div data-slot="dashboard-skeleton" className="p-4 md:p-8">
       <PageHeaderSkeleton action={false} />
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {Array.from({ length: cards }).map((_, i) => (
@@ -151,5 +152,44 @@ export function DashboardSkeleton({ cards = 6 }: { cards?: number }) {
         ))}
       </div>
     </div>
+  )
+}
+
+/**
+ * The whole admin while a route loads, in the same frame as the built-in admin
+ * chrome. Render it from the admin route's `loading.tsx`. It always draws that
+ * chrome, so the layout shifts during a load under a custom `navigation` or
+ * `navigation={false}`.
+ */
+export function AdminLoading() {
+  return (
+    <AdminFrame
+      topBar={
+        <>
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center">
+            <SkeletonLoader variant="rectangular" className="h-6 w-6" />
+          </span>
+          <SkeletonLoader variant="text" className="h-6 w-32" />
+        </>
+      }
+      sidebar={
+        <div className="w-64 border-r border-border bg-card p-6">
+          <SkeletonLoader variant="rectangular" className="mb-8 h-8 w-32" />
+          <div className="space-y-4">
+            {[1, 2, 3].map((i) => (
+              <SkeletonLoader key={i} variant="rectangular" className="h-6 w-full" />
+            ))}
+          </div>
+        </div>
+      }
+    >
+      <div data-slot="admin-loading" className="p-4 md:p-8">
+        <div className="mb-8 space-y-2">
+          <SkeletonLoader variant="text" className="h-9 w-48" />
+          <SkeletonLoader variant="text" className="h-5 w-24" />
+        </div>
+        <TableSkeleton rows={5} columns={4} />
+      </div>
+    </AdminFrame>
   )
 }

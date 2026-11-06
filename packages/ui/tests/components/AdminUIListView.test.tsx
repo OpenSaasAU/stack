@@ -5,6 +5,7 @@ import type { AccessContext, OpenSaasConfig } from '@opensaas/stack-core'
 import { list } from '@opensaas/stack-core'
 import { text, timestamp } from '@opensaas/stack-core/fields'
 import { createTestDatabase, type TestDatabase } from '@opensaas/stack-core/testing'
+import { AdminShell } from '../../src/components/AdminShell.js'
 import { AdminUI } from '../../src/components/AdminUI.js'
 import { ListView } from '../../src/components/ListView.js'
 import { ListViewClient, type ListViewClientProps } from '../../src/components/ListViewClient.js'
@@ -50,19 +51,14 @@ const noopServerAction = vi.fn(async () => ({ success: true }))
 function routedContent(tree: React.ReactNode): React.ReactElement<Record<string, unknown>> {
   const fragment = tree as React.ReactElement<{ children: React.ReactNode }>
   const children = React.Children.toArray(fragment.props.children)
-  const wrapper = children.find(
+  const shell = children.find(
     (child): child is React.ReactElement<{ children: React.ReactNode }> =>
-      React.isValidElement(child) && child.type === 'div',
+      React.isValidElement(child) && child.type === AdminShell,
   )
-  if (!wrapper) throw new Error('AdminUI layout wrapper not found')
-  const main = React.Children.toArray(wrapper.props.children).find(
-    (child): child is React.ReactElement<{ children: React.ReactNode }> =>
-      React.isValidElement(child) && child.type === 'main',
-  )
-  if (!main) throw new Error('AdminUI <main> not found')
-  // <main> wraps the routed content in a <Suspense> skeleton boundary; unwrap it
+  if (!shell) throw new Error('AdminShell not found')
+  // The shell wraps the routed content in a <Suspense> skeleton boundary; unwrap it
   // to reach the routed screen component the router selected.
-  const boundary = main.props.children as React.ReactElement<{ children: React.ReactNode }>
+  const boundary = shell.props.children as React.ReactElement<{ children: React.ReactNode }>
   if (React.isValidElement(boundary) && boundary.type === React.Suspense) {
     return boundary.props.children as React.ReactElement<Record<string, unknown>>
   }

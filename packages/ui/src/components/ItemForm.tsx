@@ -195,7 +195,7 @@ async function ItemViewLayoutView({
 
   if (!itemData) {
     return (
-      <div className="p-8">
+      <div className="p-4 md:p-8">
         <div className="bg-destructive/10 border border-destructive text-destructive rounded-lg p-6">
           <h2 className="text-lg font-semibold mb-2">Item not found</h2>
           <p>
@@ -240,7 +240,7 @@ async function ItemViewLayoutView({
   )
 
   const detailsCard = (
-    <Card data-slot="item-view-details" className="p-6">
+    <Card data-slot="item-view-details" className="p-4 md:p-6">
       <ItemFormClient
         listKey={listKey}
         urlKey={urlKey}
@@ -279,7 +279,7 @@ async function ItemViewLayoutView({
   })
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       <PageHeader
         backHref={`${basePath}/${urlKey}`}
         backLabel={`Back to ${formatListName(listKey)}`}
@@ -321,7 +321,7 @@ export async function ItemForm({
 
   if (!listConfig) {
     return (
-      <div className="p-8">
+      <div className="p-4 md:p-8">
         <div className="bg-destructive/10 border border-destructive text-destructive rounded-lg p-6">
           <h2 className="text-lg font-semibold mb-2">List not found</h2>
           <p>The list &quot;{listKey}&quot; does not exist in your configuration.</p>
@@ -367,7 +367,7 @@ export async function ItemForm({
 
     if (!itemData) {
       return (
-        <div className="p-8">
+        <div className="p-4 md:p-8">
           <div className="bg-destructive/10 border border-destructive text-destructive rounded-lg p-6">
             <h2 className="text-lg font-semibold mb-2">Item not found</h2>
             <p>
@@ -399,14 +399,14 @@ export async function ItemForm({
   )
 
   return (
-    <div className="p-8 max-w-4xl">
+    <div className="max-w-4xl p-4 md:p-8">
       <PageHeader
         backHref={`${basePath}/${urlKey}`}
         backLabel={`Back to ${formatListName(listKey)}`}
         title={`${mode === 'create' ? 'Create' : 'Edit'} ${formatListName(listKey)}`}
       />
 
-      <div className="bg-card border border-border rounded-lg p-6">
+      <div className="bg-card border border-border rounded-lg p-4 md:p-6">
         <ItemFormClient
           listKey={listKey}
           urlKey={urlKey}

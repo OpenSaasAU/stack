@@ -182,7 +182,12 @@ hosts building their own chrome entirely. `AdminUI` still owns routing, the
 per-route Suspense skeletons, and theme compilation; the supplied node owns
 its own width/height like the built-in sidebar does. When `navigation` is
 supplied, `AdminUI` skips `resolveNavCounts` — host-owned chrome resolves its
-own access-scoped counts (it's already exported for this):
+own access-scoped counts (it's already exported for this). The node renders in
+the page flow from the `md` breakpoint up and in the menu button's drawer below
+it, so it should not hide itself at narrow widths; following a link in the
+drawer closes it. Those are two instances, so state the node holds does not
+carry between them, and the drawer's resets each time it opens. `navigation={false}`
+renders no navigation, with no top bar or menu button:
 
 ```tsx
 import { NavLink, deriveCurrentPath } from '@opensaas/stack-ui'
@@ -217,6 +222,22 @@ Both `active` (default `false`) and `icon` are optional.
 `deriveCurrentPath(params)` derives the `currentPath` string `AdminUI` computes
 internally from the route params array, so host-owned chrome that needs it for
 active-state highlighting doesn't have to re-derive the rule.
+
+### Route loading state
+
+`AdminLoading` is the whole admin while a route loads, in the same frame as the
+built-in chrome, so with the built-in sidebar the layout holds still at every
+width. It always draws that chrome, so under a custom `navigation` or
+`navigation={false}` the layout shifts while a route loads. Render it from the
+admin route's `loading.tsx`:
+
+```tsx
+import { AdminLoading } from '@opensaas/stack-ui'
+
+export default function Loading() {
+  return <AdminLoading />
+}
+```
 
 ### Dashboard
 

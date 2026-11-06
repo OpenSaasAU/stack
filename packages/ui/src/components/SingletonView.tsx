@@ -61,7 +61,7 @@ export async function SingletonView({
 
   if (!listConfig) {
     return (
-      <div className="p-8">
+      <div className="p-4 md:p-8">
         <div className="bg-destructive/10 border border-destructive text-destructive rounded-lg p-6">
           <h2 className="text-lg font-semibold mb-2">List not found</h2>
           <p>The list &quot;{listKey}&quot; does not exist in your configuration.</p>
@@ -93,7 +93,7 @@ export async function SingletonView({
 
     if (!canQuery) {
       return (
-        <div className="p-8 max-w-4xl">
+        <div className="max-w-4xl p-4 md:p-8">
           <PageHeader title={formatListName(listKey)} />
           <div className="bg-muted/50 border border-border rounded-lg p-6">
             <p className="text-muted-foreground">
@@ -112,7 +112,7 @@ export async function SingletonView({
 
     if (!canCreate) {
       return (
-        <div className="p-8 max-w-4xl">
+        <div className="max-w-4xl p-4 md:p-8">
           <PageHeader title={formatListName(listKey)} />
           <div className="bg-muted/50 border border-border rounded-lg p-6">
             <p className="text-muted-foreground">
@@ -133,7 +133,7 @@ export async function SingletonView({
     } = await prepareItemForm(context, config, listKey, listConfig, {}, 'create')
 
     return (
-      <div className="p-8 max-w-4xl">
+      <div className="max-w-4xl p-4 md:p-8">
         {/* A singleton has no list view, so link back to the dashboard. */}
         <PageHeader
           backHref={basePath}
@@ -141,7 +141,7 @@ export async function SingletonView({
           title={`Create ${formatListName(listKey)}`}
         />
 
-        <div className="bg-card border border-border rounded-lg p-6">
+        <div className="bg-card border border-border rounded-lg p-4 md:p-6">
           <ItemFormClient
             listKey={listKey}
             urlKey={urlKey}
@@ -173,14 +173,14 @@ export async function SingletonView({
   const { fieldMode } = await resolveListUi(listConfig, context)
 
   return (
-    <div className="p-8 max-w-4xl">
+    <div className="max-w-4xl p-4 md:p-8">
       <PageHeader
         backHref={basePath}
         backLabel="Back to dashboard"
         title={`Edit ${formatListName(listKey)}`}
       />
 
-      <div className="bg-card border border-border rounded-lg p-6">
+      <div className="bg-card border border-border rounded-lg p-4 md:p-6">
         <ItemFormClient
           listKey={listKey}
           urlKey={urlKey}

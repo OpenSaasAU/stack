@@ -156,7 +156,7 @@ export function RelationshipLinkControl({
   }
 
   return (
-    <div data-slot="relationship-table-link" className="flex items-center gap-2">
+    <div data-slot="relationship-table-link" className="flex items-center gap-2 max-md:flex-wrap">
       {error && (
         <span role="alert" className="text-xs text-destructive">
           {error}

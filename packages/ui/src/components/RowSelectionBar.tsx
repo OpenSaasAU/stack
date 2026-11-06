@@ -93,7 +93,7 @@ export function RowSelectionBar({
       role="toolbar"
       aria-label="Selection actions"
       className={cn(
-        'flex items-center justify-between gap-4 rounded-lg border bg-muted/50 px-4 py-2',
+        'flex items-center justify-between gap-4 rounded-lg border bg-muted/50 px-4 py-2 max-md:flex-wrap max-md:gap-y-2',
         className,
         classNames?.root,
       )}
@@ -106,7 +106,7 @@ export function RowSelectionBar({
         {count} selected
       </span>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 max-md:flex-wrap">
         <div
           data-slot="selection-actions"
           className={cn('flex items-center gap-2', classNames?.actions)}

@@ -55,7 +55,7 @@ export async function Dashboard({ context, config, basePath = '/admin' }: Dashbo
   )
 
   return (
-    <div className="p-8">
+    <div className="p-4 md:p-8">
       {/* The dashboard header is the design system's one signature gradient
           moment in the chrome (spec: gradients as garnish, not sprinkled). */}
       <PageHeader

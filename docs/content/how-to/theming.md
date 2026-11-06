@@ -505,6 +505,7 @@ These names are the stable, plain-CSS-targetable contract. Composite
 | SearchBar      | `search-bar`, `search-bar-form`, `search-bar-clear`                  |
 | DeleteButton   | `delete-button-error`                                                |
 | ThemeToggle    | `theme-toggle`                                                       |
+| AdminUI shell  | `admin-topbar`, `admin-menu-button`, `admin-nav-drawer`              |
 
 ## See also
 
