@@ -7,6 +7,7 @@ This directory contains comprehensive end-to-end tests for OpenSaaS Stack exampl
 The E2E test suite validates:
 
 - ✅ **Build process** - Ensures examples build successfully
+- ✅ **Dev-mode serving** - `json-demo` runs under `next dev`, so a Node builtin in the client graph fails CI
 - ✅ **Authentication flows** - Sign up, sign in, password reset
 - ✅ **Access control** - Operation-level and field-level access rules
 - ✅ **CRUD operations** - Create, read, update, delete functionality
