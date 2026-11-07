@@ -79,7 +79,8 @@ export async function SingletonView({
     if (delegate?.get) {
       const include: Record<string, boolean> = {}
       for (const [fieldName, field] of Object.entries(listConfig.fields)) {
-        if (field.type === 'relationship') include[fieldName] = true
+        if (field.type === 'relationship' && !('many' in field && field.many))
+          include[fieldName] = true
       }
       record = await delegate.get({ include })
     }
