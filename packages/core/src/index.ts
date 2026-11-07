@@ -47,6 +47,7 @@ export type {
   RowAction,
   RowActionContext,
   RowActionIcon,
+  RowActionId,
   RowActionResult,
 } from './config/index.js'
 

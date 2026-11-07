@@ -17,7 +17,7 @@ import {
 import { Button } from '../primitives/button.js'
 import { Checkbox } from '../primitives/checkbox.js'
 import { EmptyState } from './EmptyState.js'
-import { CellRenderer } from './cells/CellRenderer.js'
+import { CellRenderer, rendersBuiltInCell } from './cells/CellRenderer.js'
 import type { CellValue } from './cells/registry.js'
 import { FilterBuilder } from './FilterBuilder.js'
 import { AvatarLabelCell } from './cells/AvatarLabelCell.js'
@@ -50,36 +50,32 @@ function parseBulkDeleteResult(
 }
 
 /**
- * Read the outcome message a custom Bulk action server action returns (issue
- * #736). A successful run yields `{ bulkAction: true, message? }`; a failure
- * yields `{ bulkAction: false, error }`. Either way we surface a single status
- * line — the handler's own `message`, its `error`, or a generic completion note
- * — without leaking which selected rows the secured handler was denied.
+ * Read the status line for a custom Bulk or Row action from its server action
+ * result, discriminated by `key`: `{ [key]: true, message? }` on success,
+ * `{ [key]: false, error }` on failure. A handler's own `message`, else
+ * `${label} complete`; an `error`, prefixed with `errorPrefix`; else
+ * `fallback` for a shape this does not recognise.
  */
-function parseBulkActionResult(result: unknown, label: string): string {
-  if (typeof result === 'object' && result !== null && 'bulkAction' in result) {
-    const value = result as { bulkAction: unknown; message?: unknown; error?: unknown }
-    if (value.bulkAction === true) {
-      return typeof value.message === 'string' && value.message.length > 0
-        ? value.message
-        : `${label} complete`
-    }
-    if (typeof value.error === 'string' && value.error.length > 0) return value.error
+function parseActionResult(
+  result: unknown,
+  key: 'bulkAction' | 'rowAction',
+  label: string,
+  { fallback, errorPrefix = '' }: { fallback: string; errorPrefix?: string },
+): string {
+  if (typeof result !== 'object' || result === null || !(key in result)) return fallback
+  const ran =
+    key === 'bulkAction'
+      ? 'bulkAction' in result && result.bulkAction
+      : 'rowAction' in result && result.rowAction
+  if (ran === true) {
+    return 'message' in result && typeof result.message === 'string' && result.message.length > 0
+      ? result.message
+      : `${label} complete`
   }
-  return `${label} complete`
-}
-
-function parseRowActionResult(result: unknown, label: string): string {
-  if (typeof result === 'object' && result !== null && 'rowAction' in result) {
-    const value = result as { rowAction: unknown; message?: unknown; error?: unknown }
-    if (value.rowAction === true) {
-      return typeof value.message === 'string' && value.message.length > 0
-        ? value.message
-        : `${label} complete`
-    }
-    if (typeof value.error === 'string' && value.error.length > 0) return `${label}: ${value.error}`
+  if ('error' in result && typeof result.error === 'string' && result.error.length > 0) {
+    return `${errorPrefix}${result.error}`
   }
-  return `${label}: this action was not run`
+  return fallback
 }
 
 export interface ListViewClientProps {
@@ -296,6 +292,16 @@ export function ListViewClient({
     return `${basePath}/${urlKey}?${withPageSize(params).toString()}`
   }
 
+  // Reset to page 1 of the current filter: a delete can remove the rows that
+  // made the current page exist, leaving it out of range. `router.refresh()`
+  // first invalidates the client Router Cache (so a previously-visited page 1
+  // is not served stale), then the push lands on page 1 and fetches the
+  // now-shorter list fresh.
+  const refreshFromFirstPage = () => {
+    router.refresh()
+    router.push(buildPaginationUrl(1))
+  }
+
   const handleBulkDelete = async () => {
     if (!serverAction) return
     const ids = [...selection.selectedIds]
@@ -312,13 +318,7 @@ export function ListViewClient({
     setBulkStatus(`${deleted} of ${total} deleted`)
     selection.clear()
 
-    // Reset to page 1 of the current filter: a bulk delete can remove the rows
-    // that made the current page exist (deleting across pages leaves the current
-    // page out of range). `router.refresh()` first invalidates the client Router
-    // Cache (so a previously-visited page 1 is not served stale), then the push
-    // lands on page 1 and fetches the now-shorter list fresh.
-    router.refresh()
-    router.push(buildPaginationUrl(1))
+    refreshFromFirstPage()
   }
 
   // Runs a custom Bulk action (issue #736); mirrors `handleBulkDelete`'s
@@ -330,11 +330,10 @@ export function ListViewClient({
     const label = bulkActions.find((a) => a.key === key)?.label ?? 'Action'
 
     const result = await serverAction({ listKey, action: 'bulkAction', key, ids })
-    setBulkStatus(parseBulkActionResult(result, label))
+    setBulkStatus(parseActionResult(result, 'bulkAction', label, { fallback: `${label} complete` }))
     selection.clear()
 
-    router.refresh()
-    router.push(buildPaginationUrl(1))
+    refreshFromFirstPage()
   }
 
   const itemHref = (id: string) => `${basePath}/${urlKey}/${id}`
@@ -351,18 +350,36 @@ export function ListViewClient({
 
   const handleRowDelete = async (id: string, name: string) => {
     if (!serverAction) return
-    const result = await serverAction({ listKey, action: 'bulkDelete', ids: [id] })
-    const { deleted } = parseBulkDeleteResult(result, 1)
+    let deleted = 0
+    try {
+      const result = await serverAction({ listKey, action: 'bulkDelete', ids: [id] })
+      deleted = parseBulkDeleteResult(result, 1).deleted
+    } catch {
+      setBulkStatus(`“${name}” not deleted`)
+      return
+    }
     setBulkStatus(deleted === 1 ? `“${name}” deleted` : `“${name}” not deleted`)
     if (deleted === 1 && selection.isSelected(id)) selection.toggle(id)
-    router.refresh()
+    if (deleted === 1) refreshFromFirstPage()
+    else router.refresh()
   }
 
   const handleRowAction = async (id: string, key: string) => {
     if (!serverAction) return
     const label = rowActions.find((a) => a.key === key)?.label ?? 'Action'
-    const result = await serverAction({ listKey, action: 'rowAction', key, id })
-    setBulkStatus(parseRowActionResult(result, label))
+    const notRun = `${label}: this action was not run`
+    try {
+      const result = await serverAction({ listKey, action: 'rowAction', key, id })
+      setBulkStatus(
+        parseActionResult(result, 'rowAction', label, {
+          fallback: notRun,
+          errorPrefix: `${label}: `,
+        }),
+      )
+    } catch {
+      setBulkStatus(notRun)
+      return
+    }
     router.refresh()
   }
 
@@ -387,6 +404,11 @@ export function ListViewClient({
     }
   }
 
+  const titleColumn =
+    labelColumn && labelColumn !== 'id' && displayColumns.includes(labelColumn)
+      ? labelColumn
+      : displayColumns.find((column) => !relationshipRefs[column])
+
   /**
    * Render one body cell. The label column of an avatar-opted-in list
    * (`avatarColumn`) renders through {@link AvatarLabelCell} — unless that
@@ -400,11 +422,6 @@ export function ListViewClient({
    * in the cell chain. A project that wants a custom cell on the label column
    * instead of the avatar sets `ui.cell` on that field.
    */
-  const titleColumn =
-    labelColumn && labelColumn !== 'id' && displayColumns.includes(labelColumn)
-      ? labelColumn
-      : displayColumns.find((column) => !relationshipRefs[column])
-
   const renderCell = (column: string, item: Record<string, unknown>) => {
     const field = columnField(column)
     const cellProps = {
@@ -585,7 +602,9 @@ export function ListViewClient({
                         key={column}
                         className={cn(isCountAlignedColumn(columnField(column)) && 'text-right')}
                       >
-                        {column === titleColumn ? (
+                        {column !== titleColumn ? (
+                          renderCell(column, item)
+                        ) : rendersBuiltInCell(columnField(column)) ? (
                           <Link
                             href={itemHref(rowId)}
                             data-slot="row-title-link"
@@ -594,7 +613,17 @@ export function ListViewClient({
                             {renderCell(column, item)}
                           </Link>
                         ) : (
-                          renderCell(column, item)
+                          <span className="inline-flex items-center gap-2">
+                            {renderCell(column, item)}
+                            <Link
+                              href={itemHref(rowId)}
+                              data-slot="row-title-link"
+                              aria-label={`Open ${rowName(item, index)}`}
+                              className="text-xs font-medium text-muted-foreground hover:underline focus-visible:underline"
+                            >
+                              Open
+                            </Link>
+                          </span>
                         )}
                       </TableCell>
                     ))}

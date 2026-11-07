@@ -528,10 +528,10 @@ The handler receives `{ listKey, ids, context }` and does its own row-by-row wor
 Runs a list's own Row action ([`ui.listView.rowActions`](/docs/reference/ui#row-actions)), looked up server-side by `key`. Before the handler runs, the row is re-read through the secured context and the action's `hasAccess` and `isAvailable` are re-run against it. Refusals:
 
 - `key` names no declared action on `listKey` → `{ rowAction: false, error: 'Row action "…" not found on list "…"' }`.
-- `hasAccess` returns false, `id` is not an id the list can hold, the row is missing or denied, or `isAvailable` rejects the re-read row → `{ rowAction: false, error: 'This action was not run' }`. These are one outcome, so a caller cannot tell a denied row from a missing one ([Silent failure](#silent-failure)).
+- `hasAccess` returns false or throws, `id` is not an id the list can hold, the row is missing or denied, or `isAvailable` rejects the re-read row or throws → `{ rowAction: false, error: 'This action was not run' }`. These are one outcome, so a caller cannot tell a denied row from a missing one ([Silent failure](#silent-failure)).
 - The handler throws a `ValidationError` or `DatabaseError` → that error's own message. Anything else is logged server-side and reaches the caller as `{ rowAction: false, error: 'Action failed' }`.
 
-The handler receives `{ listKey, id, item, context }`, where `item` is the re-read row.
+The handler receives `{ listKey, id, item, context }`, where `id` is parsed through the list's id type (a `number` on an `int autoincrement` list) and `item` is the re-read row.
 
 ### `removeRelated`, `updateRelated`, `createRelated`, `linkRelated`
 

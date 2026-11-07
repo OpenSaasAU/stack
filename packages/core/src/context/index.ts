@@ -955,28 +955,31 @@ export function getContext<TConfig extends OpenSaasConfig>(
           error: `Row action "${props.key}" not found on list "${props.listKey}"`,
         }
       }
-      try {
-        if (action.hasAccess) {
-          const allowed = await action.hasAccess({
-            session: context.session,
-            context,
-            listKey: props.listKey,
-          })
-          if (!allowed) return notRun
+      const id = parseId(props.listKey, props.id)
+      if (id === null) return notRun
+      const passes = async (check: () => boolean | Promise<boolean>): Promise<boolean> => {
+        try {
+          return await check()
+        } catch {
+          return false
         }
-        const id = parseId(props.listKey, props.id)
-        if (id === null) return notRun
+      }
+      const { hasAccess, isAvailable } = action
+      if (
+        hasAccess &&
+        !(await passes(() =>
+          hasAccess({ session: context.session, context, listKey: props.listKey }),
+        ))
+      ) {
+        return notRun
+      }
+      try {
         const item = await context.db[props.listKey].where({ id: { equals: id } }).first()
         if (item === null) return notRun
-        if (action.isAvailable && !action.isAvailable({ item, session: context.session })) {
+        if (isAvailable && !(await passes(() => isAvailable({ item, session: context.session })))) {
           return notRun
         }
-        const result = await action.handler({
-          listKey: props.listKey,
-          id: props.id,
-          item,
-          context,
-        })
+        const result = await action.handler({ listKey: props.listKey, id, item, context })
         return { rowAction: true, message: result?.message }
       } catch (error) {
         const failure = clientFailure(error, config, props.listKey, props.action, {

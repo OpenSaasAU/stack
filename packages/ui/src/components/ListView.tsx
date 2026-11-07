@@ -46,57 +46,45 @@ function canDeleteList(deleteAccess: AccessControl | boolean | undefined): boole
   return true
 }
 
+type ActionAccessGate = (args: {
+  session: AccessContext['session']
+  context: AccessContext
+  listKey: string
+}) => boolean | Promise<boolean>
+
 /**
- * Resolve the custom Bulk actions (issue #736) an admin may see, into the
- * serialisable metadata the client selection bar renders. Each action's
- * server-side `hasAccess` gate (if any) is evaluated HERE against the live
- * session/context — a denied action is dropped, so its button is never offered
- * (user story 14). Only `key`/`label`/`variant`/`destructive` cross the
- * boundary; `handler`/`hasAccess` stay on the server. The gate is also
- * re-checked on dispatch, so hiding a button is a UX affordance, not the
- * security boundary — the handler always runs through the secured context.
+ * The declared actions (Bulk or Row) whose `hasAccess` gate admits this
+ * session, resolved once per request. A gate that throws hides its action
+ * rather than failing the list page. The gate is re-checked on dispatch, so
+ * hiding an action is a UX affordance, not the security boundary.
  */
-async function resolveVisibleBulkActions(
-  actions: BulkAction[] | undefined,
+async function resolveVisibleActions<TAction extends { key: string; hasAccess?: ActionAccessGate }>(
+  actions: TAction[] | undefined,
   context: AccessContext,
   listKey: string,
-): Promise<SerializedBulkAction[]> {
+): Promise<TAction[]> {
   if (!actions || actions.length === 0) return []
-  const resolved = await Promise.all(
-    actions.map(async (action): Promise<SerializedBulkAction | null> => {
-      if (action.hasAccess) {
-        const allowed = await action.hasAccess({
-          session: context.session,
-          context,
-          listKey,
-        })
-        if (!allowed) return null
-      }
-      return {
-        key: action.key,
-        label: action.label,
-        ...(action.variant ? { variant: action.variant } : {}),
-        ...(action.destructive ? { destructive: action.destructive } : {}),
+  const allowed = await Promise.all(
+    actions.map(async (action) => {
+      if (!action.hasAccess) return true
+      try {
+        return await action.hasAccess({ session: context.session, context, listKey })
+      } catch (error) {
+        console.error(`Action "${action.key}" hasAccess threw:`, error)
+        return false
       }
     }),
   )
-  return resolved.filter((a): a is SerializedBulkAction => a !== null)
+  return actions.filter((_, index) => allowed[index])
 }
 
-async function resolveVisibleRowActions(
-  actions: RowAction[] | undefined,
-  context: AccessContext,
-  listKey: string,
-): Promise<RowAction[]> {
-  if (!actions || actions.length === 0) return []
-  const allowed = await Promise.all(
-    actions.map(async (action) =>
-      action.hasAccess
-        ? await action.hasAccess({ session: context.session, context, listKey })
-        : true,
-    ),
-  )
-  return actions.filter((_, index) => allowed[index])
+function serializeBulkAction(action: BulkAction): SerializedBulkAction {
+  return {
+    key: action.key,
+    label: action.label,
+    ...(action.variant ? { variant: action.variant } : {}),
+    ...(action.destructive ? { destructive: action.destructive } : {}),
+  }
 }
 
 function serializeRowAction(action: RowAction): SerializedRowAction {
@@ -124,24 +112,33 @@ function isRowActionAvailable(
 
 /**
  * The keys of the Row actions each row offers, keyed by row id. `isAvailable`
- * sees the row's own columns, as the dispatch re-read does, so a relation the
- * list view includes never decides availability.
+ * is evaluated over a read of the page's rows in the shape dispatch re-reads
+ * one row in, with no includes, so a computed field sees the same
+ * dependencies here as it does when the action runs.
  */
-function availableRowActionKeys(
+async function availableRowActionKeys(
   actions: RowAction[],
-  items: Array<Record<string, unknown>>,
-  relationFields: ReadonlySet<string>,
+  read: SecuredQuery,
+  ids: Array<string | number>,
   session: AccessContext['session'],
-): Record<string, string[]> {
+): Promise<Record<string, string[]>> {
+  if (actions.length === 0 || ids.length === 0) return {}
+  let rows: Array<Record<string, unknown>> = ids.map((id) => ({ id }))
+  if (actions.some((action) => action.isAvailable)) {
+    try {
+      rows = await read.where({ id: { in: ids } }).all()
+    } catch (error) {
+      unstable_rethrow(error)
+      console.error('Row action availability could not be read:', error)
+      return {}
+    }
+  }
   const keysById: Record<string, string[]> = {}
-  for (const row of items) {
-    const item = Object.fromEntries(
-      Object.entries(row).filter(([fieldName]) => !relationFields.has(fieldName)),
-    )
+  for (const item of rows) {
     const keys = actions
       .filter((action) => isRowActionAvailable(action, item, session))
       .map((action) => action.key)
-    if (keys.length > 0) keysById[String(row.id)] = keys
+    if (keys.length > 0) keysById[String(item.id)] = keys
   }
   return keysById
 }
@@ -404,21 +401,21 @@ export async function ListView({
   // never drift from the field the Item label is read off.
   const avatarColumn = listConfig.ui?.avatar ? getLabelFieldName(listConfig) : undefined
 
-  const bulkActions = await resolveVisibleBulkActions(
-    listConfig.ui?.listView?.bulkActions,
-    context,
-    listKey,
-  )
+  const bulkActions = (
+    await resolveVisibleActions(listConfig.ui?.listView?.bulkActions, context, listKey)
+  ).map(serializeBulkAction)
 
-  const visibleRowActions = await resolveVisibleRowActions(
+  const visibleRowActions = await resolveVisibleActions(
     listConfig.ui?.listView?.rowActions,
     context,
     listKey,
   )
-  const rowActionKeys = availableRowActionKeys(
+  const rowActionKeys = await availableRowActionKeys(
     visibleRowActions,
-    items,
-    new Set(Object.keys(relationshipRefs)),
+    context.db[key],
+    items.flatMap((item) =>
+      typeof item.id === 'string' || typeof item.id === 'number' ? [item.id] : [],
+    ),
     context.session,
   )
 

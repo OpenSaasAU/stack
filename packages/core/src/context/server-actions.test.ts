@@ -40,6 +40,11 @@ function schemaConfig(): OpenSaasConfig {
         },
         access: { operation: OPEN },
       },
+      Ticket: {
+        fields: { status: text() },
+        access: { operation: OPEN },
+        db: { idField: 'int autoincrement' },
+      },
     },
   }
 }
@@ -720,6 +725,91 @@ describe('context.serverAction', () => {
           }),
         ).toEqual({ rowAction: false, error: 'This action was not run' })
         expect(handler).not.toHaveBeenCalled()
+      },
+      BOOT,
+    )
+
+    test(
+      'a hasAccess that throws answers as Silent failure',
+      async () => {
+        const id = await seedPost('a', 'draft')
+        const handler = vi.fn(async () => ({ message: 'ran' }))
+        const hasAccess = () => {
+          throw new Error('no role')
+        }
+
+        expect(
+          await contextAt(withRowAction({ handler, hasAccess })).serverAction({
+            listKey: 'Post',
+            action: 'rowAction',
+            key: 'publish',
+            id,
+          }),
+        ).toEqual({ rowAction: false, error: 'This action was not run' })
+        expect(handler).not.toHaveBeenCalled()
+      },
+      BOOT,
+    )
+
+    test(
+      'an isAvailable that throws answers as Silent failure',
+      async () => {
+        const id = await seedPost('a', 'draft')
+        const handler = vi.fn(async () => ({ message: 'ran' }))
+        const isAvailable = () => {
+          throw new Error('bad row')
+        }
+
+        expect(
+          await contextAt(withRowAction({ handler, isAvailable })).serverAction({
+            listKey: 'Post',
+            action: 'rowAction',
+            key: 'publish',
+            id,
+          }),
+        ).toEqual({ rowAction: false, error: 'This action was not run' })
+        expect(handler).not.toHaveBeenCalled()
+      },
+      BOOT,
+    )
+
+    test(
+      'on an int autoincrement list the handler gets the parsed id and can write with it',
+      async () => {
+        const ticket = await harness.context.db.Ticket.create({ data: { status: 'open' } })
+        if (ticket === null) throw new Error('ticket not created')
+        const seen: unknown[] = []
+        const config = schemaConfig()
+        config.lists.Ticket.ui = {
+          listView: {
+            rowActions: [
+              {
+                key: 'close',
+                label: 'Close',
+                handler: async ({ id, context }) => {
+                  seen.push(id)
+                  const updated = await context.db.Ticket.update({
+                    where: { id },
+                    data: { status: 'closed' },
+                  })
+                  return { message: updated ? 'Closed' : 'Not closed' }
+                },
+              },
+            ],
+          },
+        }
+
+        expect(
+          await contextAt(config).serverAction({
+            listKey: 'Ticket',
+            action: 'rowAction',
+            key: 'close',
+            id: String(ticket.id),
+          }),
+        ).toEqual({ rowAction: true, message: 'Closed' })
+        expect(seen).toEqual([ticket.id])
+        expect(typeof seen[0]).toBe('number')
+        expect((await harness.context.db.Ticket.all())[0]?.status).toBe('closed')
       },
       BOOT,
     )

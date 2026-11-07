@@ -1,5 +1,6 @@
 import type { AccessControlledDB, AccessControl, FieldAccess } from '../access/types.js'
 import type { GeneratedTables } from '../contract/dependencies.js'
+import type { ListIdValue } from '../contract/id-boundary.js'
 import type { FilterSpec } from '../filter/types.js'
 import type { z } from 'zod'
 import type { PostgresOptionsBase, PostgresOptions } from '@prisma/orm-postgres/runtime'
@@ -2429,7 +2430,7 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
    * Mirrors Keystone's list-level `ui` block. Currently only `listView`
    * defaults (columns + sort) are supported.
    */
-  ui?: ListUIConfig
+  ui?: ListUIConfig<TTypeInfo>
 }
 
 /**
@@ -2441,12 +2442,12 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
  * deferred as they cover navigation text rather than list-view or
  * row-labelling defaults.
  */
-export type ListUIConfig = {
+export type ListUIConfig<TTypeInfo extends TypeInfo = TypeInfo> = {
   /**
    * Default list-view (table) configuration for this list, mirroring
    * Keystone's `ui.listView`.
    */
-  listView?: ListViewUIConfig
+  listView?: ListViewUIConfig<TTypeInfo>
   /**
    * Item-view (record edit page) configuration for this list — controls the
    * placement/order of the shape-derived Relationship-table sections (issue
@@ -2676,14 +2677,29 @@ export type RowActionIcon =
   | 'upload'
 
 /**
+ * A list's primary key at its own type: the generated item's `id` when the
+ * list is typed through its `TypeInfo`, else {@link ListIdValue}.
+ */
+export type RowActionId<TTypeInfo extends TypeInfo = TypeInfo> =
+  IsAny<TTypeInfo['item']> extends true
+    ? ListIdValue
+    : TTypeInfo['item'] extends { id: infer TId }
+      ? TId
+      : ListIdValue
+
+/**
  * Arguments passed to a Row action's server-side `handler`. The handler runs
  * entirely on the server and must do its work through the secured `context`.
  */
-export interface RowActionContext {
+export interface RowActionContext<TTypeInfo extends TypeInfo = TypeInfo> {
   /** The list the action was invoked on (PascalCase list key). */
   listKey: string
-  /** The id of the row the action targets, as the client sent it. */
-  id: string
+  /**
+   * The id of the row the action targets, parsed through the list's id type:
+   * a `number` on an `int autoincrement` list, a `string` on a `uuid7` or
+   * `cuid2` one. Pass it straight to `context.db.<List>.update({ where: { id } })`.
+   */
+  id: RowActionId<TTypeInfo>
   /**
    * The row as this session reads it, re-read through the secured context at
    * dispatch: its own columns, foreign keys and computed fields, with no
@@ -2717,7 +2733,7 @@ export interface RowActionResult {
  * through the secured context, re-runs both checks and only then runs the
  * handler.
  */
-export interface RowAction {
+export interface RowAction<TTypeInfo extends TypeInfo = TypeInfo> {
   /**
    * Stable identifier the client echoes back to dispatch this action. Must be
    * unique within the list.
@@ -2761,7 +2777,9 @@ export interface RowAction {
    * work through `context.db`. Returns an optional `{ message }` shown in the
    * list view's status line.
    */
-  handler: (args: RowActionContext) => RowActionResult | void | Promise<RowActionResult | void>
+  handler: (
+    args: RowActionContext<TTypeInfo>,
+  ) => RowActionResult | void | Promise<RowActionResult | void>
 }
 
 /**
@@ -2772,7 +2790,7 @@ export interface RowAction {
  * field whose own `ui.listView.defaultColumn` declaration holds is shown as
  * a column (see {@link BaseFieldConfig.ui}) and no default sort is applied.
  */
-export type ListViewUIConfig = {
+export type ListViewUIConfig<TTypeInfo extends TypeInfo = TypeInfo> = {
   /**
    * The fields to show as columns in the list table, in order.
    *
@@ -2867,7 +2885,7 @@ export type ListViewUIConfig = {
    * }
    * ```
    */
-  rowActions?: RowAction[]
+  rowActions?: RowAction<TTypeInfo>[]
 }
 
 /**

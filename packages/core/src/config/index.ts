@@ -169,6 +169,7 @@ export type {
   RowAction,
   RowActionContext,
   RowActionIcon,
+  RowActionId,
   RowActionResult,
   ItemViewUIConfig,
   ListUIOption,

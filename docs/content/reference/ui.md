@@ -282,7 +282,9 @@ Delete asks for confirmation, and shows only where the list's `delete` access is
 not statically `false` and `ui.hideDelete` does not hide it. Per-row update and
 delete access is not computed, so a delete the session may not perform reports
 "not deleted" in the status line with no reason. The row title links to the item
-page.
+page. When the title column renders through a `ui.cell` override or a Cell a
+package registered, whose markup may hold its own link, the item link sits
+beside the cell as "Open" rather than wrapping it.
 
 A list declares its own Row actions under `ui.listView.rowActions`. They appear
 between the built-ins, in declaration order:
@@ -325,15 +327,15 @@ const Post = list({
 })
 ```
 
-| Option        | Required | Meaning                                                                                                                                                                                                    |
-| ------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `key`         | yes      | Stable id the client sends back to dispatch the action. Unique within the list.                                                                                                                            |
-| `label`       | yes      | Menu item text.                                                                                                                                                                                            |
-| `icon`        | no       | One of `archive`, `check`, `copy`, `download`, `eye`, `eye-off`, `flag`, `lock`, `mail`, `refresh`, `send`, `star`, `trash`, `undo`, `unlock`, `upload`.                                                   |
-| `destructive` | no       | Styles the item as destructive and confirms before running.                                                                                                                                                |
-| `hasAccess`   | no       | `({ session, context, listKey }) => boolean \| Promise<boolean>`. Resolved once per request; `false` hides the action on every row.                                                                        |
-| `isAvailable` | no       | `({ item, session }) => boolean`, **synchronous**, evaluated on the server for each row, so a page of rows never fans out into queries. `item` is the row's own columns, foreign keys and computed fields. |
-| `handler`     | yes      | `({ listKey, id, item, context }) => { message? }`. Runs on the server with the secured context; do all work through `context.db`.                                                                         |
+| Option        | Required | Meaning                                                                                                                                                                                                                                                           |
+| ------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `key`         | yes      | Stable id the client sends back to dispatch the action. Unique within the list.                                                                                                                                                                                   |
+| `label`       | yes      | Menu item text.                                                                                                                                                                                                                                                   |
+| `icon`        | no       | One of `archive`, `check`, `copy`, `download`, `eye`, `eye-off`, `flag`, `lock`, `mail`, `refresh`, `send`, `star`, `trash`, `undo`, `unlock`, `upload`.                                                                                                          |
+| `destructive` | no       | Styles the item as destructive and confirms before running.                                                                                                                                                                                                       |
+| `hasAccess`   | no       | `({ session, context, listKey }) => boolean \| Promise<boolean>`. Resolved once per request; `false`, or a throw, hides the action on every row.                                                                                                                  |
+| `isAvailable` | no       | `({ item, session }) => boolean`, **synchronous**, evaluated on the server for each row, so a page of rows never fans out into queries. `item` is the row's own columns, foreign keys and computed fields, read with no includes exactly as dispatch re-reads it. |
+| `handler`     | yes      | `({ listKey, id, item, context }) => { message? }`. `id` is the list's own id type. Runs on the server with the secured context; do all work through `context.db`.                                                                                                |
 
 Only `key`, `label`, `icon` and `destructive` cross to the client, and each row
 receives only the keys available on it. Handlers, `hasAccess` and `isAvailable`

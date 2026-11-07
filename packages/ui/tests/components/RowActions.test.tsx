@@ -119,6 +119,87 @@ describe('Row actions', () => {
     )
   })
 
+  it('reports an action whose dispatch rejected as not run', async () => {
+    const user = userEvent.setup()
+    renderList(
+      vi.fn(async () => {
+        throw new Error('Failed to find Server Action')
+      }),
+    )
+
+    await user.click(trigger('Draft one'))
+    await user.click(await screen.findByRole('menuitem', { name: 'Publish now' }))
+
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Publish now: this action was not run',
+    )
+  })
+
+  it('reports a delete whose dispatch rejected as not deleted', async () => {
+    const user = userEvent.setup()
+    renderList(
+      vi.fn(async () => {
+        throw new Error('network down')
+      }),
+    )
+
+    await user.click(trigger('Live one'))
+    await user.click(await screen.findByRole('menuitem', { name: 'Delete' }))
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Delete' }),
+    )
+
+    expect(await screen.findByRole('status')).toHaveTextContent('“Live one” not deleted')
+    expect(push).not.toHaveBeenCalled()
+  })
+
+  it('returns to the first page after a delete, as a bulk delete does', async () => {
+    const user = userEvent.setup()
+    renderList(
+      vi.fn(async () => ({ deleted: 1, total: 1 })),
+      { page: 2, total: 51, items: [{ id: '51', title: 'Last one', status: 'draft' }] },
+    )
+
+    await user.click(trigger('Last one'))
+    await user.click(await screen.findByRole('menuitem', { name: 'Delete' }))
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Delete' }),
+    )
+
+    expect(await screen.findByRole('status')).toHaveTextContent('“Last one” deleted')
+    expect(refresh).toHaveBeenCalled()
+    expect(push).toHaveBeenCalledWith('/admin/post?page=1')
+  })
+
+  it('links the title beside a custom cell that renders its own anchor', () => {
+    function WebsiteCell({ value }: { value: unknown }) {
+      return <a href={String(value)}>{String(value)}</a>
+    }
+    const { container } = renderList(undefined, {
+      items: [{ id: '1', website: 'https://example.com' }],
+      fieldTypes: { website: 'text' },
+      fields: { website: { type: 'text', ui: { cell: WebsiteCell } } },
+      labelColumn: 'website',
+      rowActionKeys: {},
+    })
+
+    expect(container.querySelector('a a')).toBeNull()
+    const titleLink = container.querySelector('[data-slot="row-title-link"]')
+    expect(titleLink).toHaveAttribute('href', '/admin/post/1')
+    expect(titleLink).toHaveAccessibleName('Open https://example.com')
+    expect(screen.getByRole('link', { name: 'https://example.com' })).toHaveAttribute(
+      'href',
+      'https://example.com',
+    )
+  })
+
+  it('wraps a built-in title cell in the item link', () => {
+    const { container } = renderList()
+    const titleLink = container.querySelector('[data-slot="row-title-link"]')
+    expect(titleLink).toHaveAttribute('href', '/admin/post/1')
+    expect(titleLink).toHaveTextContent('Draft one')
+  })
+
   it('confirms Delete, and reports a denied delete as not deleted', async () => {
     const user = userEvent.setup()
     const serverAction = vi.fn(async () => ({ deleted: 0, total: 1 }))
