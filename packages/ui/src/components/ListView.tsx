@@ -5,7 +5,7 @@ import { ListViewClient } from './ListViewClient.js'
 import type { SerializedBulkAction } from './BulkActions.js'
 import { formatListName } from '../lib/utils.js'
 import { serializeFieldConfigs } from '../lib/serializeFieldConfig.js'
-import { isDefaultColumnField, withStructuralTimestampDefaults } from '../lib/defaultColumns.js'
+import { computeDefaultColumns, withStructuralTimestampDefaults } from '../lib/defaultColumns.js'
 import { resolveListUi } from '../lib/resolveListUi.js'
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '../lib/pageSize.js'
 import { jsonSafeClone } from '../lib/jsonSafeClone.js'
@@ -183,20 +183,22 @@ export async function ListView({
 
   const displayFields = withStructuralTimestampDefaults(listConfig.fields, listConfig, config.db)
 
-  // The columns `ListViewClient` will actually render, resolved the same way it
-  // resolves them. Naming a relation in the read suppresses the engine's
-  // declared-dependency widening for it (`resolveIncludes`), and a reduced
-  // relation is masked to `[]` for the rules and computed fields that read it —
-  // so a to-many is counted only where a column displays that count.
-  const availableColumns = Object.keys(displayFields)
+  const availableColumns = [
+    ...new Set([
+      ...(columns ?? []).filter((name) => !Object.hasOwn(displayFields, name)),
+      ...Object.keys(displayFields),
+    ]),
+  ]
   const chosenColumns = [...new Set(visibleColumns ?? [])].filter((name) =>
-    Object.hasOwn(displayFields, name),
+    availableColumns.includes(name),
   )
-  const resolvedColumns =
-    chosenColumns.length > 0
-      ? chosenColumns
-      : (columns ?? availableColumns.filter((name) => isDefaultColumnField(displayFields[name])))
+  const defaultColumns = columns ?? computeDefaultColumns(displayFields)
+  const resolvedColumns = chosenColumns.length > 0 ? chosenColumns : defaultColumns
   const displayedColumns = new Set(resolvedColumns)
+  // Naming a relation in the read suppresses the engine's declared-dependency
+  // widening for it (`resolveIncludes`), and a reduced relation is masked to
+  // `[]` for the rules and computed fields that read it — so a to-many is
+  // counted only where a column displays that count.
   const countedRelations = new Set(
     Object.entries(listConfig.fields)
       .filter(([name, field]) => isToManyRelationshipField(field) && displayedColumns.has(name))
@@ -387,6 +389,7 @@ export async function ListView({
         relationshipRefs={relationshipRefs}
         columns={resolvedColumns}
         availableColumns={availableColumns}
+        defaultColumns={defaultColumns}
         columnsChosen={chosenColumns.length > 0}
         sortableFields={sortableFields}
         initialSort={activeSort}

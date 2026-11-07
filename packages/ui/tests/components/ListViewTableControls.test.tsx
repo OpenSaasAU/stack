@@ -118,6 +118,63 @@ describe('column picker', () => {
     )
   })
 
+  it('lets a configured column outside the fields be shown and restored', async () => {
+    const user = userEvent.setup()
+    render(
+      <ListViewClient
+        {...props}
+        columns={['id', 'title']}
+        defaultColumns={['id', 'title']}
+        availableColumns={['id', 'title', 'status', 'views', 'author']}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Columns' }))
+    expect(screen.getByRole('menuitemcheckbox', { name: 'Id' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    )
+    await user.click(screen.getByRole('menuitemcheckbox', { name: 'Status' }))
+    expect(mockPush).toHaveBeenLastCalledWith('/admin/post?page=2&columns=id%2Ctitle%2Cstatus')
+  })
+
+  it('follows the columns the server confirms when it drops a picked name', async () => {
+    const user = userEvent.setup()
+    const { rerender } = render(<ListViewClient {...props} />)
+
+    await user.click(screen.getByRole('button', { name: 'Columns' }))
+    await user.click(screen.getByRole('menuitemcheckbox', { name: 'Views' }))
+    expect(mockPush).toHaveBeenLastCalledWith('/admin/post?page=2&columns=title%2Cstatus%2Cviews')
+
+    rerender(<ListViewClient {...props} columns={['status', 'views']} columnsChosen />)
+    expect(screen.getByRole('menuitemcheckbox', { name: 'Title' })).toHaveAttribute(
+      'aria-checked',
+      'false',
+    )
+    await user.click(screen.getByRole('menuitemcheckbox', { name: 'Views' }))
+    expect(mockPush).toHaveBeenLastCalledWith('/admin/post?page=2&columns=status')
+  })
+
+  it('drops ?columns= when a pick lands back on the default set', async () => {
+    const user = userEvent.setup()
+    render(<ListViewClient {...props} defaultColumns={['title', 'status']} />)
+
+    await user.click(screen.getByRole('button', { name: 'Columns' }))
+    await user.click(screen.getByRole('menuitemcheckbox', { name: 'Status' }))
+    expect(mockPush).toHaveBeenLastCalledWith('/admin/post?page=2&columns=title')
+    expect(screen.getByRole('menuitem', { name: 'Reset columns' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('menuitemcheckbox', { name: 'Status' }))
+    expect(mockPush).toHaveBeenLastCalledWith('/admin/post?page=2')
+    expect(screen.queryByRole('menuitem', { name: 'Reset columns' })).not.toBeInTheDocument()
+  })
+
+  it('offers no column picker when no available columns are supplied', () => {
+    render(<ListViewClient {...props} availableColumns={undefined} />)
+
+    expect(screen.queryByRole('button', { name: 'Columns' })).not.toBeInTheDocument()
+  })
+
   it('offers a reset only once columns were chosen', async () => {
     const user = userEvent.setup()
     const { unmount } = render(<ListViewClient {...props} />)

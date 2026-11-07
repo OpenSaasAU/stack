@@ -547,6 +547,26 @@ describe('ListView ?columns= resolution', () => {
   )
 
   it(
+    'keeps a configured column outside the fields pickable and choosable',
+    async () => {
+      const configured = await render(ada, { listKey: 'User', columns: ['id', 'name'] })
+      expect(configured.columns).toEqual(['id', 'name'])
+      expect(configured.defaultColumns).toEqual(['id', 'name'])
+      expect(configured.availableColumns?.slice(0, 2)).toEqual(['id', 'name'])
+
+      const toggled = await render(ada, {
+        listKey: 'User',
+        columns: ['id', 'name'],
+        visibleColumns: ['id', 'name', 'posts'],
+      })
+      expect(toggled.columns).toEqual(['id', 'name', 'posts'])
+      expect(toggled.columnsChosen).toBe(true)
+      expect(toggled.items.every((item) => typeof item.id === 'string')).toBe(true)
+    },
+    BOOT,
+  )
+
+  it(
     'marks a chosen column sortable when the read can order by it',
     async () => {
       const props = await render(ada, { listKey: 'User', visibleColumns: ['name', 'drafts'] })

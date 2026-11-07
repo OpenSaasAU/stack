@@ -56,6 +56,12 @@ describe('ListViewClient', () => {
       expect(screen.getByText('First Post').closest('td')).toHaveClass('max-md:col-span-2')
     })
 
+    it('puts the title first on a phone card when it is not the first column', () => {
+      render(<ListViewClient {...defaultProps} columns={['status', 'title']} labelColumn="title" />)
+
+      expect(screen.getByText('First Post').closest('td')).toHaveClass('max-md:order-first')
+    })
+
     it('lets the table container stop scrolling sideways below md', () => {
       const { container } = render(<ListViewClient {...defaultProps} />)
 

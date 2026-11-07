@@ -86,7 +86,56 @@ function parseBulkActionResult(result: unknown, label: string): string {
   return `${label} complete`
 }
 
-const PAGE_SIZES = [25, 50, 100]
+const PAGE_SIZES = [
+  { value: 25, label: '25' },
+  { value: 50, label: '50' },
+  { value: 100, label: '100' },
+]
+
+const DENSITIES = [
+  { value: 'comfortable', label: 'Comfortable' },
+  { value: 'compact', label: 'Compact' },
+] as const
+
+function SegmentedControl<T extends string | number>({
+  label,
+  slot,
+  options,
+  value,
+  onChange,
+  className,
+}: {
+  label: string
+  slot: string
+  options: ReadonlyArray<{ value: T; label: string }>
+  value: T
+  onChange: (value: T) => void
+  className?: string
+}) {
+  return (
+    <div
+      role="group"
+      aria-label={label}
+      data-slot={slot}
+      className="inline-flex overflow-hidden rounded-md border"
+    >
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          aria-pressed={value === option.value}
+          onClick={() => onChange(option.value)}
+          className={cn(
+            'h-9 px-3 font-sans text-sm text-muted-foreground transition-colors outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring aria-pressed:bg-muted aria-pressed:font-medium aria-pressed:text-foreground',
+            className,
+          )}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  )
+}
 
 interface ListUrlState {
   search: string
@@ -113,11 +162,17 @@ export interface ListViewClientProps {
   relationshipRefs: Record<string, string>
   columns?: string[]
   /**
-   * Every column the column picker offers, in declaration order. `ListView`
-   * passes the list's displayable fields; omitted, the picker offers the keys
-   * of `fieldTypes`.
+   * Every column the column picker offers, in order. `ListView` passes the
+   * list's displayable fields, after any configured column outside them. The
+   * picker writes `?columns=`, so it is offered only when this is supplied by
+   * a page that reads that param back into `columns`.
    */
   availableColumns?: string[]
+  /**
+   * The column set shown when no `?columns=` is chosen. A pick that lands on
+   * exactly this set drops `?columns=` instead of writing it.
+   */
+  defaultColumns?: string[]
   /**
    * Whether `columns` is the admin's own `?columns=` choice, which navigation
    * then carries along and the picker offers to reset.
@@ -190,6 +245,7 @@ export function ListViewClient({
   relationshipRefs,
   columns,
   availableColumns,
+  defaultColumns,
   columnsChosen = false,
   sortableFields = {},
   initialSort,
@@ -249,7 +305,6 @@ export function ListViewClient({
 
   const displayColumns =
     columns || Object.keys(fieldTypes).filter((key) => isDefaultColumnField(fields?.[key]))
-  const pickableColumns = availableColumns ?? Object.keys(fieldTypes)
   const titleColumn =
     labelColumn && displayColumns.includes(labelColumn) ? labelColumn : displayColumns[0]
 
@@ -290,25 +345,38 @@ export function ListViewClient({
 
   const buildPaginationUrl = (newPage: number) => buildUrl({ page: newPage })
 
-  const [pendingColumns, setPendingColumns] = React.useState<string[] | null>(null)
-  if (pendingColumns !== null && pendingColumns.join(',') === displayColumns.join(',')) {
-    setPendingColumns(null)
-  }
-  const pickedColumns = pendingColumns ?? displayColumns
+  const confirmedColumns = displayColumns.join(',')
+  const [pendingColumns, setPendingColumns] = React.useState<{
+    over: string
+    columns: string[]
+  } | null>(null)
+  const pending = pendingColumns?.over === confirmedColumns ? pendingColumns.columns : null
+  const pickedColumns = pending ?? displayColumns
+
+  const isDefaultSet = (names: string[]) =>
+    defaultColumns !== undefined &&
+    names.length === defaultColumns.length &&
+    names.every((name) => defaultColumns.includes(name))
 
   const toggleColumn = (column: string, shown: boolean) => {
     const next = shown
       ? [...pickedColumns.filter((name) => name !== column), column]
       : pickedColumns.filter((name) => name !== column)
     if (next.length === 0) return
-    setPendingColumns(next)
-    router.push(buildUrl({ columns: next }))
+    const backToDefault = isDefaultSet(next)
+    setPendingColumns({
+      over: confirmedColumns,
+      columns: backToDefault && defaultColumns ? defaultColumns : next,
+    })
+    router.push(buildUrl({ columns: backToDefault ? null : next }))
   }
 
   const resetColumns = () => {
     setPendingColumns(null)
     router.push(buildUrl({ columns: null }))
   }
+
+  const canResetColumns = pending ? !isDefaultSet(pending) : columnsChosen
 
   const sortOptions = displayColumns.filter((column) => sortableFields[column] === true)
   if (sortBy && !sortOptions.includes(sortBy)) sortOptions.push(sortBy)
@@ -468,56 +536,47 @@ export function ListViewClient({
           </DropdownMenu>
         )}
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button type="button" variant="outline" size="sm" data-slot="list-view-columns">
-              <Columns3 aria-hidden="true" />
-              <span>Columns</span>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel>Show columns</DropdownMenuLabel>
-            {pickableColumns.map((column) => {
-              const shown = pickedColumns.includes(column)
-              return (
-                <DropdownMenuCheckboxItem
-                  key={column}
-                  checked={shown}
-                  disabled={shown && pickedColumns.length === 1}
-                  onSelect={(event) => event.preventDefault()}
-                  onCheckedChange={(checked) => toggleColumn(column, checked === true)}
-                >
-                  {formatFieldName(column)}
-                </DropdownMenuCheckboxItem>
-              )
-            })}
-            {columnsChosen && (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={resetColumns}>Reset columns</DropdownMenuItem>
-              </>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {availableColumns && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="outline" size="sm" data-slot="list-view-columns">
+                <Columns3 aria-hidden="true" />
+                <span>Columns</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel>Show columns</DropdownMenuLabel>
+              {availableColumns.map((column) => {
+                const shown = pickedColumns.includes(column)
+                return (
+                  <DropdownMenuCheckboxItem
+                    key={column}
+                    checked={shown}
+                    disabled={shown && pickedColumns.length === 1}
+                    onSelect={(event) => event.preventDefault()}
+                    onCheckedChange={(checked) => toggleColumn(column, checked === true)}
+                  >
+                    {formatFieldName(column)}
+                  </DropdownMenuCheckboxItem>
+                )
+              })}
+              {canResetColumns && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={resetColumns}>Reset columns</DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
 
-        <div
-          role="group"
-          aria-label="Row density"
-          data-slot="list-view-density"
-          className="inline-flex overflow-hidden rounded-md border"
-        >
-          {(['comfortable', 'compact'] as const).map((option) => (
-            <button
-              key={option}
-              type="button"
-              aria-pressed={density === option}
-              onClick={() => storeDensity(option)}
-              className="h-9 px-3 font-sans text-sm text-muted-foreground transition-colors outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring aria-pressed:bg-muted aria-pressed:font-medium aria-pressed:text-foreground"
-            >
-              {option === 'comfortable' ? 'Comfortable' : 'Compact'}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          label="Row density"
+          slot="list-view-density"
+          options={DENSITIES}
+          value={density}
+          onChange={storeDensity}
+        />
       </div>
 
       {/* Always mounted (outside the selection bar) so the report survives the
@@ -736,24 +795,14 @@ export function ListViewClient({
             <span />
           )}
           <div className="flex flex-wrap items-center gap-2">
-            <div
-              role="group"
-              aria-label="Rows per page"
-              data-slot="list-view-page-size"
-              className="inline-flex overflow-hidden rounded-md border"
-            >
-              {PAGE_SIZES.map((size) => (
-                <button
-                  key={size}
-                  type="button"
-                  aria-pressed={pageSize === size}
-                  onClick={() => router.push(buildUrl({ page: 1, pageSize: size }))}
-                  className="h-9 min-w-10 px-3 font-sans text-sm tabular-nums text-muted-foreground transition-colors outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring aria-pressed:bg-muted aria-pressed:font-medium aria-pressed:text-foreground"
-                >
-                  {size}
-                </button>
-              ))}
-            </div>
+            <SegmentedControl
+              label="Rows per page"
+              slot="list-view-page-size"
+              options={PAGE_SIZES}
+              value={pageSize}
+              onChange={(size) => router.push(buildUrl({ page: 1, pageSize: size }))}
+              className="min-w-10 tabular-nums"
+            />
             {totalPages > 1 && (
               <>
                 <Button

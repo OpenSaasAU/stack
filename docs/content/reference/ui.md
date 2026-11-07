@@ -280,17 +280,23 @@ toolbar's Columns menu writes it, and a "Reset columns" item drops it again.
 `AdminUI` hands the selection to `ListView` as `visibleColumns`, and `ListView`
 resolves it on the server against the list's displayable fields:
 
-- A name the list does not display is ignored. When no valid name remains, the
-  view falls back to `ui.listView.initialColumns`, else the default columns.
+- A name the list does not display is ignored, unless
+  `ui.listView.initialColumns` names it. When no valid name remains, the view
+  falls back to `ui.listView.initialColumns`, else the default columns.
 - A to-many relationship is counted only for a column that is shown, so the
   server resolves the set before it reads. A count in a column you add is
   therefore the same access-scoped count a default column shows.
 - Field Visibility still applies. Adding a column the session may not read
   shows the column, never the value.
 
+A pick that lands back on the default set drops `?columns=`, so the default
+set never appears in the URL.
+
 `ListViewClient` takes the resolved set as `columns`, every pickable column as
-`availableColumns`, and `columnsChosen` to say whether `columns` came from the
-URL, which is what navigation then carries along.
+`availableColumns`, the fallback set as `defaultColumns`, and `columnsChosen`
+to say whether `columns` came from the URL, which is what navigation then
+carries along. The Columns menu renders only when `availableColumns` is
+supplied, since it works only on a page that reads `?columns=` back.
 
 #### Sorting
 
@@ -712,8 +718,9 @@ Low-level shadcn/ui components for building custom interfaces.
 - `DropdownMenu`, `DropdownMenuTrigger`, `DropdownMenuContent`, `DropdownMenuItem`,
   `DropdownMenuCheckboxItem`, `DropdownMenuRadioGroup`, `DropdownMenuRadioItem`,
   `DropdownMenuLabel`, `DropdownMenuSeparator` and the submenu parts - Menus on
-  Radix's dropdown menu, keyboard-navigable, each part carrying a
-  `dropdown-menu-*` `data-slot`
+  Radix's dropdown menu, keyboard-navigable, with a `dropdown-menu-*`
+  `data-slot` on the rendered parts (trigger, content, items, label, shortcut,
+  separator and submenu trigger and content)
 
 **Data Display:**
 
