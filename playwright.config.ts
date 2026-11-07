@@ -82,6 +82,9 @@ export default defineConfig({
       stderr: 'pipe',
     },
     /**
+     * json-demo is served by `next dev` and tiptap-demo by `next start`: the
+     * dev bundler rejects client-graph defects (a Node builtin reaching the
+     * browser bundle) that a production build ships green (#2215).
      * Neither example below wires `authPlugin`, so none of the starter-auth
      * server's env or rate-limiting concerns apply. Each registers a custom
      * field component (`examples/json-demo`'s `jsonEditor`/`taxonomy`,
@@ -91,7 +94,7 @@ export default defineConfig({
      */
     {
       command:
-        'cd examples/json-demo && rm -rf .opensaas/dev-db && pnpm build && pnpm exec opensaas dev -- next start -p 3005',
+        'cd examples/json-demo && rm -rf .opensaas/dev-db && pnpm exec opensaas dev -- next dev -p 3005',
       // `/admin` rather than the bare root: `examples/tiptap-demo` has no
       // root `app/page.tsx` at all, so its own root 404s and the readiness
       // probe never succeeds. Both examples serve `/admin` directly (200).
