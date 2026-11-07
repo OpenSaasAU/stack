@@ -301,16 +301,28 @@ The list view's single query input that turns a typed query into scoped, server-
 _Avoid_: search bar (that's the free-text subset), query builder
 
 **Filter token**:
-One parsed unit of a filter query — a field, an operator, and a value — displayed as a removable chip. The v1 grammar is AND-only: tokens combine conjunctively, values with spaces are quoted, numeric/date fields take comparison operators, a to-many relationship takes only a presence test (none, or at least one), and a bare word is free-text search across text-searchable fields. Text matching is case-insensitive.
+One parsed unit of a filter query — a field, an operator, and a value — displayed as a removable chip. Tokens combine conjunctively unless they belong to an OR group, a token can be negated or name several values, values with spaces are quoted, numeric/date fields take comparison operators, a to-many relationship takes only a presence test (none, or at least one), and a bare word is free-text search across text-searchable fields. A relationship token can name one exact related record; its chip shows that record's Item label, while the URL carries the id. Text matching is case-insensitive.
 _Avoid_: filter chip (the chip is the rendering, not the concept), predicate
 
+**OR group**:
+Two or more adjacent Filter tokens of which a row need match only one. An OR group is itself one term of the query's conjunction, so a query reads as `(A or B) and C`. Groups do not nest: a query is an AND of tokens and OR groups, nothing deeper.
+_Avoid_: filter group, OR clause, alternatives
+
 **Filter spec**:
-A field's self-declared filtering capability: which operators it supports, how a token maps to a Where vocabulary condition, and what the suggestion dropdown may offer for it (enumerated values for closed fields, label search for relationships, structure only for unbounded fields — never data-derived values). A field without a Filter spec is not filterable and never suggested. A relationship's Filter spec is pure (it cannot itself resolve access control): it emits a relation predicate — a to-one's label match, a to-many's presence test — and the engine's lowering ANDs the related list's `query` access inside it, a denied related list counting as empty, so the "never bypassed" guarantee holds for nested relationship conditions too (issue #749, ADR-0055).
+A field's self-declared filtering capability: which operators it supports, how a token maps to a Where vocabulary condition, and what the suggestion dropdown may offer for it (enumerated values for closed fields, label search for relationships, structure only for unbounded fields — never data-derived values). A field that can be empty also says what empty means for it. A field without a Filter spec is not filterable and never suggested. A relationship's Filter spec is pure (it cannot itself resolve access control): it emits a relation predicate — a to-one's label match, a to-many's presence test — and the engine's lowering ANDs the related list's `query` access inside it, a denied related list counting as empty, so the "never bypassed" guarantee holds for nested relationship conditions too (issue #749, ADR-0055).
 _Avoid_: filter config, operator list
+
+**Preset view**:
+A named starting point for a list view, declared in that list's config and offered as a tab. It can depend on the session, so one preset shows each person their own rows; a link to it means that preset, not the sender's rows. Changing any filter leaves the preset and keeps what was on screen.
+_Avoid_: saved view, filter tab
 
 **Bulk action**:
 An operation applied to an explicitly selected set of rows in a list view. Delete is the only built-in, shown only when the session's access allows it and honouring Silent failure per row; every other bulk action is list-specific, declared in that list's config, and runs server-side with the secured context. Selection is always an explicit set of row ids — accumulated across pages, cleared when the filter changes — never "everything matching the filter".
 _Avoid_: batch operation, mass action
+
+**Row action**:
+An operation offered on one row of a list view, from that row's menu. Edit, Copy link and Delete are built in; every other row action is list-specific, declared in that list's config, and runs server-side with the secured context. It can depend on the row it is offered on, and it re-checks that row when it runs, so a row the session can no longer reach ends in Silent failure.
+_Avoid_: item action, context action, single bulk action
 
 **Cell**:
 The list-table rendering of one field's value, resolved through the same priority chain as form field components (per-field override → custom type registry → field-type registry → plain text). Each field type ships its own default cell, so a third-party field's values render correctly in tables without core changes.
