@@ -246,7 +246,11 @@ async function runSetup(targetDir: string, projectName: string): Promise<boolean
   for (const step of planSetupSteps()) {
     console.log(chalk.cyan(`\n▶ ${step.title}...`))
     const ok = await runStep(step, targetDir)
-    if (!ok && step.tolerateFailure) {
+    if (
+      !ok &&
+      step.tolerateFailure &&
+      (await fs.pathExists(path.join(targetDir, 'node_modules')))
+    ) {
       console.log(chalk.yellow(`\n⚠️  "${step.title}" exited with errors; continuing.`))
     } else if (!ok) {
       console.log(chalk.yellow(`\n⚠️  ${formatStepFailure(step, projectName)}\n`))
