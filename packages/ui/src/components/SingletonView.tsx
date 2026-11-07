@@ -9,6 +9,7 @@ import {
   engineContextOf,
   getUrlKey,
   OpenSaasConfig,
+  ValidationError,
 } from '@opensaas/stack-core'
 import { prepareItemForm } from '../lib/prepareItemForm.js'
 import { isOperationPotentiallyAllowed } from '../lib/operationAccess.js'
@@ -76,10 +77,19 @@ export async function SingletonView({
   try {
     const delegate = context.db[listKey]
     if (delegate?.get) {
-      record = await delegate.get()
+      const include: Record<string, boolean> = {}
+      for (const [fieldName, field] of Object.entries(listConfig.fields)) {
+        if (field.type === 'relationship' && !('many' in field && field.many))
+          include[fieldName] = true
+      }
+      record = await delegate.get({ include })
     }
   } catch (error) {
-    console.error(`Failed to resolve singleton ${listKey}:`, error)
+    if (error instanceof ValidationError) {
+      record = null
+    } else {
+      console.error(`Failed to resolve singleton ${listKey}:`, error)
+    }
   }
 
   if (!record) {
