@@ -43,6 +43,7 @@ import {
   snapshotCallerInput,
 } from './relationship-input.js'
 import { enumerateInvolvedLists, runWithTransactionBoundary } from './transaction-boundary.js'
+import { guardedRuleItem, NO_RULE_VIEWS, ruleRowOf } from '../access/rule-item.js'
 import { TransactionRegistry, TransactionRolledBackError } from '../access/transaction-registry.js'
 import { warnOnce } from '../lib/warn-once.js'
 import {
@@ -837,11 +838,21 @@ function resolveExistingTarget(
       return { status: 'ok', originalItem: item, scope: [identity] }
     }
 
-    const accessResult = await checkAccess(listConfig.access?.operation?.[access], {
-      session: context.session,
-      item,
-      context,
-    })
+    const guard = guardedRuleItem(
+      ruleRowOf(item, NO_RULE_VIEWS, listConfig.fields, config, listName),
+    )
+    let accessResult: Awaited<ReturnType<typeof checkAccess>>
+    try {
+      accessResult = await checkAccess(listConfig.access?.operation?.[access], {
+        session: context.session,
+        item: guard.item,
+        context,
+      })
+    } catch (err) {
+      if (err instanceof TypeError && guard.tripped()) return { status: 'denied' }
+      throw err
+    }
+    if (guard.tripped()) return { status: 'denied' }
 
     if (accessResult === false) {
       return { status: 'denied' }

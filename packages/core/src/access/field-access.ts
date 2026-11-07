@@ -8,7 +8,7 @@ import { isComputedField } from '../config/field-kind.js'
 import { ValidationError } from '../hooks/index.js'
 import { InvalidFieldAccessResultError } from './errors.js'
 import { checkAccess, resolveSyntheticReverseRelation } from './engine.js'
-import { guardedRuleItem, type RuleRow } from './rule-item.js'
+import { guardedRuleItem, NO_RULE_VIEWS, ruleRowOf, type RuleRow } from './rule-item.js'
 import { shouldHaveForeignKey } from '../fields/index.js'
 import { isSystemFieldName } from './system-fields.js'
 
@@ -135,6 +135,8 @@ export async function checkFieldAccess(
     item?: Record<string, unknown>
     context: AccessContext & { _isSudo?: boolean }
     inputData?: Record<string, unknown>
+    /** A write's row, so the rule runs on a guarded `item` (ADR-0082). */
+    ruleRow?: RuleRow
   },
 ): Promise<boolean> {
   if (operation !== 'read' && fieldAccess?.write === 'hooks') {
@@ -162,13 +164,22 @@ export async function checkFieldAccess(
     return true
   }
 
-  const result = await accessControl({
-    session: args.session,
-    item: args.item,
-    context: args.context,
-    inputData: args.inputData,
-    operation,
-  } as Parameters<typeof accessControl>[0])
+  const guard =
+    operation !== 'read' && args.ruleRow && args.item ? guardedRuleItem(args.ruleRow) : undefined
+  let result: Awaited<ReturnType<typeof accessControl>>
+  try {
+    result = await accessControl({
+      session: args.session,
+      item: guard?.item ?? args.item,
+      context: args.context,
+      inputData: args.inputData,
+      operation,
+    } as Parameters<typeof accessControl>[0])
+  } catch (err) {
+    if (err instanceof TypeError && guard?.tripped()) return false
+    throw err
+  }
+  if (guard?.tripped()) return false
 
   if (result === false || result === null || result === undefined) {
     return false
@@ -370,6 +381,15 @@ export async function classifyRowIndependentCreateAccess(
   )
 }
 
+export function writeRuleRow(
+  item: Record<string, unknown> | undefined,
+  fieldConfigs: Record<string, FieldConfig>,
+  config: OpenSaasConfig | undefined,
+  listKey: string | undefined,
+): RuleRow | undefined {
+  return item ? ruleRowOf(item, NO_RULE_VIEWS, fieldConfigs, config, listKey) : undefined
+}
+
 export async function filterWritableFields<T extends Record<string, unknown>>(
   data: T,
   fieldConfigs: Record<
@@ -407,6 +427,15 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
   },
 ): Promise<Partial<T>> {
   const filtered: Record<string, unknown> = {}
+  const checkArgs = {
+    ...args,
+    ruleRow: writeRuleRow(
+      args.item,
+      fieldConfigs as Record<string, FieldConfig>,
+      args.config,
+      args.listName,
+    ),
+  }
 
   // A to-one relationship's foreign-key column (`<field>Id`) is not its own
   // declared field, but writing it directly is a legitimate spelling of the
@@ -467,7 +496,7 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
     if (isComputedField(fieldConfig, fieldName, args.listName, args.config)) continue
     const keyed = [...Object.keys(data)].some((key) => owningField(key) === fieldName)
     if (keyed) continue
-    if (!(await checkFieldAccess(fieldConfig.access, operation, { ...args }))) {
+    if (!(await checkFieldAccess(fieldConfig.access, operation, { ...checkArgs }))) {
       throw new ValidationError([`Cannot ${operation} "${fieldName}": field-level access denied.`])
     }
   }
@@ -524,7 +553,7 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
       const canWrite =
         !callerSupplied ||
         (await checkFieldAccess(foreignKeyOwner.access, operation, {
-          ...args,
+          ...checkArgs,
           inputData: args.inputData,
         }))
       if (!canWrite) {
@@ -545,7 +574,7 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
       const canWrite =
         !callerSupplied ||
         (await checkFieldAccess(splitColumnOwner.access, operation, {
-          ...args,
+          ...checkArgs,
           inputData: args.inputData,
         }))
       if (!canWrite) {
@@ -604,7 +633,7 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
     const canWrite =
       !callerSupplied ||
       (await checkFieldAccess(fieldConfig.access, operation, {
-        ...args,
+        ...checkArgs,
         inputData: args.inputData,
       }))
 
