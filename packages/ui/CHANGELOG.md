@@ -1,5 +1,139 @@
 # @opensaas/stack-ui
 
+## 0.44.0-alpha.6
+
+### Minor Changes
+
+- [#2201](https://github.com/OpenSaasAU/stack/pull/2201) [`0933b4b`](https://github.com/OpenSaasAU/stack/commit/0933b4bb6e19f56a2629623c3e5facb28fe8af73) Thanks [@dependabot](https://github.com/apps/dependabot)! - Upgrade to Prisma ORM 8.0.0-rc.22 and the `prisma` CLI to 8.0.0-rc.30
+
+  The stack's date and time columns are unchanged: `timestamp()` and `calendarDay()` keep reading and writing ISO strings, and `contract.json` is byte-identical. Prisma ORM now refuses to run from two installed copies, so every `@prisma/orm-*` package and the `prisma` CLI must move together:
+
+  ```json
+  {
+    "dependencies": { "@prisma/orm-postgres": "8.0.0-rc.22" },
+    "devDependencies": { "prisma": "8.0.0-rc.30" }
+  }
+  ```
+
+  Then run `pnpm generate` and commit what it writes. A project using `ragPlugin` or another pgvector declaration gets a new head for `migrations/pgvector/`: run `prisma db migrate` on each database to move the pack's marker.
+
+- [#2232](https://github.com/OpenSaasAU/stack/pull/2232) [`fa03c43`](https://github.com/OpenSaasAU/stack/commit/fa03c4313851a5f2caf016190843bb8a21f15f41) Thanks [@borisno2](https://github.com/borisno2)! - An unknown relationship count no longer reads as zero: the list view renders no number for a relation a rule withholds, and the item page says the section can't be shown rather than "No related rows yet".
+
+  `RelationshipTableClient` takes an `unavailable` prop for that state.
+
+- [#2212](https://github.com/OpenSaasAU/stack/pull/2212) [`bea32ad`](https://github.com/OpenSaasAU/stack/commit/bea32adade0c2aa73ab4a923692656929165d020) Thanks [@borisno2](https://github.com/borisno2)! - Item forms refuse to submit while a field holds input it can't commit, and focus the first invalid field
+
+  JSON, decimal and bigInt fields holding text that doesn't parse, and a password that isn't confirmed, now stop the submit with nothing written. A third-party field can do the same with the new `useFieldValidity` hook, and shows its own error:
+
+  ```tsx
+  import { useRef, useState } from 'react'
+  import { FieldError, useFieldValidity } from '@opensaas/stack-ui/fields'
+
+  export function HexColorField({ name, value, onChange, mode = 'edit' }) {
+    const inputRef = useRef<HTMLInputElement>(null)
+    const [text, setText] = useState(value ?? '')
+    const isInvalid = text !== '' && !/^#[0-9a-f]{6}$/i.test(text)
+
+    useFieldValidity(name, mode === 'edit' && isInvalid, inputRef)
+
+    // render the input with ref={inputRef}, and <FieldError> while isInvalid
+  }
+  ```
+
+  The hook is optional, so existing fields need no change.
+
+- [#2222](https://github.com/OpenSaasAU/stack/pull/2222) [`97a9e88`](https://github.com/OpenSaasAU/stack/commit/97a9e882a52733d3a8217fdf15b045a6a73220f8) Thanks [@borisno2](https://github.com/borisno2)! - The admin now works by keyboard: relationship pickers are ARIA comboboxes, sort headers are buttons, every control is named, and a failed submit focuses the first error.
+
+  `FieldRenderer` passes each field an `id` that is unique to the form, so a create drawer and the form under it can share a field name. A built-in field's control no longer has `id` equal to `name`, so a host's `#title` selector or `<label htmlFor="title">` stops matching it. `name` is unchanged, so select with `[name="title"]`.
+
+  A custom field should use `id` for its control, and tie its error and help text with the new helpers from `@opensaas/stack-ui/fields`. After a failed submit the form focuses the control marked `aria-invalid`:
+
+  ```tsx
+  import {
+    FieldError,
+    FieldHelp,
+    FieldLabel,
+    FieldRoot,
+    describeField,
+    fieldErrorId,
+    fieldHelpId,
+  } from '@opensaas/stack-ui/fields'
+
+  export function ColorField({ name, id = name, label, value, onChange, error, helpText }) {
+    return (
+      <FieldRoot>
+        <FieldLabel htmlFor={id}>{label}</FieldLabel>
+        <input
+          id={id}
+          name={name}
+          value={value ?? ''}
+          onChange={(e) => onChange(e.target.value)}
+          {...describeField(id, { error, helpText })}
+        />
+        {helpText && <FieldHelp id={fieldHelpId(id)}>{helpText}</FieldHelp>}
+        {error && <FieldError id={fieldErrorId(id)}>{error}</FieldError>}
+      </FieldRoot>
+    )
+  }
+  ```
+
+  Also new: `fieldLabelId` and `fieldValueId` for a button control named by its label and shown value, `TableSortButton` from `@opensaas/stack-ui/primitives`, and `disabled` and `auxiliary` on `ComboboxItem`. `ComboboxEmpty` is now a status line to keep mounted beside `ComboboxList`, passing `null` when there is nothing to say.
+
+  File and image fields holding a file now show a Replace control, which carries the field's label and error. The Radix dialog, popover and select packages are pinned exactly so they share one focus and dismiss stack, which is what lets a picker or date popover work inside a drawer.
+
+- [#2259](https://github.com/OpenSaasAU/stack/pull/2259) [`f2af7cb`](https://github.com/OpenSaasAU/stack/commit/f2af7cb048f4c0000c44bbae209d4cc987037834) Thanks [@borisno2](https://github.com/borisno2)! - Refresh the admin list table: a column picker, density, page sizes, a toolbar sort control and cards on phones
+
+  - `?columns=title,status,views` sets the visible columns, in order. The toolbar's Columns menu writes it. `ListView` resolves it on the server (new `visibleColumns` prop, which `AdminUI` fills from the URL), so a to-many count in an added column is read and correct. Unknown names are ignored, a column `initialColumns` names is accepted even outside the list's fields, and Field Visibility still applies. A pick that lands back on the default set drops `?columns=`.
+  - Density is comfortable or compact, remembered in this browser under `opensaas-list-density` (`DENSITY_STORAGE_KEY`) like the theme choice, and rendered comfortable on the server. When this browser refuses to store a choice (private mode, quota, blocked site data), the density and theme choices still apply for the page.
+  - Rows per page offers 25, 50 and 100 once there are more than 25 rows, and shows a `?pageSize=` outside those as its own pressed option. The default stays 50 and the `?pageSize=` cap stays 200.
+  - A toolbar Sort menu sits beside header sorting. Sort stays single-column; relationship columns stay unsortable.
+  - Below `md`, rows render as labelled cards with no sideways scrolling. This replaces the sticky Actions column in the list view.
+  - New `DropdownMenu` primitive on `@radix-ui/react-dropdown-menu`, exported from `@opensaas/stack-ui/primitives`.
+
+  ```tsx
+  import {
+    DropdownMenu,
+    DropdownMenuTrigger,
+    DropdownMenuContent,
+    DropdownMenuCheckboxItem,
+  } from '@opensaas/stack-ui/primitives'
+
+  ;<DropdownMenu>
+    <DropdownMenuTrigger asChild>
+      <Button variant="outline">View</Button>
+    </DropdownMenuTrigger>
+    <DropdownMenuContent>
+      <DropdownMenuCheckboxItem checked={showDrafts} onCheckedChange={setShowDrafts}>
+        Show drafts
+      </DropdownMenuCheckboxItem>
+    </DropdownMenuContent>
+  </DropdownMenu>
+  ```
+
+  `ListView` gains `urlControls`, which `AdminUI` sets: it says the page reads `?columns=` and `?pageSize=` back, and without it `ListView` offers neither control. `ListViewClient` gains `availableColumns`, `defaultColumns`, `columnsChosen` and `pageSizeControl`; the Columns menu renders only when `availableColumns` is supplied, and the rows-per-page control only when `pageSizeControl` is set. New slots: `list-view-toolbar`, `list-view-sort`, `list-view-columns`, `list-view-density`, `list-view-table` (with `data-density`), `list-view-pagination`, `list-view-page-size`, and `dropdown-menu-*` on the primitive's rendered parts.
+
+### Patch Changes
+
+- [#2218](https://github.com/OpenSaasAU/stack/pull/2218) [`357f9bb`](https://github.com/OpenSaasAU/stack/commit/357f9bbf16499fd1d7da1a02e5c9370d60ae661a) Thanks [@borisno2](https://github.com/borisno2)! - Fix optional JSON, select and text admin fields not clearing to `null`; `json()` now refuses a `null` for a NOT NULL column with an error on the field.
+  A hook on an optional text field now receives `null`, not `''`, when it's emptied in the admin, so an `=== ''` check no longer fires. Guard with `typeof value === 'string'`, not `?.`, which turns `null` into `undefined` and silently drops the write.
+
+- [#2238](https://github.com/OpenSaasAU/stack/pull/2238) [`2ae9247`](https://github.com/OpenSaasAU/stack/commit/2ae9247fb0537b6105e851a3f706f7729707b677) Thanks [@borisno2](https://github.com/borisno2)! - Fix the singleton editor showing a set to-one relationship as empty, and stop logging an error for a singleton with a required field and no row yet.
+
+- [#2205](https://github.com/OpenSaasAU/stack/pull/2205) [`dec240b`](https://github.com/OpenSaasAU/stack/commit/dec240b2e1596cb7edfa4da21cb7c2e146d05ab4) Thanks [@borisno2](https://github.com/borisno2)! - Render the admin's Sign Out control only with an `onSignOut` handler, instead of a button that only redirected, warn the user if the handler rejects, and reload an admin page restored from the back-forward cache.
+  The feature generator now emits `signOutAction` and tells you to pass it as `onSignOut`.
+
+- [#2219](https://github.com/OpenSaasAU/stack/pull/2219) [`9a87cfa`](https://github.com/OpenSaasAU/stack/commit/9a87cfa75c464b1940908d20c0fe16c2a30ebf60) Thanks [@borisno2](https://github.com/borisno2)! - Make the admin usable at phone width: below `md` the sidebar moves to a drawer behind a menu button and `main` takes the full width.
+  `loading.tsx` should now render the new `AdminLoading`, which shares that frame.
+
+- [#2230](https://github.com/OpenSaasAU/stack/pull/2230) [`ad45bd0`](https://github.com/OpenSaasAU/stack/commit/ad45bd0bf8dcaf63f023344f9de7d376205be697) Thanks [@borisno2](https://github.com/borisno2)! - Item forms set `noValidate` and read the browser's constraint check themselves, so a failed submit focuses the first error, with its message on the field.
+
+- [#2211](https://github.com/OpenSaasAU/stack/pull/2211) [`af04b65`](https://github.com/OpenSaasAU/stack/commit/af04b65745d55e0e174c2b95b04f0577651f0861) Thanks [@borisno2](https://github.com/borisno2)! - Fix admin lists emptying on a sort the column cannot take: sorting now follows the ORM's own `order` answer per column, and `orderBy` refuses a virtual or multi-column field as a `ValidationError`.
+  A failed list read now shows an error state rather than the first-run empty state.
+
+- [#2231](https://github.com/OpenSaasAU/stack/pull/2231) [`5177197`](https://github.com/OpenSaasAU/stack/commit/517719783862d3e6034611c9c5889f47e3575546) Thanks [@borisno2](https://github.com/borisno2)! - Fix date pickers showing every date one column right of its weekday: the calendar's weeks now start on Monday and its header is derived from the grid.
+
+- [#2237](https://github.com/OpenSaasAU/stack/pull/2237) [`75c6df4`](https://github.com/OpenSaasAU/stack/commit/75c6df42570fb6e1ebf091d8a3b9b2526bee69de) Thanks [@borisno2](https://github.com/borisno2)! - A successful save through a redirecting server action no longer shows "NEXT_REDIRECT" as an error (fixes [#2227](https://github.com/OpenSaasAU/stack/issues/2227)).
+
 ## 0.44.0-alpha.5
 
 No changes in this release.

@@ -1,5 +1,66 @@
 # @opensaas/stack-core
 
+## 0.44.0-alpha.6
+
+### Minor Changes
+
+- [#2201](https://github.com/OpenSaasAU/stack/pull/2201) [`0933b4b`](https://github.com/OpenSaasAU/stack/commit/0933b4bb6e19f56a2629623c3e5facb28fe8af73) Thanks [@dependabot](https://github.com/apps/dependabot)! - Upgrade to Prisma ORM 8.0.0-rc.22 and the `prisma` CLI to 8.0.0-rc.30
+
+  The stack's date and time columns are unchanged: `timestamp()` and `calendarDay()` keep reading and writing ISO strings, and `contract.json` is byte-identical. Prisma ORM now refuses to run from two installed copies, so every `@prisma/orm-*` package and the `prisma` CLI must move together:
+
+  ```json
+  {
+    "dependencies": { "@prisma/orm-postgres": "8.0.0-rc.22" },
+    "devDependencies": { "prisma": "8.0.0-rc.30" }
+  }
+  ```
+
+  Then run `pnpm generate` and commit what it writes. A project using `ragPlugin` or another pgvector declaration gets a new head for `migrations/pgvector/`: run `prisma db migrate` on each database to move the pack's marker.
+
+- [#2232](https://github.com/OpenSaasAU/stack/pull/2232) [`fa03c43`](https://github.com/OpenSaasAU/stack/commit/fa03c4313851a5f2caf016190843bb8a21f15f41) Thanks [@borisno2](https://github.com/borisno2)! - A field's `read` rule now denies when it reaches for a relation the row does not carry, closing a count, a `combine` of counts or an absent relation making a rule fail open.
+
+  This changes what rules see. A relation the read did not deliver whole — not included, narrowed by the caller with `where`, `limit`, `offset`, `orderBy`, `select` or a nested `include`, or reduced to counts with no rows — is withheld, and reading it denies that rule. A foreign key's rule takes the same decision on the same rows as every other rule on the row.
+
+  ```typescript
+  const notes = relationship({
+    ref: 'Note.ticket',
+    many: true,
+    access: { read: ({ item }) => !item.notes?.some((note) => note.private) },
+  })
+
+  await context.db.Ticket.include('notes').all() // decides on the rows, as before
+  await context.db.Ticket.include('notes', (rows) => rows.count()).all() // denies, and used to pass
+  await context.db.Ticket.include('notes', (rows) => rows.limit(10)).all() // denies, and used to pass
+  ```
+
+  - A rule that throws the `TypeError` of reading it, like `item.logs.length`, denies rather than failing the read, so the admin item view renders where it showed "Item not found". The section says it can't be shown, and the list view shows no count, rather than a false empty or `0`.
+  - An included to-one the related list's access left out is withheld, not `null`, so `!item.owner?.banned` no longer grants under `include('owner')`. `null` on a to-one with no foreign key set is a real answer. The inverse side of a one-to-one has no column to tell the two apart, so a rule reading it denies whenever the related list's access can leave a row out, even where there is no row. Rules that never read a relation, like an ownership check, are unaffected.
+  - A rule that catches a throw from `item` is now row-dependent, so `select` and `where` can no longer open it.
+  - A rule that enumerates or spreads `item` denies on a row withholding any relation, and a rule that writes through `item` denies and changes nothing. Use `toSorted()` rather than `sort()` on a relation.
+  - Everything a rule can see of a related list is what the session can see, so never grant on an absence there. Grant on a row the session can see, or keep the fact in a column on the row that only rises. See "What a read rule sees" in the access control docs and ADR-0082.
+
+### Patch Changes
+
+- [#2217](https://github.com/OpenSaasAU/stack/pull/2217) [`eaeee36`](https://github.com/OpenSaasAU/stack/commit/eaeee363778e5717371720deec7c4518dfaa80e1) Thanks [@borisno2](https://github.com/borisno2)! - Fix `create`, `update` and `delete` throwing or returning a wrong value on a list whose computed field declares a relation in `needs`; a write now returns that field exactly as `first()` does.
+
+- [#2218](https://github.com/OpenSaasAU/stack/pull/2218) [`357f9bb`](https://github.com/OpenSaasAU/stack/commit/357f9bbf16499fd1d7da1a02e5c9370d60ae661a) Thanks [@borisno2](https://github.com/borisno2)! - Fix optional JSON, select and text admin fields not clearing to `null`; `json()` now refuses a `null` for a NOT NULL column with an error on the field.
+  A hook on an optional text field now receives `null`, not `''`, when it's emptied in the admin, so an `=== ''` check no longer fires. Guard with `typeof value === 'string'`, not `?.`, which turns `null` into `undefined` and silently drops the write.
+
+- [#2195](https://github.com/OpenSaasAU/stack/pull/2195) [`ddb9e8c`](https://github.com/OpenSaasAU/stack/commit/ddb9e8cdbf67e42467ec3fec98f22c037f2a5de2) Thanks [@borisno2](https://github.com/borisno2)! - Root `update` locks `FOR NO KEY UPDATE`, fixing the deadlock between racers that insert a child and update its parent.
+  A transaction that then needs `FOR UPDATE` on that row, or changes a column in a unique index, can now deadlock with a racer holding its foreign-key lock (ADR-0078).
+
+- [#2208](https://github.com/OpenSaasAU/stack/pull/2208) [`0dd7eb4`](https://github.com/OpenSaasAU/stack/commit/0dd7eb4b4a9e5b3ec338b39f8ca83e135de36480) Thanks [@borisno2](https://github.com/borisno2)! - Fix a caller-shaped `combine()` rows branch, or an MCP `count` beside `take: 0`, bypassing a relationship's own `read` rule and revealing the count.
+  A `combine()` with a rows branch now strips as the plain include does.
+
+- [#2209](https://github.com/OpenSaasAU/stack/pull/2209) [`4a8b631`](https://github.com/OpenSaasAU/stack/commit/4a8b631e7dcfb3bf5e3eb118193722b2e31d842e) Thanks [@borisno2](https://github.com/borisno2)! - Fix `opensaas generate` failing with "gen is not defined" when a config uses the `cuid` id strategy and no list uses `uuid7`, `cuid2` or `updatedAt`
+
+- [#2143](https://github.com/OpenSaasAU/stack/pull/2143) [`a854243`](https://github.com/OpenSaasAU/stack/commit/a85424322701f3db9682b0f54acdc51bee404912) Thanks [@borisno2](https://github.com/borisno2)! - MCP `where` relation predicates into a list with `mcp.enabled: false`, `mcp.tools.read: false` or denied query access are now refused as an unknown key.
+
+- [#2211](https://github.com/OpenSaasAU/stack/pull/2211) [`af04b65`](https://github.com/OpenSaasAU/stack/commit/af04b65745d55e0e174c2b95b04f0577651f0861) Thanks [@borisno2](https://github.com/borisno2)! - Fix admin lists emptying on a sort the column cannot take: sorting now follows the ORM's own `order` answer per column, and `orderBy` refuses a virtual or multi-column field as a `ValidationError`.
+  A failed list read now shows an error state rather than the first-run empty state.
+
+- [#2239](https://github.com/OpenSaasAU/stack/pull/2239) [`ca51e67`](https://github.com/OpenSaasAU/stack/commit/ca51e67ed52a803cfeac60b2084c5409c7815f5a) Thanks [@borisno2](https://github.com/borisno2)! - An `update`/`delete` operation rule and a field `update` rule that reach for a relation the write did not deliver now deny instead of reading absence as permission ([#2233](https://github.com/OpenSaasAU/stack/issues/2233)). A rule that enumerates `item` (spread, `Object.keys`) on a list with a relationship denies too.
+
 ## 0.44.0-alpha.5
 
 ### Patch Changes
