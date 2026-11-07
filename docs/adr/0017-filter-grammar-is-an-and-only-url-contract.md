@@ -11,3 +11,7 @@ The admin UI's filter builder stores its raw query in a URL search param and exe
 ## Amendment — the compilation target is the Where vocabulary (ADR-0055)
 
 [ADR-0055](0055-the-secured-surface-accepts-a-where-vocabulary-the-engine-lowers.md) keeps the grammar frozen exactly as decided above and moves only what it compiles _to_: a value in the secured surface's Where vocabulary, handed to `.where()` and ANDed with the access filter inside the Collection rather than by hand. Three things in the third consequence above no longer hold. A to-one's label match is a `some`, not an `is` (Prisma 8 has no to-one predicate form); a to-many's count marker is gone, and the count comparison **shrinks to presence** — `orders:0` and `orders:>0` filter, any other count degrades to free text under the first consequence's own rule; and `resolveRelationshipLabelFilters`/`resolveRelationshipCountFilters` are deletions, the related list's `query` access now being ANDed inside the `EXISTS` by the engine's lowering. Text `eq` also becomes case-insensitive (`ILIKE`), a meaning change to existing URLs taken deliberately; they still parse identically.
+
+## Amendment — OR groups and negation (ADR-0083)
+
+[ADR-0083](0083-the-filter-grammar-gains-or-groups-and-negation.md) supersedes the AND-only commitment. The claim above that OR, grouping and negation could be added without changing any existing URL did not hold, because those constructs were free text; ADR-0083 takes that break deliberately. The free-text degradation rule and the structural-only suggestions stand.
