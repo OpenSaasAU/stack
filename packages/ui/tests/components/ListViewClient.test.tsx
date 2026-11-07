@@ -9,6 +9,7 @@ const mockPush = vi.fn()
 vi.mock('next/navigation.js', () => ({
   useRouter: () => ({
     push: mockPush,
+    refresh: vi.fn(),
   }),
   usePathname: () => '/admin/post',
 }))
@@ -43,7 +44,7 @@ describe('ListViewClient', () => {
     it('pins the row actions to the visible edge of a wide table', () => {
       render(<ListViewClient {...defaultProps} />)
 
-      expect(screen.getAllByRole('link', { name: 'Edit' })[0].closest('td')).toHaveClass(
+      expect(screen.getAllByRole('button', { name: /^Actions for/ })[0].closest('td')).toHaveClass(
         ...STICKY_ACTIONS_CELL.split(' '),
       )
       expect(screen.getByRole('columnheader', { name: 'Actions' })).toHaveClass(
@@ -54,7 +55,7 @@ describe('ListViewClient', () => {
     it('backs the pinned actions with the surface behind the table', () => {
       render(<ListViewClient {...defaultProps} />)
 
-      expect(screen.getAllByRole('link', { name: 'Edit' })[0].closest('td')).toHaveClass(
+      expect(screen.getAllByRole('button', { name: /^Actions for/ })[0].closest('td')).toHaveClass(
         'max-md:before:bg-background',
       )
       expect(screen.getByRole('columnheader', { name: 'Actions' })).toHaveClass(
@@ -81,8 +82,7 @@ describe('ListViewClient', () => {
     it('should render actions column', () => {
       render(<ListViewClient {...defaultProps} />)
 
-      const editLinks = screen.getAllByText('Edit')
-      expect(editLinks).toHaveLength(3)
+      expect(screen.getAllByRole('button', { name: /^Actions for/ })).toHaveLength(3)
     })
 
     it('should show a designed empty state when no items', () => {
@@ -636,21 +636,36 @@ describe('ListViewClient', () => {
     })
   })
 
-  describe('edit links', () => {
-    it('should link to correct edit page', () => {
-      render(<ListViewClient {...defaultProps} />)
+  describe('row title links', () => {
+    it('links each row title to its item page', () => {
+      render(<ListViewClient {...defaultProps} labelColumn="title" />)
 
-      const editLinks = screen.getAllByRole('link', { name: 'Edit' })
-      expect(editLinks[0]).toHaveAttribute('href', '/admin/post/1')
-      expect(editLinks[1]).toHaveAttribute('href', '/admin/post/2')
-      expect(editLinks[2]).toHaveAttribute('href', '/admin/post/3')
+      expect(screen.getByRole('link', { name: 'First Post' })).toHaveAttribute(
+        'href',
+        '/admin/post/1',
+      )
+      expect(screen.getByRole('link', { name: 'Third Post' })).toHaveAttribute(
+        'href',
+        '/admin/post/3',
+      )
     })
 
-    it('should use custom basePath in edit links', () => {
-      render(<ListViewClient {...defaultProps} basePath="/custom" />)
+    it('uses a custom basePath', () => {
+      render(<ListViewClient {...defaultProps} labelColumn="title" basePath="/custom" />)
 
-      const editLinks = screen.getAllByRole('link', { name: 'Edit' })
-      expect(editLinks[0]).toHaveAttribute('href', '/custom/post/1')
+      expect(screen.getByRole('link', { name: 'First Post' })).toHaveAttribute(
+        'href',
+        '/custom/post/1',
+      )
+    })
+
+    it('falls back to the first column when the label column is not shown', () => {
+      render(<ListViewClient {...defaultProps} labelColumn="name" />)
+
+      expect(screen.getByRole('link', { name: 'Second Post' })).toHaveAttribute(
+        'href',
+        '/admin/post/2',
+      )
     })
   })
 })

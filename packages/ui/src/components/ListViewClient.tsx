@@ -23,6 +23,7 @@ import { FilterBuilder } from './FilterBuilder.js'
 import { AvatarLabelCell } from './cells/AvatarLabelCell.js'
 import { RowSelectionBar } from './RowSelectionBar.js'
 import { BulkActions, type SerializedBulkAction } from './BulkActions.js'
+import { RowActions, type SerializedRowAction } from './RowActions.js'
 import { useRowSelection, getPageCheckboxState } from '../lib/useRowSelection.js'
 import { useBulkStatus } from '../lib/useBulkStatus.js'
 import type { SerializableFieldConfig } from '../lib/serializeFieldConfig.js'
@@ -66,6 +67,19 @@ function parseBulkActionResult(result: unknown, label: string): string {
     if (typeof value.error === 'string' && value.error.length > 0) return value.error
   }
   return `${label} complete`
+}
+
+function parseRowActionResult(result: unknown, label: string): string {
+  if (typeof result === 'object' && result !== null && 'rowAction' in result) {
+    const value = result as { rowAction: unknown; message?: unknown; error?: unknown }
+    if (value.rowAction === true) {
+      return typeof value.message === 'string' && value.message.length > 0
+        ? value.message
+        : `${label} complete`
+    }
+    if (typeof value.error === 'string' && value.error.length > 0) return `${label}: ${value.error}`
+  }
+  return `${label}: this action was not run`
 }
 
 export interface ListViewClientProps {
@@ -142,6 +156,17 @@ export interface ListViewClientProps {
    * it here. When non-empty, row selection is enabled even if delete is denied.
    */
   bulkActions?: SerializedBulkAction[]
+  /**
+   * Serialisable metadata for the Row actions this session may see, in
+   * declaration order. Handlers never cross the boundary.
+   */
+  rowActions?: SerializedRowAction[]
+  /**
+   * The keys of the Row actions each row offers, keyed by row id, resolved on
+   * the server from each action's `isAvailable`. A row absent here offers only
+   * the built-in actions.
+   */
+  rowActionKeys?: Record<string, string[]>
 }
 
 export function ListViewClient({
@@ -166,6 +191,8 @@ export function ListViewClient({
   avatarColumn,
   labelColumn,
   bulkActions = [],
+  rowActions = [],
+  rowActionKeys = {},
 }: ListViewClientProps) {
   const router = useRouter()
   const sortBy = initialSort?.field ?? null
@@ -310,6 +337,40 @@ export function ListViewClient({
     router.push(buildPaginationUrl(1))
   }
 
+  const itemHref = (id: string) => `${basePath}/${urlKey}/${id}`
+
+  const handleCopyLink = async (id: string) => {
+    const url = new URL(itemHref(id), window.location.origin).toString()
+    try {
+      await navigator.clipboard.writeText(url)
+      setBulkStatus('Link copied')
+    } catch {
+      setBulkStatus(`Copy this link: ${url}`)
+    }
+  }
+
+  const handleRowDelete = async (id: string, name: string) => {
+    if (!serverAction) return
+    const result = await serverAction({ listKey, action: 'bulkDelete', ids: [id] })
+    const { deleted } = parseBulkDeleteResult(result, 1)
+    setBulkStatus(deleted === 1 ? `“${name}” deleted` : `“${name}” not deleted`)
+    if (deleted === 1 && selection.isSelected(id)) selection.toggle(id)
+    router.refresh()
+  }
+
+  const handleRowAction = async (id: string, key: string) => {
+    if (!serverAction) return
+    const label = rowActions.find((a) => a.key === key)?.label ?? 'Action'
+    const result = await serverAction({ listKey, action: 'rowAction', key, id })
+    setBulkStatus(parseRowActionResult(result, label))
+    router.refresh()
+  }
+
+  const rowActionsFor = (id: string): SerializedRowAction[] => {
+    const keys = rowActionKeys[id]
+    return keys ? rowActions.filter((action) => keys.includes(action.key)) : []
+  }
+
   const rowName = (item: Record<string, unknown>, index: number) => {
     const label = labelColumn && labelColumn !== 'id' ? item[labelColumn] : undefined
     const hasLabel = typeof label === 'number' || (typeof label === 'string' && label.trim() !== '')
@@ -339,6 +400,11 @@ export function ListViewClient({
    * in the cell chain. A project that wants a custom cell on the label column
    * instead of the avatar sets `ui.cell` on that field.
    */
+  const titleColumn =
+    labelColumn && labelColumn !== 'id' && displayColumns.includes(labelColumn)
+      ? labelColumn
+      : displayColumns.find((column) => !relationshipRefs[column])
+
   const renderCell = (column: string, item: Record<string, unknown>) => {
     const field = columnField(column)
     const cellProps = {
@@ -519,18 +585,35 @@ export function ListViewClient({
                         key={column}
                         className={cn(isCountAlignedColumn(columnField(column)) && 'text-right')}
                       >
-                        {renderCell(column, item)}
+                        {column === titleColumn ? (
+                          <Link
+                            href={itemHref(rowId)}
+                            data-slot="row-title-link"
+                            className="font-medium text-foreground hover:underline focus-visible:underline"
+                          >
+                            {renderCell(column, item)}
+                          </Link>
+                        ) : (
+                          renderCell(column, item)
+                        )}
                       </TableCell>
                     ))}
                     <TableCell
                       className={cn('text-right max-md:before:bg-background', STICKY_ACTIONS_CELL)}
                     >
-                      <Link
-                        href={`${basePath}/${urlKey}/${item.id}`}
-                        className="text-primary hover:underline max-md:-m-3 max-md:inline-block max-md:p-3"
-                      >
-                        Edit
-                      </Link>
+                      <RowActions
+                        rowLabel={rowName(item, index)}
+                        href={itemHref(rowId)}
+                        actions={rowActionsFor(rowId)}
+                        onRun={serverAction ? (key) => handleRowAction(rowId, key) : undefined}
+                        onCopyLink={() => handleCopyLink(rowId)}
+                        onDelete={
+                          canBulkDelete
+                            ? () => handleRowDelete(rowId, rowName(item, index))
+                            : undefined
+                        }
+                        itemName={formatFieldName(listKey).toLowerCase()}
+                      />
                     </TableCell>
                   </TableRow>
                 )

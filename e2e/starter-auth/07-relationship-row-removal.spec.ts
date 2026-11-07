@@ -39,7 +39,7 @@ async function createNote(page: Page, body: string) {
 async function openCurrentUserEditPage(page: Page, email: string) {
   await page.goto('/admin/user')
   await page.waitForLoadState('networkidle')
-  await page.locator('tr', { hasText: email }).locator('a:has-text("Edit")').click()
+  await page.locator('tr', { hasText: email }).locator('[data-slot="row-title-link"]').click()
   await page.waitForURL(/\/admin\/user\/[^/]+$/, { timeout: 10000 })
 }
 

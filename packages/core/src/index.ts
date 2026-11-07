@@ -44,6 +44,10 @@ export type {
   BulkActionContext,
   BulkActionResult,
   BulkActionVariant,
+  RowAction,
+  RowActionContext,
+  RowActionIcon,
+  RowActionResult,
 } from './config/index.js'
 
 // Access control — the types a consumer writes against

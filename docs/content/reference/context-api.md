@@ -466,9 +466,9 @@ async function serverAction(props: ServerActionInput) {
 
 Import the props type as `ServerActionInput` from `@opensaas/stack-ui/server`, not `ServerActionProps` from `@opensaas/stack-core/internal` directly — `internal` carries no semver guarantee.
 
-`props` is a **discriminated union on `action`**, eleven members wide. None of them throws — an access denial, a validation failure, and even a hook's own bug are all caught and turned into that action's own result shape carrying an `error` string, following [Silent failure](#silent-failure) for the first two and `databaseErrorMessage`'s own contract for the third ("anything else is a hook's own throw or a bug, and reaches the caller as its own message"). So the wrapper above needs no `try/catch` at all for the ordinary case. The one narrow exception is `bulkAction`'s own `hasAccess` check, which runs outside any `try`/`catch` here and so can still reject the call if it throws — see [`bulkAction`](#bulkaction).
+`props` is a **discriminated union on `action`**, twelve members wide. None of them throws — an access denial, a validation failure, and even a hook's own bug are all caught and turned into that action's own result shape carrying an `error` string, following [Silent failure](#silent-failure) for the first two and `databaseErrorMessage`'s own contract for the third ("anything else is a hook's own throw or a bug, and reaches the caller as its own message"). So the wrapper above needs no `try/catch` at all for the ordinary case. The one narrow exception is `bulkAction`'s own `hasAccess` check, which runs outside any `try`/`catch` here and so can still reject the call if it throws — see [`bulkAction`](#bulkaction).
 
-`create`, `update` and `delete` share a `{ success: boolean, … }` result. Every other action returns a shape named for itself instead — `{ options }`, `{ created }`, `{ updated }`, `{ deleted, total }`, `{ removed }`, `{ added }`, `{ linked }`, `{ bulkAction }` — deliberately, so a caller that redirects on `success` can never mistake an in-place relationship-table edit for the create/update/delete case it was written for.
+`create`, `update` and `delete` share a `{ success: boolean, … }` result. Every other action returns a shape named for itself instead — `{ options }`, `{ created }`, `{ updated }`, `{ deleted, total }`, `{ removed }`, `{ added }`, `{ linked }`, `{ bulkAction }`, `{ rowAction }` — deliberately, so a caller that redirects on `success` can never mistake an in-place relationship-table edit for the create/update/delete case it was written for.
 
 ### `create`, `update`, `delete`
 
@@ -520,6 +520,18 @@ Runs a list's own custom bulk action ([`ui.listView.bulkActions`](/docs/referenc
 - The handler throws a `ValidationError` or `DatabaseError` → that error's own message. Anything else the handler throws is logged server-side and reaches the caller only as `{ bulkAction: false, error: 'Action failed' }`, so a handler bug never leaks an internal detail.
 
 The handler receives `{ listKey, ids, context }` and does its own row-by-row work through `context.db`, so per-id access control and hooks still apply inside it — this action is a lookup-and-dispatch, not a bypass.
+
+### `rowAction`
+
+`{ listKey, action: 'rowAction', key, id }` → `{ rowAction: true, message? }` or `{ rowAction: false, error }`.
+
+Runs a list's own Row action ([`ui.listView.rowActions`](/docs/reference/ui#row-actions)), looked up server-side by `key`. Before the handler runs, the row is re-read through the secured context and the action's `hasAccess` and `isAvailable` are re-run against it. Refusals:
+
+- `key` names no declared action on `listKey` → `{ rowAction: false, error: 'Row action "…" not found on list "…"' }`.
+- `hasAccess` returns false, `id` is not an id the list can hold, the row is missing or denied, or `isAvailable` rejects the re-read row → `{ rowAction: false, error: 'This action was not run' }`. These are one outcome, so a caller cannot tell a denied row from a missing one ([Silent failure](#silent-failure)).
+- The handler throws a `ValidationError` or `DatabaseError` → that error's own message. Anything else is logged server-side and reaches the caller as `{ rowAction: false, error: 'Action failed' }`.
+
+The handler receives `{ listKey, id, item, context }`, where `item` is the re-read row.
 
 ### `removeRelated`, `updateRelated`, `createRelated`, `linkRelated`
 

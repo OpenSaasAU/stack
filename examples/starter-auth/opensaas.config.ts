@@ -306,6 +306,23 @@ export default config({
               },
             },
           ],
+          // Row action: offered only on posts that are not yet published, and
+          // re-checked against the re-read row when it runs.
+          rowActions: [
+            {
+              key: 'publish',
+              label: 'Publish now',
+              icon: 'send',
+              isAvailable: ({ item }) => item.status !== 'published',
+              handler: async ({ id, context }) => {
+                const updated = await context.db.Post.update({
+                  where: { id },
+                  data: { status: 'published' },
+                })
+                return { message: updated ? 'Post published' : 'Post not published' }
+              },
+            },
+          ],
         },
       },
       hooks: {

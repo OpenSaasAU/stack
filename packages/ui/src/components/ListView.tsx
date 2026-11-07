@@ -3,6 +3,7 @@ import { unstable_rethrow } from 'next/navigation.js'
 import { AlertTriangle, Plus } from 'lucide-react'
 import { ListViewClient } from './ListViewClient.js'
 import type { SerializedBulkAction } from './BulkActions.js'
+import type { SerializedRowAction } from './RowActions.js'
 import { formatListName } from '../lib/utils.js'
 import { serializeFieldConfigs } from '../lib/serializeFieldConfig.js'
 import { isDefaultColumnField, withStructuralTimestampDefaults } from '../lib/defaultColumns.js'
@@ -18,6 +19,7 @@ import {
   type AccessControl,
   type AnyStackContext,
   type BulkAction,
+  type RowAction,
   engineContextOf,
   buildListFilterWhere,
   collectFilterSuggestions,
@@ -79,6 +81,69 @@ async function resolveVisibleBulkActions(
     }),
   )
   return resolved.filter((a): a is SerializedBulkAction => a !== null)
+}
+
+async function resolveVisibleRowActions(
+  actions: RowAction[] | undefined,
+  context: AccessContext,
+  listKey: string,
+): Promise<RowAction[]> {
+  if (!actions || actions.length === 0) return []
+  const allowed = await Promise.all(
+    actions.map(async (action) =>
+      action.hasAccess
+        ? await action.hasAccess({ session: context.session, context, listKey })
+        : true,
+    ),
+  )
+  return actions.filter((_, index) => allowed[index])
+}
+
+function serializeRowAction(action: RowAction): SerializedRowAction {
+  return {
+    key: action.key,
+    label: action.label,
+    ...(action.icon ? { icon: action.icon } : {}),
+    ...(action.destructive ? { destructive: action.destructive } : {}),
+  }
+}
+
+function isRowActionAvailable(
+  action: RowAction,
+  item: Record<string, unknown>,
+  session: AccessContext['session'],
+): boolean {
+  if (!action.isAvailable) return true
+  try {
+    return action.isAvailable({ item, session })
+  } catch (error) {
+    console.error(`Row action "${action.key}" isAvailable threw:`, error)
+    return false
+  }
+}
+
+/**
+ * The keys of the Row actions each row offers, keyed by row id. `isAvailable`
+ * sees the row's own columns, as the dispatch re-read does, so a relation the
+ * list view includes never decides availability.
+ */
+function availableRowActionKeys(
+  actions: RowAction[],
+  items: Array<Record<string, unknown>>,
+  relationFields: ReadonlySet<string>,
+  session: AccessContext['session'],
+): Record<string, string[]> {
+  const keysById: Record<string, string[]> = {}
+  for (const row of items) {
+    const item = Object.fromEntries(
+      Object.entries(row).filter(([fieldName]) => !relationFields.has(fieldName)),
+    )
+    const keys = actions
+      .filter((action) => isRowActionAvailable(action, item, session))
+      .map((action) => action.key)
+    if (keys.length > 0) keysById[String(row.id)] = keys
+  }
+  return keysById
 }
 
 /**
@@ -345,6 +410,18 @@ export async function ListView({
     listKey,
   )
 
+  const visibleRowActions = await resolveVisibleRowActions(
+    listConfig.ui?.listView?.rowActions,
+    context,
+    listKey,
+  )
+  const rowActionKeys = availableRowActionKeys(
+    visibleRowActions,
+    items,
+    new Set(Object.keys(relationshipRefs)),
+    context.session,
+  )
+
   const { hideCreate, hideDelete } = await resolveListUi(listConfig, context)
 
   return (
@@ -391,6 +468,8 @@ export async function ListView({
         avatarColumn={avatarColumn}
         labelColumn={getLabelFieldName(listConfig)}
         bulkActions={bulkActions}
+        rowActions={visibleRowActions.map(serializeRowAction)}
+        rowActionKeys={rowActionKeys}
       />
     </div>
   )

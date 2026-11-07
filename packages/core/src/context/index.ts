@@ -64,6 +64,10 @@ export type ServerActionProps =
   // message? }` shape, never `success`, so a redirect-on-`success` wrapper
   // does not hijack it.
   | { listKey: string; action: 'bulkAction'; key: string; ids: string[] }
+  // A Row action declared in `ui.listView.rowActions`. Returns a distinct
+  // `{ rowAction }` shape, never `success`, so a redirect-on-`success` wrapper
+  // does not hijack it.
+  | { listKey: string; action: 'rowAction'; key: string; id: string }
   // Relationship-table row removal (ADR-0018, #739). `listKey`/`id` target the
   // RELATED row, so the related list's own access control and hooks apply —
   // never the parent's. The other relationship-table actions below share this
@@ -602,6 +606,8 @@ function logDatabaseFailure(error: unknown, listKey: string, action: string): vo
   console.error(`Database error on "${action}" for list "${listKey}":`, error.cause ?? error)
 }
 
+const ROW_ACTION_NOT_RUN = 'This action was not run'
+
 function clientFailure(
   error: unknown,
   config: OpenSaasConfig,
@@ -835,6 +841,8 @@ export function getContext<TConfig extends OpenSaasConfig>(
       }
     | { bulkAction: true; message?: string }
     | { bulkAction: false; error: string; code?: string }
+    | { rowAction: true; message?: string }
+    | { rowAction: false; error: string; code?: string }
     | { updated: boolean; error?: string; fieldErrors?: Record<string, string>; code?: string }
     | {
         added: boolean
@@ -931,6 +939,50 @@ export function getContext<TConfig extends OpenSaasConfig>(
           genericMessage: 'Action failed',
         })
         return { bulkAction: false, error: failure.error, code: failure.code }
+      }
+    }
+
+    // A missing row, a denied row, a failed `hasAccess` and a row that is no
+    // longer eligible all answer with this one outcome, so a caller cannot tell
+    // them apart (Silent failure).
+    if (props.action === 'rowAction') {
+      const notRun = { rowAction: false, error: ROW_ACTION_NOT_RUN } as const
+      const rowActions = listConfig.ui?.listView?.rowActions ?? []
+      const action = rowActions.find((a) => a.key === props.key)
+      if (!action) {
+        return {
+          rowAction: false,
+          error: `Row action "${props.key}" not found on list "${props.listKey}"`,
+        }
+      }
+      try {
+        if (action.hasAccess) {
+          const allowed = await action.hasAccess({
+            session: context.session,
+            context,
+            listKey: props.listKey,
+          })
+          if (!allowed) return notRun
+        }
+        const id = parseId(props.listKey, props.id)
+        if (id === null) return notRun
+        const item = await context.db[props.listKey].where({ id: { equals: id } }).first()
+        if (item === null) return notRun
+        if (action.isAvailable && !action.isAvailable({ item, session: context.session })) {
+          return notRun
+        }
+        const result = await action.handler({
+          listKey: props.listKey,
+          id: props.id,
+          item,
+          context,
+        })
+        return { rowAction: true, message: result?.message }
+      } catch (error) {
+        const failure = clientFailure(error, config, props.listKey, props.action, {
+          genericMessage: 'Action failed',
+        })
+        return { rowAction: false, error: failure.error, code: failure.code }
       }
     }
 
