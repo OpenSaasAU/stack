@@ -1,0 +1,1016 @@
+<title>OpenSaas Admin List</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: the stack's admin shell (nav + main). Tokens are the "modern" preset from packages/ui/src/styles/globals.css. */
+:root {
+  --background: oklch(0.99 0.002 264); --foreground: oklch(0.21 0.02 264);
+  --card: oklch(1 0 0); --primary: oklch(0.55 0.2 264); --primary-foreground: oklch(0.99 0.003 264);
+  --muted: oklch(0.96 0.005 264); --muted-foreground: oklch(0.52 0.015 264);
+  --accent: oklch(0.96 0.01 300); --destructive: oklch(0.58 0.22 27); --destructive-foreground: oklch(0.99 0.003 264);
+  --success: oklch(0.55 0.17 150); --warning: oklch(0.62 0.15 70); --border: oklch(0.92 0.006 264);
+  --shadow-lg: 0 4px 6px -2px oklch(0.2 0.02 264 / 0.08), 0 12px 20px -4px oklch(0.2 0.02 264 / 0.12);
+  --radius: 0.625rem; --radius-md: calc(var(--radius) - 2px); --radius-sm: calc(var(--radius) - 4px);
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --background: oklch(0.17 0.015 264); --foreground: oklch(0.96 0.005 264);
+  --card: oklch(0.21 0.018 264); --primary: oklch(0.62 0.19 264); --primary-foreground: oklch(0.15 0.02 264);
+  --muted: oklch(0.27 0.02 264); --muted-foreground: oklch(0.68 0.015 264);
+  --accent: oklch(0.3 0.03 300); --destructive: oklch(0.62 0.21 27); --destructive-foreground: oklch(0.98 0.003 264);
+  --success: oklch(0.72 0.16 150); --warning: oklch(0.78 0.15 75); --border: oklch(0.3 0.02 264);
+  --shadow-lg: 0 4px 6px -2px oklch(0 0 0 / 0.3), 0 12px 20px -4px oklch(0 0 0 / 0.4); color-scheme: dark;
+} }
+:root[data-theme="dark"] {
+  --background: oklch(0.17 0.015 264); --foreground: oklch(0.96 0.005 264);
+  --card: oklch(0.21 0.018 264); --primary: oklch(0.62 0.19 264); --primary-foreground: oklch(0.15 0.02 264);
+  --muted: oklch(0.27 0.02 264); --muted-foreground: oklch(0.68 0.015 264);
+  --accent: oklch(0.3 0.03 300); --destructive: oklch(0.62 0.21 27); --destructive-foreground: oklch(0.98 0.003 264);
+  --success: oklch(0.72 0.16 150); --warning: oklch(0.78 0.15 75); --border: oklch(0.3 0.02 264);
+  --shadow-lg: 0 4px 6px -2px oklch(0 0 0 / 0.3), 0 12px 20px -4px oklch(0 0 0 / 0.4); color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { background: var(--background); color: var(--foreground); font-family: var(--font-sans); font-size: 14px; line-height: 1.45; }
+button, input { font: inherit; color: inherit; }
+button { background: none; border: 0; padding: 0; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.ic { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.ic.sm { width: 14px; height: 14px; }
+.muted { color: var(--muted-foreground); }
+.num { font-variant-numeric: tabular-nums; }
+
+.shell { display: flex; min-height: 100%; }
+.nav { width: 224px; flex: none; border-right: 1px solid var(--border); background: var(--card); padding: 16px 12px; display: flex; flex-direction: column; gap: 2px; position: sticky; top: 0; height: 100dvh; }
+.nav h2 { margin: 0 8px 14px; font-size: 15px; font-weight: 650; }
+.nav .lbl { margin: 12px 10px 4px; font-size: 12px; color: var(--muted-foreground); }
+.nav a { display: flex; gap: 10px; align-items: center; padding: 7px 10px; border-radius: var(--radius-md); color: inherit; text-decoration: none; }
+.nav a.on { background: var(--primary); color: var(--primary-foreground); }
+.nav a:not(.on):hover { background: var(--accent); }
+.main { flex: 1; min-width: 0; padding-block: 24px 40px; padding-left: max(24px, env(safe-area-inset-left, 0px)); padding-right: max(24px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 14px; }
+.head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.head h1 { margin: 0; font-size: 24px; font-weight: 650; letter-spacing: -0.01em; }
+.tag { font-size: 12px; color: var(--muted-foreground); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; margin-left: 10px; vertical-align: 3px; font-weight: 400; letter-spacing: 0; white-space: nowrap; }
+
+.btn { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: var(--radius-md); border: 1px solid var(--border); background: var(--card); white-space: nowrap; }
+.btn:hover { background: var(--accent); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn.primary { background: var(--primary); border-color: var(--primary); color: var(--primary-foreground); font-weight: 550; }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn.danger { background: var(--destructive); border-color: var(--destructive); color: var(--destructive-foreground); font-weight: 550; }
+.btn.ghost { border-color: transparent; background: none; }
+.btn.ghost:hover { background: var(--muted); }
+.icon-btn { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: var(--radius-md); color: var(--muted-foreground); }
+.icon-btn:hover, .icon-btn[aria-expanded="true"] { background: var(--muted); color: var(--foreground); }
+
+/* Saved views */
+.views { display: flex; align-items: center; gap: 2px; overflow-x: auto; border-bottom: 1px solid var(--border); scrollbar-width: none; }
+.views button.v { display: flex; gap: 6px; align-items: center; padding: 7px 10px; margin-bottom: -1px; border-bottom: 2px solid transparent; color: var(--muted-foreground); white-space: nowrap; }
+.views button.v:hover { color: var(--foreground); }
+.views button.v[aria-current="true"] { color: var(--foreground); border-bottom-color: var(--primary); font-weight: 550; }
+.views .count { font-size: 12px; color: var(--muted-foreground); font-weight: 400; }
+.views .save { margin-left: auto; flex: none; padding-bottom: 4px; }
+.views .save input { height: 30px; width: 150px; padding: 0 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--card); }
+
+/* Query bar */
+.qb { position: relative; }
+.qb-box { display: flex; align-items: center; gap: 6px; min-height: 44px; padding: 5px 6px 5px 12px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); cursor: text; }
+.qb-box:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary) 18%, transparent); }
+.qb-items { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+.qb-input { flex: 1; min-width: 130px; height: 30px; border: 0; outline: 0; background: none; padding: 0 2px; }
+.qb-input::placeholder { color: var(--muted-foreground); }
+.and { font-size: 12px; color: var(--muted-foreground); padding: 1px 5px; border-radius: 999px; border: 1px solid transparent; }
+.and:hover { border-color: var(--border); color: var(--foreground); background: var(--muted); }
+.and.or { color: var(--primary); font-weight: 650; }
+.orgroup { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; max-width: 100%; min-width: 0; padding: 2px 3px; border-radius: var(--radius); border: 1px dashed color-mix(in oklch, var(--primary) 45%, var(--border)); background: color-mix(in oklch, var(--primary) 5%, transparent); }
+.chip { display: inline-flex; align-items: stretch; max-width: 100%; height: 30px; border-radius: var(--radius-md); background: color-mix(in oklch, var(--primary) 9%, var(--card)); border: 1px solid color-mix(in oklch, var(--primary) 22%, var(--border)); overflow: hidden; }
+.chip.armed { box-shadow: 0 0 0 2px var(--primary); }
+.chip.draft { border-style: dashed; background: none; }
+.chip button.seg, .chip span.seg { padding: 0 6px; display: inline-flex; align-items: center; white-space: nowrap; }
+.chip button.seg:first-child, .chip span.seg:first-child { padding-left: 9px; }
+.chip button.seg:hover { background: color-mix(in oklch, var(--primary) 12%, transparent); }
+.chip .f { font-weight: 550; }
+.chip .o { color: var(--muted-foreground); padding-inline: 2px; }
+.chip .seg:has(.val) { min-width: 0; flex: 0 1 auto; }
+.chip .f, .chip .o, .chip .x { flex: none; }
+.chip .val { overflow: hidden; text-overflow: ellipsis; display: block; line-height: 28px; max-width: 240px; }
+.chip .x { display: grid; place-items: center; width: 26px; color: var(--muted-foreground); }
+.chip .x:hover { background: color-mix(in oklch, var(--destructive) 14%, transparent); color: var(--destructive); }
+kbd { font-family: var(--font-mono); font-size: 11px; padding: 0 5px; line-height: 18px; border: 1px solid var(--border); border-radius: 4px; color: var(--muted-foreground); background: var(--muted); }
+.pop { position: absolute; z-index: 30; top: calc(100% + 6px); width: 420px; max-width: 100%; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-lg); overflow: hidden; }
+.pop-list { max-height: 320px; overflow-y: auto; padding: 4px; }
+.pop .grp { padding: 8px 8px 3px; font-size: 12px; color: var(--muted-foreground); }
+.opt { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; padding: 6px 8px; border-radius: var(--radius-sm); cursor: pointer; }
+.opt[aria-selected="true"] { background: var(--accent); }
+.opt .r { margin-left: auto; font-size: 12px; color: var(--muted-foreground); white-space: nowrap; }
+.opt b { font-weight: 600; }
+.opt mark { background: none; color: var(--primary); font-weight: 650; }
+.opt .box { width: 16px; height: 16px; border: 1px solid var(--muted-foreground); border-radius: 4px; display: grid; place-items: center; flex: none; }
+.opt .box.on { background: var(--primary); border-color: var(--primary); color: var(--primary-foreground); }
+.oprow { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; padding: 8px 8px 7px; border-bottom: 1px solid var(--border); }
+.oprow .fl { font-weight: 600; margin-right: 4px; }
+.oprow button { height: 26px; padding: 0 9px; border-radius: 999px; border: 1px solid var(--border); font-size: 13px; }
+.oprow button:hover { background: var(--muted); }
+.oprow button[aria-pressed="true"] { background: var(--primary); border-color: var(--primary); color: var(--primary-foreground); }
+.hint { padding: 10px; color: var(--muted-foreground); }
+.dates { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; align-items: center; }
+.dates input { height: 32px; padding: 0 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--background); }
+.pop-foot { display: flex; flex-wrap: wrap; gap: 2px 12px; padding: 6px 10px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted-foreground); background: var(--muted); }
+.pop-foot span { display: inline-flex; gap: 4px; align-items: center; white-space: nowrap; }
+
+/* Toolbar */
+.bar { display: flex; align-items: center; gap: 6px; min-height: 36px; flex-wrap: wrap; }
+.bar .grow { flex: 1; min-width: 120px; }
+.bar.sel { background: color-mix(in oklch, var(--primary) 9%, var(--card)); border: 1px solid color-mix(in oklch, var(--primary) 25%, var(--border)); border-radius: var(--radius-md); padding: 3px 6px 3px 12px; }
+.seg-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; background: var(--card); }
+.seg-toggle button { padding: 0 10px; height: 32px; color: var(--muted-foreground); }
+.seg-toggle button[aria-pressed="true"] { background: var(--muted); color: var(--foreground); }
+
+/* Table */
+.tw { position: relative; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); overflow: auto; max-height: min(640px, 72vh); }
+.busy { position: sticky; top: 0; left: 0; height: 2px; margin-bottom: -2px; z-index: 4; overflow: hidden; }
+.busy i { display: block; height: 100%; width: 40%; background: var(--primary); animation: slide .5s ease-in-out infinite; }
+@keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(260%); } }
+table { width: 100%; border-collapse: separate; border-spacing: 0; }
+th { position: sticky; top: 0; z-index: 2; background: var(--card); text-align: left; font-weight: 500; font-size: 13px; color: var(--muted-foreground); border-bottom: 1px solid var(--border); padding: 0 12px; height: 38px; white-space: nowrap; }
+th.right, td.right { text-align: right; }
+th .h { display: inline-flex; align-items: center; gap: 4px; }
+th.right .h { flex-direction: row-reverse; }
+th button.sort { display: inline-flex; align-items: center; gap: 4px; color: inherit; font-weight: inherit; }
+th button.sort:hover { color: var(--foreground); }
+th[aria-sort="ascending"], th[aria-sort="descending"] { color: var(--foreground); }
+th .fbtn { opacity: 0; display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 4px; }
+th:hover .fbtn, th .fbtn:focus-visible, th .fbtn.on { opacity: 1; }
+th .fbtn.on { color: var(--primary); }
+th .fbtn:hover { background: var(--muted); color: var(--foreground); }
+td { padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; white-space: nowrap; }
+.compact td { padding-block: 3px; }
+.compact .sub { display: none; }
+tbody tr:last-child td { border-bottom: 0; }
+tbody tr:hover td { background: var(--muted); }
+tbody tr.selected td { background: color-mix(in oklch, var(--primary) 8%, var(--card)); }
+.c-sel { width: 40px; padding-right: 0; }
+.c-act { width: 46px; padding: 0 8px; position: sticky; right: 0; background: var(--card); z-index: 1; text-align: right; }
+th.c-act { z-index: 3; }
+input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--primary); margin: 0; display: block; }
+.title-btn { text-align: left; font-weight: 550; display: block; max-width: 340px; overflow: hidden; text-overflow: ellipsis; }
+.title-btn:hover { color: var(--primary); text-decoration: underline; }
+.sub { display: block; font-size: 12px; color: var(--muted-foreground); }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 1px 9px 1px 7px; border-radius: 999px; font-size: 13px; background: color-mix(in oklch, var(--c) 13%, transparent); color: var(--c); }
+.pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+button.pill:hover, button.person:hover, button.plain:hover { box-shadow: 0 0 0 1px var(--c, var(--border)); }
+.person, .plain { display: inline-flex; align-items: center; gap: 7px; padding: 1px 7px 1px 2px; border-radius: 999px; }
+.plain { padding: 1px 7px; margin-left: -7px; }
+.av { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 10px; font-weight: 650; background: color-mix(in oklch, var(--primary) 16%, var(--card)); color: var(--primary); flex: none; }
+.star { color: var(--warning); fill: currentColor; }
+.empty { padding: 44px 16px; text-align: center; white-space: normal; display: flex; flex-direction: column; gap: 10px; align-items: center; position: sticky; left: 0; }
+.empty h3 { margin: 0; font-size: 16px; }
+.empty p { margin: 0; color: var(--muted-foreground); }
+.pager { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: space-between; color: var(--muted-foreground); }
+.pager .g { display: flex; align-items: center; gap: 6px; }
+
+/* Menus, dialogs, toast */
+.menu { position: fixed; z-index: 60; min-width: 196px; max-width: calc(100vw - 16px); background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); padding: 4px; }
+.menu button { display: flex; align-items: center; gap: 9px; width: 100%; padding: 6px 9px; border-radius: var(--radius-sm); text-align: left; white-space: nowrap; }
+.menu button:hover, .menu button:focus { background: var(--accent); outline: 0; }
+.menu button.danger { color: var(--destructive); }
+.menu button.danger:hover, .menu button.danger:focus { background: color-mix(in oklch, var(--destructive) 12%, transparent); }
+.menu button .ic { color: var(--muted-foreground); }
+.menu button.danger .ic { color: inherit; }
+.menu hr { border: 0; border-top: 1px solid var(--border); margin: 4px 0; }
+.menu .grp { padding: 5px 9px 2px; font-size: 12px; color: var(--muted-foreground); }
+.menu .tick { width: 16px; display: grid; place-items: center; color: var(--primary); }
+dialog { color: inherit; background: var(--card); border: 1px solid var(--border); box-shadow: var(--shadow-lg); padding: 0; }
+dialog::backdrop { background: oklch(0.2 0.02 264 / 0.4); }
+dialog.confirm { border-radius: var(--radius); width: min(420px, calc(100vw - 32px)); padding: 20px; }
+dialog.confirm h3 { margin: 0 0 6px; font-size: 16px; }
+dialog.confirm p { margin: 0 0 16px; color: var(--muted-foreground); }
+.acts { display: flex; justify-content: flex-end; gap: 8px; }
+dialog.drawer { margin: 0 0 0 auto; height: 100dvh; max-height: 100dvh; width: min(420px, 100vw); max-width: 100vw; border-width: 0 0 0 1px; padding: 20px; }
+.drawer header { display: flex; align-items: flex-start; gap: 8px; justify-content: space-between; margin-bottom: 14px; }
+.drawer h3 { margin: 0; font-size: 18px; text-wrap: balance; }
+.drawer dl { display: grid; grid-template-columns: 110px 1fr; gap: 8px 12px; margin: 0 0 18px; }
+.drawer dt { color: var(--muted-foreground); }
+.drawer dd { margin: 0; min-width: 0; }
+.toast { position: fixed; z-index: 70; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); display: flex; gap: 12px; align-items: center; background: var(--foreground); color: var(--background); padding: 8px 14px; border-radius: var(--radius-md); box-shadow: var(--shadow-lg); max-width: calc(100vw - 32px); }
+.toast button { font-weight: 650; text-decoration: underline; }
+
+/* Prototype notes */
+.notes { margin-top: 12px; padding-top: 16px; border-top: 1px dashed var(--border); display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 16px 28px; }
+.notes h4 { margin: 0 0 6px; font-size: 13px; }
+.notes ul { margin: 0; padding-left: 16px; color: var(--muted-foreground); }
+.notes li { margin-bottom: 3px; }
+.q { grid-column: 1 / -1; min-width: 0; }
+.q code { display: block; font-family: var(--font-mono); font-size: 12.5px; padding: 9px 11px; background: var(--muted); border-radius: var(--radius-md); overflow-wrap: anywhere; }
+.q .prop { color: var(--warning); font-weight: 650; }
+.legend { color: var(--warning); font-weight: 600; }
+
+@media (max-width: 1000px) { .nav { display: none; } }
+@media (max-width: 720px) {
+  .main { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 16px 32px; }
+  .pop { left: 0 !important; width: 100%; }
+  .pop-foot { display: none; }
+  .tw { max-height: none; overflow: visible; border: 0; background: none; }
+  thead { display: none; }
+  table, tbody { display: block; }
+  tbody tr { position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; padding: 12px 44px 12px 40px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); }
+  tbody tr td, tbody tr:hover td, tbody tr.selected td { display: block; padding: 0; border: 0; background: none; white-space: normal; text-align: left; min-width: 0; }
+  tbody tr td.right { text-align: left; }
+  td[data-label]::before { content: attr(data-label); display: block; font-size: 12px; color: var(--muted-foreground); }
+  td[data-label="Title"] { grid-column: 1 / -1; }
+  td[data-label="Title"]::before { display: none; }
+  .title-btn { max-width: 100%; white-space: normal; }
+  tbody tr .c-sel { position: absolute; left: 12px; top: 14px; width: auto; }
+  tbody tr .c-act { position: absolute; right: 6px; top: 6px; width: auto; }
+  .empty { position: static; }
+  tbody tr.none { display: block; padding: 0; }
+  tbody tr.none td { display: block; }
+}
+@media (prefers-reduced-motion: reduce) { .busy i { animation: none; width: 100%; } }
+</style>
+
+<div id="app"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/htm@3.1.1/dist/htm.umd.js"></script>
+<script>
+const { useState, useEffect, useLayoutEffect, useMemo, useRef } = React;
+const html = htm.bind(React.createElement);
+
+/* ---------- Sample data ---------- */
+const TODAY = '2026-11-07';
+const addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const AUTHORS = ['Priya Nair', 'Tom Whitlock', 'Mei Chen', 'Sam Okafor', 'Ines Duarte', 'Jonas Berg'];
+const ME = 'Priya Nair';
+const CATEGORIES = ['Engineering', 'Product', 'Design', 'Company', 'Customer stories'];
+const STATUSES = [
+  { value: 'draft', label: 'Draft', c: 'var(--muted-foreground)' },
+  { value: 'review', label: 'In review', c: 'var(--warning)' },
+  { value: 'scheduled', label: 'Scheduled', c: 'var(--primary)' },
+  { value: 'published', label: 'Published', c: 'var(--success)' },
+  { value: 'archived', label: 'Archived', c: 'var(--muted-foreground)' },
+];
+const TITLES = `Why we moved our job queue to Postgres|What 18 months of on-call taught us|A field guide to row-level access|Shipping dark mode without a rewrite|The case for boring infrastructure|How we cut cold starts by 60%|Designing filters people actually use|Our 2026 product principles|Three pricing experiments that failed|Inside the new billing engine|Migrating 40 million rows with no downtime|Writing changelogs customers read|How Northwind runs support on one screen|Hiring your first platform engineer|The hidden cost of feature flags|Accessible tables are hard: here is why|Rebuilding search from the index up|What we learned from 200 user interviews|Remote onboarding, two years in|Rate limiting without the regret|Design tokens that survive a rebrand|Connection pools under real load|How Harbour Freight halved its admin time|Our approach to incident reviews|When to say no to a custom field|Typed SQL in a TypeScript codebase|Roadmap: what is coming this quarter|Empty states worth designing|Scaling webhooks past a million a day|Why every list needs saved views|A short history of our design system|Testing access control with a real database|Keyboard-first interfaces for busy teams|How Meridian Health audits every change|Better error messages in five rules|Sunsetting our legacy API|Bulk actions without the fear|What changed in our security review|The first hundred customers|Caching that respects permissions|Motion in admin tools: less is more|Quarterly engineering update|Multi-tenant data models compared|Writing a migration you can roll back|How Clearwater Energy replaced spreadsheets|Pagination done properly|Building a culture of small pull requests|Audit logs people can read|Our office is now a library|Form validation that does not shout|From monolith to modules, slowly|The metrics we stopped tracking|Handling time zones in scheduled posts|How we run design critiques|Vector search for product docs|Making relationship fields feel fast|Lessons from our first public outage|Customer advisory board: what we heard|Mobile tables without horizontal scroll|Open sourcing our admin toolkit|Sessions, tokens and what we store|Five years of the same stack|A better way to preview drafts|Why we pay for our own product`.split('|');
+function seededRows() {
+  let s = 20261107; const rnd = () => (s = (s * 1664525 + 1013904223) % 4294967296) / 4294967296;
+  const pick = (a) => a[Math.floor(rnd() * a.length)];
+  return TITLES.map((title, i) => {
+    const x = rnd();
+    const status = x < .56 ? 'published' : x < .72 ? 'draft' : x < .84 ? 'review' : x < .93 ? 'scheduled' : 'archived';
+    const live = status === 'published' || status === 'archived';
+    const publishedAt = live ? addDays(TODAY, -Math.floor(rnd() * rnd() * 420 + 1)) : status === 'scheduled' ? addDays(TODAY, Math.floor(rnd() * 28 + 1)) : null;
+    const views = live ? Math.round(Math.exp(rnd() * 4.6 + 5.4)) : 0;
+    return {
+      id: 'post_' + (1000 + i), title, slug: title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+      status, author: pick(AUTHORS), category: status === 'draft' && rnd() < .4 ? null : pick(CATEGORIES),
+      publishedAt, views, words: Math.round((rnd() * 2600 + 450) / 10) * 10,
+      comments: live && rnd() < .7 ? Math.floor(rnd() * 42 + 1) : 0, featured: live && rnd() < .14,
+      updatedAt: addDays(TODAY, -Math.floor(rnd() * 60)),
+    };
+  });
+}
+
+/* ---------- Field model: mirrors FilterFieldSuggestion, one entry per filterable field ---------- */
+const OPS = {
+  contains: { label: 'contains' }, notContains: { label: "doesn't contain", proposed: true },
+  is: { label: 'is' }, isNot: { label: 'is not', proposed: true }, anyOf: { label: 'is any of', proposed: true },
+  empty: { label: 'is empty', noValue: true, proposed: true },
+  eq: { label: '=' }, gt: { label: '>' }, gte: { label: '≥' }, lt: { label: '<' }, lte: { label: '≤' }, between: { label: 'between' },
+  within: { label: 'in' }, after: { label: 'after' }, before: { label: 'before' },
+};
+const list = (a) => a.map((v) => ({ value: v, label: v }));
+const NUM_OPS = ['gte', 'gt', 'eq', 'lt', 'lte', 'between'];
+const FIELDS = [
+  { key: 'title', label: 'Title', kind: 'text', icon: 'text', ops: ['contains', 'notContains'], freeText: true, note: 'Text' },
+  { key: 'status', label: 'Status', kind: 'list', icon: 'list', ops: ['is', 'isNot', 'anyOf'], options: STATUSES, note: 'Select' },
+  { key: 'author', label: 'Author', kind: 'list', person: true, icon: 'user', ops: ['is', 'isNot', 'anyOf'], options: list(AUTHORS), note: 'Relationship' },
+  { key: 'category', label: 'Category', kind: 'list', icon: 'tag', ops: ['is', 'isNot', 'anyOf', 'empty'], options: list(CATEGORIES), note: 'Relationship' },
+  { key: 'publishedAt', label: 'Published', kind: 'date', icon: 'cal', ops: ['within', 'after', 'before', 'between', 'empty'], note: 'Date' },
+  { key: 'views', label: 'Views', kind: 'number', icon: 'hash', ops: NUM_OPS, note: 'Number' },
+  { key: 'comments', label: 'Comments', kind: 'list', presence: true, icon: 'msg', ops: ['is'], options: [{ value: 'some', label: 'has some' }, { value: 'none', label: 'has none' }], note: 'Relationship count' },
+  { key: 'featured', label: 'Featured', kind: 'list', icon: 'toggle', ops: ['is'], options: [{ value: 'true', label: 'Yes' }, { value: 'false', label: 'No' }], note: 'Checkbox' },
+  { key: 'words', label: 'Word count', kind: 'number', icon: 'hash', ops: NUM_OPS, note: 'Number' },
+  { key: 'updatedAt', label: 'Updated', kind: 'date', icon: 'cal', ops: ['within', 'after', 'before', 'between'], note: 'Date' },
+  { key: 'slug', label: 'Slug', kind: 'text', icon: 'text', ops: ['contains', 'notContains'], freeText: true, note: 'Text' },
+];
+const F = Object.fromEntries(FIELDS.map((f) => [f.key, f]));
+const monthStart = TODAY.slice(0, 8) + '01';
+const PRESETS = [
+  { value: 'd7', label: 'the last 7 days', from: addDays(TODAY, -7), to: TODAY },
+  { value: 'd30', label: 'the last 30 days', from: addDays(TODAY, -30), to: TODAY },
+  { value: 'd90', label: 'the last 90 days', from: addDays(TODAY, -90), to: TODAY },
+  { value: 'month', label: 'this month', from: monthStart, to: addDays(addDays(monthStart, 32).slice(0, 8) + '01', -1) },
+  { value: 'lastmonth', label: 'last month', from: addDays(monthStart, -1).slice(0, 8) + '01', to: addDays(monthStart, -1) },
+  { value: 'year', label: 'this year', from: TODAY.slice(0, 4) + '-01-01', to: TODAY.slice(0, 4) + '-12-31' },
+  { value: 'next30', label: 'the next 30 days', from: TODAY, to: addDays(TODAY, 30) },
+];
+const presetOf = (v) => PRESETS.find((p) => p.value === v);
+
+/* ---------- Query semantics ---------- */
+let idc = 0; const uid = () => 'c' + ++idc; const gid = () => 'g' + ++idc;
+const fmtNum = (n) => Number(n).toLocaleString('en-AU');
+const MONTHS = 'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(' ');
+const fmtDate = (iso) => { if (!iso) return ''; const [y, m, d] = iso.split('-'); return `${+d} ${MONTHS[m - 1]} ${y}`; };
+function relDate(iso) {
+  const n = Math.round((Date.parse(iso) - Date.parse(TODAY)) / 864e5);
+  if (n === 0) return 'today'; const a = Math.abs(n);
+  const u = a < 31 ? `${a} day${a > 1 ? 's' : ''}` : a < 365 ? `${Math.round(a / 30.4)} mo` : `${(a / 365).toFixed(1)} yr`;
+  return n > 0 ? `in ${u}` : `${u} ago`;
+}
+function match(r, c) {
+  if (c.op === 'search') { const q = c.values[0].toLowerCase(); return FIELDS.some((f) => f.freeText && String(r[f.key] ?? '').toLowerCase().includes(q)); }
+  const f = F[c.field], v = r[c.field], [a, b] = c.values;
+  if (f.presence) return a === 'some' ? v > 0 : v === 0;
+  const between = (lo, hi) => v != null && v >= lo && v <= hi;
+  switch (c.op) {
+    case 'contains': return String(v ?? '').toLowerCase().includes(a.toLowerCase());
+    case 'notContains': return !String(v ?? '').toLowerCase().includes(a.toLowerCase());
+    case 'is': return String(v) === a;
+    case 'isNot': return String(v) !== a;
+    case 'anyOf': return c.values.includes(String(v));
+    case 'empty': return v == null;
+    case 'eq': return v === +a;
+    case 'gt': return v > +a;
+    case 'gte': return v >= +a;
+    case 'lt': return v < +a;
+    case 'lte': return v <= +a;
+    case 'within': { const p = presetOf(a); return between(p.from, p.to); }
+    case 'after': return v != null && v > a;
+    case 'before': return v != null && v < a;
+    case 'between': return f.kind === 'date' ? between(a, b) : between(+a, +b);
+  }
+  return true;
+}
+const optLabel = (f, v) => f.options.find((o) => o.value === v)?.label ?? v;
+function describe(c) {
+  if (c.op === 'search') return { field: 'Search', op: '', value: `“${c.values[0]}”` };
+  const f = F[c.field], [a, b] = c.values; let value = '';
+  if (f.kind === 'list') value = c.values.map((v) => optLabel(f, v)).join(', ');
+  else if (f.kind === 'text') value = `“${a}”`;
+  else if (f.kind === 'number') value = c.op === 'between' ? `${fmtNum(a)} – ${fmtNum(b)}` : a != null ? fmtNum(a) : '';
+  else if (c.op === 'within') value = presetOf(a).label;
+  else if (c.op === 'between') value = `${fmtDate(a)} – ${fmtDate(b)}`;
+  else value = fmtDate(a);
+  return { field: f.label, op: f.presence ? '' : OPS[c.op].label, value };
+}
+const sentence = (c) => { const d = describe(c); return [d.field, d.op, d.value].filter(Boolean).join(' '); };
+const quote = (v) => (/[\s,]/.test(v) ? `"${v}"` : v);
+/* The ?search= string this condition serialises to. `proposed` marks syntax the ADR-0017 grammar does not have yet. */
+function toTokens(c, grouped) {
+  const k = c.field, [a, b] = c.values, t = (text, proposed = false) => ({ text, proposed });
+  if (c.op === 'search') return [t(quote(a))];
+  const f = F[k];
+  if (f.presence) return [t(a === 'some' ? `${k}:>0` : `${k}:0`)];
+  const label = (v) => quote(f.kind === 'list' ? (f.person || k === 'category' ? optLabel(f, v) : v) : v);
+  switch (c.op) {
+    case 'contains': case 'is': return [t(`${k}:${label(a)}`)];
+    case 'notContains': case 'isNot': return [t(`-${k}:${label(a)}`, true)];
+    case 'anyOf': return [t(`${k}:${c.values.map(label).join(',')}`, true)];
+    case 'empty': return [t(`${k}:empty`, true)];
+    case 'eq': return [t(`${k}:${a}`)];
+    case 'gt': case 'after': return [t(`${k}:>${a}`)];
+    case 'gte': return [t(`${k}:>=${a}`)];
+    case 'lt': case 'before': return [t(`${k}:<${a}`)];
+    case 'lte': return [t(`${k}:<=${a}`)];
+    case 'between': return grouped ? [t(`${k}:${a}..${b}`, true)] : [t(`${k}:>=${a}`), t(`${k}:<=${b}`)];
+    case 'within': { const p = presetOf(a); return grouped ? [t(`${k}:${p.from}..${p.to}`, true)] : [t(`${k}:>=${p.from}`), t(`${k}:<=${p.to}`)]; }
+  }
+  return [];
+}
+/* A row holds one value per single-valued field, so a second positive filter on it replaces the first instead of ANDing to nothing. Members of an OR group are exempt: there, two values on one field is the point. */
+const positive = (c) => c.op === 'is' || c.op === 'anyOf';
+function withCond(cs, c, editIndex, join) {
+  const n = [...cs];
+  if (editIndex != null) { c = { ...c, g: cs[editIndex].g }; n[editIndex] = c; }
+  else if (join && n.length) { const last = n[n.length - 1], g = last.g || gid(); n[n.length - 1] = { ...last, g }; n.push({ ...c, g }); return n; }
+  else n.push(c);
+  return positive(c) && !c.g ? n.filter((o) => o === c || o.g || o.field !== c.field || !positive(o)) : n;
+}
+/* A query is an AND of units; a unit is one condition, or a run of adjacent conditions sharing `g`, which ORs them. One level only. */
+function units(conds) {
+  const out = [];
+  conds.forEach((c) => { const u = out[out.length - 1]; if (c.g && u && u[0].g === c.g) u.push(c); else out.push([c]); });
+  return out;
+}
+const matchAll = (r, conds) => units(conds).every((u) => u.some((c) => match(r, c)));
+function normalize(cs) {
+  const n = {}; cs.forEach((c) => { if (c.g) n[c.g] = (n[c.g] || 0) + 1; });
+  return cs.map((c) => { if (c.g && n[c.g] < 2) { const { g, ...rest } = c; return rest; } return c; });
+}
+/* Clicking the connector between chips i and i+1: "and" joins their units, "or" splits the group there. */
+function toggleConnector(cs, i) {
+  const a = cs[i], b = cs[i + 1];
+  if (a.g && a.g === b.g) { const g = gid(); let after = false; return cs.map((c, j) => { if (j > i && c.g === a.g) after = true; return after && c.g === a.g ? { ...c, g } : c; }); }
+  const g = a.g || b.g || gid();
+  return cs.map((c, j) => (j === i || j === i + 1 || (a.g && c.g === a.g) || (b.g && c.g === b.g) ? { ...c, g } : c));
+}
+const unitTokens = (u) => {
+  if (u.length === 1) return toTokens(u[0]);
+  return [{ text: `(${u.map((c) => toTokens(c, true).map((t) => t.text).join(' ')).join(' OR ')})`, proposed: true }];
+};
+const allTokens = (conds) => units(conds).flatMap(unitTokens);
+const queryString = (conds) => allTokens(conds).map((t) => t.text).join(' ');
+const unitSentence = (u) => u.map(sentence).join(' or ');
+const findField = (s) => { const l = s.trim().toLowerCase(); return FIELDS.find((f) => f.key.toLowerCase() === l || f.label.toLowerCase() === l); };
+const findOption = (f, s) => { const l = s.trim().toLowerCase(); return f.options.find((o) => o.value.toLowerCase() === l || o.label.toLowerCase() === l) || f.options.find((o) => o.label.toLowerCase().startsWith(l)) || f.options.find((o) => o.label.toLowerCase().includes(l)); };
+const parseDate = (s) => { const t = s.trim(); if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t; if (!/^[\da-z ,]+$/i.test(t) || !/[a-z]/i.test(t) || !/\b(19|20)\d{2}\b/.test(t)) return null; const d = Date.parse(t + ' UTC'); return isNaN(d) ? null : new Date(d).toISOString().slice(0, 10); };
+const parseInteger = (s) => { const t = s.replace(/,/g, '').trim(); return /^-?\d+$/.test(t) ? t : null; };
+const SYM = { '>': 'gt', '>=': 'gte', '<': 'lt', '<=': 'lte', '=': 'eq', ':': 'eq' };
+function buildCond(f, sym, raw, neg) {
+  const val = raw.replace(/^"|"$/g, '').trim(); if (!val) return null;
+  if (f.kind === 'text') return { field: f.key, op: neg ? 'notContains' : 'contains', values: [val] };
+  if (f.presence) { if (/^(>\s*0|some|yes)$/.test(sym === ':' ? val : sym + val)) return { field: f.key, op: 'is', values: ['some'] }; if (/^(0|none|no)$/.test(val)) return { field: f.key, op: 'is', values: ['none'] }; return null; }
+  if (f.kind === 'list') {
+    if (val === 'empty' && f.ops.includes('empty')) return { field: f.key, op: 'empty', values: [] };
+    if (f.key === 'featured') { const y = /^(true|yes)$/i.test(val), n = /^(false|no)$/i.test(val); return y || n ? { field: f.key, op: 'is', values: [String(y)] } : null; }
+    const parts = val.split(',').map((p) => findOption(f, p.replace(/"/g, '')));
+    if (parts.some((p) => !p)) return null;
+    if (parts.length > 1) return { field: f.key, op: 'anyOf', values: parts.map((p) => p.value) };
+    return { field: f.key, op: neg ? 'isNot' : 'is', values: [parts[0].value] };
+  }
+  const rng = val.match(/^(.+)\.\.(.+)$/);
+  if (rng && (f.kind === 'number' || f.kind === 'date')) { const conv = f.kind === 'number' ? parseInteger : parseDate, lo = conv(rng[1]), hi = conv(rng[2]); return lo && hi ? { field: f.key, op: 'between', values: [lo, hi] } : null; }
+  if (f.kind === 'number') { const n = parseInteger(val); return n == null ? null : { field: f.key, op: SYM[sym] ?? 'eq', values: [n] }; }
+  if (f.kind === 'date') {
+    const p = PRESETS.find((x) => x.label.includes(val.toLowerCase()));
+    const d = parseDate(val);
+    if (d && /[<]/.test(sym)) return { field: f.key, op: 'before', values: [d] };
+    if (d) return { field: f.key, op: 'after', values: [d] };
+    if (p) return { field: f.key, op: 'within', values: [p.value] };
+  }
+  return null;
+}
+/* The URL grammar. Anything unrecognised degrades to free text, the rule ADR-0017 sets. */
+function parseQuery(str) {
+  const out = []; const re = /([()])|(-?)(\w+):(>=|<=|>|<)?("[^"]*"(?:,"[^"]*")*|[^\s()]+)|"([^"]+)"|([^\s()]+)/g; let m, g = null, pendingOr = false;
+  const add = (c) => {
+    if (g) c.g = g;
+    else if (pendingOr && out.length) { const prev = out[out.length - 1]; prev.g = prev.g || gid(); c.g = prev.g; }
+    pendingOr = false; out.push(c);
+  };
+  while ((m = re.exec(str))) {
+    if (m[1]) { g = m[1] === '(' ? gid() : null; continue; }
+    if (m[7] === 'OR') { pendingOr = true; continue; }
+    if (m[3]) {
+      const f = findField(m[3]), c = f && buildCond(f, m[4] || ':', m[5], !!m[2]), prev = out[out.length - 1];
+      if (c && m[4] === '<=' && !g && !pendingOr && prev?.lo && prev.field === c.field) { out[out.length - 1] = { field: c.field, op: 'between', values: [prev.values[0], c.values[0]] }; continue; }
+      if (c) c.lo = m[4] === '>=';
+      add(c || { field: null, op: 'search', values: [m[0]] });
+    }
+    else add({ field: null, op: 'search', values: [m[6] || m[7]] });
+  }
+  return normalize(out);
+}
+/* What people type when they are not thinking about grammar: "views > 1000", "status is draft". */
+function parseExpr(q) {
+  const m = q.match(/^(.+?)\s*(>=|<=|>|<|=|:|\bis not\b|\bis\b|\bcontains\b|\bafter\b|\bbefore\b)\s*(.+)$/i); if (!m) return null;
+  const f = findField(m[1]); if (!f) return null; const w = m[2].toLowerCase();
+  const sym = w === 'after' ? '>' : w === 'before' ? '<' : /^[<>=:]/.test(w) ? w : ':';
+  return buildCond(f, sym, m[3], w === 'is not');
+}
+
+/* ---------- Suggestions ---------- */
+function fieldValueConds(f, rest) {
+  if (!rest) return [];
+  if (f.kind === 'list') return f.options.filter((o) => o.label.toLowerCase().includes(rest)).slice(0, 5).map((o) => ({ field: f.key, op: 'is', values: [o.value] }));
+  if (f.kind === 'text') return [{ field: f.key, op: 'contains', values: [rest] }];
+  if (f.kind === 'number') { const n = parseInteger(rest); return n ? [{ field: f.key, op: 'gte', values: [n] }] : []; }
+  return PRESETS.filter((p) => p.label.includes(rest)).slice(0, 4).map((p) => ({ field: f.key, op: 'within', values: [p.value] }));
+}
+function fieldItems(raw) {
+  const q = raw.trim(), l = q.toLowerCase();
+  if (!q) return FIELDS.map((f) => ({ type: 'field', field: f.key, group: 'Filter by' }));
+  const out = [], seen = new Set();
+  const addCond = (cond, group) => { const k = JSON.stringify([cond.field, cond.op, cond.values]); if (!seen.has(k)) { seen.add(k); out.push({ type: 'cond', cond, group }); } };
+  if (/\w:\S/.test(q)) {
+    const cs = parseQuery(q);
+    if (cs.length > 1) out.push({ type: 'multi', conds: cs, group: 'Best match' });
+    else if (cs[0]?.field) addCond(cs[0], 'Best match');
+  }
+  if (/\s+or\s+/i.test(q) && !q.includes('(')) {
+    const parts = q.split(/\s+or\s+/i).filter(Boolean).map((p) => parseExpr(p) || fieldItems(p).find((it) => it.type === 'cond' && it.group !== 'Text')?.cond);
+    if (parts.length > 1 && parts.every(Boolean)) { const g = gid(); out.push({ type: 'multi', conds: parts.map((c) => ({ ...c, g })), group: 'Best match' }); }
+  }
+  const ex = parseExpr(q); if (ex) addCond(ex, 'Best match');
+  FIELDS.forEach((f) => { const lab = f.label.toLowerCase() + ' '; if (l.startsWith(lab)) fieldValueConds(f, l.slice(lab.length).trim()).forEach((c) => addCond(c, 'Best match')); });
+  const fm = FIELDS.filter((f) => f.label.toLowerCase().includes(l)).sort((a, b) => a.label.toLowerCase().indexOf(l) - b.label.toLowerCase().indexOf(l));
+  fm.forEach((f) => out.push({ type: 'field', field: f.key, group: 'Fields', q: l }));
+  const nm = q.match(/^(>=|<=|>|<|=)?\s*([\d,]+)$/);
+  if (nm) FIELDS.filter((f) => f.kind === 'number').forEach((f) => addCond({ field: f.key, op: nm[1] ? SYM[nm[1]] : 'gte', values: [nm[2].replace(/,/g, '')] }, 'Values'));
+  const d = parseDate(q);
+  if (d) ['after', 'before'].forEach((op) => addCond({ field: 'publishedAt', op, values: [d] }, 'Values'));
+  if (l.length >= 2) {
+    FIELDS.filter((f) => f.kind === 'list' && !f.presence && f.key !== 'featured').forEach((f) => f.options.filter((o) => o.label.toLowerCase().includes(l)).forEach((o) => addCond({ field: f.key, op: 'is', values: [o.value] }, 'Values')));
+    if (l.length >= 3) PRESETS.filter((p) => p.label.includes(l)).slice(0, 3).forEach((p) => addCond({ field: 'publishedAt', op: 'within', values: [p.value] }, 'Values'));
+  }
+  addCond({ field: 'title', op: 'contains', values: [q] }, 'Text');
+  addCond({ field: null, op: 'search', values: [q] }, 'Text');
+  return out;
+}
+function numberValues(op, text) {
+  if (op === 'between') { const m = text.replace(/,/g, '').match(/^\s*(\d+)\s*(?:-|–|to|and|\s)\s*(\d+)\s*$/i); return m ? [m[1], m[2]] : null; }
+  const n = parseInteger(text); return n == null ? null : [n];
+}
+function valueItems(d, text) {
+  const f = F[d.field], op = d.op, l = text.trim().toLowerCase(), apply = (values) => ({ type: 'apply', cond: { field: f.key, op, values } });
+  if (OPS[op].noValue) return [apply([])];
+  if (f.kind === 'list') {
+    const items = f.options.filter((o) => o.label.toLowerCase().includes(l)).map((o) => ({ type: 'value', value: o.value, label: o.label, c: o.c, q: l }));
+    if (op === 'anyOf' && d.values.length) items.push(apply(d.values));
+    return items;
+  }
+  if (f.kind === 'text') return l ? [apply([text.trim()])] : [];
+  if (f.kind === 'number') { const v = numberValues(op, text); return v ? [apply(v)] : []; }
+  if (op === 'within') return PRESETS.filter((p) => p.label.includes(l)).map((p) => ({ type: 'value', value: p.value, label: p.label, q: l }));
+  if (op === 'between') { const m = text.split(/\s+to\s+|\s+and\s+/i).map(parseDate); return m.length === 2 && m[0] && m[1] ? [apply(m)] : []; }
+  const dt = parseDate(text); return dt ? [apply([dt])] : [];
+}
+function valueHint(d, text) {
+  const f = F[d.field], t = text.trim();
+  if (f.kind === 'text' && !t) return 'Type the text to look for.';
+  if (f.kind === 'number') {
+    if (!t) return d.op === 'between' ? 'Type a range, like 1000-5000.' : 'Type a whole number. Start with > or < to change the comparison.';
+    if (!numberValues(d.op, text)) return d.op === 'between' ? 'Type two whole numbers, like 1000-5000.' : `${f.label} takes whole numbers.`;
+  }
+  if (f.kind === 'list' && !valueItems(d, text).length) return `No ${f.label.toLowerCase()} matches “${t}”.`;
+  return null;
+}
+
+/* ---------- Small pieces ---------- */
+const PATHS = {
+  search: 'M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM21 21l-4.3-4.3', x: 'M18 6 6 18M6 6l12 12', chev: 'm6 9 6 6 6-6', up: 'M12 19V5M5 12l7-7 7 7', down: 'M12 5v14M19 12l-7 7-7-7',
+  more: 'M5 12h.01M12 12h.01M19 12h.01', funnel: 'M22 3H2l8 9.46V19l4 2v-8.54L22 3Z', columns: 'M3 3h18v18H3zM9 3v18M15 3v18', check: 'M20 6 9 17l-5-5', plus: 'M12 5v14M5 12h14',
+  star: 'm12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8-6.2-3.2L5.8 21 7 14.2 2 9.3l6.9-1L12 2Z', copy: 'M8 8h12v12H8zM4 16V4h12', edit: 'M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z',
+  trash: 'M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6', eye: 'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7ZM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z',
+  link: 'M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7', send: 'M22 2 11 13M22 2l-7 20-4-9-9-4 20-7Z',
+  archive: 'M3 4h18v4H3zM5 8v12h14V8M10 12h4', bookmark: 'M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2Z', cal: 'M3 5h18v16H3zM16 3v4M8 3v4M3 10h18',
+  user: 'M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z', tag: 'M12 2H2v10l9.3 9.3a1 1 0 0 0 1.4 0l8.6-8.6a1 1 0 0 0 0-1.4L12 2ZM7 7h.01', hash: 'M4 9h16M4 15h16M10 3 8 21M16 3l-2 18',
+  text: 'M4 7V4h16v3M9 20h6M12 4v16', toggle: 'M16 6H8a6 6 0 0 0 0 12h8a6 6 0 0 0 0-12ZM16 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z', msg: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z',
+  list: 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01', home: 'M3 10.5 12 3l9 7.5V21H3ZM9 21v-7h6v7', cog: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM12 2v3M12 19v3M4.9 4.9 7 7M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1', sort: 'M3 7h13M3 12h9M3 17h5M17 10v9M21 15l-4 4-4-4',
+};
+const Icon = ({ n, sm, className = '' }) => html`<svg className=${`ic ${sm ? 'sm' : ''} ${className}`} viewBox="0 0 24 24" aria-hidden="true"><path d=${PATHS[n]} /></svg>`;
+const Hl = ({ text, q }) => {
+  const i = q ? text.toLowerCase().indexOf(q) : -1;
+  return i < 0 ? text : html`${text.slice(0, i)}<mark>${text.slice(i, i + q.length)}</mark>${text.slice(i + q.length)}`;
+};
+const initials = (n) => n.split(' ').map((p) => p[0]).join('').slice(0, 2);
+
+/* ---------- The query bar ---------- */
+function QueryBar({ conds, setConds, api, noun }) {
+  const [text, setText] = useState('');
+  const [joinOr, setJoinOr] = useState(false);
+  const [draft, setDraft] = useState(null);
+  const [open, setOpen] = useState(false);
+  const [hi, setHi] = useState(0);
+  const [armed, setArmed] = useState(-1);
+  const [left, setLeft] = useState(0);
+  const rootRef = useRef(), inputRef = useRef(), listRef = useRef(), popRef = useRef();
+  const items = useMemo(() => {
+    if (draft) return valueItems(draft, text);
+    const base = fieldItems(text);
+    return /^or$/i.test(text.trim()) && conds.length && !joinOr ? [{ type: 'or', last: unitSentence(units(conds).at(-1)), group: 'Combine' }, ...base] : base;
+  }, [draft, text, conds, joinOr]);
+  const h = Math.max(0, Math.min(hi, items.length - 1));
+  const multiOps = draft && F[draft.field].ops.length > 1;
+
+  useEffect(() => setHi(0), [text, draft?.field, draft?.op]);
+  useEffect(() => { listRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' }); }, [h, open]);
+  useEffect(() => { if (draft) inputRef.current?.focus(); }, [draft?.field, draft?.editIndex]);
+  useLayoutEffect(() => {
+    if (!open || !rootRef.current || !inputRef.current) return;
+    const r = rootRef.current.getBoundingClientRect(), i = inputRef.current.getBoundingClientRect();
+    const pw = popRef.current?.offsetWidth ?? 420;
+    const anchor = draft ? (inputRef.current.previousElementSibling?.getBoundingClientRect().left ?? i.left) : i.left;
+    setLeft(Math.max(0, Math.min(anchor - r.left - 8, r.width - pw)));
+  }, [open, conds.length, draft?.field, draft?.editIndex, draft?.values?.length]);
+
+  const reset = () => { setDraft(null); setText(''); setArmed(-1); setJoinOr(false); };
+  const closeOut = () => {
+    if (draft?.op === 'anyOf' && draft.values.length) place({ field: draft.field, op: 'anyOf', values: draft.values }, draft, joinOr);
+    setDraft(null); setOpen(false); setArmed(-1); if (!text) setJoinOr(false);
+  };
+  const closeRef = useRef(closeOut); closeRef.current = closeOut;
+  useEffect(() => {
+    const onDown = (e) => { if (!rootRef.current.contains(e.target)) closeRef.current(); };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, []);
+
+  function place(cond, d, join) {
+    const c = { ...cond, id: uid() };
+    setConds((cs) => withCond(cs, c, d?.editIndex, join));
+  }
+  const placeAll = (list) => setConds((cs) => list.reduce((acc, c) => withCond(acc, { ...c, id: uid() }), cs));
+  const commit = (cond) => { place(cond, draft, joinOr); reset(); setOpen(false); inputRef.current?.focus(); };
+  const startField = (key) => { const f = F[key]; setDraft({ field: key, op: f.ops[0], values: [] }); setText(''); setArmed(-1); setOpen(true); };
+  api.current = { startField };
+
+  const editChip = (i) => {
+    const c = conds[i]; setArmed(-1); setOpen(true);
+    if (c.op === 'search') { setConds((cs) => cs.filter((_, j) => j !== i)); setDraft(null); setText(c.values[0]); inputRef.current?.focus(); return; }
+    const f = F[c.field];
+    setDraft({ field: c.field, op: c.op, values: c.op === 'anyOf' || f.kind === 'date' ? [...c.values] : [], editIndex: i });
+    setText(f.kind === 'text' ? c.values[0] : f.kind === 'number' ? c.values.join('-') : '');
+  };
+  const removeChip = (i) => { setConds((cs) => cs.filter((_, j) => j !== i)); setArmed(-1); inputRef.current?.focus(); };
+  const setOp = (op, viaClick) => {
+    const f = F[draft.field];
+    if (OPS[op].noValue && viaClick) return commit({ field: f.key, op, values: [] });
+    const sameShape = f.kind !== 'date' && op === 'anyOf';
+    setDraft({ ...draft, op, values: sameShape ? draft.values : [] });
+    inputRef.current?.focus();
+  };
+  const choose = (it) => {
+    if (!it) return;
+    if (it.type === 'or') { setJoinOr(true); setText(''); return; }
+    if (it.type === 'field') return startField(it.field);
+    if (it.type === 'cond' || it.type === 'apply') return commit(it.cond);
+    if (it.type === 'multi') { placeAll(it.conds); reset(); setOpen(false); return; }
+    if (it.type === 'value') {
+      if (draft.op === 'anyOf') { const has = draft.values.includes(it.value); setDraft({ ...draft, values: has ? draft.values.filter((v) => v !== it.value) : [...draft.values, it.value] }); setText(''); inputRef.current?.focus(); return; }
+      commit({ field: draft.field, op: draft.op, values: [it.value] });
+    }
+  };
+  const onKey = (e) => {
+    const empty = text === '';
+    if (e.key === 'ArrowDown') { e.preventDefault(); setOpen(true); setHi((h + 1) % Math.max(1, items.length)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setHi((h - 1 + items.length) % Math.max(1, items.length)); }
+    else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (armed >= 0) return editChip(armed);
+      if ((e.metaKey || e.ctrlKey) && draft?.op === 'anyOf' && draft.values.length) return commit({ field: draft.field, op: 'anyOf', values: draft.values });
+      if (open || text) choose(items[h]); else setOpen(true);
+    }
+    else if (e.key === 'Tab' && multiOps) { e.preventDefault(); const ops = F[draft.field].ops, i = ops.indexOf(draft.op); setOp(ops[(i + (e.shiftKey ? -1 : 1) + ops.length) % ops.length]); }
+    else if (e.key === 'Escape') { if (draft) { reset(); setOpen(false); } else if (open) { setOpen(false); } else { setText(''); setArmed(-1); inputRef.current?.blur(); } }
+    else if (e.key === 'Backspace' && empty) {
+      if (joinOr && !draft) setJoinOr(false);
+      else if (draft) { if (draft.op === 'anyOf' && draft.values.length) setDraft({ ...draft, values: draft.values.slice(0, -1) }); else reset(); }
+      else if (armed >= 0) removeChip(armed);
+      else if (conds.length) { setArmed(conds.length - 1); setOpen(false); }
+    }
+    else if (e.key === 'Delete' && armed >= 0) removeChip(armed);
+    else if (e.key === 'ArrowLeft' && empty && !draft && conds.length) { e.preventDefault(); setOpen(false); setArmed(armed < 0 ? conds.length - 1 : Math.max(0, armed - 1)); }
+    else if (e.key === 'ArrowRight' && empty && armed >= 0) { e.preventDefault(); setArmed(armed + 1 >= conds.length ? -1 : armed + 1); }
+  };
+  const onChange = (e) => {
+    let v = e.target.value; setArmed(-1); setOpen(true);
+    if (!draft && !joinOr && conds.length && /^or\s$/i.test(v)) { setJoinOr(true); setText(''); return; }
+    if (draft && F[draft.field].kind === 'number') {
+      const m = v.match(/^\s*(>=|<=|>|<|=)\s*(.*)$/);
+      if (m) { setDraft({ ...draft, op: SYM[m[1]] }); v = m[2]; }
+    }
+    setText(v);
+  };
+  const onPaste = (e) => {
+    if (draft) return;
+    const t = e.clipboardData.getData('text');
+    if (!/\w:\S/.test(t)) return;
+    e.preventDefault(); placeAll(parseQuery(t)); setOpen(false);
+  };
+
+  const draftChip = draft && html`<span className="chip draft" key="draft"><span className="seg f">${F[draft.field].label}</span>${!F[draft.field].presence && html`<span className="seg o">${OPS[draft.op].label}</span>`}${draft.op === 'anyOf' && draft.values.length > 0 && html`<span className="seg"><span className="val">${draft.values.map((v) => optLabel(F[draft.field], v)).join(', ')}</span></span>`}</span>`;
+  const placeholder = draft ? (F[draft.field].kind === 'list' ? 'Choose or type…' : 'Type a value…') : joinOr ? 'Add an alternative…' : conds.length ? 'Add a filter…' : `Filter ${noun}: try “status draft” or “views > 1000”`;
+  const input = html`<input key="input" id="qb-input" ref=${inputRef} className="qb-input" role="combobox" aria-expanded=${open} aria-controls="qb-list" aria-autocomplete="list" aria-label=${`Filter ${noun}`} aria-activedescendant=${open && items[h] ? `qb-o${h}` : undefined} autoComplete="off" spellCheck="false" value=${text} placeholder=${placeholder} onChange=${onChange} onKeyDown=${onKey} onPaste=${onPaste} onFocus=${() => setOpen(true)} onClick=${() => setOpen(true)} />`;
+
+  const connector = (i) => {
+    const or = conds[i].g && conds[i].g === conds[i + 1].g;
+    return html`<button type="button" key=${'a' + conds[i + 1].id} className=${`and ${or ? 'or' : ''}`} title=${or ? 'Switch to and' : 'Switch to or'} aria-label=${`Connector ${or ? 'or' : 'and'}. Switch to ${or ? 'and' : 'or'}`} onMouseDown=${(e) => e.preventDefault()} onClick=${() => setConds((cs) => toggleConnector(cs, i))}>${or ? 'or' : 'and'}</button>`;
+  };
+  const chip = (c, i) => {
+    if (draft?.editIndex === i) return [draftChip, input];
+    const d = describe(c);
+    return html`<span className=${`chip ${armed === i ? 'armed' : ''}`} key=${c.id}>
+      <button type="button" className="seg f" onClick=${() => editChip(i)} title="Edit filter">${d.field}</button>
+      ${d.op && html`<button type="button" className="seg o" onClick=${() => editChip(i)} title="Change condition">${d.op}</button>`}
+      <button type="button" className="seg" onClick=${() => editChip(i)} title="Change value"><span className="val">${d.value}</span></button>
+      <button type="button" className="x" aria-label=${`Remove ${sentence(c)}`} onClick=${() => removeChip(i)}><${Icon} n="x" sm /></button>
+    </span>`;
+  };
+  const nodes = []; let idx = 0;
+  units(conds).forEach((u, ui) => {
+    if (ui > 0) nodes.push(connector(idx - 1));
+    const inner = u.flatMap((c, j) => { const i = idx + j; return j > 0 ? [connector(i - 1), chip(c, i)] : [chip(c, i)]; });
+    nodes.push(...(u.length > 1 ? [html`<span className="orgroup" role="group" aria-label="Any of these" key=${'g' + u[0].g}>${inner.flat()}</span>`] : inner.flat()));
+    idx += u.length;
+  });
+  if (draft?.editIndex == null) {
+    if (conds.length) nodes.push(html`<button type="button" key="next-connector" className=${`and ${joinOr ? 'or' : ''}`} aria-pressed=${joinOr} title=${joinOr ? 'The next filter is an alternative. Switch to and' : 'Switch the next filter to or'} aria-label=${`Next filter joins with ${joinOr ? 'or' : 'and'}`} onMouseDown=${(e) => e.preventDefault()} onClick=${() => { setJoinOr(!joinOr); setOpen(true); inputRef.current.focus(); }}>${joinOr ? 'or' : 'and'}</button>`);
+    if (draft) nodes.push(draftChip);
+    nodes.push(input);
+  }
+
+  const hint = draft && valueHint(draft, text);
+  const showDates = draft && F[draft.field].kind === 'date' && ['after', 'before', 'between'].includes(draft.op);
+  const need = draft?.op === 'between' ? 2 : 1;
+  let lastGroup = null;
+  return html`<div className="qb" ref=${rootRef}>
+    <div className="qb-box" onMouseDown=${(e) => { if (e.target.closest('button,input')) return; e.preventDefault(); inputRef.current.focus(); setOpen(true); }}>
+      <${Icon} n="search" className="muted" />
+      <div className="qb-items">${nodes}</div>
+      ${conds.length > 0 ? html`<button type="button" className="btn ghost" style=${{ height: 30, padding: '0 8px' }} onClick=${() => { setConds([]); reset(); inputRef.current.focus(); }}>Clear</button>` : html`<kbd title="Press / to focus the filter bar">/</kbd>`}
+    </div>
+    ${open && html`<div className="pop" ref=${popRef} style=${{ left }}>
+      ${multiOps && html`<div className="oprow" aria-label="Condition"><span className="fl">${F[draft.field].label}</span>${F[draft.field].ops.map((op) => html`<button type="button" key=${op} aria-pressed=${draft.op === op} onMouseDown=${(e) => e.preventDefault()} onClick=${() => setOp(op, true)}>${OPS[op].label}</button>`)}</div>`}
+      ${showDates && html`<div className="dates">
+        ${Array.from({ length: need }, (_, i) => html`<input key=${i} id=${`qb-date-${i}`} type="date" aria-label=${i ? 'To date' : 'Date'} value=${draft.values[i] ?? ''} onChange=${(e) => { const v = [...draft.values]; v[i] = e.target.value; setDraft({ ...draft, values: v }); }} />`)}
+        <button type="button" className="btn primary" disabled=${draft.values.filter(Boolean).length < need} onClick=${() => commit({ field: draft.field, op: draft.op, values: draft.values })}>Apply</button>
+      </div>`}
+      <div className="pop-list" id="qb-list" role="listbox" ref=${listRef}>
+        ${items.map((it, i) => {
+          const header = it.group && it.group !== lastGroup ? html`<div className="grp">${it.group}</div>` : null; lastGroup = it.group;
+          return html`<${React.Fragment} key=${i}>${header}<div id=${`qb-o${i}`} role="option" className="opt" aria-selected=${i === h} onMouseMove=${() => i !== h && setHi(i)} onMouseDown=${(e) => e.preventDefault()} onClick=${() => choose(it)}><${Option} it=${it} draft=${draft} /></div><//>`;
+        })}
+        ${hint && html`<div className="hint">${hint}</div>`}
+      </div>
+      <div className="pop-foot"><span><kbd>↑↓</kbd> move</span><span><kbd>↵</kbd> ${draft?.op === 'anyOf' ? 'tick' : 'select'}</span>${multiOps && html`<span><kbd>Tab</kbd> change condition</span>`}${draft?.op === 'anyOf' && html`<span><kbd>⌘↵</kbd> apply</span>`}${!draft && !joinOr && conds.length > 0 && html`<span><kbd>or</kbd> add an alternative</span>`}<span><kbd>Esc</kbd> ${draft ? 'cancel' : 'close'}</span></div>
+    </div>`}
+  </div>`;
+}
+function Option({ it, draft }) {
+  if (it.type === 'field') { const f = F[it.field]; return html`<${Icon} n=${f.icon} className="muted" /><span><${Hl} text=${f.label} q=${it.q} /></span><span className="r">${f.note}</span>`; }
+  if (it.type === 'multi') return html`<${Icon} n="funnel" className="muted" /><span>Apply: <b>${units(it.conds).map(unitSentence).join(' and ')}</b></span>`;
+  if (it.type === 'or') return html`<span className="and or">or</span><span>Add an alternative to <b>${it.last}</b></span>`;
+  if (it.type === 'apply') return html`<${Icon} n="check" className="muted" /><span>Apply: <b>${sentence(it.cond)}</b></span>`;
+  if (it.type === 'cond') {
+    const d = describe(it.cond); const f = it.cond.field && F[it.cond.field];
+    return html`<${Icon} n=${f ? f.icon : 'search'} className="muted" /><span>${d.field === 'Search' ? 'Search all text for ' : html`${d.field} ${d.op} `}<b>${d.value}</b></span>`;
+  }
+  const f = F[draft.field], checked = draft.op === 'anyOf' && draft.values.includes(it.value);
+  return html`${draft.op === 'anyOf' && html`<span className=${`box ${checked ? 'on' : ''}`}>${checked && html`<${Icon} n="check" sm />`}</span>`}
+    ${f.person && html`<span className="av">${initials(it.label)}</span>`}
+    ${it.c ? html`<span className="pill" style=${{ '--c': it.c }}><${Hl} text=${it.label} q=${it.q} /></span>` : html`<span><${Hl} text=${it.label} q=${it.q} /></span>`}`;
+}
+
+/* ---------- Menus and dialogs ---------- */
+function Menu({ anchor, items, onClose, label }) {
+  const ref = useRef(); const [pos, setPos] = useState({ top: -9999, left: 0 });
+  useLayoutEffect(() => {
+    const a = anchor.getBoundingClientRect(), m = ref.current.getBoundingClientRect();
+    let top = a.bottom + 4; if (top + m.height > window.innerHeight - 8) top = Math.max(8, a.top - m.height - 4);
+    setPos({ top, left: Math.max(8, Math.min(a.right - m.width, window.innerWidth - m.width - 8)) });
+    ref.current.querySelector('button')?.focus();
+  }, []);
+  useEffect(() => {
+    const down = (e) => { if (!ref.current.contains(e.target) && !anchor.contains(e.target)) onClose(); };
+    const scroll = (e) => { if (!ref.current.contains(e.target)) onClose(); };
+    document.addEventListener('mousedown', down); window.addEventListener('scroll', scroll, true);
+    return () => { document.removeEventListener('mousedown', down); window.removeEventListener('scroll', scroll, true); };
+  }, []);
+  const key = (e) => {
+    const b = [...ref.current.querySelectorAll('button')], i = b.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown') { e.preventDefault(); b[(i + 1) % b.length].focus(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); b[(i - 1 + b.length) % b.length].focus(); }
+    else if (e.key === 'Home') { e.preventDefault(); b[0].focus(); }
+    else if (e.key === 'End') { e.preventDefault(); b[b.length - 1].focus(); }
+    else if (e.key === 'Escape' || e.key === 'Tab') { e.preventDefault(); onClose(); anchor.focus(); }
+  };
+  return ReactDOM.createPortal(html`<div className="menu" role="menu" aria-label=${label} ref=${ref} style=${pos} onKeyDown=${key}>
+    ${items.map((it, i) => it === '-' ? html`<hr key=${i} />` : it.group ? html`<div className="grp" key=${i}>${it.group}</div>` : html`<button key=${i} type="button" role=${it.checked === undefined ? 'menuitem' : 'menuitemcheckbox'} aria-checked=${it.checked} className=${it.danger ? 'danger' : ''} onClick=${() => { it.run(); if (!it.keepOpen) { onClose(); anchor.focus(); } }}>
+      ${it.checked !== undefined ? html`<span className="tick">${it.checked && html`<${Icon} n="check" sm />`}</span>` : it.icon && html`<${Icon} n=${it.icon} />`}${it.label}</button>`)}
+  </div>`, document.body);
+}
+function Modal({ className, onClose, children, label }) {
+  const ref = useRef();
+  useEffect(() => { const d = ref.current; d.showModal(); return () => d.close(); }, []);
+  return html`<dialog ref=${ref} className=${className} aria-label=${label} onCancel=${(e) => { e.preventDefault(); onClose(); }} onClick=${(e) => { if (e.target === ref.current) onClose(); }}>${children}</dialog>`;
+}
+const StatusPill = ({ value, onClick, on }) => { const s = STATUSES.find((x) => x.value === value); const st = { '--c': s.c }; return onClick ? html`<button type="button" className=${`pill ${on ? 'on' : ''}`} style=${st} title=${on ? `Remove filter: Status is ${s.label}` : `Filter to ${s.label}`} onClick=${onClick}>${s.label}</button>` : html`<span className="pill" style=${st}>${s.label}</span>`; };
+
+/* ---------- Page ---------- */
+const COLS = [
+  { key: 'title', label: 'Title', sortable: true, fixed: true },
+  { key: 'status', label: 'Status', sortable: true },
+  { key: 'author', label: 'Author' },
+  { key: 'category', label: 'Category' },
+  { key: 'publishedAt', label: 'Published', sortable: true },
+  { key: 'views', label: 'Views', sortable: true, right: true },
+  { key: 'comments', label: 'Comments', right: true },
+  { key: 'featured', label: 'Featured' },
+  { key: 'words', label: 'Word count', sortable: true, right: true },
+  { key: 'updatedAt', label: 'Updated', sortable: true },
+];
+const mk = (field, op, ...values) => ({ id: uid(), field, op, values });
+const anyOfThese = (...cs) => { const g = gid(); return cs.map((c) => ({ ...c, g })); };
+const BUILT_IN_VIEWS = [
+  { name: 'All posts', conds: [] },
+  { name: 'My drafts', conds: [mk('author', 'is', ME), mk('status', 'is', 'draft')] },
+  { name: 'Needs review', conds: [mk('status', 'is', 'review')] },
+  { name: 'Scheduled', conds: [mk('status', 'is', 'scheduled')] },
+  { name: 'Needs attention', conds: anyOfThese(mk('status', 'is', 'review'), mk('category', 'empty')) },
+  { name: 'Top this year', conds: [mk('status', 'is', 'published'), mk('publishedAt', 'within', 'year'), mk('views', 'gte', '10000')] },
+];
+const NEXT = {
+  draft: [['Submit for review', 'send', 'review'], ['Publish now', 'send', 'published']],
+  review: [['Publish now', 'send', 'published'], ['Return to draft', 'edit', 'draft']],
+  scheduled: [['Publish now', 'send', 'published'], ['Unschedule', 'cal', 'draft']],
+  published: [['Unpublish', 'eye', 'draft'], ['Archive', 'archive', 'archived']],
+  archived: [['Restore as draft', 'archive', 'draft']],
+};
+
+function App() {
+  const [rows, setRows] = useState(seededRows);
+  const [conds, setCondsRaw] = useState(() => [mk('status', 'is', 'published'), ...anyOfThese(mk('category', 'anyOf', 'Engineering', 'Product'), mk('featured', 'is', 'true')), mk('views', 'gt', '500')]);
+  const [views, setViews] = useState(BUILT_IN_VIEWS);
+  const [naming, setNaming] = useState(null);
+  const [sort, setSort] = useState({ key: 'publishedAt', dir: 'desc' });
+  const [page, setPage] = useState(1);
+  const [size, setSize] = useState(15);
+  const [cols, setCols] = useState(() => new Set(['title', 'status', 'author', 'category', 'publishedAt', 'views', 'comments']));
+  const [compact, setCompact] = useState(false);
+  const [sel, setSel] = useState(() => new Set());
+  const [menu, setMenu] = useState(null);
+  const [peek, setPeek] = useState(null);
+  const [confirm, setConfirm] = useState(null);
+  const [toast, setToast] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const api = useRef({});
+
+  const setConds = (v) => { setCondsRaw((cs) => normalize(typeof v === 'function' ? v(cs) : v)); setPage(1); setSel(new Set()); };
+  const filtered = useMemo(() => rows.filter((r) => matchAll(r, conds)), [rows, conds]);
+  const sorted = useMemo(() => {
+    const { key, dir } = sort, m = dir === 'asc' ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      const x = a[key], y = b[key];
+      if (x == null || y == null) return x == null ? (y == null ? 0 : 1) : -1;
+      return (typeof x === 'string' ? x.localeCompare(y) : x - y) * m;
+    });
+  }, [filtered, sort]);
+  const pages = Math.max(1, Math.ceil(sorted.length / size));
+  const cur = Math.min(page, pages);
+  const shown = sorted.slice((cur - 1) * size, cur * size);
+  const qs = queryString(conds);
+  const activeView = views.find((v) => queryString(v.conds) === qs);
+  const condFields = new Set(conds.map((c) => c.field));
+  const visible = COLS.filter((c) => cols.has(c.key) || condFields.has(c.key));
+
+  useEffect(() => { setBusy(true); const t = setTimeout(() => setBusy(false), 260); return () => clearTimeout(t); }, [qs, sort.key, sort.dir, cur, size]);
+  useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(null), 5000); return () => clearTimeout(t); }, [toast]);
+  useEffect(() => {
+    const k = (e) => { if (e.key === '/' && !/INPUT|TEXTAREA/.test(document.activeElement.tagName) && !document.querySelector('dialog[open]')) { e.preventDefault(); document.getElementById('qb-input').focus(); } };
+    window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k);
+  }, []);
+
+  const patchRows = (ids, patch, msg) => {
+    const before = rows;
+    setRows((rs) => rs.map((r) => (ids.includes(r.id) ? { ...r, ...patch(r) } : r)));
+    setToast({ msg, undo: () => { setRows(before); setToast({ msg: 'Change undone' }); } });
+  };
+  const moveTo = (ids, status, msg) => patchRows(ids, (r) => ({ status, updatedAt: TODAY, publishedAt: status === 'published' ? r.publishedAt && r.status !== 'scheduled' ? r.publishedAt : TODAY : status === 'draft' ? null : r.publishedAt }), msg);
+  const del = (ids, msg) => { setRows((rs) => rs.filter((r) => !ids.includes(r.id))); setSel(new Set()); setToast({ msg }); };
+  const askDelete = (ids) => {
+    const one = ids.length === 1 && rows.find((r) => r.id === ids[0]);
+    setConfirm({ title: one ? 'Delete this post?' : `Delete ${ids.length} posts?`, body: one ? `“${one.title}” will be permanently deleted. This cannot be undone.` : 'These posts will be permanently deleted. This cannot be undone.', label: one ? 'Delete post' : `Delete ${ids.length} posts`, run: () => del(ids, one ? 'Post deleted' : `${ids.length} posts deleted`) });
+  };
+  const copy = (t, msg) => { const ok = () => setToast({ msg }); navigator.clipboard?.writeText(t).then(ok, () => setToast({ msg: `Copy this: ${t}` })); };
+  const rowItems = (r) => [
+    { label: 'Quick view', icon: 'eye', run: () => setPeek(r.id) },
+    { label: 'Edit', icon: 'edit', run: () => setToast({ msg: `Opens /admin/post/${r.id}` }) },
+    { label: 'Duplicate', icon: 'copy', run: () => { setRows((rs) => [{ ...r, id: r.id + '_' + rs.length, title: r.title + ' (copy)', status: 'draft', publishedAt: null, views: 0, comments: 0, featured: false, updatedAt: TODAY }, ...rs]); setToast({ msg: 'Draft copy created' }); } },
+    { label: 'Copy link', icon: 'link', run: () => copy(`https://example.com/admin/post/${r.id}`, 'Link copied') },
+    '-',
+    ...NEXT[r.status].map(([label, icon, to]) => ({ label, icon, run: () => moveTo([r.id], to, `${label}: done for “${r.title.slice(0, 32)}”`) })),
+    '-',
+    { label: 'Delete', icon: 'trash', danger: true, run: () => askDelete([r.id]) },
+  ];
+  const sortItems = () => [{ group: 'Sort by' }, ...COLS.filter((c) => c.sortable).map((c) => ({ label: c.label, checked: sort.key === c.key, keepOpen: true, run: () => setSort({ key: c.key, dir: sort.dir }) })), '-', { label: 'Ascending', checked: sort.dir === 'asc', keepOpen: true, run: () => setSort({ ...sort, dir: 'asc' }) }, { label: 'Descending', checked: sort.dir === 'desc', keepOpen: true, run: () => setSort({ ...sort, dir: 'desc' }) }];
+  const colItems = () => [{ group: 'Show columns' }, ...COLS.filter((c) => !c.fixed).map((c) => ({ label: c.label + (condFields.has(c.key) && !cols.has(c.key) ? ' (filtered)' : ''), checked: cols.has(c.key) || condFields.has(c.key), keepOpen: true, run: () => setCols((s) => { const n = new Set(s); n.has(c.key) ? n.delete(c.key) : n.add(c.key); return n; }) }))];
+  const openMenu = (e, kind, row) => { const anchor = e.currentTarget; setMenu((m) => (m?.anchor === anchor ? null : { anchor, kind, row })); };
+  const clickSort = (key) => setSort((s) => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }));
+  const hasIs = (f, v) => conds.some((c) => c.field === f && c.op === 'is' && c.values[0] === v);
+  const toggleIs = (f, v) => setConds(hasIs(f, v) ? conds.filter((c) => !(c.field === f && c.op === 'is' && c.values[0] === v)) : withCond(conds, mk(f, 'is', v)));
+  const relax = useMemo(() => {
+    if (filtered.length || !conds.length) return null;
+    return units(conds).map((u) => ({ u, n: rows.filter((r) => matchAll(r, conds.filter((o) => !u.includes(o)))).length })).sort((a, b) => b.n - a.n)[0];
+  }, [filtered, conds, rows]);
+  const pageIds = shown.map((r) => r.id);
+  const allOn = pageIds.length > 0 && pageIds.every((id) => sel.has(id));
+  const toggleRow = (id) => setSel((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  const cell = (r, key) => {
+    const v = r[key], empty = html`<span className="muted">—</span>`;
+    switch (key) {
+      case 'title': return html`<button type="button" className="title-btn" onClick=${() => setPeek(r.id)}>${r.title}</button><span className="sub">/${r.slug.slice(0, 40)}</span>`;
+      case 'status': return html`<${StatusPill} value=${v} on=${hasIs('status', v)} onClick=${() => toggleIs('status', v)} />`;
+      case 'author': return html`<button type="button" className=${`person ${hasIs('author', v) ? 'on' : ''}`} title=${`Filter to ${v}`} onClick=${() => toggleIs('author', v)}><span className="av">${initials(v)}</span>${v}</button>`;
+      case 'category': return v ? html`<button type="button" className=${`plain ${hasIs('category', v) ? 'on' : ''}`} title=${`Filter to ${v}`} onClick=${() => toggleIs('category', v)}>${v}</button>` : empty;
+      case 'publishedAt': case 'updatedAt': return v ? html`${fmtDate(v)}<span className="sub">${relDate(v)}</span>` : empty;
+      case 'views': return r.status === 'published' || r.status === 'archived' ? html`<span className="num">${fmtNum(v)}</span>` : empty;
+      case 'words': return html`<span className="num">${fmtNum(v)}</span>`;
+      case 'comments': return v ? html`<span className="num">${v}</span>` : empty;
+      case 'featured': return v ? html`<${Icon} n="star" className="star" />` : empty;
+    }
+  };
+  const peeked = peek && rows.find((r) => r.id === peek);
+  const selIds = [...sel];
+
+  return html`<div className="shell">
+    <nav className="nav" aria-label="Lists">
+      <h2>Northline Admin</h2>
+      <a href="#"><${Icon} n="home" />Dashboard</a>
+      <div className="lbl">Lists</div>
+      <a href="#" className="on" aria-current="page"><${Icon} n="list" />Posts</a>
+      <a href="#"><${Icon} n="list" />Authors</a>
+      <a href="#"><${Icon} n="list" />Categories</a>
+      <a href="#"><${Icon} n="list" />Comments</a>
+    </nav>
+    <main className="main">
+      <div className="head">
+        <h1>Posts<span className="tag">Prototype, sample data</span></h1>
+        <button type="button" className="btn primary" onClick=${() => setToast({ msg: 'Opens /admin/post/create' })}><${Icon} n="plus" />Create post</button>
+      </div>
+
+      <div className="views" role="navigation" aria-label="Saved views">
+        ${views.map((v) => html`<button type="button" key=${v.name} className="v" aria-current=${activeView === v} onClick=${() => setConds(v.conds.map((c) => ({ ...c })))}>${v.name}<span className="count num">${rows.filter((r) => matchAll(r, v.conds)).length}</span></button>`)}
+        ${!activeView && conds.length > 0 && html`<div className="save">${naming === null
+          ? html`<button type="button" className="btn ghost" style=${{ height: 30 }} onClick=${() => setNaming('')}><${Icon} n="bookmark" sm />Save view</button>`
+          : html`<input id="view-name" autoFocus placeholder="Name this view" aria-label="View name" value=${naming} onChange=${(e) => setNaming(e.target.value)} onBlur=${() => !naming && setNaming(null)} onKeyDown=${(e) => { if (e.key === 'Escape') setNaming(null); if (e.key === 'Enter' && naming.trim()) { setViews([...views, { name: naming.trim(), conds }]); setNaming(null); setToast({ msg: 'View saved' }); } }} />`}</div>`}
+      </div>
+
+      <${QueryBar} conds=${conds} setConds=${setConds} api=${api} noun="posts" />
+
+      ${sel.size > 0
+        ? html`<div className="bar sel"><b>${sel.size} selected</b><span className="grow"></span>
+            <button type="button" className="btn ghost" onClick=${() => { moveTo(selIds, 'published', `${sel.size} posts published`); setSel(new Set()); }}><${Icon} n="send" sm />Publish</button>
+            <button type="button" className="btn ghost" onClick=${() => { moveTo(selIds, 'archived', `${sel.size} posts archived`); setSel(new Set()); }}><${Icon} n="archive" sm />Archive</button>
+            <button type="button" className="btn ghost" style=${{ color: 'var(--destructive)' }} onClick=${() => askDelete(selIds)}><${Icon} n="trash" sm />Delete</button>
+            <button type="button" className="btn ghost" onClick=${() => setSel(new Set())}>Clear</button></div>`
+        : html`<div className="bar">
+            <span className="grow num" aria-live="polite"><b>${fmtNum(sorted.length)}</b> <span className="muted">${conds.length ? `of ${rows.length} posts` : 'posts'}</span></span>
+            <button type="button" className="btn" aria-haspopup="menu" aria-expanded=${menu?.kind === 'sort'} onClick=${(e) => openMenu(e, 'sort')}><${Icon} n="sort" sm />${COLS.find((c) => c.key === sort.key).label}<${Icon} n=${sort.dir === 'asc' ? 'up' : 'down'} sm /></button>
+            <button type="button" className="btn" aria-haspopup="menu" aria-expanded=${menu?.kind === 'cols'} onClick=${(e) => openMenu(e, 'cols')}><${Icon} n="columns" sm />Columns</button>
+            <div className="seg-toggle" role="group" aria-label="Row density"><button type="button" aria-pressed=${!compact} onClick=${() => setCompact(false)}>Comfortable</button><button type="button" aria-pressed=${compact} onClick=${() => setCompact(true)}>Compact</button></div>
+          </div>`}
+
+      <div className="tw">
+        ${busy && html`<div className="busy"><i></i></div>`}
+        <table className=${compact ? 'compact' : ''}>
+          <thead><tr>
+            <th className="c-sel"><input type="checkbox" id="sel-all" aria-label="Select all on this page" checked=${allOn} onChange=${() => setSel((s) => { const n = new Set(s); pageIds.forEach((id) => (allOn ? n.delete(id) : n.add(id))); return n; })} /></th>
+            ${visible.map((c) => { const on = sort.key === c.key, f = condFields.has(c.key); return html`<th key=${c.key} className=${c.right ? 'right' : ''} aria-sort=${on ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined}><span className="h">
+              ${c.sortable ? html`<button type="button" className="sort" onClick=${() => clickSort(c.key)}>${c.label}${on && html`<${Icon} n=${sort.dir === 'asc' ? 'up' : 'down'} sm />`}</button>` : c.label}
+              <button type="button" className=${`fbtn ${f ? 'on' : ''}`} aria-label=${`Filter by ${c.label}`} title=${`Filter by ${c.label}`} onClick=${() => api.current.startField(c.key)}><${Icon} n="funnel" sm /></button>
+            </span></th>`; })}
+            <th className="c-act"><span style=${{ position: 'absolute', width: 1, height: 1, overflow: 'hidden' }}>Actions</span></th>
+          </tr></thead>
+          <tbody>
+            ${shown.length === 0 && html`<tr className="none"><td colSpan=${visible.length + 2} style=${{ padding: 0 }}><div className="empty">
+              <h3>No posts match these filters</h3>
+              ${relax && relax.n > 0 ? html`<p>Removing one filter would bring back ${relax.n} ${relax.n === 1 ? 'post' : 'posts'}.</p><button type="button" className="btn" onClick=${() => setConds(conds.filter((c) => !relax.u.includes(c)))}>Remove “${unitSentence(relax.u)}”</button>` : html`<p>No single filter is responsible. Start again to widen the search.</p><button type="button" className="btn" onClick=${() => setConds([])}>Clear all filters</button>`}
+            </div></td></tr>`}
+            ${shown.map((r) => html`<tr key=${r.id} className=${sel.has(r.id) ? 'selected' : ''}>
+              <td className="c-sel"><input type="checkbox" id=${'s' + r.id} aria-label=${`Select ${r.title}`} checked=${sel.has(r.id)} onChange=${() => toggleRow(r.id)} /></td>
+              ${visible.map((c) => html`<td key=${c.key} data-label=${c.label} className=${c.right ? 'right' : ''}>${cell(r, c.key)}</td>`)}
+              <td className="c-act"><button type="button" className="icon-btn" aria-label=${`Actions for ${r.title}`} aria-haspopup="menu" aria-expanded=${menu?.row === r} onClick=${(e) => openMenu(e, 'row', r)}><${Icon} n="more" /></button></td>
+            </tr>`)}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="pager">
+        <span className="num">${sorted.length ? `${(cur - 1) * size + 1}–${Math.min(cur * size, sorted.length)} of ${fmtNum(sorted.length)}` : 'No results'}</span>
+        <div className="g">
+          <div className="seg-toggle" role="group" aria-label="Rows per page">${[15, 30, 50].map((n) => html`<button type="button" key=${n} aria-pressed=${size === n} onClick=${() => { setSize(n); setPage(1); }}>${n}</button>`)}</div>
+          <button type="button" className="btn" disabled=${cur <= 1} onClick=${() => setPage(cur - 1)}>Previous</button>
+          <span className="num">Page ${cur} of ${pages}</span>
+          <button type="button" className="btn" disabled=${cur >= pages} onClick=${() => setPage(cur + 1)}>Next</button>
+        </div>
+      </div>
+
+      <section className="notes" aria-label="Prototype notes">
+        <div className="q"><h4>Live URL state</h4><code>?search=${allTokens(conds).map((t, i) => html`<span key=${i} className=${t.proposed ? 'prop' : ''}>${i ? ' ' : ''}${t.text}</span>`)}&sort=${sort.key}:${sort.dir}</code></div>
+        <div><h4>Works with today's grammar</h4><ul><li>Contains, is, and number or date comparisons</li><li>Between and date presets, written as two AND tokens</li><li>Comments has some or none (a to-many only filters on presence)</li></ul></div>
+        <div><h4><span className="legend">Needs a grammar addition</span> (ADR-0017)</h4><ul><li>Is not, doesn't contain, is any of, is empty</li><li>OR groups, written <code style=${{ fontFamily: 'var(--font-mono)' }}>(a OR b)</code>, one level deep. The secured Where vocabulary already takes OR, so only the grammar and its mapper change</li><li>Ranges inside a group, written <code style=${{ fontFamily: 'var(--font-mono)' }}>views:100..500</code></li></ul></div>
+        <div><h4>New config or features</h4><ul><li>Per-row actions, alongside <code style=${{ fontFamily: 'var(--font-mono)' }}>bulkActions</code></li><li>Saved views, shown as tabs</li><li>Value suggestions come from config and relationship labels only, never from row data</li></ul></div>
+      </section>
+    </main>
+
+    ${menu && html`<${Menu} anchor=${menu.anchor} label=${menu.kind === 'row' ? 'Row actions' : menu.kind === 'sort' ? 'Sort' : 'Columns'} items=${menu.kind === 'row' ? rowItems(menu.row) : menu.kind === 'sort' ? sortItems() : colItems()} onClose=${() => setMenu(null)} />`}
+
+    ${peeked && html`<${Modal} className="drawer" label="Post details" onClose=${() => setPeek(null)}>
+      <header><h3>${peeked.title}</h3><button type="button" className="icon-btn" aria-label="Close" onClick=${() => setPeek(null)}><${Icon} n="x" /></button></header>
+      <dl>
+        <dt>Status</dt><dd><${StatusPill} value=${peeked.status} /></dd>
+        <dt>Author</dt><dd>${peeked.author}</dd>
+        <dt>Category</dt><dd>${peeked.category ?? '—'}</dd>
+        <dt>Published</dt><dd>${peeked.publishedAt ? `${fmtDate(peeked.publishedAt)} (${relDate(peeked.publishedAt)})` : '—'}</dd>
+        <dt>Views</dt><dd className="num">${fmtNum(peeked.views)}</dd>
+        <dt>Comments</dt><dd className="num">${peeked.comments}</dd>
+        <dt>Word count</dt><dd className="num">${fmtNum(peeked.words)}</dd>
+        <dt>Updated</dt><dd>${fmtDate(peeked.updatedAt)}</dd>
+        <dt>Slug</dt><dd style=${{ overflowWrap: 'anywhere' }}>/${peeked.slug}</dd>
+      </dl>
+      <div className="acts"><button type="button" className="btn primary" onClick=${() => { setPeek(null); setToast({ msg: `Opens /admin/post/${peeked.id}` }); }}>Edit post</button></div>
+    <//>`}
+
+    ${confirm && html`<${Modal} className="confirm" label=${confirm.title} onClose=${() => setConfirm(null)}>
+      <h3>${confirm.title}</h3><p>${confirm.body}</p>
+      <div className="acts"><button type="button" className="btn" autoFocus onClick=${() => setConfirm(null)}>Cancel</button><button type="button" className="btn danger" onClick=${() => { confirm.run(); setConfirm(null); }}>${confirm.label}</button></div>
+    <//>`}
+
+    ${toast && html`<div className="toast" role="status"><span>${toast.msg}</span>${toast.undo && html`<button type="button" onClick=${toast.undo}>Undo</button>`}</div>`}
+  </div>`;
+}
+ReactDOM.createRoot(document.getElementById('app')).render(html`<${App} />`);
+</script>
