@@ -21,8 +21,7 @@ import {
 import { resolveListUi } from '../lib/resolveListUi.js'
 import { compileTheme } from '../lib/theme.js'
 import { deriveCurrentPath } from '../lib/currentPath.js'
-
-const MAX_PAGE_SIZE = 200
+import { MAX_PAGE_SIZE } from '../lib/pageSize.js'
 
 export interface AdminUIProps {
   /** The app's context — what `getContext()` returned for this request. */
@@ -173,12 +172,13 @@ export async function AdminUI({
         : undefined
 
     const visibleColumns =
-      typeof searchParams.columns === 'string'
-        ? searchParams.columns
-            .split(',')
+      searchParams.columns === undefined
+        ? undefined
+        : [searchParams.columns]
+            .flat()
+            .flatMap((value) => value.split(','))
             .map((name) => name.trim())
             .filter((name) => name.length > 0)
-        : undefined
 
     // Read list-view defaults (column selection/order + default sort) from the
     // list-level `ui.listView` config (mirrors Keystone). When absent, the

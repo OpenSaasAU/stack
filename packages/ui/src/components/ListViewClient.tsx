@@ -39,12 +39,13 @@ import { useBulkStatus } from '../lib/useBulkStatus.js'
 import type { SerializableFieldConfig } from '../lib/serializeFieldConfig.js'
 import { isDefaultColumnField } from '../lib/defaultColumns.js'
 import {
-  type ListDensity,
   readServerDensity,
   readStoredDensity,
   storeDensity,
   subscribeDensity,
 } from '../lib/density.js'
+import { DEFAULT_PAGE_SIZE } from '../lib/pageSize.js'
+import { CARD_CELL, CARD_PINNED_CELL, CARD_ROW, CARD_TITLE_CELL } from '../lib/tableClasses.js'
 import type { ServerActionInput } from '../server/types.js'
 import type { FilterFieldSuggestion } from '@opensaas/stack-core'
 
@@ -85,15 +86,7 @@ function parseBulkActionResult(result: unknown, label: string): string {
   return `${label} complete`
 }
 
-const DEFAULT_PAGE_SIZE = 50
 const PAGE_SIZES = [25, 50, 100]
-
-const CARD_ROW =
-  'max-md:relative max-md:grid max-md:grid-cols-2 max-md:gap-x-3 max-md:gap-y-2 max-md:rounded-lg max-md:border-0 max-md:p-3 max-md:pr-16 max-md:ring-1 max-md:ring-border'
-const CARD_CELL =
-  'max-md:block max-md:min-w-0 max-md:p-0 max-md:text-left max-md:break-words max-md:before:block max-md:before:text-xs max-md:before:font-medium max-md:before:text-muted-foreground max-md:before:content-[attr(data-label)]'
-const CARD_TITLE_CELL = 'max-md:col-span-2 max-md:text-base max-md:before:hidden'
-const CARD_PINNED_CELL = 'max-md:absolute max-md:top-3 max-md:p-0'
 
 interface ListUrlState {
   search: string
@@ -297,18 +290,28 @@ export function ListViewClient({
 
   const buildPaginationUrl = (newPage: number) => buildUrl({ page: newPage })
 
+  const [pendingColumns, setPendingColumns] = React.useState<string[] | null>(null)
+  if (pendingColumns !== null && pendingColumns.join(',') === displayColumns.join(',')) {
+    setPendingColumns(null)
+  }
+  const pickedColumns = pendingColumns ?? displayColumns
+
   const toggleColumn = (column: string, shown: boolean) => {
     const next = shown
-      ? [...displayColumns.filter((name) => name !== column), column]
-      : displayColumns.filter((name) => name !== column)
+      ? [...pickedColumns.filter((name) => name !== column), column]
+      : pickedColumns.filter((name) => name !== column)
     if (next.length === 0) return
+    setPendingColumns(next)
     router.push(buildUrl({ columns: next }))
+  }
+
+  const resetColumns = () => {
+    setPendingColumns(null)
+    router.push(buildUrl({ columns: null }))
   }
 
   const sortOptions = displayColumns.filter((column) => sortableFields[column] === true)
   if (sortBy && !sortOptions.includes(sortBy)) sortOptions.push(sortBy)
-
-  const chooseDensity = (next: ListDensity) => storeDensity(next)
 
   const handleBulkDelete = async () => {
     if (!serverAction) return
@@ -432,7 +435,9 @@ export function ListViewClient({
               <DropdownMenuLabel>Sort by</DropdownMenuLabel>
               <DropdownMenuRadioGroup
                 value={sortBy ?? ''}
-                onValueChange={(field) => sortTo(field, sortBy ? sortOrder : 'asc')}
+                onValueChange={(field) => {
+                  if (field !== sortBy) sortTo(field, sortBy ? sortOrder : 'asc')
+                }}
               >
                 {sortOptions.map((column) => (
                   <DropdownMenuRadioItem key={column} value={column}>
@@ -444,7 +449,11 @@ export function ListViewClient({
               <DropdownMenuRadioGroup
                 value={sortBy ? sortOrder : ''}
                 onValueChange={(direction) => {
-                  if (sortBy && (direction === 'asc' || direction === 'desc'))
+                  if (
+                    sortBy &&
+                    direction !== sortOrder &&
+                    (direction === 'asc' || direction === 'desc')
+                  )
                     sortTo(sortBy, direction)
                 }}
               >
@@ -469,12 +478,12 @@ export function ListViewClient({
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuLabel>Show columns</DropdownMenuLabel>
             {pickableColumns.map((column) => {
-              const shown = displayColumns.includes(column)
+              const shown = pickedColumns.includes(column)
               return (
                 <DropdownMenuCheckboxItem
                   key={column}
                   checked={shown}
-                  disabled={shown && displayColumns.length === 1}
+                  disabled={shown && pickedColumns.length === 1}
                   onSelect={(event) => event.preventDefault()}
                   onCheckedChange={(checked) => toggleColumn(column, checked === true)}
                 >
@@ -485,9 +494,7 @@ export function ListViewClient({
             {columnsChosen && (
               <>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={() => router.push(buildUrl({ columns: null }))}>
-                  Reset columns
-                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={resetColumns}>Reset columns</DropdownMenuItem>
               </>
             )}
           </DropdownMenuContent>
@@ -504,7 +511,7 @@ export function ListViewClient({
               key={option}
               type="button"
               aria-pressed={density === option}
-              onClick={() => chooseDensity(option)}
+              onClick={() => storeDensity(option)}
               className="h-9 px-3 font-sans text-sm text-muted-foreground transition-colors outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring aria-pressed:bg-muted aria-pressed:font-medium aria-pressed:text-foreground"
             >
               {option === 'comfortable' ? 'Comfortable' : 'Compact'}

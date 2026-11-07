@@ -1,3 +1,5 @@
+import { createStoredChoice } from './storedChoice.js'
+
 /** How tightly the list table packs its rows. */
 export type ListDensity = 'comfortable' | 'compact'
 
@@ -10,46 +12,17 @@ function isListDensity(value: string | null): value is ListDensity {
   return value === 'comfortable' || value === 'compact'
 }
 
-/** Read the persisted density, defaulting to comfortable when unset or unreadable. */
-export function readStoredDensity(): ListDensity {
-  try {
-    const stored = localStorage.getItem(DENSITY_STORAGE_KEY)
-    return isListDensity(stored) ? stored : DEFAULT_DENSITY
-  } catch {
-    return DEFAULT_DENSITY
-  }
-}
+const densityChoice = createStoredChoice(DENSITY_STORAGE_KEY, isListDensity, DEFAULT_DENSITY)
+
+/** Read the density, defaulting to comfortable when unset or unreadable. */
+export const readStoredDensity: () => ListDensity = densityChoice.read
 
 export function readServerDensity(): ListDensity {
   return DEFAULT_DENSITY
 }
 
-const listeners = new Set<() => void>()
-
 /** Subscribe to density changes from this tab and others, for `useSyncExternalStore`. */
-export function subscribeDensity(listener: () => void): () => void {
-  listeners.add(listener)
-  try {
-    window.addEventListener('storage', listener)
-  } catch {
-    // `window` can be unavailable; this tab's own writes still notify.
-  }
-  return () => {
-    listeners.delete(listener)
-    try {
-      window.removeEventListener('storage', listener)
-    } catch {
-      // Mirror of the add above.
-    }
-  }
-}
+export const subscribeDensity: (listener: () => void) => () => void = densityChoice.subscribe
 
-/** Persist the density, ignoring storage failures (private mode, quota). */
-export function storeDensity(density: ListDensity): void {
-  try {
-    localStorage.setItem(DENSITY_STORAGE_KEY, density)
-  } catch {
-    // The in-page choice still applies when storage is unavailable.
-  }
-  for (const listener of listeners) listener()
-}
+/** Set the density for this page, and persist it when storage allows. */
+export const storeDensity: (density: ListDensity) => void = densityChoice.store

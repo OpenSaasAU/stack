@@ -214,7 +214,7 @@ describe('AdminUI ui.listView wiring', () => {
       lists: { Post: list({ fields: { title: text(), status: text() } }) },
     }
 
-    const routed = async (searchParams: Record<string, string>) =>
+    const routed = async (searchParams: Record<string, string | string[]>) =>
       routedContent(
         await AdminUI({
           context: makeContext(),
@@ -228,5 +228,25 @@ describe('AdminUI ui.listView wiring', () => {
 
     expect(await routed({ columns: 'status, title,,' })).toEqual(['status', 'title'])
     expect(await routed({})).toBeUndefined()
+  })
+
+  it('reads a repeated ?columns= as one selection, in order', async () => {
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql' },
+      lists: { Post: list({ fields: { title: text(), status: text(), views: text() } }) },
+    }
+
+    const content = routedContent(
+      await AdminUI({
+        context: makeContext(),
+        config,
+        params: ['post'],
+        searchParams: { columns: ['status', 'title,views'] },
+        basePath: '/admin',
+        serverAction: noopServerAction,
+      }),
+    )
+
+    expect(content.props.visibleColumns).toEqual(['status', 'title', 'views'])
   })
 })

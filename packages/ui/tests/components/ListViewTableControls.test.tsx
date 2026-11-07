@@ -3,7 +3,7 @@ import { render, screen, within } from '@testing-library/react'
 import { renderToString } from 'react-dom/server'
 import userEvent from '@testing-library/user-event'
 import { ListViewClient, type ListViewClientProps } from '../../src/components/ListViewClient.js'
-import { DENSITY_STORAGE_KEY } from '../../src/lib/density.js'
+import { DENSITY_STORAGE_KEY, storeDensity } from '../../src/lib/density.js'
 
 const mockPush = vi.fn()
 const mockRefresh = vi.fn()
@@ -101,6 +101,23 @@ describe('column picker', () => {
     expect(mockPush).toHaveBeenLastCalledWith('/admin/post?page=3')
   })
 
+  it('keeps both of two columns ticked before navigation lands', async () => {
+    const user = userEvent.setup()
+    render(<ListViewClient {...props} />)
+
+    await user.click(screen.getByRole('button', { name: 'Columns' }))
+    await user.click(screen.getByRole('menuitemcheckbox', { name: 'Views' }))
+    await user.click(screen.getByRole('menuitemcheckbox', { name: 'Author' }))
+
+    expect(screen.getByRole('menuitemcheckbox', { name: 'Views' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    )
+    expect(mockPush).toHaveBeenLastCalledWith(
+      '/admin/post?page=2&columns=title%2Cstatus%2Cviews%2Cauthor',
+    )
+  })
+
   it('offers a reset only once columns were chosen', async () => {
     const user = userEvent.setup()
     const { unmount } = render(<ListViewClient {...props} />)
@@ -144,6 +161,18 @@ describe('toolbar sort control', () => {
     expect(mockPush).toHaveBeenCalledWith('/admin/post?sort=title%3Adesc&page=1')
   })
 
+  it('stays on the current page when the active field or direction is picked again', async () => {
+    const user = userEvent.setup()
+    render(<ListViewClient {...props} initialSort={{ field: 'title', direction: 'asc' }} />)
+
+    await user.click(screen.getByRole('button', { name: 'Sort: Title, ascending' }))
+    await user.click(screen.getByRole('menuitemradio', { name: 'Title' }))
+    await user.click(screen.getByRole('button', { name: 'Sort: Title, ascending' }))
+    await user.click(screen.getByRole('menuitemradio', { name: 'Ascending' }))
+
+    expect(mockPush).not.toHaveBeenCalled()
+  })
+
   it('offers only displayed columns the server marked sortable, never a relationship', async () => {
     const user = userEvent.setup()
     render(<ListViewClient {...props} columns={['title', 'author']} />)
@@ -181,6 +210,30 @@ describe('density', () => {
     expect(table).toHaveAttribute('data-density', 'compact')
     expect(screen.getByText('First Post').closest('td')).toHaveClass('py-1.5')
     expect(mockPush).not.toHaveBeenCalled()
+  })
+
+  it('applies a choice when this browser refuses to store it', async () => {
+    const user = userEvent.setup()
+    const setItem = vi.spyOn(window.localStorage, 'setItem').mockImplementation(() => {
+      throw new DOMException('The quota has been exceeded.', 'QuotaExceededError')
+    })
+    try {
+      const { container } = render(<ListViewClient {...props} />)
+      await user.click(screen.getByRole('button', { name: 'Compact' }))
+
+      expect(container.querySelector('[data-slot="list-view-table"]')).toHaveAttribute(
+        'data-density',
+        'compact',
+      )
+      expect(screen.getByRole('button', { name: 'Compact' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      )
+      expect(window.localStorage.getItem(DENSITY_STORAGE_KEY)).toBeNull()
+    } finally {
+      setItem.mockRestore()
+      storeDensity('comfortable')
+    }
   })
 
   it('restores a remembered density on mount', () => {

@@ -5,7 +5,7 @@
 Refresh the admin list table: a column picker, density, page sizes, a toolbar sort control and cards on phones
 
 - `?columns=title,status,views` sets the visible columns, in order. The toolbar's Columns menu writes it. `ListView` resolves it on the server (new `visibleColumns` prop, which `AdminUI` fills from the URL), so a to-many count in an added column is read and correct. Unknown names are ignored, and Field Visibility still applies.
-- Density is comfortable or compact, remembered in this browser under `opensaas-list-density` (`DENSITY_STORAGE_KEY`) like the theme choice, and rendered comfortable on the server.
+- Density is comfortable or compact, remembered in this browser under `opensaas-list-density` (`DENSITY_STORAGE_KEY`) like the theme choice, and rendered comfortable on the server. When this browser refuses to store a choice (private mode, quota, blocked site data), the density and theme choices still apply for the page.
 - Rows per page offers 25, 50 and 100. The default stays 50 and the `?pageSize=` cap stays 200.
 - A toolbar Sort menu sits beside header sorting. Sort stays single-column; relationship columns stay unsortable.
 - Below `md`, rows render as labelled cards with no sideways scrolling. This replaces the sticky Actions column in the list view.

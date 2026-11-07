@@ -7,6 +7,7 @@ import { formatListName } from '../lib/utils.js'
 import { serializeFieldConfigs } from '../lib/serializeFieldConfig.js'
 import { isDefaultColumnField, withStructuralTimestampDefaults } from '../lib/defaultColumns.js'
 import { resolveListUi } from '../lib/resolveListUi.js'
+import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '../lib/pageSize.js'
 import { jsonSafeClone } from '../lib/jsonSafeClone.js'
 import { applyClientValueTransforms } from '../lib/clientValueTransforms.js'
 import { EmptyState } from './EmptyState.js'
@@ -158,7 +159,7 @@ export async function ListView({
   columns,
   visibleColumns,
   page = 1,
-  pageSize: requestedPageSize = 50,
+  pageSize: requestedPageSize = DEFAULT_PAGE_SIZE,
   search,
   initialSort,
   sort,
@@ -180,11 +181,6 @@ export async function ListView({
     )
   }
 
-  // Fold in the structural createdAt/updatedAt exclusion (issue #1018) before
-  // crossing the server/client boundary, so `ListViewClient`'s fallback (used
-  // when no explicit `columns` is configured) curates off the same declared
-  // `ui.listView.defaultColumn` flag as everything else — no timestamp-aware
-  // logic needed on the client.
   const displayFields = withStructuralTimestampDefaults(listConfig.fields, listConfig, config.db)
 
   // The columns `ListViewClient` will actually render, resolved the same way it
@@ -207,7 +203,10 @@ export async function ListView({
       .map(([name]) => name),
   )
 
-  const pageSize = Math.min(Math.max(1, Math.floor(requestedPageSize) || 50), 200)
+  const pageSize = Math.min(
+    Math.max(1, Math.floor(requestedPageSize) || DEFAULT_PAGE_SIZE),
+    MAX_PAGE_SIZE,
+  )
   const currentPage = Number.isSafeInteger(page) && page >= 1 ? page : 1
   const skip = (currentPage - 1) * pageSize
   let items: Array<Record<string, unknown>> = []
