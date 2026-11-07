@@ -1,5 +1,37 @@
 # @opensaas/stack-cli
 
+## 0.44.0-alpha.6
+
+### Minor Changes
+
+- [#2201](https://github.com/OpenSaasAU/stack/pull/2201) [`0933b4b`](https://github.com/OpenSaasAU/stack/commit/0933b4bb6e19f56a2629623c3e5facb28fe8af73) Thanks [@dependabot](https://github.com/apps/dependabot)! - Upgrade to Prisma ORM 8.0.0-rc.22 and the `prisma` CLI to 8.0.0-rc.30
+
+  The stack's date and time columns are unchanged: `timestamp()` and `calendarDay()` keep reading and writing ISO strings, and `contract.json` is byte-identical. Prisma ORM now refuses to run from two installed copies, so every `@prisma/orm-*` package and the `prisma` CLI must move together:
+
+  ```json
+  {
+    "dependencies": { "@prisma/orm-postgres": "8.0.0-rc.22" },
+    "devDependencies": { "prisma": "8.0.0-rc.30" }
+  }
+  ```
+
+  Then run `pnpm generate` and commit what it writes. A project using `ragPlugin` or another pgvector declaration gets a new head for `migrations/pgvector/`: run `prisma db migrate` on each database to move the pack's marker.
+
+### Patch Changes
+
+- [#2142](https://github.com/OpenSaasAU/stack/pull/2142) [`bb87f3b`](https://github.com/OpenSaasAU/stack/commit/bb87f3bf253f31c9aee6b91338f54057ee923ffe) Thanks [@borisno2](https://github.com/borisno2)! - Fix the dev loop reading `accessWidening` instead of the `accessChanges` the Prisma CLI reports, so access changes now count as destructive and reach the plan id and `--allow`.
+
+- [#2196](https://github.com/OpenSaasAU/stack/pull/2196) [`80c9ac0`](https://github.com/OpenSaasAU/stack/commit/80c9ac0f721058b566dc93dea1caf97d39c1cc94) Thanks [@borisno2](https://github.com/borisno2)! - Fix `opensaas dev` freezing on stale config after a failed load; `db update --plan <id>` now refuses a plan the current config no longer wants.
+
+- [#2205](https://github.com/OpenSaasAU/stack/pull/2205) [`dec240b`](https://github.com/OpenSaasAU/stack/commit/dec240b2e1596cb7edfa4da21cb7c2e146d05ab4) Thanks [@borisno2](https://github.com/borisno2)! - Render the admin's Sign Out control only with an `onSignOut` handler, instead of a button that only redirected, warn the user if the handler rejects, and reload an admin page restored from the back-forward cache.
+  The feature generator now emits `signOutAction` and tells you to pass it as `onSignOut`.
+
+- [#2209](https://github.com/OpenSaasAU/stack/pull/2209) [`4a8b631`](https://github.com/OpenSaasAU/stack/commit/4a8b631e7dcfb3bf5e3eb118193722b2e31d842e) Thanks [@borisno2](https://github.com/borisno2)! - Fix `opensaas generate` failing with "gen is not defined" when a config uses the `cuid` id strategy and no list uses `uuid7`, `cuid2` or `updatedAt`
+
+- [#2146](https://github.com/OpenSaasAU/stack/pull/2146) [`28650ed`](https://github.com/OpenSaasAU/stack/commit/28650ed4cd7a8e31343732b8ff15194be0afd0dd) Thanks [@borisno2](https://github.com/borisno2)! - `opensaas generate` now refuses to write live artifacts while an `opensaas dev` loop is running for the project, so a parked destructive change is no longer promoted over the loop's database.
+- Updated dependencies [[`eaeee36`](https://github.com/OpenSaasAU/stack/commit/eaeee363778e5717371720deec7c4518dfaa80e1), [`0933b4b`](https://github.com/OpenSaasAU/stack/commit/0933b4bb6e19f56a2629623c3e5facb28fe8af73), [`357f9bb`](https://github.com/OpenSaasAU/stack/commit/357f9bbf16499fd1d7da1a02e5c9370d60ae661a), [`ddb9e8c`](https://github.com/OpenSaasAU/stack/commit/ddb9e8cdbf67e42467ec3fec98f22c037f2a5de2), [`0dd7eb4`](https://github.com/OpenSaasAU/stack/commit/0dd7eb4b4a9e5b3ec338b39f8ca83e135de36480), [`4a8b631`](https://github.com/OpenSaasAU/stack/commit/4a8b631e7dcfb3bf5e3eb118193722b2e31d842e), [`fa03c43`](https://github.com/OpenSaasAU/stack/commit/fa03c4313851a5f2caf016190843bb8a21f15f41), [`a854243`](https://github.com/OpenSaasAU/stack/commit/a85424322701f3db9682b0f54acdc51bee404912), [`af04b65`](https://github.com/OpenSaasAU/stack/commit/af04b65745d55e0e174c2b95b04f0577651f0861), [`ca51e67`](https://github.com/OpenSaasAU/stack/commit/ca51e67ed52a803cfeac60b2084c5409c7815f5a)]:
+  - @opensaas/stack-core@0.44.0-alpha.6
+
 ## 0.44.0-alpha.5
 
 ### Patch Changes
