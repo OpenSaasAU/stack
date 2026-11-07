@@ -480,6 +480,117 @@ describe('ListView to-many relationship count: presence filter, no count sort (A
   )
 })
 
+describe('ListView ?columns= resolution', () => {
+  it(
+    'shows the chosen columns, in order, and counts a to-many the defaults leave out',
+    async () => {
+      const props = await render(ada, { listKey: 'User', visibleColumns: ['drafts', 'name'] })
+      expect(props.columns).toEqual(['drafts', 'name'])
+      expect(props.columnsChosen).toBe(true)
+      const byName = Object.fromEntries(props.items.map((item) => [item.name, item]))
+      expect(byName.Ada.drafts).toBe(2)
+      expect(byName.Grace.drafts).toBe(0)
+      expect(byName.Ada.posts).toBeUndefined()
+    },
+    BOOT,
+  )
+
+  it(
+    'ignores names the list does not display, falling back to the defaults when none remain',
+    async () => {
+      const some = await render(ada, { listKey: 'User', visibleColumns: ['nope', 'name', 'name'] })
+      expect(some.columns).toEqual(['name'])
+
+      const none = await render(ada, { listKey: 'User', visibleColumns: ['nope', 'constructor'] })
+      expect(none.columnsChosen).toBe(false)
+      expect(none.columns).toEqual(['name', 'billingAddress', 'fullName', 'posts', 'draftTitles'])
+    },
+    BOOT,
+  )
+
+  it(
+    'falls back to the configured columns when nothing valid was chosen',
+    async () => {
+      const props = await render(ada, {
+        listKey: 'User',
+        columns: ['name', 'posts'],
+        visibleColumns: ['nope'],
+      })
+      expect(props.columns).toEqual(['name', 'posts'])
+      expect(props.columnsChosen).toBe(false)
+    },
+    BOOT,
+  )
+
+  it(
+    'still applies Field Visibility to a chosen column',
+    async () => {
+      const props = await render(ada, {
+        listKey: 'User',
+        visibleColumns: ['name', 'billingAddress'],
+      })
+      expect(props.columns).toEqual(['name', 'billingAddress'])
+      for (const item of props.items) expect(item.billingAddress ?? null).toBeNull()
+    },
+    BOOT,
+  )
+
+  it(
+    'offers no column picker or size control to a host that does not read the params back',
+    async () => {
+      const props = await render(ada, { listKey: 'User' })
+      expect(props.availableColumns).toBeUndefined()
+      expect(props.pageSizeControl).toBe(false)
+    },
+    BOOT,
+  )
+
+  it(
+    'offers every displayable field to the column picker',
+    async () => {
+      const props = await render(ada, { listKey: 'User', urlControls: true })
+      expect(props.pageSizeControl).toBe(true)
+      expect(props.availableColumns).toEqual(
+        expect.arrayContaining(['name', 'billingAddress', 'posts', 'drafts']),
+      )
+    },
+    BOOT,
+  )
+
+  it(
+    'keeps a configured column outside the fields pickable and choosable',
+    async () => {
+      const configured = await render(ada, {
+        listKey: 'User',
+        columns: ['id', 'name'],
+        urlControls: true,
+      })
+      expect(configured.columns).toEqual(['id', 'name'])
+      expect(configured.defaultColumns).toEqual(['id', 'name'])
+      expect(configured.availableColumns?.slice(0, 2)).toEqual(['id', 'name'])
+
+      const toggled = await render(ada, {
+        listKey: 'User',
+        columns: ['id', 'name'],
+        visibleColumns: ['id', 'name', 'posts'],
+      })
+      expect(toggled.columns).toEqual(['id', 'name', 'posts'])
+      expect(toggled.columnsChosen).toBe(true)
+      expect(toggled.items.every((item) => typeof item.id === 'string')).toBe(true)
+    },
+    BOOT,
+  )
+
+  it(
+    'marks a chosen column sortable when the read can order by it',
+    async () => {
+      const props = await render(ada, { listKey: 'User', visibleColumns: ['name', 'drafts'] })
+      expect(props.sortableFields).toEqual({ name: true, drafts: false })
+    },
+    BOOT,
+  )
+})
+
 describe('ListView default-column curation (issue #1018)', () => {
   const timestamped: OpenSaasConfig = {
     db: { provider: 'postgresql', timestamps: true },
