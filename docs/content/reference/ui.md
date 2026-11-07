@@ -260,13 +260,59 @@ The list view displays items in a table with search, sorting, and actions.
 
 **Features:**
 
-- Sortable columns
+- Sortable columns, from a column header or the toolbar's Sort menu
+- A column picker
+- Comfortable and compact density
 - Search functionality
 - Edit and delete actions
 - Pagination — `page` and `pageSize` props, defaulting to `1` and `50`. The
-  total is the same access-scoped read counted in the database, so it can only
-  ever equal the number of rows the session may page through.
-- Responsive table layout
+  admin picks 25, 50 or 100 rows per page; `?pageSize=` still accepts any size
+  up to the cap of 200. The total is the same access-scoped read counted in the
+  database, so it can only ever equal the number of rows the session may page
+  through.
+- Cards on phones: below the `md` breakpoint each row renders as a card, with
+  every cell labelled by its column, so nothing scrolls sideways
+
+#### Columns
+
+`?columns=title,status,views` sets the visible columns, in that order. The
+toolbar's Columns menu writes it, and a "Reset columns" item drops it again.
+`AdminUI` hands the selection to `ListView` as `visibleColumns`, and `ListView`
+resolves it on the server against the list's displayable fields:
+
+- A name the list does not display is ignored. When no valid name remains, the
+  view falls back to `ui.listView.initialColumns`, else the default columns.
+- A to-many relationship is counted only for a column that is shown, so the
+  server resolves the set before it reads. A count in a column you add is
+  therefore the same access-scoped count a default column shows.
+- Field Visibility still applies. Adding a column the session may not read
+  shows the column, never the value.
+
+`ListViewClient` takes the resolved set as `columns`, every pickable column as
+`availableColumns`, and `columnsChosen` to say whether `columns` came from the
+URL, which is what navigation then carries along.
+
+#### Sorting
+
+Sort stays single-column. The toolbar's Sort menu offers the same columns the
+headers do, so sorting works when the headers are hidden on a phone, and a
+relationship column is never sortable from either.
+
+#### Density
+
+Density is a per-browser preference, stored in `localStorage` under
+`opensaas-list-density` (`DENSITY_STORAGE_KEY`), the same way the theme choice
+is. The server always renders comfortable, and the stored choice applies once
+the page hydrates, so a remembered compact table never causes a hydration
+mismatch. The table wrapper carries `data-density="comfortable" | "compact"` for
+styling.
+
+#### Slots
+
+The list view adds `list-view-toolbar`, `list-view-sort`, `list-view-columns`,
+`list-view-density`, `list-view-table` (with `data-density`),
+`list-view-pagination` and `list-view-page-size`. The table's own `table-*`
+slots are unchanged.
 
 A column offers a sort only when this session's read can order by it, and a
 `?sort=` naming anything else is ignored. `ListView` works that out on the
@@ -663,6 +709,11 @@ Low-level shadcn/ui components for building custom interfaces.
 - `Card`, `CardHeader`, `CardContent`, `CardFooter` - Card components
 - `Dialog`, `DialogContent`, `DialogHeader`, `DialogFooter` - Modal dialogs
 - `Popover`, `PopoverTrigger`, `PopoverContent` - Popover components
+- `DropdownMenu`, `DropdownMenuTrigger`, `DropdownMenuContent`, `DropdownMenuItem`,
+  `DropdownMenuCheckboxItem`, `DropdownMenuRadioGroup`, `DropdownMenuRadioItem`,
+  `DropdownMenuLabel`, `DropdownMenuSeparator` and the submenu parts - Menus on
+  Radix's dropdown menu, keyboard-navigable, each part carrying a
+  `dropdown-menu-*` `data-slot`
 
 **Data Display:**
 

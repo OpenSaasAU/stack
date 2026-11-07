@@ -180,6 +180,8 @@ export type { FilterRow, FilterBuilderState } from './lib/filterBuilderState.js'
 // Theme utilities
 export { compileTheme, presetThemes } from './lib/theme.js'
 
+export { type ListDensity, DENSITY_STORAGE_KEY } from './lib/density.js'
+
 // Color-scheme (dark mode) utilities
 export {
   type ThemeChoice,

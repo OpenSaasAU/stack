@@ -172,6 +172,14 @@ export async function AdminUI({
         ? Math.min(pageSizeParam, MAX_PAGE_SIZE)
         : undefined
 
+    const visibleColumns =
+      typeof searchParams.columns === 'string'
+        ? searchParams.columns
+            .split(',')
+            .map((name) => name.trim())
+            .filter((name) => name.length > 0)
+        : undefined
+
     // Read list-view defaults (column selection/order + default sort) from the
     // list-level `ui.listView` config (mirrors Keystone). When absent, the
     // ListView falls back to its existing defaults (all non-system fields,
@@ -203,6 +211,7 @@ export async function AdminUI({
         page={page}
         pageSize={pageSize}
         columns={listView?.initialColumns}
+        visibleColumns={visibleColumns}
         initialSort={listView?.initialSort}
         sort={urlSort}
         serverAction={serverAction}

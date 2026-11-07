@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ListViewClient } from '../../src/components/ListViewClient.js'
-import { STICKY_ACTIONS_CELL } from '../../src/lib/tableClasses.js'
 
 // Mock Next.js navigation
 const mockPush = vi.fn()
@@ -40,25 +39,28 @@ describe('ListViewClient', () => {
   })
 
   describe('rendering', () => {
-    it('pins the row actions to the visible edge of a wide table', () => {
-      render(<ListViewClient {...defaultProps} />)
+    it('lays each row out as a labelled card below md, with no sticky actions column', () => {
+      render(<ListViewClient {...defaultProps} labelColumn="title" />)
 
-      expect(screen.getAllByRole('link', { name: 'Edit' })[0].closest('td')).toHaveClass(
-        ...STICKY_ACTIONS_CELL.split(' '),
-      )
-      expect(screen.getByRole('columnheader', { name: 'Actions' })).toHaveClass(
-        ...STICKY_ACTIONS_CELL.split(' '),
-      )
+      const actionsCell = screen.getAllByRole('link', { name: 'Edit' })[0].closest('td')
+      expect(actionsCell).not.toHaveClass('max-md:sticky')
+      expect(actionsCell).toHaveClass('max-md:absolute')
+      expect(screen.getByRole('columnheader', { name: 'Actions' })).toHaveClass('max-md:hidden')
+
+      const row = screen.getByText('First Post').closest('tr')
+      expect(row).toHaveClass('max-md:grid')
+      const statusCell = within(row as HTMLElement)
+        .getAllByRole('cell')
+        .find((cell) => cell.getAttribute('data-label') === 'Status')
+      expect(statusCell).toHaveClass('max-md:before:content-[attr(data-label)]')
+      expect(screen.getByText('First Post').closest('td')).toHaveClass('max-md:col-span-2')
     })
 
-    it('backs the pinned actions with the surface behind the table', () => {
-      render(<ListViewClient {...defaultProps} />)
+    it('lets the table container stop scrolling sideways below md', () => {
+      const { container } = render(<ListViewClient {...defaultProps} />)
 
-      expect(screen.getAllByRole('link', { name: 'Edit' })[0].closest('td')).toHaveClass(
-        'max-md:before:bg-background',
-      )
-      expect(screen.getByRole('columnheader', { name: 'Actions' })).toHaveClass(
-        'max-md:before:bg-background',
+      expect(container.querySelector('[data-slot="list-view-table"]')).toHaveClass(
+        'max-md:*:overflow-visible',
       )
     })
 

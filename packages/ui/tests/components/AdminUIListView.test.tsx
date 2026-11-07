@@ -207,4 +207,26 @@ describe('AdminUI ui.listView wiring', () => {
     expect(content.props.columns).toBeUndefined()
     expect(content.props.initialSort).toBeUndefined()
   })
+
+  it('passes the ?columns= selection to ListView as visibleColumns', async () => {
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql' },
+      lists: { Post: list({ fields: { title: text(), status: text() } }) },
+    }
+
+    const routed = async (searchParams: Record<string, string>) =>
+      routedContent(
+        await AdminUI({
+          context: makeContext(),
+          config,
+          params: ['post'],
+          searchParams,
+          basePath: '/admin',
+          serverAction: noopServerAction,
+        }),
+      ).props.visibleColumns
+
+    expect(await routed({ columns: 'status, title,,' })).toEqual(['status', 'title'])
+    expect(await routed({})).toBeUndefined()
+  })
 })

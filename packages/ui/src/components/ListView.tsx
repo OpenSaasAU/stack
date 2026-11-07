@@ -123,6 +123,12 @@ export interface ListViewProps {
   listKey: string
   basePath?: string
   columns?: string[]
+  /**
+   * The columns the admin chose, from the `?columns=` URL param. Names this
+   * list does not display are ignored, and an empty selection falls back to
+   * `columns`. Resolved here so a to-many count is read for every column shown.
+   */
+  visibleColumns?: string[]
   page?: number
   pageSize?: number
   search?: string
@@ -150,6 +156,7 @@ export async function ListView({
   listKey,
   basePath = '/admin',
   columns,
+  visibleColumns,
   page = 1,
   pageSize: requestedPageSize = 50,
   search,
@@ -185,10 +192,15 @@ export async function ListView({
   // declared-dependency widening for it (`resolveIncludes`), and a reduced
   // relation is masked to `[]` for the rules and computed fields that read it —
   // so a to-many is counted only where a column displays that count.
-  const displayedColumns = new Set(
-    columns ??
-      Object.keys(displayFields).filter((name) => isDefaultColumnField(displayFields[name])),
+  const availableColumns = Object.keys(displayFields)
+  const chosenColumns = [...new Set(visibleColumns ?? [])].filter((name) =>
+    Object.hasOwn(displayFields, name),
   )
+  const resolvedColumns =
+    chosenColumns.length > 0
+      ? chosenColumns
+      : (columns ?? availableColumns.filter((name) => isDefaultColumnField(displayFields[name])))
+  const displayedColumns = new Set(resolvedColumns)
   const countedRelations = new Set(
     Object.entries(listConfig.fields)
       .filter(([name, field]) => isToManyRelationshipField(field) && displayedColumns.has(name))
@@ -374,7 +386,9 @@ export async function ListView({
         )}
         fields={serializeFieldConfigs(displayFields)}
         relationshipRefs={relationshipRefs}
-        columns={columns}
+        columns={resolvedColumns}
+        availableColumns={availableColumns}
+        columnsChosen={chosenColumns.length > 0}
         sortableFields={sortableFields}
         initialSort={activeSort}
         listKey={listKey}
