@@ -1,5 +1,6 @@
 'use client'
 
+import { unstable_rethrow } from 'next/navigation.js'
 import { useState } from 'react'
 import { Button } from '../../primitives/button.js'
 import { ConfirmDialog } from '../ConfirmDialog.js'
@@ -77,6 +78,7 @@ export function DeleteButton({
         setError(result.error || `Failed to delete ${itemName}`)
       }
     } catch (err: unknown) {
+      unstable_rethrow(err)
       setError((err as Error).message || `Failed to delete ${itemName}`)
     } finally {
       setIsPending(false)

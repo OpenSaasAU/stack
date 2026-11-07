@@ -1,5 +1,6 @@
 'use client'
 
+import { unstable_rethrow } from 'next/navigation.js'
 import { useEffect, useMemo, useRef, useState, useTransition, type RefObject } from 'react'
 import type { FieldFocusTarget, FieldValidityChannel } from './fieldValidity.js'
 import type { SerializableFieldConfig } from './serializeFieldConfig.js'
@@ -637,6 +638,7 @@ export function useItemForm({
           scalarBaseline.current = { ...scalarBaseline.current, ...data }
         }
       } catch (error: unknown) {
+        unstable_rethrow(error)
         report(error instanceof Error && error.message ? error.message : errorFallback)
       }
     })
