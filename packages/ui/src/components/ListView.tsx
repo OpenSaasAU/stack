@@ -130,7 +130,11 @@ async function availableRowActionKeys(
     } catch (error) {
       unstable_rethrow(error)
       console.error('Row action availability could not be read:', error)
-      return {}
+      const unconditional = actions
+        .filter((action) => !action.isAvailable)
+        .map((action) => action.key)
+      if (unconditional.length === 0) return {}
+      return Object.fromEntries(ids.map((id) => [String(id), unconditional]))
     }
   }
   const keysById: Record<string, string[]> = {}
@@ -401,25 +405,25 @@ export async function ListView({
   // never drift from the field the Item label is read off.
   const avatarColumn = listConfig.ui?.avatar ? getLabelFieldName(listConfig) : undefined
 
-  const bulkActions = (
-    await resolveVisibleActions(listConfig.ui?.listView?.bulkActions, context, listKey)
-  ).map(serializeBulkAction)
-
-  const visibleRowActions = await resolveVisibleActions(
-    listConfig.ui?.listView?.rowActions,
-    context,
-    listKey,
+  const pageIds = items.flatMap((item) =>
+    typeof item.id === 'string' || typeof item.id === 'number' ? [item.id] : [],
   )
-  const rowActionKeys = await availableRowActionKeys(
-    visibleRowActions,
-    context.db[key],
-    items.flatMap((item) =>
-      typeof item.id === 'string' || typeof item.id === 'number' ? [item.id] : [],
-    ),
-    context.session,
-  )
-
-  const { hideCreate, hideDelete } = await resolveListUi(listConfig, context)
+  const resolveRowActions = async () => {
+    const visible = await resolveVisibleActions(
+      listConfig.ui?.listView?.rowActions,
+      context,
+      listKey,
+    )
+    const keys = await availableRowActionKeys(visible, context.db[key], pageIds, context.session)
+    return { visibleRowActions: visible, rowActionKeys: keys }
+  }
+  const [visibleBulkActions, { visibleRowActions, rowActionKeys }, { hideCreate, hideDelete }] =
+    await Promise.all([
+      resolveVisibleActions(listConfig.ui?.listView?.bulkActions, context, listKey),
+      resolveRowActions(),
+      resolveListUi(listConfig, context),
+    ])
+  const bulkActions = visibleBulkActions.map(serializeBulkAction)
 
   return (
     <div className="p-4 md:p-8">

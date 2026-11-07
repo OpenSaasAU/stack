@@ -306,8 +306,6 @@ export default config({
               },
             },
           ],
-          // Row action: offered only on posts that are not yet published, and
-          // re-checked against the re-read row when it runs.
           rowActions: [
             {
               key: 'publish',

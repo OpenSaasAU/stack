@@ -2,18 +2,13 @@
 
 import * as React from 'react'
 import {
-  cellComponentRegistry,
+  builtInCellComponents,
   getCellComponent,
   type CellComponent,
   type CellComponentProps,
 } from './registry.js'
 import type { SerializableFieldConfig } from '../../lib/serializeFieldConfig.js'
 import { TextCell } from './TextCell.js'
-
-const BUILT_IN_CELLS: ReadonlySet<CellComponent> = new Set([
-  TextCell,
-  ...Object.values(cellComponentRegistry),
-])
 
 function resolveCellComponent(field: SerializableFieldConfig): CellComponent {
   return (
@@ -29,7 +24,7 @@ function resolveCellComponent(field: SerializableFieldConfig): CellComponent {
  * (an anchor, say) the caller cannot know.
  */
 export function rendersBuiltInCell(field: SerializableFieldConfig): boolean {
-  return BUILT_IN_CELLS.has(resolveCellComponent(field))
+  return builtInCellComponents.has(resolveCellComponent(field))
 }
 
 function CellRendererInner({

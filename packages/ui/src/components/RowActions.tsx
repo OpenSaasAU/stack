@@ -107,14 +107,18 @@ export function RowActions({
   className,
 }: RowActionsProps) {
   const [busy, setBusy] = React.useState(false)
+  const running = React.useRef(false)
   const [confirm, setConfirm] = React.useState<Pending | null>(null)
   const queued = React.useRef<Pending | null>(null)
 
   const run = async (work: () => Promise<void>) => {
+    if (running.current) return
+    running.current = true
     setBusy(true)
     try {
       await work()
     } finally {
+      running.current = false
       setBusy(false)
     }
   }
@@ -148,7 +152,7 @@ export function RowActions({
             size="icon"
             data-slot="row-actions-trigger"
             aria-label={`Actions for ${rowLabel}`}
-            disabled={busy}
+            aria-disabled={busy || undefined}
             className={cn('h-8 w-8', className)}
           >
             <Ellipsis aria-hidden="true" />

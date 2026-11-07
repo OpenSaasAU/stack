@@ -360,7 +360,7 @@ export function ListViewClient({
     }
     setBulkStatus(deleted === 1 ? `“${name}” deleted` : `“${name}” not deleted`)
     if (deleted === 1 && selection.isSelected(id)) selection.toggle(id)
-    if (deleted === 1) refreshFromFirstPage()
+    if (deleted === 1 && items.length === 1 && page > 1) refreshFromFirstPage()
     else router.refresh()
   }
 

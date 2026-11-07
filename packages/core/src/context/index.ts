@@ -957,17 +957,21 @@ export function getContext<TConfig extends OpenSaasConfig>(
       }
       const id = parseId(props.listKey, props.id)
       if (id === null) return notRun
-      const passes = async (check: () => boolean | Promise<boolean>): Promise<boolean> => {
+      const passes = async (
+        name: 'hasAccess' | 'isAvailable',
+        check: () => boolean | Promise<boolean>,
+      ): Promise<boolean> => {
         try {
           return await check()
-        } catch {
+        } catch (error) {
+          console.error(`Row action "${props.key}" on "${props.listKey}" ${name} threw:`, error)
           return false
         }
       }
       const { hasAccess, isAvailable } = action
       if (
         hasAccess &&
-        !(await passes(() =>
+        !(await passes('hasAccess', () =>
           hasAccess({ session: context.session, context, listKey: props.listKey }),
         ))
       ) {
@@ -976,7 +980,10 @@ export function getContext<TConfig extends OpenSaasConfig>(
       try {
         const item = await context.db[props.listKey].where({ id: { equals: id } }).first()
         if (item === null) return notRun
-        if (isAvailable && !(await passes(() => isAvailable({ item, session: context.session })))) {
+        if (
+          isAvailable &&
+          !(await passes('isAvailable', () => isAvailable({ item, session: context.session })))
+        ) {
           return notRun
         }
         const result = await action.handler({ listKey: props.listKey, id, item, context })

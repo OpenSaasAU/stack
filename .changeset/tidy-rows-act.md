@@ -5,7 +5,7 @@
 
 Add Row actions to the admin list view
 
-Each row now has a menu with the built-in Edit, Copy link and Delete (confirmed through `ConfirmDialog`), and the row title links to the item page. The previous per-row Edit link moves into that menu. A list declares its own actions under `ui.listView.rowActions`:
+Each row now has a menu with the built-in Edit, Copy link and Delete (confirmed through `ConfirmDialog`), and the row title links to the item page. The previous per-row Edit link moves into that menu. A list declares its own actions under `ui.listView.rowActions`, each with a key unique within the list (`config()` throws on a duplicate):
 
 ```ts
 ui: {

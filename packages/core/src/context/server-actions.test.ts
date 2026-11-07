@@ -730,45 +730,57 @@ describe('context.serverAction', () => {
     )
 
     test(
-      'a hasAccess that throws answers as Silent failure',
+      'a hasAccess that throws answers as Silent failure and is logged',
       async () => {
         const id = await seedPost('a', 'draft')
         const handler = vi.fn(async () => ({ message: 'ran' }))
+        const thrown = new Error('no role')
         const hasAccess = () => {
-          throw new Error('no role')
+          throw thrown
         }
-
-        expect(
-          await contextAt(withRowAction({ handler, hasAccess })).serverAction({
-            listKey: 'Post',
-            action: 'rowAction',
-            key: 'publish',
-            id,
-          }),
-        ).toEqual({ rowAction: false, error: 'This action was not run' })
-        expect(handler).not.toHaveBeenCalled()
+        const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+        try {
+          expect(
+            await contextAt(withRowAction({ handler, hasAccess })).serverAction({
+              listKey: 'Post',
+              action: 'rowAction',
+              key: 'publish',
+              id,
+            }),
+          ).toEqual({ rowAction: false, error: 'This action was not run' })
+          expect(handler).not.toHaveBeenCalled()
+          expect(logged).toHaveBeenCalledWith(expect.stringContaining('hasAccess threw'), thrown)
+        } finally {
+          logged.mockRestore()
+        }
       },
       BOOT,
     )
 
     test(
-      'an isAvailable that throws answers as Silent failure',
+      'an isAvailable that throws answers as Silent failure and is logged',
       async () => {
         const id = await seedPost('a', 'draft')
         const handler = vi.fn(async () => ({ message: 'ran' }))
+        const thrown = new Error('bad row')
         const isAvailable = () => {
-          throw new Error('bad row')
+          throw thrown
         }
-
-        expect(
-          await contextAt(withRowAction({ handler, isAvailable })).serverAction({
-            listKey: 'Post',
-            action: 'rowAction',
-            key: 'publish',
-            id,
-          }),
-        ).toEqual({ rowAction: false, error: 'This action was not run' })
-        expect(handler).not.toHaveBeenCalled()
+        const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+        try {
+          expect(
+            await contextAt(withRowAction({ handler, isAvailable })).serverAction({
+              listKey: 'Post',
+              action: 'rowAction',
+              key: 'publish',
+              id,
+            }),
+          ).toEqual({ rowAction: false, error: 'This action was not run' })
+          expect(handler).not.toHaveBeenCalled()
+          expect(logged).toHaveBeenCalledWith(expect.stringContaining('isAvailable threw'), thrown)
+        } finally {
+          logged.mockRestore()
+        }
       },
       BOOT,
     )

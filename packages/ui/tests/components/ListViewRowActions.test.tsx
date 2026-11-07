@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as React from 'react'
-import type { AccessContext, OpenSaasConfig, Session } from '@opensaas/stack-core'
+import type { OpenSaasConfig, Session } from '@opensaas/stack-core'
 import { relationship, text, virtual } from '@opensaas/stack-core/fields'
 import { createTestDatabase, type TestDatabase } from '@opensaas/stack-core/testing'
 import { ListView } from '../../src/components/ListView.js'
@@ -62,11 +62,17 @@ const config: OpenSaasConfig = {
 }
 
 let database: TestDatabase
+let flakyComputations = 0
+const flakyPageSize = 2
 const ids: Record<string, string> = {}
 
+function hasChildren(props: unknown): props is { children: React.ReactNode } {
+  return typeof props === 'object' && props !== null && 'children' in props
+}
+
 function findListViewClientProps(tree: React.ReactElement): ListViewClientProps {
-  const outer = tree as React.ReactElement<{ children: React.ReactNode }>
-  const client = React.Children.toArray(outer.props.children).find(
+  if (!hasChildren(tree.props)) throw new Error('ListView output has no children')
+  const client = React.Children.toArray(tree.props.children).find(
     (child): child is React.ReactElement<ListViewClientProps> =>
       React.isValidElement(child) && child.type === ListViewClient,
   )
@@ -75,7 +81,7 @@ function findListViewClientProps(tree: React.ReactElement): ListViewClientProps 
 }
 
 async function render(session: Session | null): Promise<ListViewClientProps> {
-  const context = database.context(session) as unknown as AccessContext
+  const context = database.context(session)
   return findListViewClientProps(
     await ListView({ context, config, listKey: 'Post', basePath: '/admin' }),
   )
@@ -195,6 +201,30 @@ const commentedConfig: OpenSaasConfig = {
       },
       access: { operation: { query: () => true } },
     },
+    Flaky: {
+      fields: {
+        title: text(),
+        broken: virtual({
+          type: 'string',
+          hooks: {
+            resolveOutput: () => {
+              flakyComputations += 1
+              if (flakyComputations > flakyPageSize) throw new Error('cannot compute')
+              return 'ok'
+            },
+          },
+        }),
+      },
+      access: { operation: { query: () => true } },
+      ui: {
+        listView: {
+          rowActions: [
+            { key: 'archive', label: 'Archive', handler },
+            { key: 'publish', label: 'Publish', isAvailable: () => true, handler },
+          ],
+        },
+      },
+    },
   },
 }
 
@@ -203,7 +233,7 @@ describe('ListView Row actions over computed fields', () => {
   const articleIds: Record<string, string> = {}
 
   async function renderArticles(columns: string[]): Promise<ListViewClientProps> {
-    const context = commented.context({ userId: 'u1' }) as unknown as AccessContext
+    const context = commented.context({ userId: 'u1' })
     return findListViewClientProps(
       await ListView({
         context,
@@ -225,6 +255,10 @@ describe('ListView Row actions over computed fields', () => {
     await db.Comment.create({
       data: { body: 'first', article: { connect: { id: articleIds.Discussed } } },
     })
+    for (const title of ['One', 'Two']) {
+      const flaky = await db.Flaky.create({ data: { title } })
+      articleIds[title] = String(flaky?.id)
+    }
   }, BOOT)
 
   afterAll(async () => {
@@ -238,6 +272,38 @@ describe('ListView Row actions over computed fields', () => {
 
       expect(props.items.find((item) => item.title === 'Discussed')?.comments).toBe(1)
       expect(props.rowActionKeys).toEqual({ [articleIds.Discussed]: ['moderate'] })
+    },
+    BOOT,
+  )
+
+  it(
+    'still offers the actions with no isAvailable when the availability read fails',
+    async () => {
+      const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+      flakyComputations = 0
+      try {
+        const props = findListViewClientProps(
+          await ListView({
+            context: commented.context({ userId: 'u1' }),
+            config: commentedConfig,
+            listKey: 'Flaky',
+            basePath: '/admin',
+            columns: ['title'],
+          }),
+        )
+
+        expect(props.items).toHaveLength(2)
+        expect(props.rowActionKeys).toEqual({
+          [articleIds.One]: ['archive'],
+          [articleIds.Two]: ['archive'],
+        })
+        expect(logged).toHaveBeenCalledWith(
+          'Row action availability could not be read:',
+          expect.any(Error),
+        )
+      } finally {
+        logged.mockRestore()
+      }
     },
     BOOT,
   )

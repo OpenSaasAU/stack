@@ -41,6 +41,14 @@ function renderList(
   )
 }
 
+function deferred<T>() {
+  let resolve: (value: T) => void = () => {}
+  const promise = new Promise<T>((settle) => {
+    resolve = settle
+  })
+  return { promise, resolve }
+}
+
 function trigger(name: string) {
   return screen.getByRole('button', { name: `Actions for ${name}` })
 }
@@ -153,7 +161,7 @@ describe('Row actions', () => {
     expect(push).not.toHaveBeenCalled()
   })
 
-  it('returns to the first page after a delete, as a bulk delete does', async () => {
+  it('returns to the first page after deleting the last row on a later page', async () => {
     const user = userEvent.setup()
     renderList(
       vi.fn(async () => ({ deleted: 1, total: 1 })),
@@ -169,6 +177,31 @@ describe('Row actions', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('“Last one” deleted')
     expect(refresh).toHaveBeenCalled()
     expect(push).toHaveBeenCalledWith('/admin/post?page=1')
+  })
+
+  it('stays on the current page after a delete that leaves rows on it', async () => {
+    const user = userEvent.setup()
+    renderList(
+      vi.fn(async () => ({ deleted: 1, total: 1 })),
+      {
+        page: 7,
+        total: 1000,
+        items: [
+          { id: '301', title: 'Kept one', status: 'draft' },
+          { id: '302', title: 'Gone one', status: 'draft' },
+        ],
+      },
+    )
+
+    await user.click(trigger('Gone one'))
+    await user.click(await screen.findByRole('menuitem', { name: 'Delete' }))
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Delete' }),
+    )
+
+    expect(await screen.findByRole('status')).toHaveTextContent('“Gone one” deleted')
+    expect(refresh).toHaveBeenCalled()
+    expect(push).not.toHaveBeenCalled()
   })
 
   it('links the title beside a custom cell that renders its own anchor', () => {
@@ -228,6 +261,75 @@ describe('Row actions', () => {
     const dialog = await screen.findByRole('dialog')
     await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
     await waitFor(() => expect(trigger('Live one')).toHaveFocus())
+  })
+
+  it('returns focus to the trigger after a confirmed Delete, while the delete is in flight', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<unknown>()
+    renderList(vi.fn(() => pending.promise))
+
+    trigger('Live one').focus()
+    await user.keyboard('{Enter}')
+    await screen.findByRole('menu')
+    await user.keyboard('{End}{Enter}')
+
+    const dialog = await screen.findByRole('dialog')
+    within(dialog).getByRole('button', { name: 'Delete' }).focus()
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    await waitFor(() => expect(trigger('Live one')).toHaveFocus())
+
+    pending.resolve({ deleted: 1, total: 2 })
+    expect(await screen.findByRole('status')).toHaveTextContent('“Live one” deleted')
+    expect(trigger('Live one')).toHaveFocus()
+  })
+
+  it('returns focus to the trigger after a confirmed destructive action', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<unknown>()
+    renderList(
+      vi.fn(() => pending.promise),
+      {
+        rowActions: [{ key: 'archive', label: 'Archive', destructive: true }],
+        rowActionKeys: { '1': ['archive'] },
+      },
+    )
+
+    trigger('Draft one').focus()
+    await user.keyboard('{Enter}')
+    const menu = await screen.findByRole('menu')
+    within(menu).getByRole('menuitem', { name: 'Archive' }).focus()
+    await user.keyboard('{Enter}')
+
+    const dialog = await screen.findByRole('dialog')
+    within(dialog).getByRole('button', { name: 'Archive' }).focus()
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    await waitFor(() => expect(trigger('Draft one')).toHaveFocus())
+
+    pending.resolve({ rowAction: true, message: 'Archived' })
+    expect(await screen.findByRole('status')).toHaveTextContent('Archived')
+    expect(trigger('Draft one')).toHaveFocus()
+  })
+
+  it('returns focus to the trigger after a non-destructive action', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<unknown>()
+    renderList(vi.fn(() => pending.promise))
+
+    trigger('Draft one').focus()
+    await user.keyboard('{Enter}')
+    const menu = await screen.findByRole('menu')
+    within(menu).getByRole('menuitem', { name: 'Publish now' }).focus()
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+    await waitFor(() => expect(trigger('Draft one')).toHaveFocus())
+    expect(trigger('Draft one')).toHaveAttribute('aria-disabled', 'true')
+
+    pending.resolve({ rowAction: true, message: 'Published' })
+    expect(await screen.findByRole('status')).toHaveTextContent('Published')
+    expect(trigger('Draft one')).toHaveFocus()
+    expect(trigger('Draft one')).not.toHaveAttribute('aria-disabled')
   })
 
   it('offers no Delete when the list cannot delete', async () => {
