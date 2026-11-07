@@ -43,6 +43,23 @@ export {
 } from './select.js'
 export { Checkbox } from './checkbox.js'
 export { Popover, PopoverTrigger, PopoverContent } from './popover.js'
+export {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuCheckboxItem,
+  DropdownMenuRadioItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuGroup,
+  DropdownMenuPortal,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuRadioGroup,
+} from './dropdown-menu.js'
 export { Calendar, type CalendarProps } from './calendar.js'
 export { TimePicker, type TimePickerProps } from './time-picker.js'
 export { DateTimePicker, type DateTimePickerProps } from './datetime-picker.js'

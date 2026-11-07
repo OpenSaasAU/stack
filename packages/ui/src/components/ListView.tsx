@@ -5,8 +5,9 @@ import { ListViewClient } from './ListViewClient.js'
 import type { SerializedBulkAction } from './BulkActions.js'
 import { formatListName } from '../lib/utils.js'
 import { serializeFieldConfigs } from '../lib/serializeFieldConfig.js'
-import { isDefaultColumnField, withStructuralTimestampDefaults } from '../lib/defaultColumns.js'
+import { computeDefaultColumns, withStructuralTimestampDefaults } from '../lib/defaultColumns.js'
 import { resolveListUi } from '../lib/resolveListUi.js'
+import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '../lib/pageSize.js'
 import { jsonSafeClone } from '../lib/jsonSafeClone.js'
 import { applyClientValueTransforms } from '../lib/clientValueTransforms.js'
 import { EmptyState } from './EmptyState.js'
@@ -123,6 +124,18 @@ export interface ListViewProps {
   listKey: string
   basePath?: string
   columns?: string[]
+  /**
+   * The columns the admin chose, from the `?columns=` URL param. Names this
+   * list does not display are ignored, and an empty selection falls back to
+   * `columns`. Resolved here so a to-many count is read for every column shown.
+   */
+  visibleColumns?: string[]
+  /**
+   * Whether this page reads `?columns=` and `?pageSize=` back into
+   * `visibleColumns` and `pageSize`. Offers the Columns menu and the
+   * rows-per-page control, which write those params. `AdminUI` sets it.
+   */
+  urlControls?: boolean
   page?: number
   pageSize?: number
   search?: string
@@ -150,8 +163,10 @@ export async function ListView({
   listKey,
   basePath = '/admin',
   columns,
+  visibleColumns,
+  urlControls = false,
   page = 1,
-  pageSize: requestedPageSize = 50,
+  pageSize: requestedPageSize = DEFAULT_PAGE_SIZE,
   search,
   initialSort,
   sort,
@@ -173,29 +188,34 @@ export async function ListView({
     )
   }
 
-  // Fold in the structural createdAt/updatedAt exclusion (issue #1018) before
-  // crossing the server/client boundary, so `ListViewClient`'s fallback (used
-  // when no explicit `columns` is configured) curates off the same declared
-  // `ui.listView.defaultColumn` flag as everything else — no timestamp-aware
-  // logic needed on the client.
   const displayFields = withStructuralTimestampDefaults(listConfig.fields, listConfig, config.db)
 
-  // The columns `ListViewClient` will actually render, resolved the same way it
-  // resolves them. Naming a relation in the read suppresses the engine's
-  // declared-dependency widening for it (`resolveIncludes`), and a reduced
-  // relation is masked to `[]` for the rules and computed fields that read it —
-  // so a to-many is counted only where a column displays that count.
-  const displayedColumns = new Set(
-    columns ??
-      Object.keys(displayFields).filter((name) => isDefaultColumnField(displayFields[name])),
+  const availableColumns = [
+    ...new Set([
+      ...(columns ?? []).filter((name) => !Object.hasOwn(displayFields, name)),
+      ...Object.keys(displayFields),
+    ]),
+  ]
+  const chosenColumns = [...new Set(visibleColumns ?? [])].filter((name) =>
+    availableColumns.includes(name),
   )
+  const defaultColumns = columns ?? computeDefaultColumns(displayFields)
+  const resolvedColumns = chosenColumns.length > 0 ? chosenColumns : defaultColumns
+  const displayedColumns = new Set(resolvedColumns)
+  // Naming a relation in the read suppresses the engine's declared-dependency
+  // widening for it (`resolveIncludes`), and a reduced relation is masked to
+  // `[]` for the rules and computed fields that read it — so a to-many is
+  // counted only where a column displays that count.
   const countedRelations = new Set(
     Object.entries(listConfig.fields)
       .filter(([name, field]) => isToManyRelationshipField(field) && displayedColumns.has(name))
       .map(([name]) => name),
   )
 
-  const pageSize = Math.min(Math.max(1, Math.floor(requestedPageSize) || 50), 200)
+  const pageSize = Math.min(
+    Math.max(1, Math.floor(requestedPageSize) || DEFAULT_PAGE_SIZE),
+    MAX_PAGE_SIZE,
+  )
   const currentPage = Number.isSafeInteger(page) && page >= 1 ? page : 1
   const skip = (currentPage - 1) * pageSize
   let items: Array<Record<string, unknown>> = []
@@ -374,7 +394,11 @@ export async function ListView({
         )}
         fields={serializeFieldConfigs(displayFields)}
         relationshipRefs={relationshipRefs}
-        columns={columns}
+        columns={resolvedColumns}
+        availableColumns={urlControls ? availableColumns : undefined}
+        pageSizeControl={urlControls}
+        defaultColumns={defaultColumns}
+        columnsChosen={chosenColumns.length > 0}
         sortableFields={sortableFields}
         initialSort={activeSort}
         listKey={listKey}
