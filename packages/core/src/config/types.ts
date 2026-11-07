@@ -2702,13 +2702,14 @@ export interface RowActionContext<TTypeInfo extends TypeInfo = TypeInfo> {
   id: RowActionId<TTypeInfo>
   /**
    * The row as this session reads it, re-read through the secured context at
-   * dispatch: its own columns, foreign keys and computed fields, with no
-   * relations.
+   * dispatch after the row lock is taken: its own columns, foreign keys and
+   * computed fields, with no relations.
    */
   item: Record<string, unknown>
   /**
-   * The access-scoped context. All database work MUST go through `context.db`
-   * so the list's access control and hooks are enforced.
+   * The access-scoped context, bound to the dispatch's transaction. All
+   * database work MUST go through `context.db` so the list's access control
+   * and hooks are enforced, and so it commits or rolls back with the check.
    */
   context: import('../access/types.js').AccessContext
 }
@@ -2729,9 +2730,9 @@ export interface RowActionResult {
  *
  * Only `key`, `label`, `icon` and `destructive` cross to the client. `hasAccess`,
  * `isAvailable` and `handler` stay on the server: the client sends `key` and
- * the row id back through the generic server action, which re-reads the row
- * through the secured context, re-runs both checks and only then runs the
- * handler.
+ * the row id back through the generic server action, which opens a
+ * transaction, takes a row lock on the row, re-reads it through the secured
+ * context, re-runs both checks and only then runs the handler.
  */
 export interface RowAction<TTypeInfo extends TypeInfo = TypeInfo> {
   /**
@@ -2776,6 +2777,13 @@ export interface RowAction<TTypeInfo extends TypeInfo = TypeInfo> {
    * The server-side handler. Receives the row and the secured `context`; do all
    * work through `context.db`. Returns an optional `{ message }` shown in the
    * list view's status line.
+   *
+   * It runs inside a transaction that holds a row lock on the target row, so
+   * its `context.db` writes commit atomically with the `hasAccess` and
+   * `isAvailable` checks, a throw rolls them back, and a concurrent dispatch on
+   * the same row waits and then re-checks against what this one committed.
+   * The lock is held for as long as the handler runs: keep slow external
+   * calls short, or make them after the handler returns.
    */
   handler: (
     args: RowActionContext<TTypeInfo>,

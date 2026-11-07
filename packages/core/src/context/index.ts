@@ -969,25 +969,39 @@ export function getContext<TConfig extends OpenSaasConfig>(
         }
       }
       const { hasAccess, isAvailable } = action
-      if (
-        hasAccess &&
-        !(await passes('hasAccess', () =>
-          hasAccess({ session: context.session, context, listKey: props.listKey }),
-        ))
-      ) {
-        return notRun
-      }
       try {
-        const item = await context.db[props.listKey].where({ id: { equals: id } }).first()
-        if (item === null) return notRun
-        if (
-          isAvailable &&
-          !(await passes('isAvailable', () => isAvailable({ item, session: context.session })))
-        ) {
-          return notRun
-        }
-        const result = await action.handler({ listKey: props.listKey, id, item, context })
-        return { rowAction: true, message: result?.message }
+        return await transaction(async (tx) => {
+          const list = tx.db[props.listKey]
+          const locked = await list
+            .where({ id: { equals: id } })
+            .forUpdate()
+            .first()
+          if (locked === null) return notRun
+          const item = await list.where({ id: { equals: id } }).first()
+          if (item === null) return notRun
+          const txContext = engineContextOf(tx)
+          if (
+            hasAccess &&
+            !(await passes('hasAccess', () =>
+              hasAccess({ session: txContext.session, context: txContext, listKey: props.listKey }),
+            ))
+          ) {
+            return notRun
+          }
+          if (
+            isAvailable &&
+            !(await passes('isAvailable', () => isAvailable({ item, session: txContext.session })))
+          ) {
+            return notRun
+          }
+          const result = await action.handler({
+            listKey: props.listKey,
+            id,
+            item,
+            context: txContext,
+          })
+          return { rowAction: true, message: result?.message } as const
+        })
       } catch (error) {
         const failure = clientFailure(error, config, props.listKey, props.action, {
           genericMessage: 'Action failed',

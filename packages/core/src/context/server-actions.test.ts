@@ -859,6 +859,52 @@ describe('context.serverAction', () => {
     )
 
     test(
+      'the handler runs inside the transaction, so its write rolls back when it throws',
+      async () => {
+        const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+        try {
+          const id = await seedPost('a', 'draft')
+          const result = await contextAt(
+            withRowAction({
+              handler: async ({ id: rowId, context }) => {
+                const updated = await context.db.Post.update({
+                  where: { id: rowId },
+                  data: { status: 'published' },
+                })
+                if (updated === null) throw new Error('write denied')
+                throw new Error('after the write')
+              },
+            }),
+          ).serverAction({ listKey: 'Post', action: 'rowAction', key: 'publish', id })
+          expect(result).toEqual({ rowAction: false, error: 'Action failed' })
+          expect((await harness.context.db.Post.all())[0]?.status).toBe('draft')
+        } finally {
+          logged.mockRestore()
+        }
+      },
+      BOOT,
+    )
+
+    test(
+      'the handler context is transaction-bound, so it can take a row lock',
+      async () => {
+        const id = await seedPost('a', 'draft')
+        const result = await contextAt(
+          withRowAction({
+            handler: async ({ id: rowId, context }) => {
+              const locked = await context.db.Post.where({ id: { equals: rowId } })
+                .forUpdate()
+                .first()
+              return { message: locked === null ? 'not locked' : 'locked' }
+            },
+          }),
+        ).serverAction({ listKey: 'Post', action: 'rowAction', key: 'publish', id })
+        expect(result).toEqual({ rowAction: true, message: 'locked' })
+      },
+      BOOT,
+    )
+
+    test(
       'a handler that throws a plain Error yields a generic message',
       async () => {
         const logged = vi.spyOn(console, 'error').mockImplementation(() => {})

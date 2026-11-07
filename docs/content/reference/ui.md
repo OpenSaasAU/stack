@@ -395,18 +395,27 @@ const Post = list({
 | `destructive` | no       | Styles the item as destructive and confirms before running.                                                                                                                                                                                                                                                                                           |
 | `hasAccess`   | no       | `({ session, context, listKey }) => boolean \| Promise<boolean>`. Resolved once per request; `false`, or a throw, hides the action on every row.                                                                                                                                                                                                      |
 | `isAvailable` | no       | `({ item, session }) => boolean`, **synchronous**, evaluated on the server for each row, so a page of rows never fans out into queries. `item` is the row's own columns, foreign keys and computed fields, read with no includes exactly as dispatch re-reads it. If that read fails, each row offers only the actions that declare no `isAvailable`. |
-| `handler`     | yes      | `({ listKey, id, item, context }) => { message? }`. `id` is the list's own id type. Runs on the server with the secured context; do all work through `context.db`.                                                                                                                                                                                    |
+| `handler`     | yes      | `({ listKey, id, item, context }) => { message? }`. `id` is the list's own id type. Runs on the server inside a transaction holding a row lock on the target row; do all work through `context.db`.                                                                                                                                                   |
 
 Only `key`, `label`, `icon` and `destructive` cross to the client, and each row
 receives only the keys available on it. Handlers, `hasAccess` and `isAvailable`
 never leave the server.
 
 Running an action dispatches `{ action: 'rowAction', key, id }` through the
-admin's `serverAction`. The server re-reads the row through the secured context
-and re-runs `hasAccess` and `isAvailable` against it before the handler runs. A
-row that is missing, that the session can no longer read, or that is no longer
-eligible all answer with the same "not run" outcome, so a stale page can neither
-run an action nor learn why it was refused. The outcome — the handler's
+admin's `serverAction`. The server opens a transaction, takes a row lock on the
+target row (`.forUpdate()`), re-reads the row through the secured context in its
+own statement after the lock, and re-runs `hasAccess` and `isAvailable` against
+that read before the handler runs. A row that is missing, that the session can
+no longer read, or that is no longer eligible all answer with the same "not run"
+outcome, so a stale page can neither run an action nor learn why it was refused.
+
+The handler runs inside that transaction, still holding the lock, and its
+`context` is bound to it. Its `context.db` writes commit atomically with the
+check: a handler that throws rolls them back, and two concurrent dispatches of a
+one-shot action (`isAvailable: ({ item }) => item.sentAt === null`) run the
+handler once, the second answering "not run". Because the lock is held for as
+long as the handler runs, keep slow external calls (an email, a payment API)
+short, or make them after the handler returns. The outcome — the handler's
 `message`, or that the action was not run — appears in the list's status line,
 which survives the refresh that follows.
 

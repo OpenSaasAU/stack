@@ -525,13 +525,13 @@ The handler receives `{ listKey, ids, context }` and does its own row-by-row wor
 
 `{ listKey, action: 'rowAction', key, id }` → `{ rowAction: true, message? }` or `{ rowAction: false, error }`.
 
-Runs a list's own Row action ([`ui.listView.rowActions`](/docs/reference/ui#row-actions)), looked up server-side by `key`. Before the handler runs, the row is re-read through the secured context and the action's `hasAccess` and `isAvailable` are re-run against it. Refusals:
+Runs a list's own Row action ([`ui.listView.rowActions`](/docs/reference/ui#row-actions)), looked up server-side by `key`. It opens a [transaction](#transactions), takes a [row lock](#the-row-lock) on the target row with `.forUpdate()`, re-reads the row in its own statement after the lock, and re-runs the action's `hasAccess` and `isAvailable` against that read before the handler runs. Refusals:
 
 - `key` names no declared action on `listKey` → `{ rowAction: false, error: 'Row action "…" not found on list "…"' }`.
 - `hasAccess` returns false or throws, `id` is not an id the list can hold, the row is missing or denied, or `isAvailable` rejects the re-read row or throws → `{ rowAction: false, error: 'This action was not run' }`. These are one outcome, so a caller cannot tell a denied row from a missing one ([Silent failure](#silent-failure)).
-- The handler throws a `ValidationError` or `DatabaseError` → that error's own message. Anything else is logged server-side and reaches the caller as `{ rowAction: false, error: 'Action failed' }`.
+- The handler throws a `ValidationError` or `DatabaseError` → that error's own message. Anything else is logged server-side and reaches the caller as `{ rowAction: false, error: 'Action failed' }`. Either way the transaction rolls back, so none of the handler's writes persist.
 
-The handler receives `{ listKey, id, item, context }`, where `id` is parsed through the list's id type (a `number` on an `int autoincrement` list) and `item` is the re-read row.
+The handler receives `{ listKey, id, item, context }`, where `id` is parsed through the list's id type (a `number` on an `int autoincrement` list), `item` is the post-lock re-read row, and `context` is bound to the transaction. The handler runs inside the transaction while it holds the row lock, so its `context.db` writes commit atomically with the check, and a concurrent dispatch on the same row waits for it and then re-checks `isAvailable` against what it committed. The lock is held for as long as the handler runs: keep slow external calls short, or make them after the handler returns.
 
 ### `removeRelated`, `updateRelated`, `createRelated`, `linkRelated`
 
