@@ -1,8 +1,31 @@
 'use client'
 
 import * as React from 'react'
-import { getCellComponent, type CellComponent, type CellComponentProps } from './registry.js'
+import {
+  builtInCellComponents,
+  getCellComponent,
+  type CellComponent,
+  type CellComponentProps,
+} from './registry.js'
+import type { SerializableFieldConfig } from '../../lib/serializeFieldConfig.js'
 import { TextCell } from './TextCell.js'
+
+function resolveCellComponent(field: SerializableFieldConfig): CellComponent {
+  return (
+    field.ui?.cell ||
+    (field.ui?.fieldType ? getCellComponent(field.ui.fieldType) : getCellComponent(field.type)) ||
+    TextCell
+  )
+}
+
+/**
+ * Whether `field` renders through one of the admin UI's own Cells, rather
+ * than a `ui.cell` override or a Cell a package registered, whose markup
+ * (an anchor, say) the caller cannot know.
+ */
+export function rendersBuiltInCell(field: SerializableFieldConfig): boolean {
+  return builtInCellComponents.has(resolveCellComponent(field))
+}
 
 function CellRendererInner({
   Component,
@@ -17,12 +40,5 @@ function CellRendererInner({
  * the field-builder self-containment rule.
  */
 export function CellRenderer(props: CellComponentProps) {
-  const { field } = props
-
-  const Component: CellComponent =
-    field.ui?.cell ||
-    (field.ui?.fieldType ? getCellComponent(field.ui.fieldType) : getCellComponent(field.type)) ||
-    TextCell
-
-  return <CellRendererInner {...props} Component={Component} />
+  return <CellRendererInner {...props} Component={resolveCellComponent(props.field)} />
 }

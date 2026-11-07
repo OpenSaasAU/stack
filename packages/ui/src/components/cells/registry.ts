@@ -69,6 +69,21 @@ const cellComponentRegistry: Record<string, CellComponent> = {
   json: JsonCell,
 }
 
+/** The admin UI's own Cells, which a package's {@link registerCellComponent} never adds to. */
+export const builtInCellComponents: ReadonlySet<CellComponent> = Object.freeze(
+  new Set<CellComponent>([
+    TextCell,
+    IntegerCell,
+    CheckboxCell,
+    SelectCell,
+    TimestampCell,
+    CalendarDayCell,
+    RelationshipCell,
+    PasswordCell,
+    JsonCell,
+  ]),
+)
+
 /**
  * Register a default Cell component for a field type. A third-party field
  * package calls this to make its values render correctly in tables, exactly as

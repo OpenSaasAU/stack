@@ -264,7 +264,7 @@ The list view displays items in a table with search, sorting, and actions.
 - A column picker
 - Comfortable and compact density
 - Search functionality
-- Edit and delete actions
+- A menu of [Row actions](#row-actions) on every row, and a row title that links to the item page
 - Pagination — `page` and `pageSize` props, defaulting to `1` and `50`. The
   admin picks 25, 50 or 100 rows per page once there are more than 25 rows;
   `?pageSize=` still accepts any size up to the cap of 200, and a size outside
@@ -272,7 +272,8 @@ The list view displays items in a table with search, sorting, and actions.
   database, so it can only ever equal the number of rows the session may page
   through.
 - Cards on phones: below the `md` breakpoint each row renders as a card, with
-  every cell labelled by its column, so nothing scrolls sideways
+  every cell labelled by its column and the Row actions menu pinned to its top
+  corner, so nothing scrolls sideways
 
 #### Columns
 
@@ -333,6 +334,87 @@ server and hands `ListViewClient` one boolean per column as `sortableFields`.
 If you render the exported `ListViewClient` directly, pass `sortableFields`
 yourself: a column it does not mark `true` has no sort affordance, so omitting
 the prop leaves the table unsortable.
+
+### Row actions
+
+Each row has a menu of **Row actions**. Edit, Copy link and Delete are built in;
+Delete asks for confirmation, and shows only where the list's `delete` access is
+not statically `false` and `ui.hideDelete` does not hide it. Per-row update and
+delete access is not computed, so a delete the session may not perform reports
+"not deleted" in the status line with no reason. The row title links to the item
+page. When the title column renders through a `ui.cell` override or a Cell a
+package registered, whose markup may hold its own link, the item link sits
+beside the cell as "Open" rather than wrapping it.
+
+A list declares its own Row actions under `ui.listView.rowActions`. They appear
+between the built-ins, in declaration order:
+
+```typescript
+import { list } from '@opensaas/stack-core'
+import { select, text } from '@opensaas/stack-core/fields'
+
+const Post = list({
+  fields: {
+    title: text(),
+    status: select({
+      options: [
+        { label: 'Draft', value: 'draft' },
+        { label: 'Published', value: 'published' },
+      ],
+    }),
+  },
+  ui: {
+    listView: {
+      rowActions: [
+        {
+          key: 'publish',
+          label: 'Publish now',
+          icon: 'send',
+          destructive: false,
+          hasAccess: ({ session }) => session !== null,
+          isAvailable: ({ item }) => item.status !== 'published',
+          handler: async ({ id, context }) => {
+            const post = await context.db.Post.update({
+              where: { id },
+              data: { status: 'published' },
+            })
+            return { message: post ? 'Published' : 'Not published' }
+          },
+        },
+      ],
+    },
+  },
+})
+```
+
+| Option        | Required | Meaning                                                                                                                                                                                                                                                                                                                                               |
+| ------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `key`         | yes      | Stable id the client sends back to dispatch the action. Unique within the list: `config()` throws on a duplicate, naming the list and the key.                                                                                                                                                                                                        |
+| `label`       | yes      | Menu item text.                                                                                                                                                                                                                                                                                                                                       |
+| `icon`        | no       | One of `archive`, `check`, `copy`, `download`, `eye`, `eye-off`, `flag`, `lock`, `mail`, `refresh`, `send`, `star`, `trash`, `undo`, `unlock`, `upload`.                                                                                                                                                                                              |
+| `destructive` | no       | Styles the item as destructive and confirms before running.                                                                                                                                                                                                                                                                                           |
+| `hasAccess`   | no       | `({ session, context, listKey }) => boolean \| Promise<boolean>`. Resolved once per request; `false`, or a throw, hides the action on every row.                                                                                                                                                                                                      |
+| `isAvailable` | no       | `({ item, session }) => boolean`, **synchronous**, evaluated on the server for each row, so a page of rows never fans out into queries. `item` is the row's own columns, foreign keys and computed fields, read with no includes exactly as dispatch re-reads it. If that read fails, each row offers only the actions that declare no `isAvailable`. |
+| `handler`     | yes      | `({ listKey, id, item, context }) => { message? }`. `id` is the list's own id type. Runs on the server with the secured context; do all work through `context.db`.                                                                                                                                                                                    |
+
+Only `key`, `label`, `icon` and `destructive` cross to the client, and each row
+receives only the keys available on it. Handlers, `hasAccess` and `isAvailable`
+never leave the server.
+
+Running an action dispatches `{ action: 'rowAction', key, id }` through the
+admin's `serverAction`. The server re-reads the row through the secured context
+and re-runs `hasAccess` and `isAvailable` against it before the handler runs. A
+row that is missing, that the session can no longer read, or that is no longer
+eligible all answer with the same "not run" outcome, so a stale page can neither
+run an action nor learn why it was refused. The outcome — the handler's
+`message`, or that the action was not run — appears in the list's status line,
+which survives the refresh that follows.
+
+The menu is keyboard operable: Enter, Space or ArrowDown on the trigger opens
+it, the arrow keys, Home and End move through it, Escape closes it, and focus
+returns to the trigger, including after a confirmation dialog closes. Its parts
+carry the `row-actions-trigger`, `dropdown-menu-content` and `dropdown-menu-item`
+slots, and the row title link carries `row-title-link`.
 
 ### Filtering and sorting
 
@@ -727,7 +809,7 @@ Low-level shadcn/ui components for building custom interfaces.
   `DropdownMenuLabel`, `DropdownMenuSeparator` and the submenu parts - Menus on
   Radix's dropdown menu, keyboard-navigable, with a `dropdown-menu-*`
   `data-slot` on the rendered parts (trigger, content, items, label, shortcut,
-  separator and submenu trigger and content)
+  separator and submenu trigger and content). `DropdownMenuItem` takes `destructive`
 
 **Data Display:**
 
