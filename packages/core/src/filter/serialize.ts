@@ -61,8 +61,9 @@ export function serializeFilterToken(token: FilterToken): string {
  * Serialise a {@link FilterQuery} into the `?search=` grammar, joining its
  * terms with the grammar's implicit AND (a space). The inverse of
  * {@link parseFilterQuery}: for every query `parseFilterQuery` returns,
- * `parseFilterQuery(serializeFilterQuery(query))` is that query again. Every
- * term is written, including one whose values are empty (`field:` or `""`).
+ * `parseFilterQuery(serializeFilterQuery(query))` is that query again, with
+ * `quoted` set on a value this function had to quote. Every term is written,
+ * including one whose values are empty (`field:` or `""`).
  *
  * A value is quoted when its token says so or when it would otherwise read back
  * as different syntax: whitespace, a comma, a leading quote, a free-text word

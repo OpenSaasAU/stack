@@ -140,6 +140,19 @@ describe('FilterBuilder', () => {
     expect((screen.getByLabelText('Search') as HTMLInputElement).value).toBe(freeText)
   })
 
+  it('hydrates a comma value as a structured row with that one value', () => {
+    render(
+      <FilterBuilder
+        suggestions={suggestions}
+        defaultValue="title:draft,review"
+        onApply={vi.fn()}
+      />,
+    )
+    expect(screen.getAllByLabelText('Filter field')).toHaveLength(1)
+    expect((screen.getByLabelText('Filter value') as HTMLInputElement).value).toBe('draft,review')
+    expect((screen.getByLabelText('Search') as HTMLInputElement).value).toBe('')
+  })
+
   it('applies an unchanged hydrated query as it was written', async () => {
     const onApply = vi.fn()
     const user = userEvent.setup()

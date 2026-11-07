@@ -114,23 +114,27 @@ describe('parseFilterQuery', () => {
     })
   })
 
-  it('reads a leading `-` followed by more of the token as negation', () => {
-    expect(parseFilterQuery('-status:draft -beta --x')).toEqual({
+  it('reads a leading `-` as part of the word, never as negation', () => {
+    expect(parseFilterQuery('-status:draft -beta --x - beta')).toEqual({
       terms: [
-        tok('status', 'draft', { negated: true }),
-        tok(null, 'beta', { negated: true }),
-        tok(null, '-x', { negated: true }),
+        tok(null, '-status:draft'),
+        tok(null, '-beta'),
+        tok(null, '--x'),
+        tok(null, '-'),
+        tok(null, 'beta'),
       ],
     })
   })
 
-  it('keeps a lone `-` a free-text word', () => {
-    expect(parseFilterQuery('- beta')).toEqual({ terms: [tok(null, '-'), tok(null, 'beta')] })
-  })
-
-  it('splits a value on commas, and keeps a comma inside quotes', () => {
-    expect(parseFilterQuery('status:a,"b c",')).toEqual({
-      terms: [tok('status', '', { values: ['a', 'b c', ''] })],
+  it('reads a comma as part of the value, never as a separator', () => {
+    expect(parseFilterQuery('status:draft,review , role:, a,"b c"')).toEqual({
+      terms: [
+        tok('status', 'draft,review'),
+        tok(null, ','),
+        tok('role', ','),
+        tok(null, 'a,"b'),
+        tok(null, 'c"'),
+      ],
     })
     expect(parseFilterQuery('status:"a,b"')).toEqual({
       terms: [tok('status', 'a,b', { quoted: true })],
@@ -174,10 +178,11 @@ describe('parseFilterQuery', () => {
     })
   })
 
-  it('reads ADR-0083 negation and comma lists into the tree', () => {
-    expect(parseFilterQuery('-status:draft status:a,b')).toEqual({
-      terms: [tok('status', 'draft', { negated: true }), tok('status', '', { values: ['a', 'b'] })],
-    })
+  it('gives every token exactly one value and no negation', () => {
+    for (const term of parseFilterQuery('-status:draft status:a,b -"x" ,, -').terms) {
+      expect(term.negated).toBe(false)
+      expect(term.values).toHaveLength(1)
+    }
   })
 })
 
@@ -355,9 +360,31 @@ describe('buildFilterWhere', () => {
     })
   })
 
-  it('searches a negated token as the literal word it serialises to, never dropped or negated', () => {
+  it('searches a leading `-` word exactly as written', () => {
     expect(buildFilterWhere(parseFilterQuery('-status:active'), specs)).toEqual({
       name: { contains: '-status:active' },
+    })
+  })
+
+  it('searches a structured negated token as the literal word it serialises to, never dropped or negated', () => {
+    expect(
+      buildFilterWhere({ terms: [tok('status', 'active', { negated: true })] }, specs),
+    ).toEqual({ name: { contains: '-status:active' } })
+  })
+
+  it('maps a structured multi-value token as its comma-joined text, never dropped', () => {
+    expect(
+      buildFilterWhere({ terms: [tok('name', '', { values: ['Ada', 'Grace'] })] }, specs),
+    ).toEqual({ name: { contains: 'Ada,Grace' } })
+    expect(buildFilterWhere({ terms: [tok(null, '', { values: ['', ''] })] }, specs)).toEqual({
+      name: { contains: ',' },
+    })
+  })
+
+  it('searches a comma-only query as the literal comma (#1356)', () => {
+    expect(buildFilterWhere(parseFilterQuery(','), specs)).toEqual({ name: { contains: ',' } })
+    expect(buildFilterWhere(parseFilterQuery('role:,'), specs)).toEqual({
+      name: { contains: ',' },
     })
   })
 
@@ -426,13 +453,9 @@ describe('buildFilterWhere — empty-value tokens (#1509)', () => {
     expect(buildFilterWhere(parseFilterQuery('""'), { name: containsEverything })).toBeUndefined()
   })
 
-  it('treats a negated empty token as inert, exactly as the non-negated one', () => {
+  it('treats a structured negated empty token as inert, exactly as the non-negated one', () => {
     const negatedEmpty = tok('status', '', { negated: true })
     expect(buildFilterWhere({ terms: [negatedEmpty] }, specs)).toBeUndefined()
-    expect(buildFilterWhere(parseFilterQuery('-status: -""'), specs)).toBeUndefined()
-    expect(buildFilterWhere(parseFilterQuery('status:Active -role:'), specs)).toEqual({
-      status: { equals: 'active' },
-    })
   })
 
   it('leaves a non-empty token on the same field completely unaffected (#1356/#1504 unchanged)', () => {

@@ -33,12 +33,10 @@ export function fieldPrefixLength(text: string, start = 0): number {
  *
  * - `field:value` is a field token with the `eq` operator, and `field:>value`,
  *   `field:>=value`, `field:<value`, `field:<=value` are comparisons.
- * - A leading `-` followed by more of the token negates it: `-status:draft`.
- * - Commas separate a token's values: `status:draft,review`.
- * - A value in double quotes keeps its spaces and commas and is literal:
- *   `"status:draft"` is a free-text word. Inside quotes, `\"` is a quote and
- *   `\\` a backslash; any other backslash is itself. A token is `quoted` when
- *   its first value is.
+ * - A value in double quotes keeps its spaces and is literal: `"status:draft"`
+ *   is a free-text word. Inside quotes, `\"` is a quote and `\\` a backslash;
+ *   any other backslash is itself.
+ * - A leading `-` and a `,` are ordinary characters of a value.
  * - Anything else (`beta`, `>5`, `http://x`) is a free-text word (`field: null`).
  *
  * Validating fields and values is the engine's job, where a token that cannot
@@ -61,7 +59,7 @@ export function parseFilterQuery(query: string): FilterQuery {
   const readValue = (): { value: string; quoted: boolean } => {
     if (query[i] !== '"') {
       const start = i
-      while (i < n && query[i] !== ',' && !isFilterWhitespace(query[i])) i++
+      while (i < n && !isFilterWhitespace(query[i])) i++
       return { value: query.slice(start, i), quoted: false }
     }
     i++
@@ -84,9 +82,6 @@ export function parseFilterQuery(query: string): FilterQuery {
     while (i < n && isFilterWhitespace(query[i])) i++
     if (i >= n) break
 
-    const negated = query[i] === '-' && i + 1 < n && !isFilterWhitespace(query[i + 1])
-    if (negated) i++
-
     let field: string | null = null
     const prefixLength = fieldPrefixLength(query, i)
     if (prefixLength > 0) {
@@ -103,14 +98,8 @@ export function parseFilterQuery(query: string): FilterQuery {
       }
     }
 
-    const first = readValue()
-    const values = [first.value]
-    while (query[i] === ',') {
-      i++
-      values.push(readValue().value)
-    }
-
-    terms.push({ kind: 'token', field, operator, negated, values, quoted: first.quoted })
+    const { value, quoted } = readValue()
+    terms.push({ kind: 'token', field, operator, negated: false, values: [value], quoted })
   }
 
   return { terms }

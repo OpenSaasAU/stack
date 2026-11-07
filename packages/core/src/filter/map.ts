@@ -21,11 +21,11 @@ import type {
 const NEVER_MATCHES: FilterCondition = { NOT: {} }
 
 /**
- * Whether a {@link FilterToken} carries no value at all (`role:`, `""`,
- * `-role:`). Such a token is incomplete input and filters nothing (#1509).
+ * Whether a {@link FilterToken} was written with no characters at all (`role:`,
+ * `""`). Such a token is incomplete input and filters nothing (#1509).
  */
 export function isEmptyFilterToken(token: FilterToken): boolean {
-  return token.values.every((value) => value === '')
+  return token.values.length === 1 && token.values[0] === ''
 }
 
 /**
@@ -47,11 +47,11 @@ export function isFieldConditionToken(
  * fields' {@link FilterSpec}s (ADR-0017).
  *
  * Pure — no DB/Prisma imports. This is the unit-tested half of the filter seam.
- * Terms combine with implicit AND. An empty token, negated or not, is a
- * deliberate no-op — incomplete input expresses no constraint, so it
- * contributes nothing and is never handed to a free-text field (#1509). A
- * negated token is searched as the literal word it serialises to, and a token
- * with several values as the comma-joined value it was written as. A token
+ * Terms combine with implicit AND. An empty token is a deliberate no-op —
+ * incomplete input expresses no constraint, so it contributes nothing and is
+ * never handed to a free-text field (#1509). A negated token is searched as
+ * the literal word it serialises to, and a token with several values as their
+ * comma-joined text; neither is dropped or negated. A token
  * degrades to free text (never an error) when its field is unknown, has no
  * spec, uses an unsupported operator, or maps to `null`. Bare words (and
  * degraded tokens) are OR-matched across every free-text field, and each such
@@ -94,13 +94,13 @@ export function buildFilterWhere(
     }
 
     const value = token.values.join(',')
-    if (!isFieldConditionToken(token, (field) => specFor(field)?.operators)) {
+    const spec = token.field === null ? undefined : specFor(token.field)
+    if (!spec || !isFieldConditionToken(token, () => spec.operators)) {
       freeTextWords.push(value)
       continue
     }
 
-    const spec = specFor(token.field)
-    const condition = spec ? spec.toCondition(token.operator, value) : null
+    const condition = spec.toCondition(token.operator, value)
     if (condition === null) {
       freeTextWords.push(value)
       continue

@@ -38,14 +38,17 @@ function rowValue(row: ConditionRow): string {
   return row.token.values[0] ?? ''
 }
 
-function hydrate(query: string, suggestions: FilterFieldSuggestion[]): BuilderState {
-  const operatorsFor = (field: string) => suggestions.find((s) => s.field === field)?.operators
+function hydrate(
+  query: string,
+  suggestionByField: ReadonlyMap<string, FilterFieldSuggestion>,
+): BuilderState {
+  const operatorsFor = (field: string) => suggestionByField.get(field)?.operators
   const rows: ConditionRow[] = []
   const freeTerms: FilterToken[] = []
   const order: QuerySlot[] = []
   for (const token of parseFilterQuery(query).terms) {
     if (isEmptyFilterToken(token)) continue
-    if (isFieldConditionToken(token, operatorsFor) && token.values.length === 1) {
+    if (isFieldConditionToken(token, operatorsFor)) {
       const id = `row-${rows.length}`
       rows.push({ id, token })
       order.push({ kind: 'row', id })
@@ -179,13 +182,12 @@ export function FilterBuilder({
   // Hydrate once from the incoming query. The parent remounts this component
   // (via a `key` on the applied query) when the URL changes, so the builder
   // always reflects the active filter without an effect-driven prop copy.
-  const [state, setState] = React.useState(() => hydrate(defaultValue, suggestions))
-  const searchRef = React.useRef<HTMLInputElement>(null)
-
   const suggestionByField = React.useMemo(
     () => new Map(suggestions.map((s) => [s.field, s])),
     [suggestions],
   )
+  const [state, setState] = React.useState(() => hydrate(defaultValue, suggestionByField))
+  const searchRef = React.useRef<HTMLInputElement>(null)
 
   const applyQuery = (query: string) => {
     if (onApply) {

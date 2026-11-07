@@ -13,6 +13,7 @@ A query is an AND of terms, where a term is a Filter token or an OR group. The a
 | `field:a..b`           | An inclusive range, as one token                      |
 | `field:#id`            | The related record with exactly this id               |
 | `\"`                   | A literal quote inside a quoted value                 |
+| `\\`                   | A literal backslash inside a quoted value             |
 
 Literal text stays reachable by quoting, so `"OR"` and `"(draft"` are still free-text searches.
 
