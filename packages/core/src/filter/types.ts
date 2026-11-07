@@ -1,15 +1,6 @@
 /**
- * Filter engine types (ADR-0017).
- *
- * The admin UI's Filter builder turns a URL query string into scoped,
- * server-executed filtering. The grammar is an AND-only URL contract:
- * implicit-AND tokens, quoted multi-word values, comparison operators on
- * numeric/date fields, and bare words as free text. Fields participate by
- * declaring a {@link FilterSpec} (a self-contained field-builder method, peer
- * of `getContractField` et al.); a field without one is not filterable.
- *
- * These types are the pure boundary — no Prisma / DB imports — so the
- * `parse → tokens` and `tokens + specs → conditions` seam is unit-testable.
+ * Filter engine types (ADR-0017, ADR-0083). The pure boundary: no Prisma or DB
+ * imports, so `parse → query` and `query + specs → condition` are unit-testable.
  */
 
 import type { Where } from '../secured/vocabulary.js'
@@ -23,21 +14,42 @@ import type { Where } from '../secured/vocabulary.js'
 export type FilterOperator = 'eq' | 'gt' | 'gte' | 'lt' | 'lte'
 
 /**
- * One parsed unit of a filter query — a field, an operator, and a value.
+ * One Filter token: a field, an operator and its values.
  *
- * A bare free-text word parses to a token with `field: null`. `raw` is the
- * original source substring, retained so a token that can't map to a condition
- * degrades to free text without re-tokenising.
+ * A bare free-text word has `field: null`. `quoted` records that the value was
+ * written in double quotes, which keeps it literal: a quoted `"status:draft"`
+ * is a free-text word, never a field token. `negated` and a `values` list
+ * longer than one are the shapes ADR-0083's `-field:value` and `field:a,b`
+ * describe. {@link parseFilterQuery} does not produce them yet, and the engine
+ * searches such a token as the literal word it serialises to.
  */
 export interface FilterToken {
+  kind: 'token'
   /** Field key the token targets, or `null` for a bare free-text word. */
   field: string | null
-  /** The operator; `eq` for a plain `field:value`, comparisons for prefixed values. */
+  /** The operator: `eq` for a plain `field:value`, comparisons for prefixed values. */
   operator: FilterOperator
-  /** The unquoted value. */
-  value: string
-  /** The original source substring for this token (used when degrading to free text). */
-  raw: string
+  /** Whether the token is negated (`-field:value`). */
+  negated: boolean
+  /** The unquoted, unescaped values. A parsed token carries exactly one. */
+  values: string[]
+  /** Whether the value is written in double quotes. */
+  quoted: boolean
+}
+
+/**
+ * One term of a {@link FilterQuery}'s conjunction. A term is a
+ * {@link FilterToken}; ADR-0083's OR group joins this union under its own `kind`.
+ */
+export type FilterTerm = FilterToken
+
+/**
+ * A structured filter query: an AND of {@link FilterTerm}s. Produced by
+ * {@link parseFilterQuery} and turned back into the `?search=` grammar by
+ * {@link serializeFilterQuery}, its inverse.
+ */
+export interface FilterQuery {
+  terms: FilterTerm[]
 }
 
 /**

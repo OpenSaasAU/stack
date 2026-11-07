@@ -1,4 +1,5 @@
-import type { FilterCondition, FilterSpec, FilterToken } from './types.js'
+import { serializeFilterToken } from './serialize.js'
+import type { FilterCondition, FilterQuery, FilterSpec } from './types.js'
 
 /**
  * A Where fragment an `AND` chain can carry that never matches a row. `NOT`
@@ -14,11 +15,12 @@ import type { FilterCondition, FilterSpec, FilterToken } from './types.js'
 const NEVER_MATCHES: FilterCondition = { NOT: {} }
 
 /**
- * Map parsed {@link FilterToken}s to a single Prisma `where` fragment, given the
+ * Map a parsed {@link FilterQuery} to a single Where fragment, given the
  * fields' {@link FilterSpec}s (ADR-0017).
  *
  * Pure — no DB/Prisma imports. This is the unit-tested half of the filter seam.
- * Tokens combine with implicit AND. An empty-value token (`role:` or a bare
+ * Terms combine with implicit AND. A negated or multi-value token, which the
+ * parser does not produce yet, is searched as the literal word it serialises to. An empty-value token (`role:` or a bare
  * `""`) is a deliberate no-op — incomplete input expresses no constraint, so it
  * contributes nothing and is never handed to a free-text field (#1509). A
  * token with a value degrades to free text (never an error) when its field is
@@ -31,12 +33,12 @@ const NEVER_MATCHES: FilterCondition = { NOT: {} }
  * dropped: a condition that cannot be honoured must never widen the result set
  * (#1356).
  *
- * @param tokens Parsed tokens from {@link parseFilterQuery}.
- * @param specs  Field-name → Filter spec (from {@link collectFilterSpecs}).
- * @returns A Prisma `where` fragment, or `undefined` when nothing filters.
+ * @param query The structured query from {@link parseFilterQuery}.
+ * @param specs Field-name → Filter spec (from {@link collectFilterSpecs}).
+ * @returns A Where fragment, or `undefined` when nothing filters.
  */
 export function buildFilterWhere(
-  tokens: FilterToken[],
+  query: FilterQuery,
   specs: Record<string, FilterSpec>,
 ): FilterCondition | undefined {
   const andConditions: FilterCondition[] = []
@@ -44,7 +46,7 @@ export function buildFilterWhere(
 
   const freeTextFields = Object.keys(specs).filter((field) => specs[field].freeText)
 
-  for (const token of tokens) {
+  for (const token of query.terms) {
     // An empty value is incomplete input, not a constraint the engine failed
     // to honour: `role:` (or a bare `""`) says nothing to filter on, so it is
     // inert by design rather than narrowed away (#1509). This must be checked
@@ -53,23 +55,29 @@ export function buildFilterWhere(
     // `contains`-style mapping over `''` matches every row, not none. That is
     // the opposite of #1356's narrow-on-failure rule, which only ever applies
     // to a token that DOES carry a value the system cannot compile.
-    if (token.value === '') continue
+    if (!token.negated && token.values.every((value) => value === '')) continue
+
+    if (token.negated || token.values.length !== 1) {
+      freeTextWords.push(serializeFilterToken(token))
+      continue
+    }
+    const value = token.values[0]
 
     if (token.field === null) {
-      freeTextWords.push(token.value)
+      freeTextWords.push(value)
       continue
     }
 
     const spec = Object.hasOwn(specs, token.field) ? specs[token.field] : undefined
 
     if (!spec || !spec.operators.includes(token.operator)) {
-      freeTextWords.push(token.value)
+      freeTextWords.push(value)
       continue
     }
 
-    const condition = spec.toCondition(token.operator, token.value)
+    const condition = spec.toCondition(token.operator, value)
     if (condition === null) {
-      freeTextWords.push(token.value)
+      freeTextWords.push(value)
       continue
     }
 

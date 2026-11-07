@@ -1,13 +1,4 @@
-// ───────────────────────────────────────────────────────────────
-// Filter engine (ADR-0017)
-//
-// The pure boundary behind the admin UI's Filter builder:
-//   • parseFilterQuery  — query string → Filter tokens
-//   • buildFilterWhere  — tokens + Filter specs → Prisma where fragment
-// plus config-aware helpers that collect each field's Filter spec and compose
-// the two steps for a list. All of this stays free of DB/Prisma imports so the
-// grammar contract (including graceful degradation) is unit-testable.
-// ───────────────────────────────────────────────────────────────
+// Filter engine (ADR-0017, ADR-0083): query string ⇄ structured query → Where.
 
 export { parseFilterQuery } from './parse.js'
 export { serializeFilterQuery } from './serialize.js'
@@ -17,6 +8,8 @@ export type { FilterAccessArgs } from './collect.js'
 export type {
   FilterOperator,
   FilterToken,
+  FilterTerm,
+  FilterQuery,
   FilterCondition,
   FilterSpec,
   FilterValueSource,

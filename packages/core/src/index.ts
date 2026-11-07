@@ -384,6 +384,8 @@ export {
 export type {
   FilterOperator,
   FilterToken,
+  FilterTerm,
+  FilterQuery,
   FilterCondition,
   FilterSpec,
   FilterValueSource,

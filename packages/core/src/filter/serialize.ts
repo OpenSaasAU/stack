@@ -1,10 +1,6 @@
-import type { FilterOperator, FilterToken } from './types.js'
+import { fieldPrefixLength, isFilterWhitespace } from './parse.js'
+import type { FilterOperator, FilterQuery, FilterToken } from './types.js'
 
-/**
- * The comparison-operator prefix each {@link FilterOperator} serialises to. The
- * exact inverse of the prefixes {@link parseFilterQuery} recognises (`eq` has no
- * prefix — a plain `field:value`).
- */
 const OPERATOR_PREFIX: Record<FilterOperator, string> = {
   eq: '',
   gt: '>',
@@ -13,61 +9,54 @@ const OPERATOR_PREFIX: Record<FilterOperator, string> = {
   lte: '<=',
 }
 
-/**
- * Whether a value must be wrapped in double quotes to survive re-parsing.
- *
- * A value is quoted when it contains whitespace (so `parseFilterQuery` keeps it
- * as one token) or an embedded quote. When `guardOperatorChars` is set (an `eq`
- * field token, where a leading `>`/`<` would otherwise be read as a comparison
- * operator), a value starting with `<`/`>` is also quoted so it round-trips as a
- * literal value rather than an operator.
- */
-function quoteIfNeeded(value: string, guardOperatorChars: boolean): string {
-  const needsQuote =
-    /\s/.test(value) ||
-    value.includes('"') ||
-    (guardOperatorChars && (value.startsWith('>') || value.startsWith('<')))
-  return needsQuote ? `"${value}"` : value
+function mustQuote(token: FilterToken, value: string): boolean {
+  if (value.startsWith('"') || [...value].some(isFilterWhitespace)) return true
+  if (token.field === null) return value === '' || fieldPrefixLength(value) > 0
+  if (token.operator === 'eq') return /^(?:[<>]|\/\/)/.test(value)
+  if (token.operator === 'gt' || token.operator === 'lt') return value.startsWith('=')
+  return false
+}
+
+function quote(value: string): string {
+  let escaped = ''
+  for (let i = 0; i < value.length; i++) {
+    const ch = value[i]
+    const next = value[i + 1]
+    if (ch === '"') escaped += '\\"'
+    else if (ch === '\\' && (next === undefined || next === '"' || next === '\\')) escaped += '\\\\'
+    else escaped += ch
+  }
+  return `"${escaped}"`
 }
 
 /**
- * Serialise {@link FilterToken}s back into a filter query string — the exact
- * inverse of {@link parseFilterQuery} (ADR-0017). This is the grammar-producing
- * half the Filter builder UI relies on: the builder turns UI state into tokens
- * and serialises them into the `?search=` URL param the engine already consumes,
- * so the same quoting and operator-prefix rules live next to the parser and can
- * never drift.
+ * Serialise one {@link FilterToken} to its query-string form, as
+ * {@link serializeFilterQuery} writes it.
+ */
+export function serializeFilterToken(token: FilterToken): string {
+  const value = token.values.join(',')
+  const text = token.quoted || mustQuote(token, value) ? quote(value) : value
+  const negation = token.negated ? '-' : ''
+  if (token.field === null) return `${negation}${text}`
+  return `${negation}${token.field}:${OPERATOR_PREFIX[token.operator]}${text}`
+}
+
+/**
+ * Serialise a {@link FilterQuery} into the `?search=` grammar, joining its
+ * terms with the grammar's implicit AND (a space). The inverse of
+ * {@link parseFilterQuery}: for every query `parseFilterQuery` returns,
+ * `parseFilterQuery(serializeFilterQuery(query))` is that query again.
  *
- * Pure and field-agnostic (no DB/Prisma imports). Tokens are joined with the
- * grammar's implicit AND (a single space). A token with an empty value carries
- * no filter and is omitted, so `serializeFilterQuery` never emits a dangling
- * `field:` or a stray quote pair.
+ * A value is quoted when its token says so or when it would otherwise read back
+ * as different syntax: whitespace, a leading quote, a free-text word that looks
+ * like `field:value`, or a value an operator prefix would swallow. Inside
+ * quotes a quote is written `\"`, and a backslash that precedes a quote or ends
+ * the value is written `\\`.
  *
  * @example
- * serializeFilterQuery([
- *   { field: 'role',   operator: 'eq', value: 'Editor',       raw: '' },
- *   { field: 'orders', operator: 'gt', value: '5',            raw: '' },
- *   { field: 'name',   operator: 'eq', value: 'Ada Lovelace', raw: '' },
- *   { field: null,     operator: 'eq', value: 'beta',         raw: '' },
- * ])
- * // 'role:Editor orders:>5 name:"Ada Lovelace" beta'
+ * serializeFilterQuery(parseFilterQuery('name:"Ada \\"the Countess\\"" "status:draft"'))
+ * // 'name:"Ada \\"the Countess\\"" "status:draft"'
  */
-export function serializeFilterQuery(tokens: FilterToken[]): string {
-  const parts: string[] = []
-
-  for (const token of tokens) {
-    if (token.value === '') continue
-
-    if (token.field === null) {
-      // A leading `>`/`<` stays literal for a bare word (the parser only
-      // treats them as operators after a `field:`), so no operator guard here.
-      parts.push(quoteIfNeeded(token.value, false))
-      continue
-    }
-
-    const prefix = OPERATOR_PREFIX[token.operator]
-    parts.push(`${token.field}:${prefix}${quoteIfNeeded(token.value, prefix === '')}`)
-  }
-
-  return parts.join(' ')
+export function serializeFilterQuery(query: FilterQuery): string {
+  return query.terms.map(serializeFilterToken).join(' ')
 }

@@ -3,12 +3,75 @@
 import * as React from 'react'
 import { usePathname, useRouter } from 'next/navigation.js'
 import { Plus, X } from 'lucide-react'
-import type { FilterFieldSuggestion, FilterOperator, FilterValueSource } from '@opensaas/stack-core'
+import {
+  parseFilterQuery,
+  serializeFilterQuery,
+  type FilterFieldSuggestion,
+  type FilterOperator,
+  type FilterToken,
+} from '@opensaas/stack-core'
 import { Card } from '../primitives/card.js'
 import { Input } from '../primitives/input.js'
 import { Button } from '../primitives/button.js'
 import { cn, formatFieldName } from '../lib/utils.js'
-import { type FilterRow, queryToState, stateToQuery } from '../lib/filterBuilderState.js'
+
+interface ConditionRow {
+  id: string
+  token: FilterToken
+}
+
+interface BuilderState {
+  rows: ConditionRow[]
+  freeText: string
+}
+
+function fieldToken(field: string, operator: FilterOperator, value: string): FilterToken {
+  return { kind: 'token', field, operator, negated: false, values: [value], quoted: false }
+}
+
+function rowValue(row: ConditionRow): string {
+  return row.token.values.join('')
+}
+
+function hasValue(token: FilterToken): boolean {
+  return token.values.some((value) => value !== '')
+}
+
+function isConditionRow(
+  token: FilterToken,
+  suggestionByField: Map<string, FilterFieldSuggestion>,
+): boolean {
+  const suggestion = token.field === null ? undefined : suggestionByField.get(token.field)
+  return (
+    suggestion !== undefined &&
+    suggestion.operators.includes(token.operator) &&
+    !token.negated &&
+    token.values.length === 1 &&
+    hasValue(token)
+  )
+}
+
+function hydrate(query: string, suggestions: FilterFieldSuggestion[]): BuilderState {
+  const suggestionByField = new Map(suggestions.map((s) => [s.field, s]))
+  const rows: ConditionRow[] = []
+  const freeTerms: FilterToken[] = []
+  for (const token of parseFilterQuery(query).terms) {
+    if (isConditionRow(token, suggestionByField)) {
+      rows.push({ id: `row-${rows.length}`, token })
+    } else if (hasValue(token)) {
+      freeTerms.push(token)
+    }
+  }
+  return { rows, freeText: serializeFilterQuery({ terms: freeTerms }) }
+}
+
+function toQuery(state: BuilderState): string {
+  const terms = [
+    ...state.rows.map((row) => row.token),
+    ...parseFilterQuery(state.freeText).terms,
+  ].filter(hasValue)
+  return serializeFilterQuery({ terms })
+}
 
 /**
  * Human-readable labels for the grammar's operators. `eq` reads as "is" because
@@ -88,18 +151,10 @@ export interface FilterBuilderProps {
 }
 
 /**
- * The default value a fresh row gets for a given value source: enums start
- * unset (the user picks from the dropdown), everything else starts empty.
- */
-function initialValueForSource(_source: FilterValueSource): string {
-  return ''
-}
-
-/**
  * Constructs the admin list's `?search=` filter query from a friendly UI —
  * structured field/operator/value rows plus a free-text box — and produces the
- * exact grammar the filter engine already consumes (`serializeFilterQuery`,
- * ADR-0017). It never invents a parallel filter path: the applied query flows
+ * exact grammar the filter engine already consumes through core's
+ * `parseFilterQuery` and `serializeFilterQuery` (ADR-0017, ADR-0083). It never invents a parallel filter path: the applied query flows
  * through the same URL param the secured `context.db` reads server-side, so
  * filtering can only ever narrow, never widen, what a session may see.
  *
@@ -122,7 +177,7 @@ export function FilterBuilder({
   // Hydrate once from the incoming query. The parent remounts this component
   // (via a `key` on the applied query) when the URL changes, so the builder
   // always reflects the active filter without an effect-driven prop copy.
-  const [state, setState] = React.useState(() => queryToState(defaultValue, suggestions))
+  const [state, setState] = React.useState(() => hydrate(defaultValue, suggestions))
   const searchRef = React.useRef<HTMLInputElement>(null)
 
   const suggestionByField = React.useMemo(
@@ -140,7 +195,7 @@ export function FilterBuilder({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    applyQuery(stateToQuery(state))
+    applyQuery(toQuery(state))
   }
 
   const handleClear = () => {
@@ -151,11 +206,9 @@ export function FilterBuilder({
   const addRow = () => {
     const first = suggestions[0]
     if (!first) return
-    const newRow: FilterRow = {
+    const newRow: ConditionRow = {
       id: `row-${Date.now()}-${state.rows.length}`,
-      field: first.field,
-      operator: first.operators[0] ?? 'eq',
-      value: initialValueForSource(first.valueSource),
+      token: fieldToken(first.field, first.operators[0] ?? 'eq', ''),
     }
     setState((prev) => ({ ...prev, rows: [...prev.rows, newRow] }))
   }
@@ -164,29 +217,30 @@ export function FilterBuilder({
     setState((prev) => ({ ...prev, rows: prev.rows.filter((row) => row.id !== id) }))
   }
 
-  const updateRow = (id: string, patch: Partial<Omit<FilterRow, 'id'>>) => {
+  const updateRow = (id: string, update: (token: FilterToken) => FilterToken) => {
     setState((prev) => ({
       ...prev,
-      rows: prev.rows.map((row) => {
-        if (row.id !== id) return row
-        // Changing the field resets the operator to one the new field supports
-        // and clears the value (its meaning/source differs per field).
-        if (patch.field !== undefined && patch.field !== row.field) {
-          const suggestion = suggestionByField.get(patch.field)
-          return {
-            ...row,
-            field: patch.field,
-            operator: suggestion?.operators[0] ?? 'eq',
-            value: suggestion ? initialValueForSource(suggestion.valueSource) : '',
-          }
-        }
-        return { ...row, ...patch }
-      }),
+      rows: prev.rows.map((row) => (row.id === id ? { ...row, token: update(row.token) } : row)),
     }))
   }
 
-  const renderValueControl = (row: FilterRow) => {
-    const suggestion = suggestionByField.get(row.field)
+  const changeField = (id: string, field: string) => {
+    updateRow(id, (token) => {
+      if (token.field === field) return token
+      return fieldToken(field, suggestionByField.get(field)?.operators[0] ?? 'eq', '')
+    })
+  }
+
+  const changeOperator = (id: string, operator: FilterOperator) => {
+    updateRow(id, (token) => ({ ...token, operator }))
+  }
+
+  const changeValue = (id: string, value: string) => {
+    updateRow(id, (token) => ({ ...token, values: [value] }))
+  }
+
+  const renderValueControl = (row: ConditionRow) => {
+    const suggestion = row.token.field === null ? undefined : suggestionByField.get(row.token.field)
     const source = suggestion?.valueSource ?? { kind: 'none' as const }
     const valueClass = cn(NATIVE_CONTROL_CLASS, 'min-w-[10rem]', classNames?.value)
 
@@ -196,8 +250,8 @@ export function FilterBuilder({
           data-slot="filter-builder-value"
           aria-label="Filter value"
           className={valueClass}
-          value={row.value}
-          onChange={(e) => updateRow(row.id, { value: e.target.value })}
+          value={rowValue(row)}
+          onChange={(e) => changeValue(row.id, e.target.value)}
         >
           <option value="">Select…</option>
           {source.options.map((opt) => (
@@ -217,9 +271,9 @@ export function FilterBuilder({
         data-slot="filter-builder-value"
         aria-label="Filter value"
         className={cn('h-10 min-w-[10rem] flex-1', classNames?.value)}
-        value={row.value}
+        value={rowValue(row)}
         placeholder={relationshipPlaceholder}
-        onChange={(e) => updateRow(row.id, { value: e.target.value })}
+        onChange={(e) => changeValue(row.id, e.target.value)}
       />
     )
   }
@@ -232,8 +286,8 @@ export function FilterBuilder({
           className={cn('space-y-2', classNames?.conditions)}
         >
           {state.rows.map((row) => {
-            const suggestion = suggestionByField.get(row.field)
-            const operators = suggestion?.operators ?? ['eq']
+            const field = row.token.field ?? ''
+            const operators = suggestionByField.get(field)?.operators ?? ['eq']
             return (
               <div
                 key={row.id}
@@ -244,8 +298,8 @@ export function FilterBuilder({
                   data-slot="filter-builder-field"
                   aria-label="Filter field"
                   className={cn(NATIVE_CONTROL_CLASS, classNames?.field)}
-                  value={row.field}
-                  onChange={(e) => updateRow(row.id, { field: e.target.value })}
+                  value={field}
+                  onChange={(e) => changeField(row.id, e.target.value)}
                 >
                   {suggestions.map((s) => (
                     <option key={s.field} value={s.field}>
@@ -259,10 +313,11 @@ export function FilterBuilder({
                     data-slot="filter-builder-operator"
                     aria-label="Filter operator"
                     className={cn(NATIVE_CONTROL_CLASS, classNames?.operator)}
-                    value={row.operator}
-                    onChange={(e) =>
-                      updateRow(row.id, { operator: e.target.value as FilterOperator })
-                    }
+                    value={row.token.operator}
+                    onChange={(e) => {
+                      const operator = operators.find((op) => op === e.target.value)
+                      if (operator) changeOperator(row.id, operator)
+                    }}
                   >
                     {operators.map((op) => (
                       <option key={op} value={op}>
