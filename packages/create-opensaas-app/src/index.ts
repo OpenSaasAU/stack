@@ -13,6 +13,7 @@ import { randomBytes } from 'node:crypto'
 import { applyProjectName, rewriteReadmeHeading } from './lib/package-json.js'
 import { removedDbFlagMessage, missingNonInteractiveFlags } from './lib/args.js'
 import { planSetupSteps, formatStepFailure, nextStepCommands, type SetupStep } from './lib/setup.js'
+import { renderPnpmWorkspace } from './lib/pnpm-workspace.js'
 import { removeAiTooling } from './lib/ai-tooling.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -155,6 +156,8 @@ async function createProject(options: TemplateOptions) {
     const pkg = await fs.readJSON(pkgPath)
     await fs.writeJSON(pkgPath, applyProjectName(pkg, projectName), { spaces: 2 })
 
+    await fs.writeFile(path.join(targetDir, 'pnpm-workspace.yaml'), renderPnpmWorkspace())
+
     const readmePath = path.join(targetDir, 'README.md')
     if (await fs.pathExists(readmePath)) {
       const readme = await fs.readFile(readmePath, 'utf-8')
@@ -243,7 +246,9 @@ async function runSetup(targetDir: string, projectName: string): Promise<boolean
   for (const step of planSetupSteps()) {
     console.log(chalk.cyan(`\n▶ ${step.title}...`))
     const ok = await runStep(step, targetDir)
-    if (!ok) {
+    if (!ok && step.tolerateFailure) {
+      console.log(chalk.yellow(`\n⚠️  "${step.title}" exited with errors; continuing.`))
+    } else if (!ok) {
       console.log(chalk.yellow(`\n⚠️  ${formatStepFailure(step, projectName)}\n`))
       return false
     }

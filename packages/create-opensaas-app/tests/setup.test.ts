@@ -47,3 +47,11 @@ describe('nextStepCommands', () => {
     }
   })
 })
+
+describe('install step', () => {
+  it('tolerates a non-zero exit so ignored build scripts are not fatal', () => {
+    const [install, generate] = planSetupSteps()
+    expect(install.tolerateFailure).toBe(true)
+    expect(generate.tolerateFailure).toBeFalsy()
+  })
+})
