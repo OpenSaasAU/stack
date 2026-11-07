@@ -47,9 +47,9 @@ describe('ListViewClient', () => {
       expect(actionsCell).toHaveClass('max-md:absolute')
       expect(screen.getByRole('columnheader', { name: 'Actions' })).toHaveClass('max-md:hidden')
 
-      const row = screen.getByText('First Post').closest('tr')
+      const row = screen.getByRole('row', { name: /First Post/ })
       expect(row).toHaveClass('max-md:grid')
-      const statusCell = within(row as HTMLElement)
+      const statusCell = within(row)
         .getAllByRole('cell')
         .find((cell) => cell.getAttribute('data-label') === 'Status')
       expect(statusCell).toHaveClass('max-md:before:content-[attr(data-label)]')

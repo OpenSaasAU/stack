@@ -212,6 +212,7 @@ export async function AdminUI({
         pageSize={pageSize}
         columns={listView?.initialColumns}
         visibleColumns={visibleColumns}
+        urlControls
         initialSort={listView?.initialSort}
         sort={urlSort}
         serverAction={serverAction}

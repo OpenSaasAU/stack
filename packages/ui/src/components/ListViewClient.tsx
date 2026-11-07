@@ -179,6 +179,11 @@ export interface ListViewClientProps {
    */
   columnsChosen?: boolean
   /**
+   * Whether to offer the rows-per-page control. It writes `?pageSize=`, so a
+   * page sets this only when it reads that param back into `pageSize`.
+   */
+  pageSizeControl?: boolean
+  /**
    * Which columns offer a sort affordance, keyed by column name. `ListView`
    * resolves this on the server by asking whether this session's read can order
    * by each column; a column absent here is not sortable.
@@ -247,6 +252,7 @@ export function ListViewClient({
   availableColumns,
   defaultColumns,
   columnsChosen = false,
+  pageSizeControl = false,
   sortableFields = {},
   initialSort,
   listKey,
@@ -350,6 +356,7 @@ export function ListViewClient({
     over: string
     columns: string[]
   } | null>(null)
+  if (pendingColumns !== null && pendingColumns.over !== confirmedColumns) setPendingColumns(null)
   const pending = pendingColumns?.over === confirmedColumns ? pendingColumns.columns : null
   const pickedColumns = pending ?? displayColumns
 
@@ -358,10 +365,18 @@ export function ListViewClient({
     names.length === defaultColumns.length &&
     names.every((name) => defaultColumns.includes(name))
 
+  const pickerOrder = (name: string) => availableColumns?.indexOf(name) ?? -1
+
+  const withColumn = (column: string) => {
+    const others = pickedColumns.filter((name) => name !== column)
+    const before = others.findIndex((name) => pickerOrder(name) > pickerOrder(column))
+    return before === -1
+      ? [...others, column]
+      : [...others.slice(0, before), column, ...others.slice(before)]
+  }
+
   const toggleColumn = (column: string, shown: boolean) => {
-    const next = shown
-      ? [...pickedColumns.filter((name) => name !== column), column]
-      : pickedColumns.filter((name) => name !== column)
+    const next = shown ? withColumn(column) : pickedColumns.filter((name) => name !== column)
     if (next.length === 0) return
     const backToDefault = isDefaultSet(next)
     setPendingColumns({
@@ -377,6 +392,13 @@ export function ListViewClient({
   }
 
   const canResetColumns = pending ? !isDefaultSet(pending) : columnsChosen
+
+  const pageSizeOptions = PAGE_SIZES.some((option) => option.value === pageSize)
+    ? PAGE_SIZES
+    : [...PAGE_SIZES, { value: pageSize, label: String(pageSize) }].sort(
+        (a, b) => a.value - b.value,
+      )
+  const showPageSizes = pageSizeControl && total > PAGE_SIZES[0].value
 
   const sortOptions = displayColumns.filter((column) => sortableFields[column] === true)
   if (sortBy && !sortOptions.includes(sortBy)) sortOptions.push(sortBy)
@@ -795,14 +817,16 @@ export function ListViewClient({
             <span />
           )}
           <div className="flex flex-wrap items-center gap-2">
-            <SegmentedControl
-              label="Rows per page"
-              slot="list-view-page-size"
-              options={PAGE_SIZES}
-              value={pageSize}
-              onChange={(size) => router.push(buildUrl({ page: 1, pageSize: size }))}
-              className="min-w-10 tabular-nums"
-            />
+            {showPageSizes && (
+              <SegmentedControl
+                label="Rows per page"
+                slot="list-view-page-size"
+                options={pageSizeOptions}
+                value={pageSize}
+                onChange={(size) => router.push(buildUrl({ page: 1, pageSize: size }))}
+                className="min-w-10 tabular-nums"
+              />
+            )}
             {totalPages > 1 && (
               <>
                 <Button

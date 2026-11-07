@@ -266,8 +266,9 @@ The list view displays items in a table with search, sorting, and actions.
 - Search functionality
 - Edit and delete actions
 - Pagination — `page` and `pageSize` props, defaulting to `1` and `50`. The
-  admin picks 25, 50 or 100 rows per page; `?pageSize=` still accepts any size
-  up to the cap of 200. The total is the same access-scoped read counted in the
+  admin picks 25, 50 or 100 rows per page once there are more than 25 rows;
+  `?pageSize=` still accepts any size up to the cap of 200, and a size outside
+  the presets shows as its own pressed option. The total is the same access-scoped read counted in the
   database, so it can only ever equal the number of rows the session may page
   through.
 - Cards on phones: below the `md` breakpoint each row renders as a card, with
@@ -296,7 +297,13 @@ set never appears in the URL.
 `availableColumns`, the fallback set as `defaultColumns`, and `columnsChosen`
 to say whether `columns` came from the URL, which is what navigation then
 carries along. The Columns menu renders only when `availableColumns` is
-supplied, since it works only on a page that reads `?columns=` back.
+supplied, and the rows-per-page control only when `pageSizeControl` is set,
+since each works only on a page that reads its param back.
+
+`ListView` passes both only when its `urlControls` prop is set, which says the
+page reads `?columns=` and `?pageSize=` back into `visibleColumns` and
+`pageSize`. `AdminUI` sets it. A host rendering `ListView` on its own gets
+neither control unless it reads those params and sets `urlControls`.
 
 #### Sorting
 

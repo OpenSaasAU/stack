@@ -130,6 +130,12 @@ export interface ListViewProps {
    * `columns`. Resolved here so a to-many count is read for every column shown.
    */
   visibleColumns?: string[]
+  /**
+   * Whether this page reads `?columns=` and `?pageSize=` back into
+   * `visibleColumns` and `pageSize`. Offers the Columns menu and the
+   * rows-per-page control, which write those params. `AdminUI` sets it.
+   */
+  urlControls?: boolean
   page?: number
   pageSize?: number
   search?: string
@@ -158,6 +164,7 @@ export async function ListView({
   basePath = '/admin',
   columns,
   visibleColumns,
+  urlControls = false,
   page = 1,
   pageSize: requestedPageSize = DEFAULT_PAGE_SIZE,
   search,
@@ -388,7 +395,8 @@ export async function ListView({
         fields={serializeFieldConfigs(displayFields)}
         relationshipRefs={relationshipRefs}
         columns={resolvedColumns}
-        availableColumns={availableColumns}
+        availableColumns={urlControls ? availableColumns : undefined}
+        pageSizeControl={urlControls}
         defaultColumns={defaultColumns}
         columnsChosen={chosenColumns.length > 0}
         sortableFields={sortableFields}

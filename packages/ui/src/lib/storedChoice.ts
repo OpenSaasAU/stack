@@ -23,16 +23,20 @@ export function createStoredChoice<T extends string>(
   }
 
   const subscribe = (listener: () => void): (() => void) => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === key || event.key === null) unpersisted = undefined
+      listener()
+    }
     listeners.add(listener)
     try {
-      window.addEventListener('storage', listener)
+      window.addEventListener('storage', onStorage)
     } catch {
       // `window` can be unavailable outside a browser.
     }
     return () => {
       listeners.delete(listener)
       try {
-        window.removeEventListener('storage', listener)
+        window.removeEventListener('storage', onStorage)
       } catch {
         // `window` can be unavailable outside a browser.
       }

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import { renderToString } from 'react-dom/server'
 import userEvent from '@testing-library/user-event'
 import { ListViewClient, type ListViewClientProps } from '../../src/components/ListViewClient.js'
@@ -21,6 +21,7 @@ const props: ListViewClientProps = {
   relationshipRefs: { author: 'User.posts' },
   columns: ['title', 'status'],
   availableColumns: ['title', 'status', 'views', 'author'],
+  pageSizeControl: true,
   sortableFields: { title: true, status: true, views: true, author: false },
   listKey: 'Post',
   urlKey: 'post',
@@ -169,6 +170,34 @@ describe('column picker', () => {
     expect(screen.queryByRole('menuitem', { name: 'Reset columns' })).not.toBeInTheDocument()
   })
 
+  it('puts a re-checked column back at its place in the picker order', async () => {
+    const user = userEvent.setup()
+    render(<ListViewClient {...props} columns={['status', 'views']} columnsChosen />)
+
+    await user.click(screen.getByRole('button', { name: 'Columns' }))
+    await user.click(screen.getByRole('menuitemcheckbox', { name: 'Title' }))
+
+    expect(mockPush).toHaveBeenLastCalledWith('/admin/post?page=2&columns=title%2Cstatus%2Cviews')
+  })
+
+  it('shows what the table shows after Back undoes a pick', async () => {
+    const user = userEvent.setup()
+    const { rerender } = render(<ListViewClient {...props} />)
+
+    await user.click(screen.getByRole('button', { name: 'Columns' }))
+    await user.click(screen.getByRole('menuitemcheckbox', { name: 'Views' }))
+    rerender(<ListViewClient {...props} columns={['title', 'status', 'views']} columnsChosen />)
+    rerender(<ListViewClient {...props} />)
+
+    expect(screen.getByRole('menuitemcheckbox', { name: 'Views' })).toHaveAttribute(
+      'aria-checked',
+      'false',
+    )
+    expect(screen.queryByRole('menuitem', { name: 'Reset columns' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('menuitemcheckbox', { name: 'Author' }))
+    expect(mockPush).toHaveBeenLastCalledWith('/admin/post?page=2&columns=title%2Cstatus%2Cauthor')
+  })
+
   it('offers no column picker when no available columns are supplied', () => {
     render(<ListViewClient {...props} availableColumns={undefined} />)
 
@@ -293,6 +322,33 @@ describe('density', () => {
     }
   })
 
+  it('takes a choice another tab stored after this one failed to store its own', async () => {
+    const user = userEvent.setup()
+    const setItem = vi.spyOn(window.localStorage, 'setItem').mockImplementation(() => {
+      throw new DOMException('The quota has been exceeded.', 'QuotaExceededError')
+    })
+    try {
+      const { container } = render(<ListViewClient {...props} />)
+      await user.click(screen.getByRole('button', { name: 'Compact' }))
+      setItem.mockRestore()
+
+      window.localStorage.setItem(DENSITY_STORAGE_KEY, 'comfortable')
+      act(() => {
+        window.dispatchEvent(
+          new StorageEvent('storage', { key: DENSITY_STORAGE_KEY, newValue: 'comfortable' }),
+        )
+      })
+
+      expect(container.querySelector('[data-slot="list-view-table"]')).toHaveAttribute(
+        'data-density',
+        'comfortable',
+      )
+    } finally {
+      setItem.mockRestore()
+      storeDensity('comfortable')
+    }
+  })
+
   it('restores a remembered density on mount', () => {
     window.localStorage.setItem(DENSITY_STORAGE_KEY, 'compact')
     render(<ListViewClient {...props} />)
@@ -346,11 +402,38 @@ describe('page sizes', () => {
     expect(mockPush).toHaveBeenLastCalledWith('/admin/post?page=1')
   })
 
-  it('shows the size control on a single page of results', () => {
-    render(<ListViewClient {...props} page={1} total={2} />)
+  it('shows the size control on a single page of more than 25 results', () => {
+    render(<ListViewClient {...props} page={1} total={40} />)
 
     expect(screen.getByRole('group', { name: 'Rows per page' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Next' })).not.toBeInTheDocument()
+  })
+
+  it('hides the size control when every row fits on the smallest page', () => {
+    render(<ListViewClient {...props} page={1} total={25} />)
+
+    expect(screen.queryByRole('group', { name: 'Rows per page' })).not.toBeInTheDocument()
+  })
+
+  it('shows a size outside the presets as the pressed segment, in order', () => {
+    render(<ListViewClient {...props} pageSize={37} />)
+    const group = screen.getByRole('group', { name: 'Rows per page' })
+
+    expect(
+      within(group)
+        .getAllByRole('button')
+        .map((button) => button.textContent),
+    ).toEqual(['25', '37', '50', '100'])
+    expect(within(group).getByRole('button', { name: '37' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+  })
+
+  it('offers no size control unless the page reads ?pageSize= back', () => {
+    render(<ListViewClient {...props} pageSizeControl={undefined} />)
+
+    expect(screen.queryByRole('group', { name: 'Rows per page' })).not.toBeInTheDocument()
   })
 })
 

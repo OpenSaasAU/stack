@@ -536,9 +536,20 @@ describe('ListView ?columns= resolution', () => {
   )
 
   it(
-    'offers every displayable field to the column picker',
+    'offers no column picker or size control to a host that does not read the params back',
     async () => {
       const props = await render(ada, { listKey: 'User' })
+      expect(props.availableColumns).toBeUndefined()
+      expect(props.pageSizeControl).toBe(false)
+    },
+    BOOT,
+  )
+
+  it(
+    'offers every displayable field to the column picker',
+    async () => {
+      const props = await render(ada, { listKey: 'User', urlControls: true })
+      expect(props.pageSizeControl).toBe(true)
       expect(props.availableColumns).toEqual(
         expect.arrayContaining(['name', 'billingAddress', 'posts', 'drafts']),
       )
@@ -549,7 +560,11 @@ describe('ListView ?columns= resolution', () => {
   it(
     'keeps a configured column outside the fields pickable and choosable',
     async () => {
-      const configured = await render(ada, { listKey: 'User', columns: ['id', 'name'] })
+      const configured = await render(ada, {
+        listKey: 'User',
+        columns: ['id', 'name'],
+        urlControls: true,
+      })
       expect(configured.columns).toEqual(['id', 'name'])
       expect(configured.defaultColumns).toEqual(['id', 'name'])
       expect(configured.availableColumns?.slice(0, 2)).toEqual(['id', 'name'])
