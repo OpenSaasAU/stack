@@ -130,6 +130,80 @@ describe('FilterBuilder', () => {
     expect((screen.getByLabelText('Search') as HTMLInputElement).value).toBe('gamma')
   })
 
+  it.each([
+    ['an unknown field', 'nosuch:value', 'nosuch:value'],
+    ['an operator the field does not support', 'status:>2', 'status:>2'],
+    ['a quoted field-shaped word', '"status:draft"', '"status:draft"'],
+  ])('keeps %s in the free-text box rather than a row', (_case, query, freeText) => {
+    render(<FilterBuilder suggestions={suggestions} defaultValue={query} onApply={vi.fn()} />)
+    expect(screen.queryByLabelText('Filter field')).not.toBeInTheDocument()
+    expect((screen.getByLabelText('Search') as HTMLInputElement).value).toBe(freeText)
+  })
+
+  it('applies an unchanged hydrated query as it was written', async () => {
+    const onApply = vi.fn()
+    const user = userEvent.setup()
+    const written = 'status:draft views:>=10 title:"Ada \\"the Countess\\"" "status:draft" beta'
+    render(<FilterBuilder suggestions={suggestions} defaultValue={written} onApply={onApply} />)
+
+    expect(screen.getAllByLabelText('Filter field')).toHaveLength(3)
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(onApply).toHaveBeenCalledWith(written)
+  })
+
+  it('keeps free text written before a field token in its place', async () => {
+    const onApply = vi.fn()
+    const user = userEvent.setup()
+    render(
+      <FilterBuilder
+        suggestions={suggestions}
+        defaultValue="beta status:draft"
+        onApply={onApply}
+      />,
+    )
+
+    expect(screen.getAllByLabelText('Filter field')).toHaveLength(1)
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(onApply).toHaveBeenCalledWith('beta status:draft')
+  })
+
+  it('never writes an empty row or empty token into the query', async () => {
+    const onApply = vi.fn()
+    const user = userEvent.setup()
+    render(
+      <FilterBuilder suggestions={suggestions} defaultValue='title: "" beta' onApply={onApply} />,
+    )
+
+    await user.click(screen.getByRole('button', { name: /add filter/i }))
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(onApply).toHaveBeenCalledWith('beta')
+  })
+
+  it('escapes a quote typed into a row value', async () => {
+    const onApply = vi.fn()
+    const user = userEvent.setup()
+    render(<FilterBuilder suggestions={suggestions} onApply={onApply} />)
+
+    await user.click(screen.getByRole('button', { name: /add filter/i }))
+    await user.selectOptions(screen.getByLabelText('Filter field'), 'title')
+    await user.type(screen.getByLabelText('Filter value'), 'say "hi"')
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    expect(onApply).toHaveBeenCalledWith('title:"say \\"hi\\""')
+  })
+
+  it('drops a row with no value', async () => {
+    const onApply = vi.fn()
+    const user = userEvent.setup()
+    render(<FilterBuilder suggestions={suggestions} onApply={onApply} />)
+
+    await user.click(screen.getByRole('button', { name: /add filter/i }))
+    await user.type(screen.getByLabelText('Search'), 'beta')
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+    expect(onApply).toHaveBeenCalledWith('beta')
+  })
+
   it('removes a condition row', async () => {
     const user = userEvent.setup()
     render(

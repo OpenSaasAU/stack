@@ -1,99 +1,117 @@
-import type { FilterOperator, FilterToken } from './types.js'
+import type { FilterOperator, FilterQuery, FilterToken } from './types.js'
 
-/**
- * A field prefix is an identifier (letter/underscore, then word chars)
- * immediately followed by a colon, e.g. `role:` or `orders:`.
- */
-const FIELD_PREFIX_RE = /^([A-Za-z_][A-Za-z0-9_]*):/
+const FIELD_PREFIX_RE = /([A-Za-z_][A-Za-z0-9_]*):/y
 
-function isWhitespace(ch: string): boolean {
-  return ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r'
+const WHITESPACE_RE = /\s/
+
+const COMPARISON_PREFIXES: ReadonlyArray<readonly [string, FilterOperator]> = [
+  ['>=', 'gte'],
+  ['<=', 'lte'],
+  ['>', 'gt'],
+  ['<', 'lt'],
+]
+
+export function isFilterWhitespace(ch: string): boolean {
+  return WHITESPACE_RE.test(ch)
 }
 
 /**
- * Parse a filter query string into {@link FilterToken}s (ADR-0017 grammar).
+ * The length of the field prefix (`name:`) at `start` in `text`, or `0` when
+ * there is none. A `word:` followed by `//` is a URL scheme, not a field.
+ */
+export function fieldPrefixLength(text: string, start = 0): number {
+  FIELD_PREFIX_RE.lastIndex = start
+  const match = FIELD_PREFIX_RE.exec(text)
+  if (!match || text.startsWith('//', start + match[0].length)) return 0
+  return match[0].length
+}
+
+/**
+ * Parse a filter query string into a structured {@link FilterQuery}
+ * (ADR-0017, ADR-0083). Never throws: input it cannot read as syntax parses as
+ * bare free-text words.
  *
- * Pure and field-agnostic: it recognises the *syntax* (field prefix, comparison
- * operator, quoted value, bare word) but never validates field names or values
- * — that is the mapping step's job, where unknown/unmappable tokens degrade to
- * free text. This parser therefore never throws; malformed input simply parses
- * as bare free-text words.
+ * - `field:value` is a field token with the `eq` operator, and `field:>value`,
+ *   `field:>=value`, `field:<value`, `field:<=value` are comparisons.
+ * - A leading `-` followed by more of the token negates it: `-status:draft`.
+ * - Commas separate a token's values: `status:draft,review`.
+ * - A value in double quotes keeps its spaces and commas and is literal:
+ *   `"status:draft"` is a free-text word. Inside quotes, `\"` is a quote and
+ *   `\\` a backslash; any other backslash is itself. A token is `quoted` when
+ *   its first value is.
+ * - Anything else (`beta`, `>5`, `http://x`) is a free-text word (`field: null`).
  *
- * Grammar:
- * - `field:value` → a field token with the `eq` operator.
- * - `field:>value`, `field:>=value`, `field:<value`, `field:<=value` →
- *   comparison operators.
- * - `field:"multi word"` / bare `"multi word"` → quoted values keep spaces.
- * - anything else (`beta`, `>5`) → a bare free-text token (`field: null`).
- *
- * A `word:` is *not* treated as a field prefix when the colon is immediately
- * followed by `//` (a URL scheme like `http://x` or `https://…`); the whole
- * token stays free text so a pasted URL is searched verbatim rather than
- * mangled into `{ field: 'http', value: '//x' }`.
+ * Validating fields and values is the engine's job, where a token that cannot
+ * map degrades to free text. {@link serializeFilterQuery} is the inverse.
  *
  * @example
  * parseFilterQuery('role:Editor orders:>5 name:"Ada Lovelace" beta')
- * // [
- * //   { field: 'role',   operator: 'eq',  value: 'Editor',       raw: 'role:Editor' },
- * //   { field: 'orders', operator: 'gt',  value: '5',            raw: 'orders:>5' },
- * //   { field: 'name',   operator: 'eq',  value: 'Ada Lovelace', raw: 'name:"Ada Lovelace"' },
- * //   { field: null,     operator: 'eq',  value: 'beta',         raw: 'beta' },
- * // ]
+ * // { terms: [
+ * //   { kind: 'token', field: 'role',   operator: 'eq', negated: false, values: ['Editor'],       quoted: false },
+ * //   { kind: 'token', field: 'orders', operator: 'gt', negated: false, values: ['5'],            quoted: false },
+ * //   { kind: 'token', field: 'name',   operator: 'eq', negated: false, values: ['Ada Lovelace'], quoted: true },
+ * //   { kind: 'token', field: null,     operator: 'eq', negated: false, values: ['beta'],         quoted: false },
+ * // ] }
  */
-export function parseFilterQuery(query: string): FilterToken[] {
-  const tokens: FilterToken[] = []
-  if (!query) return tokens
-
+export function parseFilterQuery(query: string): FilterQuery {
+  const terms: FilterToken[] = []
   const n = query.length
   let i = 0
 
+  const readValue = (): { value: string; quoted: boolean } => {
+    if (query[i] !== '"') {
+      const start = i
+      while (i < n && query[i] !== ',' && !isFilterWhitespace(query[i])) i++
+      return { value: query.slice(start, i), quoted: false }
+    }
+    i++
+    let value = ''
+    while (i < n && query[i] !== '"') {
+      const next = query[i + 1]
+      if (query[i] === '\\' && (next === '"' || next === '\\')) {
+        value += next
+        i += 2
+      } else {
+        value += query[i]
+        i++
+      }
+    }
+    if (i < n) i++
+    return { value, quoted: true }
+  }
+
   while (i < n) {
-    while (i < n && isWhitespace(query[i])) i++
+    while (i < n && isFilterWhitespace(query[i])) i++
     if (i >= n) break
 
-    const start = i
+    const negated = query[i] === '-' && i + 1 < n && !isFilterWhitespace(query[i + 1])
+    if (negated) i++
 
     let field: string | null = null
-    const prefixMatch = FIELD_PREFIX_RE.exec(query.slice(i))
-    if (prefixMatch && !query.startsWith('//', i + prefixMatch[0].length)) {
-      field = prefixMatch[1]
-      i += prefixMatch[0].length
+    const prefixLength = fieldPrefixLength(query, i)
+    if (prefixLength > 0) {
+      field = query.slice(i, i + prefixLength - 1)
+      i += prefixLength
     }
 
     let operator: FilterOperator = 'eq'
-    if (field) {
-      if (query.startsWith('>=', i)) {
-        operator = 'gte'
-        i += 2
-      } else if (query.startsWith('<=', i)) {
-        operator = 'lte'
-        i += 2
-      } else if (query[i] === '>') {
-        operator = 'gt'
-        i += 1
-      } else if (query[i] === '<') {
-        operator = 'lt'
-        i += 1
+    if (field !== null) {
+      const comparison = COMPARISON_PREFIXES.find(([prefix]) => query.startsWith(prefix, i))
+      if (comparison) {
+        operator = comparison[1]
+        i += comparison[0].length
       }
     }
 
-    let value = ''
-    if (query[i] === '"') {
+    const first = readValue()
+    const values = [first.value]
+    while (query[i] === ',') {
       i++
-      while (i < n && query[i] !== '"') {
-        value += query[i]
-        i++
-      }
-      if (i < n) i++
-    } else {
-      while (i < n && !isWhitespace(query[i])) {
-        value += query[i]
-        i++
-      }
+      values.push(readValue().value)
     }
 
-    tokens.push({ field, operator, value, raw: query.slice(start, i) })
+    terms.push({ kind: 'token', field, operator, negated, values, quoted: first.quoted })
   }
 
-  return tokens
+  return { terms }
 }
