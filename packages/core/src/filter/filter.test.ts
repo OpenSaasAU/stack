@@ -114,6 +114,39 @@ describe('parseFilterQuery', () => {
     })
   })
 
+  it('reads a leading `-` followed by more of the token as negation', () => {
+    expect(parseFilterQuery('-status:draft -beta --x')).toEqual({
+      terms: [
+        tok('status', 'draft', { negated: true }),
+        tok(null, 'beta', { negated: true }),
+        tok(null, '-x', { negated: true }),
+      ],
+    })
+  })
+
+  it('keeps a lone `-` a free-text word', () => {
+    expect(parseFilterQuery('- beta')).toEqual({ terms: [tok(null, '-'), tok(null, 'beta')] })
+  })
+
+  it('splits a value on commas, and keeps a comma inside quotes', () => {
+    expect(parseFilterQuery('status:a,"b c",')).toEqual({
+      terms: [tok('status', '', { values: ['a', 'b c', ''] })],
+    })
+    expect(parseFilterQuery('status:"a,b"')).toEqual({
+      terms: [tok('status', 'a,b', { quoted: true })],
+    })
+  })
+
+  it('splits tokens on every whitespace character', () => {
+    expect(parseFilterQuery('a\u00a0b\fc\vd\u2028e').terms.map((t) => t.values)).toEqual([
+      ['a'],
+      ['b'],
+      ['c'],
+      ['d'],
+      ['e'],
+    ])
+  })
+
   it('keeps a quoted `"status:draft"` a free-text word, never a field token', () => {
     expect(parseFilterQuery('"status:draft"')).toEqual({
       terms: [tok(null, 'status:draft', { quoted: true })],
@@ -141,9 +174,9 @@ describe('parseFilterQuery', () => {
     })
   })
 
-  it('does not parse ADR-0083 syntax that would change what a URL means today', () => {
+  it('reads ADR-0083 negation and comma lists into the tree', () => {
     expect(parseFilterQuery('-status:draft status:a,b')).toEqual({
-      terms: [tok(null, '-status:draft'), tok('status', 'a,b')],
+      terms: [tok('status', 'draft', { negated: true }), tok('status', '', { values: ['a', 'b'] })],
     })
   })
 })
@@ -322,19 +355,20 @@ describe('buildFilterWhere', () => {
     })
   })
 
-  it.each<[string, FilterToken, string]>([
-    ['negated', tok('status', 'active', { negated: true }), '-status:active'],
-    [
-      'multi-value',
-      tok('status', '', { values: ['active', 'inactive'] }),
-      'status:active,inactive',
-    ],
-  ])(
-    'searches a %s token as the literal word it serialises to, never dropped or negated',
-    (_shape, token, word) => {
-      expect(buildFilterWhere({ terms: [token] }, specs)).toEqual({ name: { contains: word } })
-    },
-  )
+  it('searches a negated token as the literal word it serialises to, never dropped or negated', () => {
+    expect(buildFilterWhere(parseFilterQuery('-status:active'), specs)).toEqual({
+      name: { contains: '-status:active' },
+    })
+  })
+
+  it('maps a comma list as the single value it was written as', () => {
+    expect(buildFilterWhere(parseFilterQuery('name:Ada,Grace'), specs)).toEqual({
+      name: { contains: 'Ada,Grace' },
+    })
+    expect(buildFilterWhere(parseFilterQuery('beta,gamma'), specs)).toEqual({
+      name: { contains: 'beta,gamma' },
+    })
+  })
 })
 
 // ─────────────────────────────────────────────────────────────
@@ -390,6 +424,15 @@ describe('buildFilterWhere — empty-value tokens (#1509)', () => {
       suggestions: { valueSource: { kind: 'none' } },
     }
     expect(buildFilterWhere(parseFilterQuery('""'), { name: containsEverything })).toBeUndefined()
+  })
+
+  it('treats a negated empty token as inert, exactly as the non-negated one', () => {
+    const negatedEmpty = tok('status', '', { negated: true })
+    expect(buildFilterWhere({ terms: [negatedEmpty] }, specs)).toBeUndefined()
+    expect(buildFilterWhere(parseFilterQuery('-status: -""'), specs)).toBeUndefined()
+    expect(buildFilterWhere(parseFilterQuery('status:Active -role:'), specs)).toEqual({
+      status: { equals: 'active' },
+    })
   })
 
   it('leaves a non-empty token on the same field completely unaffected (#1356/#1504 unchanged)', () => {

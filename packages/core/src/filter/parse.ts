@@ -1,6 +1,8 @@
 import type { FilterOperator, FilterQuery, FilterToken } from './types.js'
 
-const FIELD_PREFIX_RE = /^([A-Za-z_][A-Za-z0-9_]*):/
+const FIELD_PREFIX_RE = /([A-Za-z_][A-Za-z0-9_]*):/y
+
+const WHITESPACE_RE = /\s/
 
 const COMPARISON_PREFIXES: ReadonlyArray<readonly [string, FilterOperator]> = [
   ['>=', 'gte'],
@@ -10,16 +12,17 @@ const COMPARISON_PREFIXES: ReadonlyArray<readonly [string, FilterOperator]> = [
 ]
 
 export function isFilterWhitespace(ch: string): boolean {
-  return ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r'
+  return WHITESPACE_RE.test(ch)
 }
 
 /**
- * The length of the field prefix (`name:`) at the start of `text`, or `0` when
+ * The length of the field prefix (`name:`) at `start` in `text`, or `0` when
  * there is none. A `word:` followed by `//` is a URL scheme, not a field.
  */
-export function fieldPrefixLength(text: string): number {
+export function fieldPrefixLength(text: string, start = 0): number {
+  FIELD_PREFIX_RE.lastIndex = start
   const match = FIELD_PREFIX_RE.exec(text)
-  if (!match || text.startsWith('//', match[0].length)) return 0
+  if (!match || text.startsWith('//', start + match[0].length)) return 0
   return match[0].length
 }
 
@@ -30,9 +33,12 @@ export function fieldPrefixLength(text: string): number {
  *
  * - `field:value` is a field token with the `eq` operator, and `field:>value`,
  *   `field:>=value`, `field:<value`, `field:<=value` are comparisons.
- * - A value in double quotes keeps its spaces and is literal: `"status:draft"`
- *   is a free-text word. Inside quotes, `\"` is a quote and `\\` a backslash;
- *   any other backslash is itself.
+ * - A leading `-` followed by more of the token negates it: `-status:draft`.
+ * - Commas separate a token's values: `status:draft,review`.
+ * - A value in double quotes keeps its spaces and commas and is literal:
+ *   `"status:draft"` is a free-text word. Inside quotes, `\"` is a quote and
+ *   `\\` a backslash; any other backslash is itself. A token is `quoted` when
+ *   its first value is.
  * - Anything else (`beta`, `>5`, `http://x`) is a free-text word (`field: null`).
  *
  * Validating fields and values is the engine's job, where a token that cannot
@@ -52,12 +58,37 @@ export function parseFilterQuery(query: string): FilterQuery {
   const n = query.length
   let i = 0
 
+  const readValue = (): { value: string; quoted: boolean } => {
+    if (query[i] !== '"') {
+      const start = i
+      while (i < n && query[i] !== ',' && !isFilterWhitespace(query[i])) i++
+      return { value: query.slice(start, i), quoted: false }
+    }
+    i++
+    let value = ''
+    while (i < n && query[i] !== '"') {
+      const next = query[i + 1]
+      if (query[i] === '\\' && (next === '"' || next === '\\')) {
+        value += next
+        i += 2
+      } else {
+        value += query[i]
+        i++
+      }
+    }
+    if (i < n) i++
+    return { value, quoted: true }
+  }
+
   while (i < n) {
     while (i < n && isFilterWhitespace(query[i])) i++
     if (i >= n) break
 
+    const negated = query[i] === '-' && i + 1 < n && !isFilterWhitespace(query[i + 1])
+    if (negated) i++
+
     let field: string | null = null
-    const prefixLength = fieldPrefixLength(query.slice(i))
+    const prefixLength = fieldPrefixLength(query, i)
     if (prefixLength > 0) {
       field = query.slice(i, i + prefixLength - 1)
       i += prefixLength
@@ -72,29 +103,14 @@ export function parseFilterQuery(query: string): FilterQuery {
       }
     }
 
-    let value = ''
-    const quoted = query[i] === '"'
-    if (quoted) {
+    const first = readValue()
+    const values = [first.value]
+    while (query[i] === ',') {
       i++
-      while (i < n && query[i] !== '"') {
-        const next = query[i + 1]
-        if (query[i] === '\\' && (next === '"' || next === '\\')) {
-          value += next
-          i += 2
-        } else {
-          value += query[i]
-          i++
-        }
-      }
-      if (i < n) i++
-    } else {
-      while (i < n && !isFilterWhitespace(query[i])) {
-        value += query[i]
-        i++
-      }
+      values.push(readValue().value)
     }
 
-    terms.push({ kind: 'token', field, operator, negated: false, values: [value], quoted })
+    terms.push({ kind: 'token', field, operator, negated, values, quoted: first.quoted })
   }
 
   return { terms }

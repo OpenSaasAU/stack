@@ -18,10 +18,8 @@ export type FilterOperator = 'eq' | 'gt' | 'gte' | 'lt' | 'lte'
  *
  * A bare free-text word has `field: null`. `quoted` records that the value was
  * written in double quotes, which keeps it literal: a quoted `"status:draft"`
- * is a free-text word, never a field token. `negated` and a `values` list
- * longer than one are the shapes ADR-0083's `-field:value` and `field:a,b`
- * describe. {@link parseFilterQuery} does not produce them yet, and the engine
- * searches such a token as the literal word it serialises to.
+ * is a free-text word, never a field token. `negated` is ADR-0083's
+ * `-field:value`, and a `values` list longer than one its `field:a,b`.
  */
 export interface FilterToken {
   kind: 'token'
@@ -31,9 +29,9 @@ export interface FilterToken {
   operator: FilterOperator
   /** Whether the token is negated (`-field:value`). */
   negated: boolean
-  /** The unquoted, unescaped values. A parsed token carries exactly one. */
+  /** The unquoted, unescaped values, in the order written. */
   values: string[]
-  /** Whether the value is written in double quotes. */
+  /** Whether the first value is written in double quotes. */
   quoted: boolean
 }
 

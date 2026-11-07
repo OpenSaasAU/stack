@@ -9,11 +9,18 @@ const OPERATOR_PREFIX: Record<FilterOperator, string> = {
   lte: '<=',
 }
 
-function mustQuote(token: FilterToken, value: string): boolean {
-  if (value.startsWith('"') || [...value].some(isFilterWhitespace)) return true
-  if (token.field === null) return value === '' || fieldPrefixLength(value) > 0
-  if (token.operator === 'eq') return /^(?:[<>]|\/\/)/.test(value)
-  if (token.operator === 'gt' || token.operator === 'lt') return value.startsWith('=')
+function mustQuoteValue(value: string): boolean {
+  return value.startsWith('"') || value.includes(',') || [...value].some(isFilterWhitespace)
+}
+
+function mustQuoteBareText(token: FilterToken, text: string): boolean {
+  if (token.field === null) {
+    if (fieldPrefixLength(text) > 0) return true
+    if (token.negated) return text === ''
+    return text === '' || (text.startsWith('-') && text !== '-')
+  }
+  if (token.operator === 'eq') return /^(?:[<>]|\/\/)/.test(text)
+  if (token.operator === 'gt' || token.operator === 'lt') return text.startsWith('=')
   return false
 }
 
@@ -29,13 +36,22 @@ function quote(value: string): string {
   return `"${escaped}"`
 }
 
+function serializeValues(token: FilterToken): string {
+  const written = token.values.map((value) => (mustQuoteValue(value) ? quote(value) : value))
+  if (written.length > 0 && !written[0].startsWith('"')) {
+    if (token.quoted || mustQuoteBareText(token, written.join(','))) {
+      written[0] = quote(token.values[0])
+    }
+  }
+  return written.join(',')
+}
+
 /**
  * Serialise one {@link FilterToken} to its query-string form, as
  * {@link serializeFilterQuery} writes it.
  */
 export function serializeFilterToken(token: FilterToken): string {
-  const value = token.values.join(',')
-  const text = token.quoted || mustQuote(token, value) ? quote(value) : value
+  const text = serializeValues(token)
   const negation = token.negated ? '-' : ''
   if (token.field === null) return `${negation}${text}`
   return `${negation}${token.field}:${OPERATOR_PREFIX[token.operator]}${text}`
@@ -45,13 +61,14 @@ export function serializeFilterToken(token: FilterToken): string {
  * Serialise a {@link FilterQuery} into the `?search=` grammar, joining its
  * terms with the grammar's implicit AND (a space). The inverse of
  * {@link parseFilterQuery}: for every query `parseFilterQuery` returns,
- * `parseFilterQuery(serializeFilterQuery(query))` is that query again.
+ * `parseFilterQuery(serializeFilterQuery(query))` is that query again. Every
+ * term is written, including one whose values are empty (`field:` or `""`).
  *
  * A value is quoted when its token says so or when it would otherwise read back
- * as different syntax: whitespace, a leading quote, a free-text word that looks
- * like `field:value`, or a value an operator prefix would swallow. Inside
- * quotes a quote is written `\"`, and a backslash that precedes a quote or ends
- * the value is written `\\`.
+ * as different syntax: whitespace, a comma, a leading quote, a free-text word
+ * that looks like `field:value` or starts with `-`, or a value an operator
+ * prefix would swallow. Inside quotes a quote is written `\"`, and a backslash
+ * that precedes a quote or ends the value is written `\\`.
  *
  * @example
  * serializeFilterQuery(parseFilterQuery('name:"Ada \\"the Countess\\"" "status:draft"'))

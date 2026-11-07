@@ -83,6 +83,37 @@ describe('serializeFilterQuery', () => {
     expect(serializeFilterQuery(query(token({ values: [''] })))).toBe('""')
   })
 
+  it.each(['\u00a0', '\f', '\v', '\u2028', '\u3000'])(
+    'quotes a value containing the whitespace %j',
+    (space) => {
+      expect(serializeFilterQuery(query(token({ field: 'title', values: [`Ada${space}`] })))).toBe(
+        `title:"Ada${space}"`,
+      )
+      expect(serializeFilterQuery(query(token({ values: [space] })))).toBe(`"${space}"`)
+    },
+  )
+
+  it('quotes a value containing a comma, so one value never reads as a list', () => {
+    expect(serializeFilterQuery(query(token({ field: 'title', values: ['a,b'] })))).toBe(
+      'title:"a,b"',
+    )
+    expect(serializeFilterQuery(query(token({ field: 'title', values: ['a', 'b'] })))).toBe(
+      'title:a,b',
+    )
+    expect(serializeFilterQuery(query(token({ field: 'title', values: ['a', 'b c,d'] })))).toBe(
+      'title:a,"b c,d"',
+    )
+  })
+
+  it('quotes a free-text word starting with `-`, so it never reads as negation', () => {
+    expect(serializeFilterQuery(query(token({ values: ['-beta'] })))).toBe('"-beta"')
+    expect(serializeFilterQuery(query(token({ values: ['beta'], negated: true })))).toBe('-beta')
+    expect(serializeFilterQuery(query(token({ values: ['-'] })))).toBe('-')
+    expect(
+      serializeFilterQuery(query(token({ field: 'status', values: ['draft'], negated: true }))),
+    ).toBe('-status:draft')
+  })
+
   it('joins terms with the grammar implicit AND (a single space)', () => {
     expect(
       serializeFilterQuery(
@@ -111,6 +142,7 @@ describe('parse/serialize round-trip on written queries', () => {
     '"beta"',
     'role: ""',
     'http://x',
+    'status:a,b,"c d" "a,b" -status:draft -beta "-beta" - --x -"" -role:',
     '"C:\\Users me"',
   ]
 
@@ -155,8 +187,28 @@ const ALPHABET = [
   '!',
   'é',
   '\u00a0',
+  '\f',
+  '\v',
+  '\u2028',
 ]
-const TRICKY_PREFIXES = ['', '', '"', '//', '>', '<', '=', '>=', 'status:', 'a:"', '\\', ' ']
+const TRICKY_PREFIXES = [
+  '',
+  '',
+  '"',
+  '//',
+  '>',
+  '<',
+  '=',
+  '>=',
+  'status:',
+  'a:"',
+  '\\',
+  ' ',
+  '-',
+  ',',
+  '-status:',
+  'a,',
+]
 const OPERATORS: FilterOperator[] = ['eq', 'gt', 'gte', 'lt', 'lte']
 const FIELDS = ['status', 'a', '_b1', 'http', 'OR']
 const RUNS = 2000
@@ -171,7 +223,10 @@ function arbitrary(random: () => number) {
     return token({
       field,
       operator: field === null ? 'eq' : pick(OPERATORS),
-      values: [text(8)],
+      negated: random() < 0.2,
+      values: Array.from({ length: random() < 0.7 ? 1 : 2 + Math.floor(random() * 3) }, () =>
+        text(8),
+      ),
       quoted: random() < 0.3,
     })
   }

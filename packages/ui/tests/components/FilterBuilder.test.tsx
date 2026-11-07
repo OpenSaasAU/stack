@@ -151,6 +151,34 @@ describe('FilterBuilder', () => {
     expect(onApply).toHaveBeenCalledWith(written)
   })
 
+  it('keeps free text written before a field token in its place', async () => {
+    const onApply = vi.fn()
+    const user = userEvent.setup()
+    render(
+      <FilterBuilder
+        suggestions={suggestions}
+        defaultValue="beta status:draft"
+        onApply={onApply}
+      />,
+    )
+
+    expect(screen.getAllByLabelText('Filter field')).toHaveLength(1)
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(onApply).toHaveBeenCalledWith('beta status:draft')
+  })
+
+  it('never writes an empty row or empty token into the query', async () => {
+    const onApply = vi.fn()
+    const user = userEvent.setup()
+    render(
+      <FilterBuilder suggestions={suggestions} defaultValue='title: "" beta' onApply={onApply} />,
+    )
+
+    await user.click(screen.getByRole('button', { name: /add filter/i }))
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(onApply).toHaveBeenCalledWith('beta')
+  })
+
   it('escapes a quote typed into a row value', async () => {
     const onApply = vi.fn()
     const user = userEvent.setup()

@@ -4,6 +4,8 @@ import * as React from 'react'
 import { usePathname, useRouter } from 'next/navigation.js'
 import { Plus, X } from 'lucide-react'
 import {
+  isEmptyFilterToken,
+  isFieldConditionToken,
   parseFilterQuery,
   serializeFilterQuery,
   type FilterFieldSuggestion,
@@ -20,9 +22,12 @@ interface ConditionRow {
   token: FilterToken
 }
 
+type QuerySlot = { kind: 'row'; id: string } | { kind: 'free' }
+
 interface BuilderState {
   rows: ConditionRow[]
   freeText: string
+  order: QuerySlot[]
 }
 
 function fieldToken(field: string, operator: FilterOperator, value: string): FilterToken {
@@ -30,47 +35,44 @@ function fieldToken(field: string, operator: FilterOperator, value: string): Fil
 }
 
 function rowValue(row: ConditionRow): string {
-  return row.token.values.join('')
-}
-
-function hasValue(token: FilterToken): boolean {
-  return token.values.some((value) => value !== '')
-}
-
-function isConditionRow(
-  token: FilterToken,
-  suggestionByField: Map<string, FilterFieldSuggestion>,
-): boolean {
-  const suggestion = token.field === null ? undefined : suggestionByField.get(token.field)
-  return (
-    suggestion !== undefined &&
-    suggestion.operators.includes(token.operator) &&
-    !token.negated &&
-    token.values.length === 1 &&
-    hasValue(token)
-  )
+  return row.token.values[0] ?? ''
 }
 
 function hydrate(query: string, suggestions: FilterFieldSuggestion[]): BuilderState {
-  const suggestionByField = new Map(suggestions.map((s) => [s.field, s]))
+  const operatorsFor = (field: string) => suggestions.find((s) => s.field === field)?.operators
   const rows: ConditionRow[] = []
   const freeTerms: FilterToken[] = []
+  const order: QuerySlot[] = []
   for (const token of parseFilterQuery(query).terms) {
-    if (isConditionRow(token, suggestionByField)) {
-      rows.push({ id: `row-${rows.length}`, token })
-    } else if (hasValue(token)) {
+    if (isEmptyFilterToken(token)) continue
+    if (isFieldConditionToken(token, operatorsFor) && token.values.length === 1) {
+      const id = `row-${rows.length}`
+      rows.push({ id, token })
+      order.push({ kind: 'row', id })
+    } else {
       freeTerms.push(token)
+      order.push({ kind: 'free' })
     }
   }
-  return { rows, freeText: serializeFilterQuery({ terms: freeTerms }) }
+  return { rows, freeText: serializeFilterQuery({ terms: freeTerms }), order }
 }
 
 function toQuery(state: BuilderState): string {
-  const terms = [
-    ...state.rows.map((row) => row.token),
-    ...parseFilterQuery(state.freeText).terms,
-  ].filter(hasValue)
-  return serializeFilterQuery({ terms })
+  const rowsById = new Map(state.rows.map((row) => [row.id, row.token]))
+  const freeTerms = parseFilterQuery(state.freeText).terms
+  const terms: FilterToken[] = []
+  for (const slot of state.order) {
+    if (slot.kind === 'row') {
+      const token = rowsById.get(slot.id)
+      if (token) terms.push(token)
+      rowsById.delete(slot.id)
+    } else {
+      const token = freeTerms.shift()
+      if (token) terms.push(token)
+    }
+  }
+  terms.push(...rowsById.values(), ...freeTerms)
+  return serializeFilterQuery({ terms: terms.filter((token) => !isEmptyFilterToken(token)) })
 }
 
 /**
@@ -199,7 +201,7 @@ export function FilterBuilder({
   }
 
   const handleClear = () => {
-    setState({ rows: [], freeText: '' })
+    setState({ rows: [], freeText: '', order: [] })
     applyQuery('')
   }
 

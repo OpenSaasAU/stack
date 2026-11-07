@@ -377,6 +377,8 @@ export {
   parseFilterQuery,
   serializeFilterQuery,
   buildFilterWhere,
+  isEmptyFilterToken,
+  isFieldConditionToken,
   collectFilterSpecs,
   buildListFilterWhere,
   collectFilterSuggestions,
