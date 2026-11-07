@@ -3,7 +3,7 @@ import * as React from 'react'
 import { render, screen } from '@testing-library/react'
 import type { AccessContext, OpenSaasConfig } from '@opensaas/stack-core'
 import { list } from '@opensaas/stack-core'
-import { text } from '@opensaas/stack-core/fields'
+import { relationship, text } from '@opensaas/stack-core/fields'
 import { createTestContext, createTestDatabase } from '@opensaas/stack-core/testing'
 import { AdminUI } from '../../src/components/AdminUI.js'
 import { SingletonView } from '../../src/components/SingletonView.js'
@@ -182,6 +182,85 @@ describe('AdminUI singleton routing', () => {
         // An empty field input is rendered (no display value yet).
         expect(screen.getByText('Site Name')).toBeInTheDocument()
       } finally {
+        await harness.close()
+      }
+    },
+    BOOT,
+  )
+
+  it(
+    'shows a set to-one relationship on the singleton form',
+    async () => {
+      const relConfig: OpenSaasConfig = {
+        db: { provider: 'postgresql' },
+        lists: {
+          Tag: list({
+            fields: { name: text() },
+            access: { operation: { query: () => true, create: () => true } },
+          }),
+          Settings: list({
+            isSingleton: true,
+            fields: { siteName: text(), featured: relationship({ ref: 'Tag' }) },
+            access: { operation: { query: () => true, create: () => true, update: () => true } },
+          }),
+        },
+      }
+      const harness = await createTestContext(relConfig, null)
+      try {
+        const context = harness.context as unknown as AccessContext
+        const tag = await harness.context.db.Tag.create({ data: { name: 'Hot' } })
+        if (tag === null) throw new Error('tag not created')
+        await harness.context.db.Settings.get()
+        await harness.context.db.Settings.update({
+          where: { id: '1' },
+          data: { featured: { connect: { id: tag.id } } },
+        })
+
+        const element = await SingletonView({
+          context,
+          config: relConfig,
+          listKey: 'Settings',
+          basePath: '/admin',
+          serverAction: noopServerAction,
+        })
+        render(element)
+        expect(screen.getByText('Hot')).toBeInTheDocument()
+      } finally {
+        await harness.close()
+      }
+    },
+    BOOT,
+  )
+
+  it(
+    'logs no error for a singleton with a required field and no row yet',
+    async () => {
+      const reqConfig: OpenSaasConfig = {
+        db: { provider: 'postgresql' },
+        lists: {
+          Settings: list({
+            isSingleton: true,
+            fields: { siteName: text({ validation: { isRequired: true } }) },
+            access: { operation: { query: () => true, create: () => true } },
+          }),
+        },
+      }
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const harness = await createTestContext(reqConfig, null)
+      try {
+        const context = harness.context as unknown as AccessContext
+        const element = await SingletonView({
+          context,
+          config: reqConfig,
+          listKey: 'Settings',
+          basePath: '/admin',
+          serverAction: noopServerAction,
+        })
+        render(element)
+        expect(screen.getByText('Create Settings')).toBeInTheDocument()
+        expect(errorSpy).not.toHaveBeenCalled()
+      } finally {
+        errorSpy.mockRestore()
         await harness.close()
       }
     },
