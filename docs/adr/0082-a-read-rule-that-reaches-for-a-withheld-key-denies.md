@@ -68,7 +68,8 @@ A related row is different. A relation delivered whole carries no relations of i
 - A rule that keeps `item` and reads it after settling is not observed.
 - A to-many narrowed by the related list's Access Filter is delivered as what the session can see, and cannot be told from the whole relation. That is the to-many form of the scoped to-one above, and it stays session-relative (ADR-0051).
 - A `create` rule is handed no `item`, so there is no row for it to read a relation off.
-- **Write rules.** An `update` or `delete` operation rule and a field `update` rule run on the same guarded `item`. A write delivers the row's scalars and no relations, so a reach for a relation denies. The engine fetches nothing extra for the rule: a rule that needs a relation to decide denies, and one reading only scalars is unaffected ([#2233](https://github.com/OpenSaasAU/stack/issues/2233)).
+- A multi-column field's `update` rule is guarded by the list's declared relationship fields only; a synthetic back-relation (`from_<List>_<field>`) is not known to it.
+- **Write rules.** An `update` or `delete` operation rule and a field `update` rule run on the same guarded `item`. A write delivers the row's scalars and no relations, so a reach for a relation denies. The engine fetches nothing extra for the rule: a rule that needs a relation to decide denies, and one reading only scalars is unaffected Enumerating the `item` (`Object.keys`, spread, `JSON.stringify`) denies on a list with a relationship, as on a read ([#2233](https://github.com/OpenSaasAU/stack/issues/2233)).
 
 ## Costs
 
