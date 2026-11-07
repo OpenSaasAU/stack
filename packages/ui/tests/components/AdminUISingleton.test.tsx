@@ -210,7 +210,7 @@ describe('AdminUI singleton routing', () => {
         const context = harness.context as unknown as AccessContext
         const tag = await harness.context.db.Tag.create({ data: { name: 'Hot' } })
         if (tag === null) throw new Error('tag not created')
-        await harness.context.db.Settings.get()
+        await harness.context.db.Settings.get?.()
         await harness.context.db.Settings.update({
           where: { id: '1' },
           data: { featured: { connect: { id: tag.id } } },
