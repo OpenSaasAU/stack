@@ -522,6 +522,7 @@ to free text rather than erroring.
 | `field:a,b`            | Is any of these values; each value is quoted on its own |
 | `field:!` / `-field:!` | Is empty / is not empty, on a field that can be empty   |
 | `field:"!"`            | The literal text `!`                                    |
+| `(a OR b)`             | An OR group: rows matching any of its tokens            |
 
 "Is not" keeps the rows with no value: `-category:product` returns uncategorised
 rows too, which SQL's `NOT` alone would drop. `field:!` is understood only on a
@@ -534,6 +535,21 @@ negated token searches its whole literal and is never negated: `-secret:x`, on
 a field the session cannot read or the list does not have, searches for
 `-secret:x`, so negation never turns an unreadable field into a filter. A comma
 in a free-text word is part of the word.
+
+An OR group joins two or more tokens: `(status:draft OR author:#42) views:>100`
+is drafts or anything of that author's, with more than 100 views. The keyword
+is uppercase `OR`, the `(` sits directly before the first token and the `)`
+directly after the last, and groups do not nest. Anything else keeps its
+literal meaning: `a OR b` without parentheses, a lowercase `(a or b)`, a quoted
+`"OR"`, an unmatched parenthesis and a nested `((a OR b) OR c)` are all free-text
+words. Each token in a group maps exactly as it would on its own, negation
+included, and a range inside a group is one `a..b` token. A token in a group
+that cannot map stays in place as its free-text alternative and is never
+dropped: `(status:draft OR secret:x)`, on a field the session cannot read,
+matches drafts or rows whose text contains `x`, and a negated one searches its
+literal `-secret:x`. Inside a group, two values on one field are both kept.
+Whatever the query, it is ANDed with the list's access filter, so a group can
+only ever narrow what the session may see.
 
 Each field type declares which operators it accepts. Text fields accept `eq`
 only, and lower it to `contains`. Numbers, decimals, big integers, timestamps
@@ -649,6 +665,18 @@ value the field does not take (`views:abc`) shows as a "Text contains" chip,
 because the engine searches it as free text, and is written back exactly as it
 was read.
 
+Chips are joined by connector buttons. Between two filters the connector reads
+**and**; clicking it joins them into an OR group, and the group is drawn as one
+bordered unit whose members are joined by **or**. Clicking an **or** splits the
+group there. Typing `or` and a space after the last filter starts an
+alternative to it, and Backspace on the empty bar backs out of it. Typing `draft or priya` offers the whole group at once, each
+side read as a filter or as text to search for. A group left with one member
+stops being a group. The "replace the first `is`" rule above applies outside
+groups only: inside one, `status:draft` and `status:published` are both kept,
+and a filter added outside never removes a group's member. A "between" chip
+joins a group as its one `a..b` token, and `>=` and `<=` tokens are never read
+as one "between" chip across a group's edge.
+
 | Key             | Does                                                         |
 | --------------- | ------------------------------------------------------------ |
 | `/`             | Focuses the bar from anywhere on the page                    |
@@ -659,6 +687,7 @@ was read.
 | Alt+← →         | Switches the condition while a field is staged               |
 | Backspace, ← →  | Selects a chip from an empty bar; Backspace again removes it |
 | Esc             | Cancels the filter being built and closes the suggestions    |
+| `or` then space | Starts an alternative to the last filter                     |
 
 The bar is a labelled combobox. DOM focus stays on its input and
 `aria-activedescendant` names the active suggestion; the number of suggestions
@@ -678,7 +707,10 @@ slots are `filter-builder` (root),
 `filter-builder-bar`, `filter-builder-chip` (with `data-armed` and
 `data-editing`), `filter-builder-chip-field`, `filter-builder-chip-condition`,
 `filter-builder-chip-value`, `filter-builder-chip-remove`,
-`filter-builder-draft`, `filter-builder-input`, `filter-builder-clear`,
+`filter-builder-group` (an OR group, with `data-alternative` while one is being
+added to it), `filter-builder-connector` (the **and** or **or** button between
+chips, with `data-joined` on an **or**), `filter-builder-alternative` (the
+**or** shown while an alternative is being typed), `filter-builder-draft`, `filter-builder-input`, `filter-builder-clear`,
 `filter-builder-progress`, `filter-builder-menu`,
 `filter-builder-menu-conditions`, `filter-builder-menu-condition`,
 `filter-builder-dates`, `filter-builder-option` (with `data-active`), `filter-builder-option-check`

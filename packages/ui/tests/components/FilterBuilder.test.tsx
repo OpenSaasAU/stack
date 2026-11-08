@@ -1466,4 +1466,153 @@ describe('FilterBuilder', () => {
       expect(chipNames()).toEqual(['Text contains -views:ten..20', 'Text contains 1..2,3'])
     })
   })
+
+  describe('OR groups', () => {
+    const groupNames = () =>
+      screen
+        .queryAllByRole('group')
+        .filter((element) => element.getAttribute('data-slot') === 'filter-builder-group')
+        .map((element) => element.getAttribute('aria-label'))
+
+    it('shows a group as one bounded unit, with or inside it and and around it', () => {
+      setup({ defaultValue: '(status:draft OR title:priya) views:>2' })
+      expect(groupNames()).toEqual(['Any of: Status is Draft or Title contains priya'])
+      const group = screen.getByRole('group', {
+        name: 'Any of: Status is Draft or Title contains priya',
+      })
+      expect(
+        within(group)
+          .getAllByRole('group')
+          .map((chip) => chip.getAttribute('aria-label')),
+      ).toEqual(['Status is Draft', 'Title contains priya'])
+      expect(
+        within(group).getByRole('button', {
+          name: 'Change or to and between Status is Draft and Title contains priya',
+        }),
+      ).toHaveTextContent('or')
+      expect(
+        screen.getByRole('button', {
+          name: 'Change and to or between Title contains priya and Views greater than 2',
+        }),
+      ).toHaveTextContent('and')
+    })
+
+    it('joins two chips by clicking the and between them', async () => {
+      const { user, onApply } = setup({ defaultValue: 'status:draft title:priya' })
+      await user.click(
+        screen.getByRole('button', {
+          name: 'Change and to or between Status is Draft and Title contains priya',
+        }),
+      )
+      expect(onApply).toHaveBeenCalledWith('(status:draft OR title:priya)')
+      expect(groupNames()).toEqual(['Any of: Status is Draft or Title contains priya'])
+    })
+
+    it('splits a group by clicking an or, and a side of one stops being a group', async () => {
+      const { user, onApply } = setup({ defaultValue: '(status:draft OR title:priya)' })
+      await user.click(
+        screen.getByRole('button', {
+          name: 'Change or to and between Status is Draft and Title contains priya',
+        }),
+      )
+      expect(onApply).toHaveBeenCalledWith('status:draft title:priya')
+      expect(groupNames()).toEqual([])
+    })
+
+    it('reaches the connectors from the keyboard', async () => {
+      const { user, onApply } = setup({ defaultValue: 'status:draft title:priya' })
+      const connector = screen.getByRole('button', {
+        name: 'Change and to or between Status is Draft and Title contains priya',
+      })
+      connector.focus()
+      await user.keyboard('{Enter}')
+      expect(onApply).toHaveBeenCalledWith('(status:draft OR title:priya)')
+    })
+
+    it('adds an alternative to the last filter when or is typed after it', async () => {
+      const { user, bar, onApply } = setup({ defaultValue: 'status:draft' })
+      await user.type(bar, 'or ')
+      expect(bar).toHaveValue('')
+      expect(bar).toHaveAttribute('placeholder', 'Add an alternative…')
+      await user.type(bar, 'title contains priya{Enter}')
+      expect(onApply).toHaveBeenCalledWith('(status:draft OR title:priya)')
+    })
+
+    it('keeps two values on one field when they are alternatives', async () => {
+      const { user, bar, onApply } = setup({ defaultValue: 'status:draft' })
+      await user.type(bar, 'or ')
+      await user.type(bar, 'status is published{Enter}')
+      expect(onApply).toHaveBeenCalledWith('(status:draft OR status:published)')
+    })
+
+    it('backs out of an alternative with Backspace', async () => {
+      const { user, bar } = setup({ defaultValue: 'status:draft' })
+      await user.type(bar, 'or ')
+      await user.keyboard('{Backspace}')
+      expect(bar).toHaveAttribute('placeholder', 'Add a filter…')
+    })
+
+    it('builds a whole group from `a or b`', async () => {
+      const { user, bar, onApply } = setup()
+      await user.type(bar, 'draft or priya')
+      expect(optionNames()[0]).toBe('Status is Draft or Text contains priya')
+      await user.keyboard('{Enter}')
+      expect(onApply).toHaveBeenCalledWith('(status:draft OR priya)')
+      expect(groupNames()).toEqual(['Any of: Status is Draft or Text contains priya'])
+    })
+
+    it('replaces an is filter outside groups only', async () => {
+      const { user, bar, onApply } = setup({
+        defaultValue: '(status:draft OR title:x) status:draft',
+      })
+      await user.type(bar, 'status is published{Enter}')
+      expect(onApply).toHaveBeenCalledWith('(status:draft OR title:x) status:published')
+    })
+
+    it('edits a member in place, keeping it in its group', async () => {
+      const { user, onApply } = setup({ defaultValue: '(status:draft OR status:published)' })
+      await user.click(screen.getByRole('button', { name: 'Change value of Status is Draft' }))
+      await user.click(screen.getByRole('option', { name: 'Published' }))
+      expect(onApply).toHaveBeenCalledWith('(status:published OR status:published)')
+    })
+
+    it('removes a member, and a group left with one stops being a group', async () => {
+      const { user, onApply } = setup({ defaultValue: '(status:draft OR title:x) beta' })
+      await user.click(screen.getByRole('button', { name: 'Remove Title contains x' }))
+      expect(onApply).toHaveBeenCalledWith('status:draft beta')
+      expect(groupNames()).toEqual([])
+    })
+
+    it('joins a between chip as one range token', async () => {
+      const { user, onApply } = setup({ defaultValue: 'views:>=1 views:<=5 title:x' })
+      await user.click(
+        screen.getByRole('button', {
+          name: 'Change and to or between Views between 1 and 5 and Title contains x',
+        }),
+      )
+      expect(onApply).toHaveBeenCalledWith('(views:1..5 OR title:x)')
+    })
+
+    it('keeps an unreadable member in its group as text', () => {
+      setup({ defaultValue: '(status:draft OR nosuch:value)' })
+      expect(groupNames()).toEqual(['Any of: Status is Draft or Text contains value'])
+    })
+
+    it('pastes a group as a group', async () => {
+      const { user, bar, onApply } = setup({ defaultValue: 'beta' })
+      await user.click(bar)
+      await user.paste('(status:draft OR views:>2)')
+      expect(onApply).toHaveBeenCalledWith('beta (status:draft OR views:>2)')
+    })
+
+    it('keeps unmatched parentheses as typed text', () => {
+      setup({ defaultValue: '(status:draft OR title:x' })
+      expect(groupNames()).toEqual([])
+      expect(chipNames()).toEqual([
+        'Text contains (status:draft',
+        'Text contains OR',
+        'Title contains x',
+      ])
+    })
+  })
 })

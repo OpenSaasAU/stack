@@ -409,3 +409,99 @@ describe('a negated range over the secured surface (ADR-0083)', () => {
     BOOT,
   )
 })
+
+describe('OR groups over the secured surface (ADR-0083)', () => {
+  const titles = (rows: Record<string, unknown>[]) => rows.map((row) => row.title).sort()
+
+  test(
+    '`(a OR b)` returns the rows either side matches',
+    async () => {
+      expect(titles(await filtered('Post', '(category:news OR title:ledgers)'))).toEqual([
+        'On Ledgers',
+        'On Looms',
+      ])
+    },
+    BOOT,
+  )
+
+  test(
+    'a group ANDs with the rest of the query, and keeps two values on one field',
+    async () => {
+      expect(
+        titles(await filtered('Post', '(category:product OR category:news) title:looms')),
+      ).toEqual(['On Looms'])
+    },
+    BOOT,
+  )
+
+  test(
+    'without parentheses, or with a quoted keyword, `OR` is a free-text word',
+    async () => {
+      expect(await filtered('Post', 'category:news OR category:product')).toEqual([])
+      expect(await filtered('Post', '(category:news "OR" category:news)')).toEqual([])
+    },
+    BOOT,
+  )
+
+  test(
+    'an unreadable field in a group stays in place as a free-text alternative',
+    async () => {
+      expect(titles(await filtered('Post', '(category:news OR secret:Engines)'))).toEqual([
+        'On Engines',
+        'On Looms',
+      ])
+    },
+    BOOT,
+  )
+
+  test(
+    'a negated unreadable field in a group searches its literal word and is never negated',
+    async () => {
+      await seed('Post', { title: 'Notes on -secret:x', secret: 'z' })
+      expect(titles(await filtered('Post', '(category:news OR -secret:x)'))).toEqual([
+        'Notes on -secret:x',
+        'On Looms',
+      ])
+    },
+    BOOT,
+  )
+
+  test(
+    'an unmappable member narrows to nothing on a list with no free-text field, never widening',
+    async () => {
+      const rows = await filtered('Setting', '(priority:1 OR nosuch:2)')
+      expect(rows.map((row) => row.priority)).toEqual([1])
+    },
+    BOOT,
+  )
+
+  test(
+    'a range in a group is one alternative',
+    async () => {
+      const rows = await filtered('Setting', '(priority:2..5 OR due:2026-11-01)')
+      expect(rows.map((row) => row.priority).sort()).toEqual([1, 2])
+    },
+    BOOT,
+  )
+
+  test(
+    'the access filter still ANDs the whole query',
+    async () => {
+      expect(await filtered('Ledger', '(name:private OR name:other)')).toEqual([])
+      const rows = await filtered('Ledger', '(name:private OR name:other)', auditor)
+      expect(rows.map((row) => row.name)).toEqual(['private'])
+    },
+    BOOT,
+  )
+
+  test(
+    'a related record the session cannot read matches nothing inside a group',
+    async () => {
+      const [ledger] = await filtered('Ledger', 'name:private', auditor)
+      expect(
+        titles(await filtered('Post', `(ledger:#${String(ledger.id)} OR category:news)`)),
+      ).toEqual(['On Looms'])
+    },
+    BOOT,
+  )
+})

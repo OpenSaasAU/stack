@@ -35,3 +35,7 @@ Literal text stays reachable by quoting, so `"OR"` and `"(draft"` are still free
 - Unmatched or nested parentheses degrade to literal words.
 - Core owns the tree, parser and serialiser, and parse-then-serialise is a true inverse. The admin UI carries no grammar of its own.
 - Filtering can still only narrow: the query is ANDed with the Access Filter however it is built.
+
+## Amendment — exactly what reads as a group (issue #2251)
+
+Only a matched group changes meaning. A group is `(` directly before its first token, two or more tokens separated by whitespace, uppercase `OR` and whitespace, and `)` directly after the last token, ending its word. The last `)` of a word is the closer, so `(a OR b))` holds the value `b)`. Anything short of that reads exactly as it did before groups existed: `a OR b` without parentheses, `(a or b)`, `"OR"`, `( a OR b )`, `(a)`, `-(a OR b)`, an unmatched parenthesis and a nested group are all literal words, and a valid group after an unmatched `(` still reads as a group. The serialiser quotes whatever would otherwise change shape on the way back: a token inside a group that starts with a parenthesis or ends with `)` before an `OR`, and a free-text word outside a group that would open one. The engine reads a structured group as its serialised form reads back, so a query built in code filters the same rows as its URL.

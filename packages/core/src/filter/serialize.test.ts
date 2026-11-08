@@ -1,16 +1,20 @@
 import { describe, it, expect } from 'vitest'
-import { parseFilterQuery } from './parse.js'
+import { filterQueryTokens, filterTermTokens, parseFilterQuery } from './parse.js'
 import { quoteFilterValue, serializeFilterQuery } from './serialize.js'
 import { filterTokenRecordId, recordIdFilterToken } from './record-id.js'
 import { buildFilterWhere } from './map.js'
 import type {
   FilterOperator,
   FilterQuery,
+  FilterGroup,
   FilterSpec,
+  FilterTerm,
   FilterToken,
   FilterTokenOperator,
   FilterValue,
 } from './types.js'
+
+const tokensOf = (written: string) => filterQueryTokens(parseFilterQuery(written))
 
 const v = (text: string, quoted = false): FilterValue => ({ text, quoted })
 
@@ -23,7 +27,9 @@ const token = (partial: Partial<FilterToken>): FilterToken => ({
   ...partial,
 })
 
-const query = (...terms: FilterToken[]): FilterQuery => ({ terms })
+const query = (...terms: FilterTerm[]): FilterQuery => ({ terms })
+
+const group = (...tokens: FilterToken[]): FilterGroup => ({ kind: 'group', tokens })
 
 describe('serializeFilterQuery', () => {
   it('serialises a bare free-text word', () => {
@@ -180,13 +186,10 @@ describe('serializing a token with no values', () => {
   })
 
   it('reads back as the same number of terms, the first one empty', () => {
-    const readBack = parseFilterQuery(
+    const readBack = tokensOf(
       serializeFilterQuery(query(token({ values: [] }), token({ values: [v('x')] }))),
     )
-    expect(readBack.terms.map((term) => term.values.map((value) => value.text))).toEqual([
-      [''],
-      ['x'],
-    ])
+    expect(readBack.map((term) => term.values.map((value) => value.text))).toEqual([[''], ['x']])
   })
 })
 
@@ -225,11 +228,11 @@ describe('parse/serialize round-trip on written queries', () => {
   })
 
   it('tells `a,"b c"` from `a,b c` by its per-value quoting', () => {
-    const quoted = parseFilterQuery('status:a,"b c"')
-    const split = parseFilterQuery('status:a,b c')
-    expect(quoted.terms).toHaveLength(1)
-    expect(quoted.terms[0].values).toEqual([v('a'), v('b c', true)])
-    expect(split.terms.map((term) => term.values)).toEqual([[v('a'), v('b')], [v('c')]])
+    const quoted = tokensOf('status:a,"b c"')
+    const split = tokensOf('status:a,b c')
+    expect(quoted).toHaveLength(1)
+    expect(quoted[0].values).toEqual([v('a'), v('b c', true)])
+    expect(split.map((term) => term.values)).toEqual([[v('a'), v('b')], [v('c')]])
   })
 })
 
@@ -301,7 +304,12 @@ const TRICKY_PREFIXES = [
   '!',
   '-a:!',
   'a:x,',
+  '(',
+  ')',
+  'OR',
+  '(a OR ',
 ]
+const GROUP_PIECES = ['(', ')', ' OR ', ' OR ', ' or ', ' ', '((', '))', '"OR"', ' OR)', '-(']
 const OPERATORS: FilterTokenOperator[] = ['eq', 'gt', 'gte', 'lt', 'lte', 'empty']
 const FIELDS = ['status', 'a', '_b1', 'http', 'OR']
 const RUNS = 2000
@@ -338,11 +346,25 @@ function arbitrary(random: () => number) {
       values: [v(bound(LOW_BOUND)), v(bound(HIGH_BOUND))],
     })
   const anyToken = () => (random() < 0.2 ? rangeToken() : parserShapedToken())
+  const groupTerm = (): FilterGroup =>
+    group(...Array.from({ length: 2 + Math.floor(random() * 3) }, anyToken))
+  const anyTerm = (): FilterTerm => (random() < 0.3 ? groupTerm() : anyToken())
+  const groupString = () => {
+    const members = Array.from({ length: 1 + Math.floor(random() * 3) }, () => text(6))
+    const written = `(${members.join(random() < 0.8 ? ' OR ' : pick(GROUP_PIECES))})`
+    const pieces = Array.from({ length: Math.floor(random() * 3) }, () => pick(GROUP_PIECES))
+    return random() < 0.5 ? written + pieces.join('') : pieces.join('') + written
+  }
   return {
-    string: () => text(24),
+    string: () =>
+      random() < 0.4
+        ? Array.from({ length: 1 + Math.floor(random() * 3) }, () =>
+            random() < 0.5 ? groupString() : text(8),
+          ).join(' ')
+        : text(24),
     token: parserShapedToken,
     freeTextToken,
-    query: () => query(...Array.from({ length: Math.floor(random() * 5) }, anyToken)),
+    query: () => query(...Array.from({ length: Math.floor(random() * 5) }, anyTerm)),
   }
 }
 
@@ -360,8 +382,13 @@ describe('parse/serialize is an inverse on what the parser produces (property)',
   })
 
   it('produces negated, multi-value and empty tokens from what it is given', () => {
-    const parsed = Array.from({ length: RUNS }, () => parseFilterQuery(generate.string()).terms)
+    const parsed = Array.from({ length: RUNS }, () => tokensOf(generate.string()))
     const terms = parsed.flat()
+    const groups = Array.from({ length: RUNS }, () => parseFilterQuery(generate.string()).terms)
+      .flat()
+      .filter((term) => term.kind === 'group')
+    expect(groups.length).toBeGreaterThan(0)
+    expect(groups.some((term) => term.tokens.some((member) => member.field !== null))).toBe(true)
     expect(terms.some((term) => term.negated)).toBe(true)
     expect(terms.some((term) => term.values.length > 1)).toBe(true)
     expect(terms.some((term) => term.operator === 'empty')).toBe(true)
@@ -370,8 +397,18 @@ describe('parse/serialize is an inverse on what the parser produces (property)',
     expect(terms.some((term) => filterTokenRecordId(term) !== null)).toBe(true)
   })
 
-  it('generates negated, multi-value, empty, #id and range tokens together', () => {
-    const terms = Array.from({ length: RUNS }, () => generate.query().terms).flat()
+  it('generates groups holding negated, multi-value, empty, #id and range tokens', () => {
+    const generated = Array.from({ length: RUNS }, () => generate.query().terms).flat()
+    const members = generated.flatMap((term) => (term.kind === 'group' ? term.tokens : []))
+    expect(members.some((member) => member.negated)).toBe(true)
+    expect(members.some((member) => member.values.length > 1)).toBe(true)
+    expect(members.some((member) => member.operator === 'empty')).toBe(true)
+    expect(members.some((member) => member.operator === 'range')).toBe(true)
+    expect(members.some((member) => member.field === null)).toBe(true)
+    expect(
+      members.some((member) => member.values.some((value) => value.text.startsWith('#'))),
+    ).toBe(true)
+    const terms = generated.flatMap(filterTermTokens)
     expect(terms.some((term) => term.negated && term.values.length > 1)).toBe(true)
     expect(terms.some((term) => term.operator === 'empty')).toBe(true)
     expect(terms.some((term) => term.values.some((value) => value.text.startsWith('#')))).toBe(true)
@@ -390,16 +427,24 @@ describe('parse/serialize is an inverse on what the parser produces (property)',
       const original = generate.query()
       const readBack = parseFilterQuery(serializeFilterQuery(original))
       const label = JSON.stringify(original)
+      const asRead = (source: FilterToken, read: FilterToken | undefined): FilterToken => ({
+        ...source,
+        values: source.values.map((value, at) => ({
+          ...value,
+          quoted: value.quoted || read?.values[at]?.quoted === true,
+        })),
+      })
       expect(readBack.terms.length, label).toBe(original.terms.length)
       readBack.terms.forEach((term, index) => {
         const source = original.terms[index]
-        expect(term, label).toEqual({
-          ...source,
-          values: source.values.map((value, at) => ({
-            ...value,
-            quoted: value.quoted || term.values[at]?.quoted === true,
-          })),
-        })
+        if (source.kind === 'group') {
+          const members = term.kind === 'group' ? term.tokens : []
+          expect(term, label).toEqual(
+            group(...source.tokens.map((member, at) => asRead(member, members[at]))),
+          )
+          return
+        }
+        expect(term, label).toEqual(asRead(source, term.kind === 'token' ? term : undefined))
       })
     }
   })
@@ -407,15 +452,17 @@ describe('parse/serialize is an inverse on what the parser produces (property)',
   it('a related record id reads back as the same id, and label text never becomes one', () => {
     for (let run = 0; run < RUNS; run++) {
       const original = generate.query()
-      const readBack = parseFilterQuery(serializeFilterQuery(original))
+      const readBack = filterQueryTokens(parseFilterQuery(serializeFilterQuery(original)))
+      const sources = filterQueryTokens(original)
       const label = JSON.stringify(original)
-      readBack.terms.forEach((term, index) => {
-        const source = original.terms[index]
+      expect(readBack.length, label).toBe(sources.length)
+      readBack.forEach((term, index) => {
+        const source = sources[index]
         const id = filterTokenRecordId(source)
         if (source.values.some((value) => value.quoted)) {
           expect(filterTokenRecordId(term), label).toBeNull()
         }
-        if (id !== null && !/[\s,"]/.test(id)) {
+        if (id !== null && !/[\s,"]|\)$/.test(id)) {
           expect(filterTokenRecordId(term), label).toBe(id)
         }
       })
@@ -429,7 +476,7 @@ describe('a range reads back as one range token (property)', () => {
   it('every parsed range has two unquoted, comma-free bounds and writes back bare', () => {
     for (let run = 0; run < RUNS; run++) {
       const written = generate.string()
-      for (const term of parseFilterQuery(written).terms) {
+      for (const term of tokensOf(written)) {
         if (term.operator !== 'range') continue
         expect(term.values, JSON.stringify(written)).toHaveLength(2)
         expect(
@@ -449,11 +496,11 @@ describe('a related record id token', () => {
   it('serialises as field:#id and reads back as that id', () => {
     const written = serializeFilterQuery(query(recordIdFilterToken('author', '42')))
     expect(written).toBe('author:#42')
-    expect(parseFilterQuery(written).terms.map(filterTokenRecordId)).toEqual(['42'])
+    expect(tokensOf(written).map(filterTokenRecordId)).toEqual(['42'])
   })
 
   it('is not read from a quoted value, a free-text word or a comparison', () => {
-    expect(parseFilterQuery('author:"#42" #42 views:>#42').terms.map(filterTokenRecordId)).toEqual([
+    expect(tokensOf('author:"#42" #42 views:>#42').map(filterTokenRecordId)).toEqual([
       null,
       null,
       null,
@@ -461,10 +508,7 @@ describe('a related record id token', () => {
   })
 
   it('names no single record when negated or listing several ids', () => {
-    expect(parseFilterQuery('-author:#42 author:#1,#2').terms.map(filterTokenRecordId)).toEqual([
-      null,
-      null,
-    ])
+    expect(tokensOf('-author:#42 author:#1,#2').map(filterTokenRecordId)).toEqual([null, null])
   })
 
   it('serialises negated as -field:#id', () => {
@@ -542,8 +586,9 @@ describe('buildFilterWhere reads a structured token as its serialised URL reads 
   it('agrees on multi-value free-text tokens', () => {
     let multiValue = 0
     for (let run = 0; run < RUNS; run++) {
-      const structured = query(generate.freeTextToken())
-      if (structured.terms[0].values.length > 1) multiValue++
+      const free = generate.freeTextToken()
+      const structured = query(free)
+      if (free.values.length > 1) multiValue++
       const readBack = parseFilterQuery(serializeFilterQuery(structured))
       expect(buildFilterWhere(structured, PROPERTY_SPECS), JSON.stringify(structured)).toEqual(
         buildFilterWhere(readBack, PROPERTY_SPECS),

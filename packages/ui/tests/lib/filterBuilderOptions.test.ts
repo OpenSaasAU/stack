@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import type { FilterFieldSuggestion } from '@opensaas/stack-core'
+import type { FilterFieldSuggestion, FilterToken } from '@opensaas/stack-core'
 import {
+  addAlternatives,
+  alternativesOption,
   checkRange,
   chipEditText,
   chipsOf,
@@ -9,12 +11,23 @@ import {
   describeToken,
   draftOptions,
   filterQuery,
+  entriesQuery,
   formatOffset,
+  hydrateEntries,
   hydrateTokens,
+  joinChips,
   localInstant,
+  normaliseGroups,
+  placeEntries,
   rootOptions,
+  splitChips,
+  unitsOf,
+  type FilterEntry,
   type FilterOption,
 } from '../../src/lib/filterBuilderOptions.js'
+
+const ungrouped = (tokens: FilterToken[]): FilterEntry[] =>
+  tokens.map((token) => ({ token, group: null }))
 
 const views: FilterFieldSuggestion = {
   field: 'views',
@@ -169,7 +182,7 @@ describe('checkRange', () => {
 describe('chipsOf', () => {
   it('pairs >= and <= only when adjacent and on one field', () => {
     const chips = chipsOf(
-      hydrateTokens('views:>=1 views:<=5 views:>=2 due:<=2026-01-01 views:<=9'),
+      ungrouped(hydrateTokens('views:>=1 views:<=5 views:>=2 due:<=2026-01-01 views:<=9')),
       fields,
     )
     expect(chips.map((chip) => [chip.start, chip.count, chip.description.sentence])).toEqual([
@@ -263,7 +276,7 @@ describe('a typed or pasted timestamp token', () => {
   })
 
   it('shows a plain date already in a URL as written', () => {
-    const [chip] = chipsOf(hydrateTokens('at:2026-01-01..2026-01-31'), everyField)
+    const [chip] = chipsOf(ungrouped(hydrateTokens('at:2026-01-01..2026-01-31')), everyField)
     expect(chip.description.sentence).toBe('At between 2026-01-01 and 2026-01-31')
   })
 })
@@ -353,7 +366,7 @@ describe('editing a chip', () => {
   it('edits an is instant on a local midnight as its raw instant, never as a whole day', () => {
     const instant = dayBoundary('2026-11-03', false) ?? ''
     const tokens = hydrateTokens(`at:${instant}`)
-    const [chip] = chipsOf(tokens, everyField)
+    const [chip] = chipsOf(ungrouped(tokens), everyField)
     expect(chip.description.sentence).toBe(`At is ${instant}`)
     expect(chipEditText(chip, tokens[0], everyField)).toEqual({
       draft: { field: 'at', condition: 'eq' },
@@ -363,7 +376,7 @@ describe('editing a chip', () => {
 
   it('edits an at least instant on a local midnight as its day', () => {
     const tokens = hydrateTokens(`at:>=${dayBoundary('2026-11-03', false)}`)
-    const [chip] = chipsOf(tokens, everyField)
+    const [chip] = chipsOf(ungrouped(tokens), everyField)
     expect(chipEditText(chip, tokens[0], everyField).text).toBe('2026-11-03')
   })
 })
@@ -375,13 +388,13 @@ describe('`field:a..b` on a field with no range', () => {
   ])('shows %s as the field’s own condition on the literal', (query, sentence) => {
     const tokens = hydrateTokens(query)
     expect(describeToken(tokens[0], everyField).sentence).toBe(sentence)
-    expect(chipsOf(tokens, everyField)[0].range).toBeNull()
+    expect(chipsOf(ungrouped(tokens), everyField)[0].range).toBeNull()
     expect(filterQuery(tokens)).toBe(query)
   })
 
   it('edits it as that condition on the literal', () => {
     const tokens = hydrateTokens('title:wait...what')
-    const [chip] = chipsOf(tokens, everyField)
+    const [chip] = chipsOf(ungrouped(tokens), everyField)
     expect(chipEditText(chip, tokens[0], everyField)).toEqual({
       draft: { field: 'title', condition: 'eq' },
       text: 'wait...what',
@@ -413,12 +426,140 @@ describe('negation with ranges and dates', () => {
   })
 
   it('never pairs a negated comparison into a between chip', () => {
-    const chips = chipsOf(hydrateTokens('-views:>=1 views:<=5'), everyField)
+    const chips = chipsOf(ungrouped(hydrateTokens('-views:>=1 views:<=5')), everyField)
     expect(chips.map((chip) => chip.count)).toEqual([1, 1])
   })
 
   it('describes a range on a field with no range, negated, as its negated literal condition', () => {
     const [token] = hydrateTokens('-title:v1..v2')
     expect(describeToken(token, everyField).sentence).toBe('Title does not contain v1..v2')
+  })
+})
+
+describe('OR groups', () => {
+  const status: FilterFieldSuggestion = {
+    field: 'status',
+    operators: ['eq'],
+    freeText: false,
+    valueSource: {
+      kind: 'enum',
+      options: [
+        { value: 'draft', label: 'Draft' },
+        { value: 'published', label: 'Published' },
+      ],
+    },
+  }
+  const grouped = new Map(
+    [views, title, status].map((suggestion) => [suggestion.field, suggestion]),
+  )
+  const chipsFor = (query: string) => chipsOf(hydrateEntries(query), grouped)
+  const groupsOf = (entries: FilterEntry[]) => entries.map((entry) => entry.group)
+
+  it('hydrates a group as entries sharing one group, and writes it back as written', () => {
+    const entries = hydrateEntries('beta (status:draft OR title:x) views:>2')
+    expect(groupsOf(entries)).toEqual([null, 0, 0, null])
+    expect(entriesQuery(entries)).toBe('beta (status:draft OR title:x) views:>2')
+  })
+
+  it('reads degraded parentheses as words outside any group', () => {
+    const entries = hydrateEntries('(status:draft or title:x)')
+    expect(groupsOf(entries)).toEqual([null, null, null])
+    expect(entriesQuery(entries)).toBe('(status:draft or title:x)')
+  })
+
+  it('takes the group off a member left alone', () => {
+    const entries = hydrateEntries('(status:draft OR title:x) beta')
+    expect(groupsOf(normaliseGroups([entries[0], entries[2]]))).toEqual([null, null])
+  })
+
+  it('never pairs >= and <= across a group boundary', () => {
+    expect(chipsFor('(views:>=1 OR views:<=5)').map((chip) => chip.count)).toEqual([1, 1])
+    expect(chipsFor('views:>=1 (views:<=5 OR title:x)').map((chip) => chip.count)).toEqual([
+      1, 1, 1,
+    ])
+    expect(chipsFor('views:>=1 views:<=5').map((chip) => chip.count)).toEqual([2])
+  })
+
+  it('reads chips as units: a group, or one chip outside any group', () => {
+    expect(unitsOf(chipsFor('beta (status:draft OR title:x OR title:y) gamma'))).toEqual([
+      { first: 0, last: 0, group: null },
+      { first: 1, last: 3, group: 0 },
+      { first: 4, last: 4, group: null },
+    ])
+  })
+
+  it('joins two chips into a group, and a between chip joins as one a..b token', () => {
+    const entries = hydrateEntries('views:>=1 views:<=5 title:x')
+    const joined = joinChips(entries, chipsOf(entries, grouped), 0)
+    expect(entriesQuery(joined)).toBe('(views:1..5 OR title:x)')
+  })
+
+  it('joins a chip into the group beside it', () => {
+    const entries = hydrateEntries('beta (status:draft OR title:x)')
+    expect(entriesQuery(joinChips(entries, chipsOf(entries, grouped), 0))).toBe(
+      '(beta OR status:draft OR title:x)',
+    )
+  })
+
+  it('splits a group between two chips, and a side of one stops being a group', () => {
+    const entries = hydrateEntries('(status:draft OR title:x OR title:y)')
+    const chips = chipsOf(entries, grouped)
+    expect(entriesQuery(splitChips(entries, chips, 0))).toBe('status:draft (title:x OR title:y)')
+    expect(entriesQuery(splitChips(entries, chips, 1))).toBe('(status:draft OR title:x) title:y')
+  })
+
+  it('adds alternatives after a group, or makes a lone chip a group', () => {
+    const lone = hydrateEntries('status:draft beta')
+    expect(
+      entriesQuery(addAlternatives(lone, chipsOf(lone, grouped), 0, hydrateTokens('title:x'))),
+    ).toBe('(status:draft OR title:x) beta')
+    const group = hydrateEntries('(status:draft OR title:x) beta')
+    expect(
+      entriesQuery(
+        addAlternatives(group, chipsOf(group, grouped), 0, hydrateTokens('status:published')),
+      ),
+    ).toBe('(status:draft OR title:x OR status:published) beta')
+  })
+
+  it('keeps two values on one field in a group, and replaces only outside groups', () => {
+    const entries = hydrateEntries('(status:draft OR title:x) status:draft')
+    const [published] = hydrateTokens('status:published')
+    expect(
+      entriesQuery(placeEntries(entries, [{ token: published, group: null }], null, grouped, true)),
+    ).toBe('(status:draft OR title:x) status:published')
+    expect(
+      entriesQuery(
+        placeEntries(
+          entries,
+          [{ token: published, group: 0 }],
+          { start: 2, count: 0 },
+          grouped,
+          true,
+        ),
+      ),
+    ).toBe('(status:draft OR title:x OR status:published) status:draft')
+  })
+
+  it('offers `a or b` as one group, each side read on its own', () => {
+    const option = alternativesOption('draft or priya', grouped)
+    expect(option).toMatchObject({
+      kind: 'apply',
+      alternatives: true,
+      label: 'Status is Draft or Text contains priya',
+    })
+    expect(
+      option?.kind === 'apply'
+        ? entriesQuery(option.tokens.map((token) => ({ token, group: 0 })))
+        : null,
+    ).toBe('(status:draft OR priya)')
+    expect(rootOptions('views > 5 or title contains ada', grouped).options[0]).toMatchObject({
+      label: 'Views greater than 5 or Title contains ada',
+    })
+  })
+
+  it('offers no group for a side that is not one token, or an empty side', () => {
+    expect(alternativesOption('draft or', grouped)).toBeNull()
+    expect(alternativesOption('draft or two words', grouped)).toBeNull()
+    expect(alternativesOption('views > x or draft', grouped)).toBeNull()
   })
 })
