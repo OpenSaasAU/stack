@@ -125,6 +125,19 @@ describe('the filter engine over the secured surface', () => {
   )
 
   test(
+    'a quoted field-shaped word is free text, and an escaped quote reaches the value',
+    async () => {
+      await seed('User', { name: 'name:Ada' })
+      await seed('User', { name: 'Ada "the Countess"' })
+      expect((await filtered('User', '"name:Ada"')).map((row) => row.name)).toEqual(['name:Ada'])
+      expect((await filtered('User', 'name:"\\"the Countess\\""')).map((row) => row.name)).toEqual([
+        'Ada "the Countess"',
+      ])
+    },
+    BOOT,
+  )
+
+  test(
     'a to-one label token matches through the relation',
     async () => {
       const rows = await filtered('Post', 'author:ada')

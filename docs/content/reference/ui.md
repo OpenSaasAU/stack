@@ -339,9 +339,13 @@ the prop leaves the table unsortable.
 The list view's Filter builder and the `?search=` query it serialises are one
 grammar. A token is `field:value`, optionally with a comparison
 (`views:>100`); a bare word is free text, OR-matched across every field that
-declares itself free-text. Tokens combine with implicit AND, and a token the
-list cannot honour — an unknown field, an unsupported operator, an empty value —
-degrades to free text rather than erroring.
+declares itself free-text. A value with spaces is quoted
+(`title:"Ada Lovelace"`), and quoted text is always literal: `"status:draft"`
+searches for those words rather than filtering on `status`. Inside quotes, `\"`
+is a literal quote and `\\` a literal backslash. Tokens combine with implicit
+AND. A token with an empty value (`title:` or `""`) filters nothing, and a token
+the list cannot honour — an unknown field or an unsupported operator — degrades
+to free text rather than erroring.
 
 Each field type declares which operators it accepts. Text fields accept `eq`
 only, and lower it to `contains`. Numbers, decimals, big integers and timestamps
