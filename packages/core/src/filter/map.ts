@@ -1,4 +1,5 @@
-import { FILTER_OPERATOR_PREFIXES } from './parse.js'
+import { parseFilterQuery } from './parse.js'
+import { serializeFilterToken } from './serialize.js'
 import type {
   FilterCondition,
   FilterFieldSuggestion,
@@ -51,16 +52,31 @@ export function isFieldConditionToken(
     : capabilities.operators.includes(token.operator)
 }
 
-function literalWord(token: FilterToken): string {
-  const negation = token.negated ? '-' : ''
-  const field = token.field === null ? '' : `${token.field}:`
-  if (token.operator === 'empty') return `${negation}${field}!`
-  const values = token.values.map((value) => value.text).join(',')
-  return `${negation}${field}${FILTER_OPERATOR_PREFIXES[token.operator]}${values}`
-}
-
 function anyOf(conditions: FilterCondition[]): FilterCondition {
   return conditions.length === 1 ? conditions[0] : { OR: conditions }
+}
+
+function fieldCondition(token: FilterToken, spec: FilterSpec): FilterCondition | null {
+  if (token.operator === 'empty') {
+    if (spec.empty === undefined) return null
+    return token.negated ? { NOT: spec.empty } : spec.empty
+  }
+  if (!spec.operators.includes(token.operator)) return null
+  const operator = token.operator
+  const conditions: FilterCondition[] = []
+  for (const value of token.values) {
+    if (value.text === '') continue
+    const condition = spec.toCondition(operator, value.text)
+    if (condition === null) return null
+    conditions.push(condition)
+  }
+  if (conditions.length === 0) return null
+  const matched = anyOf(conditions)
+  if (!token.negated) return matched
+  const excluded: FilterCondition = { NOT: matched }
+  return spec.empty === undefined || spec.negation !== undefined
+    ? excluded
+    : { OR: [excluded, spec.empty] }
 }
 
 /**
@@ -78,15 +94,17 @@ function anyOf(conditions: FilterCondition[]): FilterCondition {
  * - `field:a,b` ORs the field's condition once per value.
  * - `-field:value` is `NOT` of that condition, ORed with the field's `empty`
  *   condition when it states one, so "is not" keeps the rows with no value.
+ *   A spec stating a `negation` says `NOT` alone already does, and gets no `OR`.
  * - `field:!` is the field's `empty` condition and `-field:!` its `NOT`.
  *
- * A token degrades to free text (never an error) when its field is unknown,
- * has no spec, uses an unsupported operator, or cannot be empty for `field:!`.
- * A value its field maps to `null` degrades on its own, as a free-text
- * alternative to the token's other values. A token that cannot map is never
- * negated: a negated one is searched as the literal word it was written as
- * (`-secret:x`), because `NOT` of free text would turn a field the session
- * cannot read into a filter.
+ * A field token that cannot map in any part degrades whole to one free-text
+ * word, written exactly as {@link serializeFilterToken} writes it and as the
+ * Filter builder's chip shows it (`status:draft,bogus`, `-secret:"Ada"`): its
+ * field is unknown, has no spec, does not support the operator, cannot be
+ * empty for `field:!`, or maps any one of the values to `null`. Degrading the
+ * whole token keeps `NOT` of free text from turning a field the session cannot
+ * read into a filter. A free-text token is read as its serialised form reads
+ * back, so a structured one with several values is the words its URL holds.
  *
  * Bare words (and degraded tokens) are OR-matched across every free-text
  * field, and each such word is ANDed with the rest — so `beta gamma` requires
@@ -109,10 +127,6 @@ export function buildFilterWhere(
   const freeTextFields = Object.keys(specs).filter((field) => specs[field].freeText)
   const specFor = (field: string): FilterSpec | undefined =>
     Object.hasOwn(specs, field) ? specs[field] : undefined
-  const capabilitiesFor = (field: string): FilterFieldCapabilities | undefined => {
-    const spec = specFor(field)
-    return spec && { operators: spec.operators, canBeEmpty: spec.empty !== undefined }
-  }
 
   const freeText = (word: string): FilterCondition => {
     const conditions = freeTextFields
@@ -121,7 +135,11 @@ export function buildFilterWhere(
     return conditions.length > 0 ? anyOf(conditions) : NEVER_MATCHES
   }
 
-  for (const token of query.terms) {
+  const terms = query.terms.flatMap((token) =>
+    token.field === null ? parseFilterQuery(serializeFilterToken(token)).terms : [token],
+  )
+
+  for (const token of terms) {
     // An empty value is incomplete input, not a constraint the engine failed
     // to honour: `role:` (or a bare `""`) says nothing to filter on, so it is
     // inert by design rather than narrowed away (#1509). This must be checked
@@ -132,46 +150,18 @@ export function buildFilterWhere(
     // carry a value the system cannot compile.
     if (isEmptyFilterToken(token)) continue
 
-    const texts = token.values.map((value) => value.text).filter((text) => text !== '')
-    const spec = isFieldConditionToken(token, capabilitiesFor) ? specFor(token.field) : undefined
-
-    if (!spec) {
-      if (token.negated || token.operator === 'empty') {
-        textConditions.push(freeText(literalWord(token)))
-      } else {
-        textConditions.push(anyOf(texts.map(freeText)))
-      }
+    const spec = token.field === null ? undefined : specFor(token.field)
+    const condition = spec === undefined ? null : fieldCondition(token, spec)
+    if (condition !== null) {
+      fieldConditions.push(condition)
       continue
     }
-
-    if (token.operator === 'empty') {
-      const empty = spec.empty
-      if (empty === undefined) textConditions.push(freeText(literalWord(token)))
-      else fieldConditions.push(token.negated ? { NOT: empty } : empty)
-      continue
-    }
-
-    const operator = token.operator
-    const mapped = texts.map((text) => spec.toCondition(operator, text))
-
-    if (!token.negated) {
-      const alternatives = mapped.map((condition, index) => condition ?? freeText(texts[index]))
-      const target = mapped.every((condition) => condition !== null)
-        ? fieldConditions
-        : textConditions
-      target.push(anyOf(alternatives))
-      continue
-    }
-
-    const conditions = mapped.filter(
-      (condition): condition is FilterCondition => condition !== null,
-    )
-    if (conditions.length !== mapped.length) {
-      textConditions.push(freeText(literalWord(token)))
-      continue
-    }
-    const excluded: FilterCondition = { NOT: anyOf(conditions) }
-    fieldConditions.push(spec.empty === undefined ? excluded : { OR: [excluded, spec.empty] })
+    const [value] = token.values
+    const word =
+      token.field === null && !token.negated && token.values.length === 1 && value !== undefined
+        ? value.text
+        : serializeFilterToken(token)
+    textConditions.push(freeText(word))
   }
 
   const andConditions = [...fieldConditions, ...textConditions]

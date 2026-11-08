@@ -301,28 +301,26 @@ describe('buildFilterWhere', () => {
 
   // ─── Graceful degradation (ADR-0017): unknown syntax → free text, never error
   it('degrades an unknown field to free text', () => {
-    // `role` has no spec → search "Editor" across free-text fields.
     expect(buildFilterWhere(parseFilterQuery('role:Editor'), specs)).toEqual({
-      name: { contains: 'Editor' },
+      name: { contains: 'role:Editor' },
     })
   })
 
   it('degrades an unsupported operator to free text', () => {
-    // `status` supports only eq → `status:>x` degrades, searching "x".
     expect(buildFilterWhere(parseFilterQuery('status:>x'), specs)).toEqual({
-      name: { contains: 'x' },
+      name: { contains: 'status:>x' },
     })
   })
 
   it('degrades an unmappable value (non-numeric on a numeric field) to free text', () => {
     expect(buildFilterWhere(parseFilterQuery('orders:abc'), specs)).toEqual({
-      name: { contains: 'abc' },
+      name: { contains: 'orders:abc' },
     })
   })
 
   it('degrades an unknown enum value to free text', () => {
     expect(buildFilterWhere(parseFilterQuery('status:pending'), specs)).toEqual({
-      name: { contains: 'pending' },
+      name: { contains: 'status:pending' },
     })
   })
 
@@ -406,9 +404,21 @@ describe('buildFilterWhere', () => {
     expect(buildFilterWhere(parseFilterQuery('role:,'), specs)).toBeUndefined()
   })
 
-  it('degrades a value its field cannot map to a free-text alternative of the others', () => {
+  it('degrades the whole token when one of its values cannot map', () => {
     expect(buildFilterWhere(parseFilterQuery('status:active,pending'), specs)).toEqual({
-      OR: [{ status: { equals: 'active' } }, { name: { contains: 'pending' } }],
+      name: { contains: 'status:active,pending' },
+    })
+    expect(buildFilterWhere(parseFilterQuery('secret:a,b'), specs)).toEqual({
+      name: { contains: 'secret:a,b' },
+    })
+  })
+
+  it('searches a degraded token exactly as it serialises, quotes included', () => {
+    expect(buildFilterWhere(parseFilterQuery('-secret:"Ada Lovelace"'), specs)).toEqual({
+      name: { contains: '-secret:"Ada Lovelace"' },
+    })
+    expect(buildFilterWhere(parseFilterQuery('status:"!"'), specs)).toEqual({
+      name: { contains: 'status:"!"' },
     })
   })
 
@@ -423,7 +433,7 @@ describe('buildFilterWhere', () => {
       name: { contains: '-status:>x' },
     })
     expect(buildFilterWhere(parseFilterQuery('-beta -"a b"'), specs)).toEqual({
-      AND: [{ name: { contains: '-beta' } }, { name: { contains: '-a b' } }],
+      AND: [{ name: { contains: '-beta' } }, { name: { contains: '-"a b"' } }],
     })
   })
 
@@ -443,6 +453,11 @@ describe('buildFilterWhere', () => {
       tok('status', '', { values: [v('active'), v('inactive')] }),
       tok('orders', '', { values: [v('5'), v('')] }),
       tok('status', '', { operator: 'empty', values: [] }),
+      tok(null, '', { values: [v('a'), v('b')] }),
+      tok(null, '', { values: [v('a', true), v('b c')] }),
+      tok(null, '', { negated: true, values: [v('a'), v('b')] }),
+      tok('secret', '', { values: [v('a'), v('b')] }),
+      tok('status', '', { values: [v('active'), v('bogus')] }),
     ]
     for (const token of cases) {
       const structured = { terms: [token] }
@@ -627,7 +642,7 @@ function makeConfig(): OpenSaasConfig {
           }),
           featured: checkbox(),
           publishedAt: timestamp(),
-          author: relationship({ ref: 'User.posts' }),
+          author: relationship({ ref: 'User' }),
         },
       }),
     },
@@ -637,6 +652,22 @@ function makeConfig(): OpenSaasConfig {
 describe('core field Filter specs', () => {
   const config = makeConfig()
   const postConfig = config.lists.Post
+  const oneToOneConfig: OpenSaasConfig = {
+    db: { provider: 'postgresql' },
+    lists: {
+      AuthUser: list({
+        access: READABLE,
+        fields: {
+          name: text(),
+          profile: relationship({ ref: 'Profile.user', db: { isNullable: false } }),
+        },
+      }),
+      Profile: list({
+        access: READABLE,
+        fields: { title: text(), user: relationship({ ref: 'AuthUser.profile' }) },
+      }),
+    },
+  }
 
   it('collectFilterSpecs resolves a spec for every filterable core field', async () => {
     const collected = await collectFilterSpecs(postConfig, 'Post', config, noAccessArgs)
@@ -714,8 +745,27 @@ describe('core field Filter specs', () => {
     ],
     [
       'a to-one relationship',
-      relationship({ ref: 'User.posts' }).getFilterSpec?.('f', 'Post', config),
+      relationship({ ref: 'User' }).getFilterSpec?.('f', 'Post', config),
       { f: { none: {} } },
+    ],
+    [
+      'a required to-one relationship',
+      relationship({ ref: 'User', db: { isNullable: false } }).getFilterSpec?.('f', 'Post', config),
+      undefined,
+    ],
+    [
+      'the inverse side of a one-to-one, even when the owning side is required',
+      oneToOneConfig.lists.Profile.fields.user.getFilterSpec?.('user', 'Profile', oneToOneConfig),
+      { user: { none: {} } },
+    ],
+    [
+      'the required owning side of a one-to-one',
+      oneToOneConfig.lists.AuthUser.fields.profile.getFilterSpec?.(
+        'profile',
+        'AuthUser',
+        oneToOneConfig,
+      ),
+      undefined,
     ],
     [
       'a to-many relationship, whose presence counts already say none',
@@ -776,6 +826,21 @@ describe('core field Filter specs', () => {
     const condition = spec.toCondition('gt', '2024-01-01') as { publishedAt: { gt: Date } }
     expect(condition.publishedAt.gt).toBeInstanceOf(Date)
     expect(spec.toCondition('gt', 'not-a-date')).toBeNull()
+  })
+
+  it('negates a to-one relationship with one NOT, since NOT some already includes none', async () => {
+    expect(
+      await buildListFilterWhere('-author:Ada', postConfig, 'Post', config, noAccessArgs),
+    ).toEqual({ NOT: { author: { some: { name: { contains: 'Ada' } } } } })
+    expect(
+      await buildListFilterWhere('-author:!', postConfig, 'Post', config, noAccessArgs),
+    ).toEqual({ NOT: { author: { none: {} } } })
+  })
+
+  it('states that negating a to-many presence count only restates it', () => {
+    const spec = relationship({ ref: 'User', many: true }).getFilterSpec?.('f', 'Post', config)
+    expect(spec?.negation).toBe('redundant')
+    expect(spec?.empty).toBeUndefined()
   })
 
   it('relationship maps to a nested label filter (some, for either cardinality)', () => {
@@ -956,7 +1021,7 @@ describe('buildListFilterWhere (end-to-end over a real list config)', () => {
       gatedConfig,
       noAccessArgs,
     )
-    expect(where).toEqual({ name: { contains: '12' } })
+    expect(where).toEqual({ name: { contains: 'billingAddress:12' } })
   })
 })
 
@@ -1009,7 +1074,7 @@ describe('to-many relationship Filter spec (presence — issue #732, ADR-0055)',
     ).toEqual({ posts: { some: {} } })
     expect(
       await buildListFilterWhere('posts:>5', config.lists.User, 'User', config, noAccessArgs),
-    ).toEqual({ name: { contains: '5' } })
+    ).toEqual({ name: { contains: 'posts:>5' } })
   })
 })
 
@@ -1045,6 +1110,18 @@ describe('collectFilterSuggestions', () => {
         .sort(),
     ).toEqual(['author', 'occurredAtMs', 'publishedAt', 'status', 'title', 'views'])
     expect(suggestions.find((s) => s.field === 'featured')?.canBeEmpty).toBeUndefined()
+  })
+
+  it('carries how a field negates', async () => {
+    const config = makeConfig()
+    const suggestions = await collectFilterSuggestions(
+      config.lists.Post,
+      'Post',
+      config,
+      noAccessArgs,
+    )
+    expect(suggestions.find((s) => s.field === 'author')?.negation).toBe('includesEmpty')
+    expect(suggestions.find((s) => s.field === 'title')?.negation).toBeUndefined()
   })
 
   it('excludes a read-denied field from the suggestion metadata (#915)', async () => {

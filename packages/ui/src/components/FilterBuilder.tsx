@@ -126,6 +126,7 @@ export function FilterBuilder({
 
   const [tokens, setTokens] = React.useState(() => hydrateTokens(defaultValue))
   const [seenValue, setSeenValue] = React.useState(defaultValue)
+  const [pendingQueries, setPendingQueries] = React.useState<readonly string[]>([])
   const [text, setText] = React.useState('')
   const [draft, setDraft] = React.useState<FilterDraft | null>(null)
   const [editing, setEditing] = React.useState<number | null>(null)
@@ -135,7 +136,11 @@ export function FilterBuilder({
 
   if (defaultValue !== seenValue) {
     setSeenValue(defaultValue)
-    if (filterQuery(tokens) !== defaultValue.trim()) {
+    const landed = pendingQueries.indexOf(defaultValue.trim())
+    if (landed >= 0) {
+      setPendingQueries(pendingQueries.slice(landed + 1))
+    } else if (filterQuery(tokens) !== defaultValue.trim()) {
+      setPendingQueries([])
       setTokens(hydrateTokens(defaultValue))
       setEditing(null)
       setArmed(null)
@@ -200,6 +205,7 @@ export function FilterBuilder({
   const apply = (next: FilterToken[]) => {
     setTokens(next)
     const query = filterQuery(next)
+    setPendingQueries((pending) => (query === seenValue.trim() ? [] : [...pending, query]))
     startTransition(() => {
       if (onApply) onApply(query)
       else router.push(query ? `${pathname}?search=${encodeURIComponent(query)}` : pathname)
@@ -371,7 +377,7 @@ export function FilterBuilder({
     setArmed(null)
     setOpen(true)
     setActiveIndex(0)
-    if (draft && draftField) {
+    if (draft && draftField && draft.condition !== 'not') {
       const comparison = splitComparison(draftField, value)
       if (comparison) {
         setDraft({ ...draft, condition: comparison.operator })

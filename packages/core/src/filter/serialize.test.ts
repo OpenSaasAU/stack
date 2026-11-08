@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import { parseFilterQuery } from './parse.js'
 import { serializeFilterQuery } from './serialize.js'
+import { buildFilterWhere } from './map.js'
 import type {
   FilterOperator,
   FilterQuery,
+  FilterSpec,
   FilterToken,
   FilterTokenOperator,
   FilterValue,
@@ -306,9 +308,15 @@ function arbitrary(random: () => number) {
     const count = 1 + Math.floor(random() * 3)
     return token({ field, operator, negated, values: Array.from({ length: count }, value) })
   }
+  const freeTextToken = (): FilterToken =>
+    token({
+      negated: random() < 0.3,
+      values: Array.from({ length: 1 + Math.floor(random() * 3) }, value),
+    })
   return {
     string: () => text(24),
     token: parserShapedToken,
+    freeTextToken,
     query: () => query(...Array.from({ length: Math.floor(random() * 5) }, parserShapedToken)),
   }
 }
@@ -357,6 +365,48 @@ describe('parse/serialize is an inverse on what the parser produces (property)',
           })),
         })
       })
+    }
+  })
+})
+
+const PROPERTY_SPECS: Record<string, FilterSpec> = {
+  title: {
+    operators: ['eq'],
+    freeText: true,
+    toCondition: (operator, value) => (operator === 'eq' ? { title: { contains: value } } : null),
+    suggestions: { valueSource: { kind: 'none' } },
+  },
+  status: {
+    operators: ['eq'],
+    toCondition: (_operator, value) => (value === 'a' ? { status: { equals: 'a' } } : null),
+    empty: { status: { equals: null } },
+    suggestions: { valueSource: { kind: 'none' } },
+  },
+}
+
+describe('buildFilterWhere reads a structured token as its serialised URL reads back (property)', () => {
+  const generate = arbitrary(seededRandom(2265))
+
+  it('agrees on multi-value free-text tokens', () => {
+    let multiValue = 0
+    for (let run = 0; run < RUNS; run++) {
+      const structured = query(generate.freeTextToken())
+      if (structured.terms[0].values.length > 1) multiValue++
+      const readBack = parseFilterQuery(serializeFilterQuery(structured))
+      expect(buildFilterWhere(structured, PROPERTY_SPECS), JSON.stringify(structured)).toEqual(
+        buildFilterWhere(readBack, PROPERTY_SPECS),
+      )
+    }
+    expect(multiValue).toBeGreaterThan(0)
+  })
+
+  it('agrees on parser-shaped queries', () => {
+    for (let run = 0; run < RUNS; run++) {
+      const structured = generate.query()
+      const readBack = parseFilterQuery(serializeFilterQuery(structured))
+      expect(buildFilterWhere(structured, PROPERTY_SPECS), JSON.stringify(structured)).toEqual(
+        buildFilterWhere(readBack, PROPERTY_SPECS),
+      )
     }
   })
 })

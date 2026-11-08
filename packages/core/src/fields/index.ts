@@ -1542,6 +1542,7 @@ export function relationship<
           if (operator === 'gt' || operator === 'gte') return { [_fieldName]: { some: {} } }
           return null
         },
+        negation: 'redundant',
         suggestions: { valueSource: { kind: 'none' }, valueFormat: PRESENCE_COUNT },
       }
     }
@@ -1556,13 +1557,17 @@ export function relationship<
     // integer, checkbox, select, etc.). None of these is filterable (#1359).
     if (labelFieldConfig?.type !== 'text' || labelFieldConfig.virtual === true) return undefined
 
+    const canBeEmpty =
+      !shouldHaveForeignKey(_listKey, _fieldName, field, config) || field.db?.isNullable !== false
+
     return {
       operators: ['eq'],
       toCondition: (operator, value) => {
         if (operator !== 'eq') return null
         return { [_fieldName]: { some: { [labelField]: { contains: value } } } }
       },
-      empty: { [_fieldName]: { none: {} } },
+      empty: canBeEmpty ? { [_fieldName]: { none: {} } } : undefined,
+      negation: 'includesEmpty',
       suggestions: { valueSource: { kind: 'relationship', listKey: targetList, many: false } },
     }
   }

@@ -133,14 +133,15 @@ function eqMatchesPart(suggestion: FilterFieldSuggestion): boolean {
 
 /**
  * The conditions the Filter builder offers for a field, in Tab order. They
- * derive from the field's Filter spec alone: its own operators, "is not" and
- * (for an enumerated field) "is any of" around equality, and "is empty" / "is
- * not empty" where the field can be empty.
+ * derive from the field's Filter spec alone: its own operators, "is not"
+ * (unless the spec says negation is redundant) and, for an enumerated field,
+ * "is any of" around equality, and "is empty" / "is not empty" where the
+ * field can be empty.
  */
 export function conditionsOf(suggestion: FilterFieldSuggestion): FilterBuilderCondition[] {
   const conditions: FilterBuilderCondition[] = [...suggestion.operators]
   if (suggestion.operators.includes('eq')) {
-    conditions.push('not')
+    if (suggestion.negation !== 'redundant') conditions.push('not')
     if (suggestion.valueSource.kind === 'enum') conditions.push('anyOf')
   }
   if (suggestion.canBeEmpty === true) conditions.push('empty', 'notEmpty')
@@ -548,7 +549,7 @@ export function draftOptions(
     const operator: FilterOperator = condition === 'not' ? 'eq' : condition
     if (suggestion.valueSource.kind === 'enum') {
       const currentValue =
-        current && current.field === draft.field && current.negated === negated
+        current && current.field === draft.field && conditionOfToken(current) === condition
           ? current.values[0]?.text.toLowerCase()
           : undefined
       for (const option of enumMatches(suggestion, typed)) {
@@ -564,9 +565,11 @@ export function draftOptions(
         hint = `No ${fieldLabel(suggestion.field).toLowerCase()} matches “${typed}”.`
       }
     } else {
-      const check = checkValue(suggestion, operator, typed)
+      const comparison = negated ? splitComparison(suggestion, typed) : null
+      const typedOperator = comparison?.operator ?? operator
+      const check = checkValue(suggestion, typedOperator, comparison?.rest ?? typed)
       if (check.ok) {
-        const token = fieldToken(suggestion.field, operator, check.value, negated)
+        const token = fieldToken(suggestion.field, typedOperator, check.value, negated)
         options.push({
           kind: 'apply',
           tokens: [token],

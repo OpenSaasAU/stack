@@ -648,6 +648,104 @@ describe('FilterBuilder', () => {
       expect(chipNames()).toEqual(['Status is Published'])
     })
 
+    it('keeps every tick and the menu open when its own first navigation lands late', async () => {
+      const { user, bar, onApply, view } = setup()
+      await user.type(bar, 'status{Enter}')
+      await user.click(screen.getByRole('button', { name: 'is any of' }))
+      await user.click(screen.getByRole('option', { name: 'Draft' }))
+      await user.click(screen.getByRole('option', { name: 'Published' }))
+      expect(onApply).toHaveBeenLastCalledWith('status:draft,published')
+
+      view.rerender(
+        <FilterBuilder suggestions={suggestions} onApply={onApply} defaultValue="status:draft" />,
+      )
+      expect(bar).toHaveAttribute('aria-expanded', 'true')
+      expect(chipNames()).toEqual(['Status is any of Draft, Published'])
+      expect(screen.getByRole('option', { name: 'Draft' })).toHaveAttribute('aria-selected', 'true')
+      expect(screen.getByRole('option', { name: 'Published' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      )
+
+      view.rerender(
+        <FilterBuilder
+          suggestions={suggestions}
+          onApply={onApply}
+          defaultValue="status:draft,published"
+        />,
+      )
+      expect(bar).toHaveAttribute('aria-expanded', 'true')
+      expect(screen.getByRole('option', { name: 'Published' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      )
+
+      view.rerender(
+        <FilterBuilder suggestions={suggestions} onApply={onApply} defaultValue="views:>1" />,
+      )
+      expect(chipNames()).toEqual(['Views greater than 1'])
+    })
+
+    it('marks a value under "is" or "is not" only when the chip holds exactly that one', async () => {
+      const { user } = setup({ defaultValue: 'status:draft,published' })
+      await user.click(
+        screen.getByRole('button', { name: 'Change value of Status is any of Draft, Published' }),
+      )
+      const conditions = screen.getByRole('group', { name: 'Status condition' })
+      for (const condition of ['is', 'is not']) {
+        await user.click(within(conditions).getByRole('button', { name: condition }))
+        expect(screen.getByRole('option', { name: 'Draft' })).toHaveAttribute(
+          'aria-selected',
+          'false',
+        )
+        expect(screen.getByRole('option', { name: 'Published' })).toHaveAttribute(
+          'aria-selected',
+          'false',
+        )
+      }
+    })
+
+    it('marks a single "is" value under "is" but not under "is not"', async () => {
+      const { user } = setup({ defaultValue: 'status:draft' })
+      await user.click(screen.getByRole('button', { name: 'Change value of Status is Draft' }))
+      expect(screen.getByRole('option', { name: 'Draft' })).toHaveAttribute('aria-selected', 'true')
+      const conditions = screen.getByRole('group', { name: 'Status condition' })
+      await user.click(within(conditions).getByRole('button', { name: 'is not' }))
+      expect(screen.getByRole('option', { name: 'Draft' })).toHaveAttribute(
+        'aria-selected',
+        'false',
+      )
+    })
+
+    it('keeps "is not" when a comparison is typed', async () => {
+      const { user, bar, onApply } = setup()
+      await user.type(bar, 'views{Enter}')
+      await user.click(screen.getByRole('button', { name: 'is not' }))
+      await user.type(bar, '>3{Enter}')
+      expect(onApply).toHaveBeenCalledWith('-views:>3')
+      expect(chipNames()).toEqual(['Views not greater than 3'])
+    })
+
+    it('offers no "is not" where the spec says negation only restates a condition', async () => {
+      const orders: FilterFieldSuggestion = {
+        field: 'orders',
+        operators: ['eq', 'gt', 'gte'],
+        freeText: false,
+        valueSource: { kind: 'none' },
+        valueFormat: { pattern: '^0$', description: 'takes 0' },
+        negation: 'redundant',
+      }
+      const user = userEvent.setup()
+      render(<FilterBuilder suggestions={[orders]} onApply={vi.fn()} />)
+      await user.type(screen.getByRole('combobox', { name: 'Filter' }), 'orders{Enter}')
+      const conditions = screen.getByRole('group', { name: 'Orders condition' })
+      expect(
+        within(conditions)
+          .getAllByRole('button')
+          .map((b) => b.textContent),
+      ).toEqual(['is', 'greater than', 'at least'])
+    })
+
     it('reopens an "is any of" chip with its values ticked', async () => {
       const { user } = setup({ defaultValue: 'status:draft,published' })
       expect(chipNames()).toEqual(['Status is any of Draft, Published'])

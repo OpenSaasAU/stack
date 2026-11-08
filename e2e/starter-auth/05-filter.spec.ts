@@ -70,12 +70,18 @@ test.describe('List filtering (URL-driven, server-side)', () => {
 
   test('unknown syntax degrades to free text and never errors', async ({ page }) => {
     await createPost(page, { title: 'Findable Title', slug: 'findable', status: 'published' })
+    await createPost(page, {
+      title: 'About nosuchfield:Findable',
+      slug: 'about-nosuchfield',
+      status: 'published',
+    })
 
-    // `nosuchfield:Findable` — the field has no Filter spec, so the token
-    // degrades to a free-text search for "Findable" rather than 500-ing.
+    // `nosuchfield:Findable` — the field has no Filter spec, so the whole token
+    // degrades to a free-text search for `nosuchfield:Findable` rather than 500-ing.
     await page.goto('/admin/post?search=nosuchfield%3AFindable')
     await page.waitForLoadState('networkidle')
 
-    await expect(titleCell(page, 'Findable Title')).toBeVisible()
+    await expect(titleCell(page, 'About nosuchfield:Findable')).toBeVisible()
+    await expect(titleCell(page, 'Findable Title')).toHaveCount(0)
   })
 })

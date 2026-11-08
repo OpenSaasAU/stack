@@ -24,7 +24,7 @@ getFilterSpec: (fieldName) => ({
 })
 ```
 
-Every core field that can be empty sets it, and `collectFilterSuggestions` reports it as `canBeEmpty: true`. A negated token is ORed with the field's `empty` condition, so "is not" keeps the rows with no value. A token that cannot map is never negated: `-secret:x` on a field the session cannot read searches for the literal word.
+Every core field that can be empty sets it, and `collectFilterSuggestions` reports it as `canBeEmpty: true`. A negated token is ORed with the field's `empty` condition, so "is not" keeps the rows with no value, unless the spec's new optional `negation` says `NOT` alone already does (`'includesEmpty'`, as on a to-one relationship) or only restates another condition (`'redundant'`, as on a to-many count, where the builder then offers no "is not"). A token that cannot map in any part is searched whole as the one word it serialises to, which is what its chip shows: `-secret:x` on a field the session cannot read searches for `-secret:x`, and `status:draft,bogus` for `status:draft,bogus`.
 
 `FilterToken` now carries its quoting per value — `values: Array<{ text, quoted }>` replaces `values: string[]` and the token-level `quoted` — and its `operator` is a `FilterTokenOperator` (`FilterOperator | 'empty'`). `isFieldConditionToken` takes a lookup returning `{ operators, canBeEmpty }`, so a `FilterFieldSuggestion` can be passed straight in. The comparison prefixes are exported once as `FILTER_OPERATOR_PREFIXES` and `FILTER_COMPARISON_PREFIXES`.
 

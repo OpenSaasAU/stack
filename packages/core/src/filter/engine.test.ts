@@ -262,6 +262,39 @@ describe('is not, any of and is empty over the secured surface (ADR-0083)', () =
   )
 
   test(
+    'a list with a value its field rejects is searched whole, never as the values that map',
+    async () => {
+      await seed('Post', { title: 'About category:product,bogus' })
+      expect(titles(await filtered('Post', 'category:product,bogus'))).toEqual([
+        'About category:product,bogus',
+      ])
+    },
+    BOOT,
+  )
+
+  test(
+    'a list on a field the session cannot read is searched as its literal word',
+    async () => {
+      await seed('Post', { title: 'Reading secret:a,b', secret: 'a' })
+      await seed('Post', { title: 'Reading a', secret: 'b' })
+      expect(titles(await filtered('Post', 'secret:a,b'))).toEqual(['Reading secret:a,b'])
+    },
+    BOOT,
+  )
+
+  test(
+    'a quoted negated token that cannot map is searched with its quotes',
+    async () => {
+      await seed('Post', { title: 'Reading -secret:"Ada Lovelace"' })
+      await seed('Post', { title: 'Reading -secret:Ada Lovelace' })
+      expect(titles(await filtered('Post', '-secret:"Ada Lovelace"'))).toEqual([
+        'Reading -secret:"Ada Lovelace"',
+      ])
+    },
+    BOOT,
+  )
+
+  test(
     'a negated filter only narrows: a list the session cannot query still returns nothing',
     async () => {
       expect((await filtered('Ledger', '-name:nothing', auditor)).map((row) => row.name)).toEqual([

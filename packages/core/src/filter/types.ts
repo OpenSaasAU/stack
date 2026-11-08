@@ -107,6 +107,9 @@ export interface FilterValueFormat extends FilterValuePattern {
   operators?: Partial<Record<FilterOperator, FilterValuePattern>>
 }
 
+/** How a field's negated condition behaves; see {@link FilterSpec.negation}. */
+export type FilterNegation = 'includesEmpty' | 'redundant'
+
 /**
  * A field's self-declared filtering capability. Returned by the optional
  * `getFilterSpec` field-builder method.
@@ -135,6 +138,19 @@ export interface FilterSpec {
    * degrades to free text.
    */
   empty?: FilterCondition
+  /**
+   * How `NOT` of this field's condition already behaves, when the engine
+   * should not compose "is not" as `NOT cond OR empty`:
+   *
+   * - `'includesEmpty'`: `NOT cond` already matches the rows with no value
+   *   (a relation's `NOT some`), so `empty` is not ORed in.
+   * - `'redundant'`: `NOT cond` only restates one of the field's own
+   *   operators (a to-many presence count, where `-orders:0` is `orders:>0`),
+   *   so the Filter builder does not offer "is not".
+   *
+   * Omit it for the default: `NOT cond`, ORed with `empty` when set.
+   */
+  negation?: FilterNegation
   /** Serializable suggestion metadata for the client. */
   suggestions: {
     valueSource: FilterValueSource
@@ -164,4 +180,6 @@ export interface FilterFieldSuggestion {
   valueFormat?: FilterValueFormat
   /** Whether the field can be empty, and so takes `field:!` and `-field:!`. */
   canBeEmpty?: boolean
+  /** How the field's negated condition behaves, when its spec states it. */
+  negation?: FilterNegation
 }

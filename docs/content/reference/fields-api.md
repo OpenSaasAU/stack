@@ -2199,6 +2199,8 @@ Optional and additive: the field's filtering capability for the admin UI's filte
 
 A field gets negation and "any of" with no code of its own: the engine composes `NOT` and `OR` around `toCondition`, so `-field:value` is `NOT` of the field's condition and `field:a,b` ORs it once per value. The optional `empty` member states what "no value" means for the field, as a condition matching exactly the rows that have none. Set it only on a field that can be empty: it is what makes `field:!` (is empty) and `-field:!` (is not empty) understood and offered, and the engine ORs it into every negated token on the field, so "is not" keeps the rows with no value that SQL's `NOT` would drop. A field without it takes neither, and `field:!` degrades to free text. Suggestions carry it to the client as `canBeEmpty: true`.
 
+The optional `negation` member says when `NOT` of the field's condition already behaves on its own. `'includesEmpty'` says `NOT` already matches the rows with no value, as a relationship's `NOT some` does, so the engine ORs no `empty` into a negated token. `'redundant'` says negation only restates one of the field's own operators, as on a to-many presence count where `-orders:0` is `orders:>0`, so the Filter builder does not offer "is not". Suggestions carry it to the client as `negation`.
+
 ```typescript
 getFilterSpec: (fieldName) => ({
   operators: ['eq'],
@@ -2208,7 +2210,7 @@ getFilterSpec: (fieldName) => ({
 })
 ```
 
-The built-in fields set `empty` where their column can hold no value: a nullable column is `{ equals: null }`; an optional text field is also empty when it holds `''`; a to-one relationship is empty when it has no related record the session can see (`{ none: {} }`). A required field, a checkbox that is not nullable, a timestamp defaulting to now, a select with a default, and a to-many relationship (whose `field:0` already means none) set none.
+The built-in fields set `empty` where their column can hold no value: a nullable column is `{ equals: null }`; an optional text field is also empty when it holds `''`; a to-one relationship is empty when it has no related record the session can see (`{ none: {} }`), unless it owns a foreign key declared `db: { isNullable: false }`. A required field, a checkbox that is not nullable, a timestamp defaulting to now, a select with a default, and a to-many relationship (whose `field:0` already means none) set none.
 
 ---
 

@@ -15,6 +15,7 @@ export type {
   FilterQuery,
   FilterCondition,
   FilterSpec,
+  FilterNegation,
   FilterValueSource,
   FilterValueFormat,
   FilterValuePattern,
