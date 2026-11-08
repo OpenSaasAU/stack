@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import { parseFilterQuery } from './parse.js'
-import { buildFilterWhere, effectiveFilterToken, isFieldConditionToken } from './map.js'
+import {
+  buildFilterWhere,
+  effectiveFilterToken,
+  filterTokenFreeTextWord,
+  isFieldConditionToken,
+} from './map.js'
 import { serializeFilterQuery } from './serialize.js'
 import {
   buildListFilterWhere,
@@ -8,7 +13,7 @@ import {
   collectFilterSuggestions,
   type FilterAccessArgs,
 } from './collect.js'
-import type { FilterOperator, FilterSpec, FilterToken } from './types.js'
+import type { FilterOperator, FilterSpec, FilterToken, FilterValue } from './types.js'
 import { list } from '../config/index.js'
 import {
   text,
@@ -39,19 +44,22 @@ const READABLE = { operation: { query: () => true } }
 // parseFilterQuery — the pure query-string → structured query boundary
 // ─────────────────────────────────────────────────────────────
 
+const v = (text: string, quoted = false): FilterValue => ({ text, quoted })
+
 const tok = (
   field: string | null,
   value: string,
-  partial: Partial<FilterToken> = {},
+  { quoted = false, ...partial }: Partial<FilterToken> & { quoted?: boolean } = {},
 ): FilterToken => ({
   kind: 'token',
   field,
   operator: 'eq',
   negated: false,
-  values: [value],
-  quoted: false,
+  values: [v(value, quoted)],
   ...partial,
 })
+
+const texts = (token: FilterToken) => token.values.map((value) => value.text)
 
 describe('parseFilterQuery', () => {
   it('parses a bare word as a free-text token (field: null)', () => {
@@ -87,7 +95,7 @@ describe('parseFilterQuery', () => {
     const { terms } = parseFilterQuery(
       'role:Editor status:Active orders:>5 name:"Ada Lovelace" beta',
     )
-    expect(terms.map((t) => ({ field: t.field, operator: t.operator, values: t.values }))).toEqual([
+    expect(terms.map((t) => ({ field: t.field, operator: t.operator, values: texts(t) }))).toEqual([
       { field: 'role', operator: 'eq', values: ['Editor'] },
       { field: 'status', operator: 'eq', values: ['Active'] },
       { field: 'orders', operator: 'gt', values: ['5'] },
@@ -97,7 +105,7 @@ describe('parseFilterQuery', () => {
   })
 
   it('collapses surrounding / repeated whitespace', () => {
-    expect(parseFilterQuery('   a    b  ').terms.map((t) => t.values)).toEqual([['a'], ['b']])
+    expect(parseFilterQuery('   a    b  ').terms.map(texts)).toEqual([['a'], ['b']])
   })
 
   it('returns no terms for an empty query', () => {
@@ -117,26 +125,26 @@ describe('parseFilterQuery', () => {
     })
   })
 
-  it('reads a leading `-` as part of the word, never as negation', () => {
-    expect(parseFilterQuery('-status:draft -beta --x - beta')).toEqual({
+  it('reads a leading `-` followed by more of the token as negation', () => {
+    expect(parseFilterQuery('-status:draft -beta --x - beta -"a b"')).toEqual({
       terms: [
-        tok(null, '-status:draft'),
-        tok(null, '-beta'),
-        tok(null, '--x'),
+        tok('status', 'draft', { negated: true }),
+        tok(null, 'beta', { negated: true }),
+        tok(null, '-x', { negated: true }),
         tok(null, '-'),
         tok(null, 'beta'),
+        tok(null, 'a b', { negated: true, quoted: true }),
       ],
     })
   })
 
-  it('reads a comma as part of the value, never as a separator', () => {
-    expect(parseFilterQuery('status:draft,review , role:, a,"b c"')).toEqual({
+  it('reads a comma in a field value as a separator, each value quoted on its own', () => {
+    expect(parseFilterQuery('status:draft,review , role:, status:a,"b c",d')).toEqual({
       terms: [
-        tok('status', 'draft,review'),
+        tok('status', '', { values: [v('draft'), v('review')] }),
         tok(null, ','),
-        tok('role', ','),
-        tok(null, 'a,"b'),
-        tok(null, 'c"'),
+        tok('role', '', { values: [v(''), v('')] }),
+        tok('status', '', { values: [v('a'), v('b c', true), v('d')] }),
       ],
     })
     expect(parseFilterQuery('status:"a,b"')).toEqual({
@@ -144,8 +152,30 @@ describe('parseFilterQuery', () => {
     })
   })
 
+  it('reads a comma in a free-text word as part of the word', () => {
+    expect(parseFilterQuery('a,"b c"')).toEqual({
+      terms: [tok(null, 'a,"b'), tok(null, 'c"')],
+    })
+  })
+
+  it('reads `field:!` as the empty operator, and a quoted or longer `!` as a value', () => {
+    expect(
+      parseFilterQuery('status:! -status:! status:"!" status:!x status:!,a status:>!'),
+    ).toEqual({
+      terms: [
+        tok('status', '', { operator: 'empty', values: [] }),
+        tok('status', '', { operator: 'empty', values: [], negated: true }),
+        tok('status', '!', { quoted: true }),
+        tok('status', '!x'),
+        tok('status', '', { values: [v('!'), v('a')] }),
+        tok('status', '!', { operator: 'gt' }),
+      ],
+    })
+    expect(parseFilterQuery('!')).toEqual({ terms: [tok(null, '!')] })
+  })
+
   it('splits tokens on every whitespace character', () => {
-    expect(parseFilterQuery('a\u00a0b\fc\vd\u2028e').terms.map((t) => t.values)).toEqual([
+    expect(parseFilterQuery('a\u00a0b\fc\vd\u2028e').terms.map(texts)).toEqual([
       ['a'],
       ['b'],
       ['c'],
@@ -179,13 +209,6 @@ describe('parseFilterQuery', () => {
     expect(parseFilterQuery('"open ended')).toEqual({
       terms: [tok(null, 'open ended', { quoted: true })],
     })
-  })
-
-  it('gives every token exactly one value and no negation', () => {
-    for (const term of parseFilterQuery('-status:draft status:a,b -"x" ,, -').terms) {
-      expect(term.negated).toBe(false)
-      expect(term.values).toHaveLength(1)
-    }
   })
 })
 
@@ -283,14 +306,12 @@ describe('buildFilterWhere', () => {
 
   // ─── Graceful degradation (ADR-0017): unknown syntax → free text, never error
   it('degrades an unknown field to free text', () => {
-    // `role` has no spec → search "Editor" across free-text fields.
     expect(buildFilterWhere(parseFilterQuery('role:Editor'), specs)).toEqual({
       name: { contains: 'Editor' },
     })
   })
 
   it('degrades an unsupported operator to free text', () => {
-    // `status` supports only eq → `status:>x` degrades, searching "x".
     expect(buildFilterWhere(parseFilterQuery('status:>x'), specs)).toEqual({
       name: { contains: 'x' },
     })
@@ -363,73 +384,142 @@ describe('buildFilterWhere', () => {
     })
   })
 
-  it('searches a leading `-` word exactly as written', () => {
+  it('negates a field condition: `-status:active` is NOT of status:active', () => {
     expect(buildFilterWhere(parseFilterQuery('-status:active'), specs)).toEqual({
-      name: { contains: '-status:active' },
+      NOT: { status: { equals: 'active' } },
+    })
+    expect(buildFilterWhere(parseFilterQuery('-orders:>5'), specs)).toEqual({
+      NOT: { orders: { gt: 5 } },
     })
   })
 
-  it('searches a structured negated token as its serialised URL reads back, never dropped or negated', () => {
-    expect(
-      buildFilterWhere({ terms: [tok('status', 'active', { negated: true })] }, specs),
-    ).toEqual({ name: { contains: '-status:active' } })
-  })
-
-  it('maps a structured multi-value token as its serialised URL reads back, never dropped', () => {
-    expect(
-      buildFilterWhere({ terms: [tok('name', '', { values: ['Ada', 'Grace'] })] }, specs),
-    ).toEqual({ name: { contains: 'Ada,Grace' } })
-    expect(buildFilterWhere({ terms: [tok(null, '', { values: ['', ''] })] }, specs)).toEqual({
-      name: { contains: ',' },
+  it('ORs the field condition once per value: `status:active,inactive` is any of', () => {
+    expect(buildFilterWhere(parseFilterQuery('status:active,inactive'), specs)).toEqual({
+      OR: [{ status: { equals: 'active' } }, { status: { equals: 'inactive' } }],
+    })
+    expect(buildFilterWhere(parseFilterQuery('-status:active,inactive'), specs)).toEqual({
+      NOT: { OR: [{ status: { equals: 'active' } }, { status: { equals: 'inactive' } }] },
     })
   })
 
-  it.each<[string, FilterToken, unknown]>([
-    [
-      'a negated value with a space',
-      tok(null, 'a b', { negated: true }),
-      { AND: [{ name: { contains: '-"a' } }, { name: { contains: 'b"' } }] },
-    ],
-    [
-      'a multi-value token whose first value has a space',
-      tok('name', '', { values: ['a b', 'c'] }),
-      { AND: [{ name: { contains: 'a b' } }, { name: { contains: ',c' } }] },
-    ],
-    ['a negated field token', tok('status', 'active', { negated: true }), undefined],
-    ['a negated quoted word', tok(null, 'x', { negated: true, quoted: true }), undefined],
-    [
-      'a multi-value status token',
-      tok('status', '', { values: ['active', 'inactive'] }),
-      undefined,
-    ],
-    ['a multi-value token with an empty part', tok('orders', '', { values: ['5', ''] }), undefined],
-    [
-      'a negated multi-value token',
-      tok(null, '', { negated: true, values: ['-x', 'y z'] }),
-      undefined,
-    ],
-  ])('searches %s exactly as its serialised URL reads back', (_case, token, expected) => {
-    const structured = { terms: [token] }
-    const reparsed = parseFilterQuery(serializeFilterQuery(structured))
-    const where = buildFilterWhere(structured, specs)
-    expect(where).toEqual(buildFilterWhere(reparsed, specs))
-    expect(where).not.toBeUndefined()
-    if (expected !== undefined) expect(where).toEqual(expected)
+  it('skips an empty value inside a list, and treats a list of empty values as inert', () => {
+    expect(buildFilterWhere(parseFilterQuery('orders:5,'), specs)).toEqual({
+      orders: { equals: 5 },
+    })
+    expect(buildFilterWhere(parseFilterQuery('role:,'), specs)).toBeUndefined()
   })
 
-  it('searches a comma-only query as the literal comma (#1356)', () => {
+  it('searches a positive token that cannot map as one word, its values', () => {
+    expect(buildFilterWhere(parseFilterQuery('status:active,pending'), specs)).toEqual({
+      name: { contains: 'active,pending' },
+    })
+    expect(buildFilterWhere(parseFilterQuery('secret:a,b'), specs)).toEqual({
+      name: { contains: 'a,b' },
+    })
+    expect(buildFilterWhere(parseFilterQuery('secret:"Ada Lovelace"'), specs)).toEqual({
+      name: { contains: 'Ada Lovelace' },
+    })
+    expect(buildFilterWhere(parseFilterQuery('status:"!"'), specs)).toEqual({
+      name: { contains: '!' },
+    })
+  })
+
+  it('searches a negated token that cannot map as its whole literal, quotes included', () => {
+    expect(buildFilterWhere(parseFilterQuery('-secret:"Ada Lovelace"'), specs)).toEqual({
+      name: { contains: '-secret:"Ada Lovelace"' },
+    })
+  })
+
+  it('searches the word its chip shows', () => {
+    for (const written of ['status:active,pending', '-secret:x', 'role:"a b"', 'views:!']) {
+      const [token] = parseFilterQuery(written).terms
+      expect(buildFilterWhere({ terms: [token] }, specs), written).toEqual({
+        name: { contains: filterTokenFreeTextWord(token) },
+      })
+    }
+  })
+
+  it('never negates a token that cannot map: it is searched as the literal word', () => {
+    expect(buildFilterWhere(parseFilterQuery('-secret:x'), specs)).toEqual({
+      name: { contains: '-secret:x' },
+    })
+    expect(buildFilterWhere(parseFilterQuery('-status:active,pending'), specs)).toEqual({
+      name: { contains: '-status:active,pending' },
+    })
+    expect(buildFilterWhere(parseFilterQuery('-status:>x'), specs)).toEqual({
+      name: { contains: '-status:>x' },
+    })
+    expect(buildFilterWhere(parseFilterQuery('-beta -"a b"'), specs)).toEqual({
+      AND: [{ name: { contains: '-beta' } }, { name: { contains: '-"a b"' } }],
+    })
+  })
+
+  it('searches a comma in a free-text word as part of the word', () => {
     expect(buildFilterWhere(parseFilterQuery(','), specs)).toEqual({ name: { contains: ',' } })
-    expect(buildFilterWhere(parseFilterQuery('role:,'), specs)).toEqual({
-      name: { contains: ',' },
-    })
-  })
-
-  it('maps a comma list as the single value it was written as', () => {
-    expect(buildFilterWhere(parseFilterQuery('name:Ada,Grace'), specs)).toEqual({
-      name: { contains: 'Ada,Grace' },
-    })
     expect(buildFilterWhere(parseFilterQuery('beta,gamma'), specs)).toEqual({
       name: { contains: 'beta,gamma' },
+    })
+  })
+
+  it('searches a structured token exactly as its serialised URL reads back', () => {
+    const cases: FilterToken[] = [
+      tok(null, 'a b', { negated: true }),
+      tok('name', '', { values: [v('a b'), v('c')] }),
+      tok('status', 'active', { negated: true }),
+      tok(null, 'x', { negated: true, quoted: true }),
+      tok('status', '', { values: [v('active'), v('inactive')] }),
+      tok('orders', '', { values: [v('5'), v('')] }),
+      tok('status', '', { operator: 'empty', values: [] }),
+      tok(null, '', { values: [v('a'), v('b')] }),
+      tok(null, '', { values: [v('a', true), v('b c')] }),
+      tok(null, '', { negated: true, values: [v('a'), v('b')] }),
+      tok('secret', '', { values: [v('a'), v('b')] }),
+      tok('status', '', { values: [v('active'), v('bogus')] }),
+    ]
+    for (const token of cases) {
+      const structured = { terms: [token] }
+      const reparsed = parseFilterQuery(serializeFilterQuery(structured))
+      expect(buildFilterWhere(structured, specs), JSON.stringify(token)).toEqual(
+        buildFilterWhere(reparsed, specs),
+      )
+    }
+  })
+})
+
+describe('buildFilterWhere — is empty, and "is not" keeps empty rows', () => {
+  const emptiable: FilterSpec = { ...statusSpec, empty: { status: { equals: null } } }
+  const withEmpty = { name: nameSpec, status: emptiable, orders: ordersSpec }
+
+  it('maps `field:!` to the field’s empty condition and `-field:!` to its NOT', () => {
+    expect(buildFilterWhere(parseFilterQuery('status:!'), withEmpty)).toEqual({
+      status: { equals: null },
+    })
+    expect(buildFilterWhere(parseFilterQuery('-status:!'), withEmpty)).toEqual({
+      NOT: { status: { equals: null } },
+    })
+  })
+
+  it('degrades `field:!` to the literal word on a field that cannot be empty', () => {
+    expect(buildFilterWhere(parseFilterQuery('orders:!'), withEmpty)).toEqual({
+      name: { contains: 'orders:!' },
+    })
+    expect(buildFilterWhere(parseFilterQuery('-orders:!'), withEmpty)).toEqual({
+      name: { contains: '-orders:!' },
+    })
+  })
+
+  it('ORs the empty condition into a negated token', () => {
+    expect(buildFilterWhere(parseFilterQuery('-status:active,inactive'), withEmpty)).toEqual({
+      OR: [
+        { NOT: { OR: [{ status: { equals: 'active' } }, { status: { equals: 'inactive' } }] } },
+        { status: { equals: null } },
+      ],
+    })
+  })
+
+  it('leaves a positive token alone', () => {
+    expect(buildFilterWhere(parseFilterQuery('status:active'), withEmpty)).toEqual({
+      status: { equals: 'active' },
     })
   })
 })
@@ -569,7 +659,7 @@ function makeConfig(): OpenSaasConfig {
           }),
           featured: checkbox(),
           publishedAt: timestamp(),
-          author: relationship({ ref: 'User.posts' }),
+          author: relationship({ ref: 'User' }),
         },
       }),
     },
@@ -579,12 +669,129 @@ function makeConfig(): OpenSaasConfig {
 describe('core field Filter specs', () => {
   const config = makeConfig()
   const postConfig = config.lists.Post
+  const oneToOneConfig: OpenSaasConfig = {
+    db: { provider: 'postgresql' },
+    lists: {
+      AuthUser: list({
+        access: READABLE,
+        fields: {
+          name: text(),
+          profile: relationship({ ref: 'Profile.user', db: { isNullable: false } }),
+        },
+      }),
+      Profile: list({
+        access: READABLE,
+        fields: { title: text(), user: relationship({ ref: 'AuthUser.profile' }) },
+      }),
+    },
+  }
 
   it('collectFilterSpecs resolves a spec for every filterable core field', async () => {
     const collected = await collectFilterSpecs(postConfig, 'Post', config, noAccessArgs)
     expect(Object.keys(collected).sort()).toEqual(
       ['author', 'featured', 'occurredAtMs', 'publishedAt', 'status', 'title', 'views'].sort(),
     )
+  })
+
+  it.each<[string, FilterSpec | undefined, unknown]>([
+    [
+      'an optional text',
+      text().getFilterSpec?.('f', 'Post', config),
+      { OR: [{ f: { equals: null } }, { f: { equals: '' } }] },
+    ],
+    [
+      'a non-null text',
+      text({ db: { isNullable: false } }).getFilterSpec?.('f', 'Post', config),
+      { f: { equals: '' } },
+    ],
+    [
+      'a required text',
+      text({ validation: { isRequired: true } }).getFilterSpec?.('f', 'Post', config),
+      undefined,
+    ],
+    [
+      'an optional integer',
+      integer().getFilterSpec?.('f', 'Post', config),
+      { f: { equals: null } },
+    ],
+    [
+      'a required integer',
+      integer({ validation: { isRequired: true } }).getFilterSpec?.('f', 'Post', config),
+      undefined,
+    ],
+    [
+      'an optional decimal',
+      decimal().getFilterSpec?.('f', 'Post', config),
+      { f: { equals: null } },
+    ],
+    ['an optional bigInt', bigInt().getFilterSpec?.('f', 'Post', config), { f: { equals: null } }],
+    [
+      'an optional calendar day',
+      calendarDay().getFilterSpec?.('f', 'Post', config),
+      { f: { equals: null } },
+    ],
+    [
+      'an optional timestamp',
+      timestamp().getFilterSpec?.('f', 'Post', config),
+      { f: { equals: null } },
+    ],
+    [
+      'a timestamp defaulting to now',
+      timestamp({ defaultValue: { kind: 'now' } }).getFilterSpec?.('f', 'Post', config),
+      undefined,
+    ],
+    ['a checkbox', checkbox().getFilterSpec?.('f', 'Post', config), undefined],
+    [
+      'a nullable checkbox',
+      checkbox({ db: { isNullable: true } }).getFilterSpec?.('f', 'Post', config),
+      { f: { equals: null } },
+    ],
+    [
+      'an optional select',
+      select({ options: [{ label: 'A', value: 'a' }] }).getFilterSpec?.('f', 'Post', config),
+      { f: { equals: null } },
+    ],
+    [
+      'a select with a default',
+      select({ options: [{ label: 'A', value: 'a' }], defaultValue: 'a' }).getFilterSpec?.(
+        'f',
+        'Post',
+        config,
+      ),
+      undefined,
+    ],
+    [
+      'a to-one relationship',
+      relationship({ ref: 'User' }).getFilterSpec?.('f', 'Post', config),
+      { f: { none: {} } },
+    ],
+    [
+      'a required to-one relationship',
+      relationship({ ref: 'User', db: { isNullable: false } }).getFilterSpec?.('f', 'Post', config),
+      undefined,
+    ],
+    [
+      'the inverse side of a one-to-one, even when the owning side is required',
+      oneToOneConfig.lists.Profile.fields.user.getFilterSpec?.('user', 'Profile', oneToOneConfig),
+      { user: { none: {} } },
+    ],
+    [
+      'the required owning side of a one-to-one',
+      oneToOneConfig.lists.AuthUser.fields.profile.getFilterSpec?.(
+        'profile',
+        'AuthUser',
+        oneToOneConfig,
+      ),
+      undefined,
+    ],
+    [
+      'a to-many relationship, whose presence counts already say none',
+      relationship({ ref: 'User', many: true }).getFilterSpec?.('f', 'Post', config),
+      undefined,
+    ],
+  ])('states what empty means for %s only where it can be empty', (_case, spec, empty) => {
+    expect(spec).toBeDefined()
+    expect(spec?.empty).toEqual(empty)
   })
 
   it('text is free-text and maps to contains', () => {
@@ -636,6 +843,21 @@ describe('core field Filter specs', () => {
     const condition = spec.toCondition('gt', '2024-01-01') as { publishedAt: { gt: Date } }
     expect(condition.publishedAt.gt).toBeInstanceOf(Date)
     expect(spec.toCondition('gt', 'not-a-date')).toBeNull()
+  })
+
+  it('negates a to-one relationship with one NOT, since NOT some already includes none', async () => {
+    expect(
+      await buildListFilterWhere('-author:Ada', postConfig, 'Post', config, noAccessArgs),
+    ).toEqual({ NOT: { author: { some: { name: { contains: 'Ada' } } } } })
+    expect(
+      await buildListFilterWhere('-author:!', postConfig, 'Post', config, noAccessArgs),
+    ).toEqual({ NOT: { author: { none: {} } } })
+  })
+
+  it('states that negating a to-many presence count only restates it', () => {
+    const spec = relationship({ ref: 'User', many: true }).getFilterSpec?.('f', 'Post', config)
+    expect(spec?.negation).toBe('redundant')
+    expect(spec?.empty).toBeUndefined()
   })
 
   it('relationship maps to a nested label filter (some, for either cardinality)', () => {
@@ -890,6 +1112,35 @@ describe('collectFilterSuggestions', () => {
     expect(author.valueSource).toEqual({ kind: 'relationship', listKey: 'User', many: false })
   })
 
+  it('says which fields can be empty, and only those', async () => {
+    const config = makeConfig()
+    const suggestions = await collectFilterSuggestions(
+      config.lists.Post,
+      'Post',
+      config,
+      noAccessArgs,
+    )
+    expect(
+      suggestions
+        .filter((suggestion) => suggestion.canBeEmpty === true)
+        .map((suggestion) => suggestion.field)
+        .sort(),
+    ).toEqual(['author', 'occurredAtMs', 'publishedAt', 'status', 'title', 'views'])
+    expect(suggestions.find((s) => s.field === 'featured')?.canBeEmpty).toBeUndefined()
+  })
+
+  it('carries how a field negates', async () => {
+    const config = makeConfig()
+    const suggestions = await collectFilterSuggestions(
+      config.lists.Post,
+      'Post',
+      config,
+      noAccessArgs,
+    )
+    expect(suggestions.find((s) => s.field === 'author')?.negation).toBe('includesEmpty')
+    expect(suggestions.find((s) => s.field === 'title')?.negation).toBeUndefined()
+  })
+
   it('excludes a read-denied field from the suggestion metadata (#915)', async () => {
     const gatedConfig: OpenSaasConfig = {
       db: { provider: 'postgresql' },
@@ -1035,25 +1286,25 @@ describe('collectFilterSuggestions', () => {
 describe('ranges (`field:a..b`)', () => {
   it('parses an unquoted field value with `..` as one inclusive range token', () => {
     expect(parseFilterQuery('orders:5..10').terms).toEqual([
-      tok('orders', '', { operator: 'range', values: ['5', '10'] }),
+      tok('orders', '', { operator: 'range', values: [v('5'), v('10')] }),
     ])
     expect(
       parseFilterQuery('at:2026-11-01T00:00:00.000+11:00..2026-11-01T23:59:59.999+11:00').terms,
     ).toEqual([
       tok('at', '', {
         operator: 'range',
-        values: ['2026-11-01T00:00:00.000+11:00', '2026-11-01T23:59:59.999+11:00'],
+        values: [v('2026-11-01T00:00:00.000+11:00'), v('2026-11-01T23:59:59.999+11:00')],
       }),
     ])
   })
 
   it('splits at the first `..`', () => {
     expect(parseFilterQuery('orders:1...5').terms).toEqual([
-      tok('orders', '', { operator: 'range', values: ['1', '.5'] }),
+      tok('orders', '', { operator: 'range', values: [v('1'), v('.5')] }),
     ])
   })
 
-  it.each(['orders:..5', 'orders:5..', 'orders:..', 'orders:"5..10"', 'orders:1..2,3'])(
+  it.each(['orders:..5', 'orders:5..', 'orders:..', 'orders:"5..10"'])(
     'reads %s as a single literal value, never a range',
     (written) => {
       const [term] = parseFilterQuery(written).terms
@@ -1087,7 +1338,7 @@ describe('ranges (`field:a..b`)', () => {
   })
 
   it('writes a range whose bounds cannot be written bare as one literal value', () => {
-    const range = tok('title', '', { operator: 'range', values: ['a b', 'c'] })
+    const range = tok('title', '', { operator: 'range', values: [v('a b'), v('c')] })
     const written = serializeFilterQuery({ terms: [range] })
     expect(written).toBe('title:"a b..c"')
     expect(parseFilterQuery(written).terms[0].operator).toBe('eq')
@@ -1145,7 +1396,10 @@ describe('ranges (`field:a..b`)', () => {
 
   it('reads a range token on a field with no range as a field condition, on its literal', () => {
     const lookup: Record<string, FilterSpec> = specs
-    const operatorsFor = (field: string) => lookup[field]?.operators
+    const operatorsFor = (field: string) => {
+      const spec = lookup[field]
+      return spec === undefined ? undefined : { operators: spec.operators }
+    }
     const [token] = parseFilterQuery('name:v1..v2').terms
     expect(isFieldConditionToken(token, operatorsFor)).toBe(true)
     expect(effectiveFilterToken(token, specs.name.operators)).toEqual(
@@ -1156,10 +1410,57 @@ describe('ranges (`field:a..b`)', () => {
   })
 
   it('degrades a structured range with an empty bound as its serialised URL reads back', () => {
-    const range = tok('orders', '', { operator: 'range', values: ['', '10'] })
+    const range = tok('orders', '', { operator: 'range', values: [v(''), v('10')] })
     expect(buildFilterWhere({ terms: [range] }, specs)).toEqual({
       name: { contains: '..10' },
     })
+  })
+
+  it('reads a negated range as one negated range token, written back as it was', () => {
+    expect(parseFilterQuery('-orders:5..10').terms).toEqual([
+      tok('orders', '', { operator: 'range', negated: true, values: [v('5'), v('10')] }),
+    ])
+    expect(serializeFilterQuery(parseFilterQuery('-orders:5..10'))).toBe('-orders:5..10')
+  })
+
+  it('lowers a negated range to NOT of the ANDed bounds, keeping the rows with no value', () => {
+    const range = { AND: [{ orders: { gte: 5 } }, { orders: { lte: 10 } }] }
+    const nullable: FilterSpec = { ...specs.orders, empty: { orders: { equals: null } } }
+    expect(buildFilterWhere(parseFilterQuery('-orders:5..10'), specs)).toEqual({ NOT: range })
+    expect(buildFilterWhere(parseFilterQuery('-orders:5..10'), { orders: nullable })).toEqual({
+      OR: [{ NOT: range }, { orders: { equals: null } }],
+    })
+    expect(
+      buildFilterWhere(parseFilterQuery('-orders:5..10'), {
+        orders: { ...nullable, negation: 'includesEmpty' },
+      }),
+    ).toEqual({ NOT: range })
+  })
+
+  it('searches a negated range that cannot map as its whole literal, never negated', () => {
+    const [token] = parseFilterQuery('-orders:abc..10').terms
+    expect(filterTokenFreeTextWord(token)).toBe('-orders:abc..10')
+    expect(buildFilterWhere(parseFilterQuery('-orders:abc..10'), specs)).toEqual({
+      name: { contains: '-orders:abc..10' },
+    })
+  })
+
+  it('searches a positive range that cannot map as its literal `a..b`', () => {
+    const [token] = parseFilterQuery('nosuch:1..2').terms
+    expect(filterTokenFreeTextWord(token)).toBe('1..2')
+  })
+
+  it('reads a negated range on a field with no range as that field’s negated eq on its literal', () => {
+    expect(buildFilterWhere(parseFilterQuery('-name:v1..v2'), specs)).toEqual(
+      buildFilterWhere(parseFilterQuery('-name:"v1..v2"'), specs),
+    )
+  })
+
+  it('never reads a list as a range: `a..b,c` is eq on each value', () => {
+    const [token] = parseFilterQuery('orders:1..2,3').terms
+    expect(token.operator).toBe('eq')
+    expect(texts(token)).toEqual(['1..2', '3'])
+    expect(serializeFilterQuery(parseFilterQuery('orders:1..2,3'))).toBe('orders:1..2,3')
   })
 
   it('filters a range the same rows as the two comparisons it stands for', () => {

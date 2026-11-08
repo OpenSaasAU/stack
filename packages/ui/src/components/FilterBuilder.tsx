@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { usePathname, useRouter } from 'next/navigation.js'
-import { Search, X } from 'lucide-react'
+import { Check, Search, X } from 'lucide-react'
 import type { FilterFieldSuggestion, FilterToken } from '@opensaas/stack-core'
 import { Popover, PopoverAnchor, PopoverContent } from '../primitives/popover.js'
 import { cn } from '../lib/utils.js'
@@ -11,19 +11,30 @@ import {
   chipsOf,
   conditionLabel,
   conditionsOf,
+  conditionTakesValue,
   draftOptions,
   draftTokens,
   fieldLabel,
   filterQuery,
   hydrateTokens,
   isFieldCondition,
+  isRecordLookupField,
   normaliseTokens,
   placeTokens,
   rootOptions,
   splitComparison,
+  type FilterBuilderCondition,
   type FilterDraft,
   type FilterOption,
+  type FilterRecord,
+  type RecordLookup,
+  type ResolvedFilterRecord,
 } from '../lib/filterBuilderOptions.js'
+import { useRelationshipSearch } from '../lib/useRelationshipSearch.js'
+import type { ServerActionInput } from '../server/types.js'
+
+const NO_RECORDS: FilterRecord[] = []
+const LOOKUP_PAGE_SIZE = 10
 
 /**
  * Per-part `classNames` slots for {@link FilterBuilder}. Each merges onto its
@@ -77,6 +88,25 @@ export interface FilterBuilderProps {
   label?: string
   /** The number of rows the applied query returns, announced when it changes. */
   resultCount?: number
+  /**
+   * The list being filtered. With {@link serverAction}, choosing a to-one
+   * relationship field browses and searches its records, and picking one
+   * writes `field:#id`.
+   */
+  listKey?: string
+  /**
+   * The generic server action, asked for a relationship field's records via
+   * its `relationshipOptions` operation. Without it, a relationship field takes
+   * typed label text, matched as contains.
+   */
+  serverAction?: (input: ServerActionInput) => Promise<unknown>
+  /**
+   * The records the `field:#id` tokens in {@link defaultValue} name, keyed by
+   * field: each id the related list accepts, with its Item label, or `null`
+   * when the session cannot read it and the chip shows the raw id. A `#id`
+   * absent here is shown as the free text the server searches for instead.
+   */
+  recordLabels?: Record<string, ResolvedFilterRecord[]>
   className?: string
   /** Structured per-part class overrides; each merges onto its `data-slot` part. */
   classNames?: FilterBuilderClassNames
@@ -115,6 +145,9 @@ export function FilterBuilder({
   placeholder = 'Filter or search…',
   label = 'Filter',
   resultCount,
+  listKey,
+  serverAction,
+  recordLabels,
   className,
   classNames,
 }: FilterBuilderProps) {
@@ -128,6 +161,7 @@ export function FilterBuilder({
 
   const [tokens, setTokens] = React.useState(() => hydrateTokens(defaultValue))
   const [seenValue, setSeenValue] = React.useState(defaultValue)
+  const [pendingQueries, setPendingQueries] = React.useState<readonly string[]>([])
   const [text, setText] = React.useState('')
   const [draft, setDraft] = React.useState<FilterDraft | null>(null)
   const [editing, setEditing] = React.useState<number | null>(null)
@@ -138,7 +172,11 @@ export function FilterBuilder({
 
   if (defaultValue !== seenValue) {
     setSeenValue(defaultValue)
-    if (filterQuery(tokens) !== defaultValue.trim()) {
+    const landed = pendingQueries.indexOf(defaultValue.trim())
+    if (landed >= 0) {
+      setPendingQueries(pendingQueries.slice(landed + 1))
+    } else if (filterQuery(tokens) !== defaultValue.trim()) {
+      setPendingQueries([])
       setTokens(hydrateTokens(defaultValue))
       setEditing(null)
       setArmed(null)
@@ -154,17 +192,50 @@ export function FilterBuilder({
   const listId = `${baseId}-list`
   const optionId = (index: number) => `${baseId}-option-${index}`
 
-  const chips = React.useMemo(() => chipsOf(tokens, fields), [tokens, fields])
+  const [picked, setPicked] = React.useState<ReadonlyMap<string, FilterRecord>>(() => new Map())
+  const recordOf = React.useCallback(
+    (field: string, id: string): ResolvedFilterRecord | undefined =>
+      picked.get(JSON.stringify([field, id])) ??
+      recordLabels?.[field]?.find((record) => record.id === id),
+    [picked, recordLabels],
+  )
+
+  const chips = React.useMemo(() => chipsOf(tokens, fields, recordOf), [tokens, fields, recordOf])
   const editingChip = editing === null ? undefined : chips[editing]
   const editingToken = editingChip ? tokens[editingChip.start] : undefined
+  const draftField = draft ? fields.get(draft.field) : undefined
+  const lookupField =
+    draft &&
+    (draft.condition === 'eq' || draft.condition === 'not') &&
+    isRecordLookupField(draftField)
+      ? draft.field
+      : undefined
+  const search = useRelationshipSearch({
+    initialItems: NO_RECORDS,
+    listKey,
+    fieldName: lookupField,
+    serverAction,
+    query: text,
+    take: LOOKUP_PAGE_SIZE,
+    loadOnOpen: lookupField !== undefined,
+  })
+  const { searchResults, isSearching, searchApplied } = search
+  const lookup = React.useMemo(
+    (): RecordLookup | null =>
+      serverAction && listKey && lookupField !== undefined
+        ? { records: searchResults, loading: isSearching, searched: searchApplied }
+        : null,
+    [serverAction, listKey, lookupField, searchResults, isSearching, searchApplied],
+  )
   const { options, hint } = React.useMemo(
-    () => (draft ? draftOptions(draft, text, fields, editingToken) : rootOptions(text, fields)),
-    [draft, text, fields, editingToken],
+    () =>
+      draft ? draftOptions(draft, text, fields, editingToken, lookup) : rootOptions(text, fields),
+    [draft, text, fields, editingToken, lookup],
   )
   const active = options.length === 0 ? -1 : Math.min(activeIndex, options.length - 1)
-  const draftField = draft ? fields.get(draft.field) : undefined
-  const conditions = draftField ? conditionsOf(draftField) : []
-  const hasDateForm = draft !== null && draftField?.datePicker !== undefined
+  const conditions = React.useMemo(() => (draftField ? conditionsOf(draftField) : []), [draftField])
+  const hasDateForm =
+    draft !== null && draftField?.datePicker !== undefined && conditionTakesValue(draft.condition)
 
   React.useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -208,6 +279,7 @@ export function FilterBuilder({
   const apply = (next: FilterToken[]) => {
     setTokens(next)
     const query = filterQuery(next)
+    setPendingQueries((pending) => (query === seenValue.trim() ? [] : [...pending, query]))
     startTransition(() => {
       if (onApply) onApply(query)
       else router.push(query ? `${pathname}?search=${encodeURIComponent(query)}` : pathname)
@@ -224,7 +296,7 @@ export function FilterBuilder({
   const stageField = (field: string) => {
     const suggestion = fields.get(field)
     if (!suggestion) return
-    setDraft({ field, operator: suggestion.operators[0] ?? 'eq' })
+    setDraft({ field, condition: conditionsOf(suggestion)[0] ?? 'eq' })
     setText('')
     setDates({ from: '', to: '' })
     setArmed(null)
@@ -233,9 +305,42 @@ export function FilterBuilder({
     focusInput()
   }
 
+  const withoutChip = (chip: { start: number; count: number } | undefined) =>
+    chip ? tokens.filter((_, i) => i < chip.start || i >= chip.start + chip.count) : tokens
+
+  const toggle = (chosen: FilterToken[]) => {
+    const next =
+      chosen.length > 0
+        ? placeTokens(tokens, chosen, editingChip ?? null, fields, true)
+        : withoutChip(editingChip)
+    apply(next)
+    const at = chosen.length > 0 ? next.indexOf(chosen[0]) : -1
+    const chip = chipsOf(next, fields, recordOf).findIndex(({ start }) => start === at)
+    setEditing(chip >= 0 ? chip : null)
+    setText('')
+    setArmed(null)
+    focusInput()
+  }
+
   const choose = (option: FilterOption) => {
-    if (option.kind === 'field') stageField(option.field)
-    else commit(option.tokens)
+    if (option.kind === 'field') {
+      stageField(option.field)
+      return
+    }
+    if (option.kind === 'toggle') {
+      toggle(option.tokens)
+      return
+    }
+    const { record } = option
+    if (record) {
+      setPicked((previous) =>
+        new Map(previous).set(JSON.stringify([record.field, record.id]), {
+          id: record.id,
+          label: record.label,
+        }),
+      )
+    }
+    commit(option.tokens)
   }
 
   const editChip = (index: number) => {
@@ -256,7 +361,7 @@ export function FilterBuilder({
   const removeChip = (index: number) => {
     const chip = chips[index]
     if (!chip) return
-    apply(tokens.filter((_, i) => i < chip.start || i >= chip.start + chip.count))
+    apply(withoutChip(chip))
     reset()
     focusInput()
   }
@@ -265,8 +370,8 @@ export function FilterBuilder({
     event.preventDefault()
     event.stopPropagation()
     if (!draft || !draftField) return
-    const typed = draft.operator === 'range' ? `${dates.from}..${dates.to}` : dates.from
-    const check = draftTokens(draftField, draft.operator, typed)
+    const typed = draft.condition === 'range' ? `${dates.from}..${dates.to}` : dates.from
+    const check = draftTokens(draftField, draft.condition, typed)
     if (check.ok) commit(check.tokens)
   }
 
@@ -282,16 +387,16 @@ export function FilterBuilder({
     setOpen(false)
   }
 
-  const setCondition = (operator: FilterDraft['operator']) => {
+  const setCondition = (condition: FilterBuilderCondition) => {
     if (!draft) return
-    setDraft({ ...draft, operator })
+    setDraft({ ...draft, condition })
     setActiveIndex(0)
     focusInput()
   }
 
   const stepCondition = (step: number) => {
     if (!draft) return
-    const at = conditions.indexOf(draft.operator)
+    const at = conditions.indexOf(draft.condition)
     setCondition(conditions[(at + step + conditions.length) % conditions.length])
   }
 
@@ -385,16 +490,16 @@ export function FilterBuilder({
     setArmed(null)
     setOpen(true)
     setActiveIndex(0)
-    if (draft && draftField) {
+    if (draft && draftField && draft.condition !== 'not') {
       const comparison = splitComparison(draftField, value)
       if (comparison) {
-        setDraft({ ...draft, operator: comparison.operator })
+        setDraft({ ...draft, condition: comparison.operator })
         value = comparison.rest
       } else if (text === '' && value.startsWith('=')) {
         const widened =
-          draft.operator === 'gt' ? 'gte' : draft.operator === 'lt' ? 'lte' : undefined
+          draft.condition === 'gt' ? 'gte' : draft.condition === 'lt' ? 'lte' : undefined
         if (widened && draftField.operators.includes(widened)) {
-          setDraft({ ...draft, operator: widened })
+          setDraft({ ...draft, condition: widened })
           value = value.slice(1)
         }
       }
@@ -479,16 +584,18 @@ export function FilterBuilder({
                   >
                     {description.condition}
                   </button>
-                  <button
-                    type="button"
-                    tabIndex={-1}
-                    data-slot="filter-builder-chip-value"
-                    aria-label={`Change value of ${description.sentence}`}
-                    onClick={() => editChip(index)}
-                    className={cn(chipPart, 'min-w-0 truncate font-semibold')}
-                  >
-                    <span className="truncate">{description.value}</span>
-                  </button>
+                  {description.value !== '' && (
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      data-slot="filter-builder-chip-value"
+                      aria-label={`Change value of ${description.sentence}`}
+                      onClick={() => editChip(index)}
+                      className={cn(chipPart, 'min-w-0 truncate font-semibold')}
+                    >
+                      <span className="truncate">{description.value}</span>
+                    </button>
+                  )}
                   <button
                     type="button"
                     data-slot="filter-builder-chip-remove"
@@ -516,7 +623,7 @@ export function FilterBuilder({
                 <span className="font-medium">{fieldLabel(draft.field)}</span>
                 {draftField && (
                   <span className="text-muted-foreground">
-                    {conditionLabel(draftField, draft.operator)}
+                    {conditionLabel(draftField, draft.condition)}
                   </span>
                 )}
               </span>
@@ -609,7 +716,7 @@ export function FilterBuilder({
             >
               <label className="flex flex-col gap-1">
                 <span className="text-muted-foreground">
-                  {draft.operator === 'range' ? 'From' : 'Date'}
+                  {draft.condition === 'range' ? 'From' : 'Date'}
                 </span>
                 <input
                   ref={dateFromRef}
@@ -625,7 +732,7 @@ export function FilterBuilder({
                   className="h-8 rounded-md border border-input bg-background px-2"
                 />
               </label>
-              {draft.operator === 'range' && (
+              {draft.condition === 'range' && (
                 <label className="flex flex-col gap-1">
                   <span className="text-muted-foreground">To</span>
                   <input
@@ -652,18 +759,18 @@ export function FilterBuilder({
               data-slot="filter-builder-menu-conditions"
               className="flex flex-wrap items-center gap-1 border-b border-border p-2"
             >
-              {conditions.map((operator) => (
+              {conditions.map((condition) => (
                 <button
-                  key={operator}
+                  key={condition}
                   type="button"
                   tabIndex={-1}
-                  aria-pressed={draft.operator === operator}
+                  aria-pressed={draft.condition === condition}
                   data-slot="filter-builder-menu-condition"
                   onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => setCondition(operator)}
+                  onClick={() => setCondition(condition)}
                   className="rounded-md border border-border px-2 py-0.5 text-xs aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground"
                 >
-                  {conditionLabel(draftField, operator)}
+                  {conditionLabel(draftField, condition)}
                 </button>
               ))}
             </div>
@@ -671,6 +778,7 @@ export function FilterBuilder({
           <div
             id={listId}
             role="listbox"
+            aria-multiselectable={draft?.condition === 'anyOf' || undefined}
             aria-label={draft ? `${fieldLabel(draft.field)} values` : 'Filter suggestions'}
             className="max-h-[300px] overflow-y-auto p-1"
           >
@@ -690,7 +798,7 @@ export function FilterBuilder({
                       key={index}
                       id={optionId(index)}
                       role="option"
-                      aria-selected={option.kind === 'apply' && option.selected === true}
+                      aria-selected={option.kind !== 'field' && option.selected === true}
                       data-slot="filter-builder-option"
                       data-active={index === active ? '' : undefined}
                       onMouseDown={(event) => event.preventDefault()}
@@ -705,6 +813,16 @@ export function FilterBuilder({
                         classNames?.option,
                       )}
                     >
+                      {option.kind === 'toggle' && (
+                        <Check
+                          aria-hidden="true"
+                          data-slot="filter-builder-option-check"
+                          className={cn(
+                            'mr-2 h-3.5 w-3.5 shrink-0',
+                            !option.selected && 'invisible',
+                          )}
+                        />
+                      )}
                       {option.kind === 'field' ? fieldLabel(option.field) : option.label}
                     </div>
                   )

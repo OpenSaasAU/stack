@@ -84,10 +84,7 @@ export async function getRelationshipOptions(
   const take = Math.min(requestedTake, MAX_TAKE)
   const labelFieldConfig = relatedListConfig.fields[labelField] as
     { type?: string; virtual?: boolean } | undefined
-  const where =
-    labelReadable && search && labelFieldConfig?.type === 'text'
-      ? { [labelField]: { contains: search } }
-      : undefined
+  const where = relationshipSearchWhere(config, relatedListKey, { search, labelReadable })
 
   // Virtual/computed label fields (resolved at read time via `resolveOutput`)
   // have no backing database column, so passing them into `orderBy` fails
@@ -114,6 +111,25 @@ export async function getRelationshipOptions(
     id: String(item.id),
     label: getItemLabel(relatedListConfig, item),
   }))
+}
+
+/**
+ * The `where` {@link getRelationshipOptions} narrows its window by for `search`,
+ * or `undefined` when it does not apply the search: no search was given, the
+ * label is not a text field, or the session may not read it.
+ */
+export function relationshipSearchWhere(
+  config: OpenSaasConfig,
+  relatedListKey: string,
+  { search, labelReadable = true }: Pick<RelationshipOptionsArgs, 'search' | 'labelReadable'>,
+): Where | undefined {
+  if (!Object.hasOwn(config.lists, relatedListKey)) return undefined
+  const relatedListConfig = config.lists[relatedListKey]
+  const labelField = getLabelFieldName(relatedListConfig)
+  const labelFieldConfig = relatedListConfig.fields[labelField]
+  return labelReadable && search && labelFieldConfig?.type === 'text'
+    ? { [labelField]: { contains: search } }
+    : undefined
 }
 
 /** Whether the session may name the related list's label field in a `where`/`orderBy`. */

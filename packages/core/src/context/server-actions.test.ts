@@ -147,7 +147,36 @@ describe('context.serverAction', () => {
       })
 
       expect(response).not.toHaveProperty('success')
-      expect(response).toMatchObject({ options: [{ id }] })
+      expect(response).toMatchObject({ options: [{ id }], searched: true })
+    })
+
+    test('reports searched: false when the label cannot be searched', async () => {
+      const config = schemaConfig()
+      config.lists.User.fields.name = text({ access: { read: () => false } })
+      await harness.context.serverAction({
+        listKey: 'User',
+        action: 'create',
+        data: { name: 'Ada', email: 'ada@x.io' },
+      })
+
+      const response = await contextAt(config).serverAction({
+        listKey: 'Post',
+        action: 'relationshipOptions',
+        field: 'author',
+        search: 'Grace',
+      })
+
+      expect(response).toMatchObject({ options: [{}], searched: false })
+    })
+
+    test('reports searched: false when no search was given', async () => {
+      const response = await harness.context.serverAction({
+        listKey: 'Post',
+        action: 'relationshipOptions',
+        field: 'author',
+      })
+
+      expect(response).toMatchObject({ options: [], searched: false })
     })
   })
 

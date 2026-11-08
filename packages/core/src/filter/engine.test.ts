@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
 import type { OpenSaasConfig } from '../config/types.js'
 import type { AccessContext, Session } from '../access/types.js'
-import { calendarDay, integer, relationship, text, timestamp } from '../fields/index.js'
+import { calendarDay, integer, relationship, select, text, timestamp } from '../fields/index.js'
 import { withOrigin } from '../origin.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
 import { buildListFilterWhere } from './collect.js'
@@ -27,6 +27,13 @@ const config: OpenSaasConfig = {
         slug: text(),
         author: relationship({ ref: 'User.posts' }),
         ledger: relationship({ ref: 'Ledger.posts' }),
+        category: select({
+          options: [
+            { label: 'Product', value: 'product' },
+            { label: 'News', value: 'news' },
+          ],
+        }),
+        secret: text({ access: { read: () => false } }),
       },
       access: { operation: { query: () => true } },
     },
@@ -98,8 +105,13 @@ beforeEach(async () => {
   const author = await seed('User', { name: 'Ada' })
   ada = { userId: author.id }
   await seed('User', { name: 'Grace' })
-  await seed('Post', { title: 'On Engines', authorId: author.id })
-  await seed('Post', { title: 'On Looms', authorId: author.id })
+  await seed('Post', {
+    title: 'On Engines',
+    authorId: author.id,
+    category: 'product',
+    secret: 'x',
+  })
+  await seed('Post', { title: 'On Looms', authorId: author.id, category: 'news', secret: 'y' })
   const ledger = await seed('Ledger', { name: 'private' })
   await seed('Post', { title: 'On Ledgers', ledgerId: ledger.id })
   await seed('Setting', {
@@ -246,6 +258,153 @@ describe('the filter engine over the secured surface', () => {
       const utcDay = 'at:2026-11-01T00:00:00.000+00:00..2026-11-01T23:59:59.999+00:00'
       expect(await priorities(sydneyDay)).toEqual([1])
       expect(await priorities(utcDay)).toEqual([1, 2])
+    },
+    BOOT,
+  )
+})
+
+const titles = (rows: Record<string, unknown>[]) => rows.map((row) => String(row.title)).sort()
+
+describe('is not, any of and is empty over the secured surface (ADR-0083)', () => {
+  test(
+    '"is not" keeps the rows with no value',
+    async () => {
+      expect(titles(await filtered('Post', '-category:product'))).toEqual([
+        'On Ledgers',
+        'On Looms',
+      ])
+    },
+    BOOT,
+  )
+
+  test(
+    '"does not contain" on a relationship keeps the rows with no related record',
+    async () => {
+      expect(titles(await filtered('Post', '-author:ada'))).toEqual(['On Ledgers'])
+    },
+    BOOT,
+  )
+
+  test(
+    '"is any of" matches a row holding any of the values',
+    async () => {
+      expect(titles(await filtered('Post', 'category:product,news'))).toEqual([
+        'On Engines',
+        'On Looms',
+      ])
+      expect(titles(await filtered('Post', '-category:product,news'))).toEqual(['On Ledgers'])
+    },
+    BOOT,
+  )
+
+  test(
+    '"is empty" and "is not empty" split the rows on whether the field has a value',
+    async () => {
+      expect(titles(await filtered('Post', 'category:!'))).toEqual(['On Ledgers'])
+      expect(titles(await filtered('Post', '-category:!'))).toEqual(['On Engines', 'On Looms'])
+      expect(titles(await filtered('Post', 'author:!'))).toEqual(['On Ledgers'])
+    },
+    BOOT,
+  )
+
+  test(
+    '`-secret:x` on a field the session cannot read stays the literal word, never a negation',
+    async () => {
+      await seed('Post', { title: 'Reading -secret:x', secret: 'x' })
+      expect(titles(await filtered('Post', '-secret:x'))).toEqual(['Reading -secret:x'])
+      expect(titles(await filtered('Post', 'secret:!'))).toEqual([])
+    },
+    BOOT,
+  )
+
+  test(
+    'a list with a value its field rejects is searched as one word, never as the values that map',
+    async () => {
+      await seed('Post', { title: 'About product,bogus' })
+      expect(titles(await filtered('Post', 'category:product,bogus'))).toEqual([
+        'About product,bogus',
+      ])
+    },
+    BOOT,
+  )
+
+  test(
+    'a positive token on an unknown field searches its value',
+    async () => {
+      await seed('Post', { title: 'Findable Title' })
+      expect(titles(await filtered('Post', 'nosuchfield:Findable'))).toEqual(['Findable Title'])
+    },
+    BOOT,
+  )
+
+  test(
+    'a list on a field the session cannot read is searched as one word, its values',
+    async () => {
+      await seed('Post', { title: 'Reading a,b', secret: 'a' })
+      await seed('Post', { title: 'Reading a', secret: 'b' })
+      expect(titles(await filtered('Post', 'secret:a,b'))).toEqual(['Reading a,b'])
+    },
+    BOOT,
+  )
+
+  test(
+    'a quoted negated token that cannot map is searched with its quotes',
+    async () => {
+      await seed('Post', { title: 'Reading -secret:"Ada Lovelace"' })
+      await seed('Post', { title: 'Reading -secret:Ada Lovelace' })
+      expect(titles(await filtered('Post', '-secret:"Ada Lovelace"'))).toEqual([
+        'Reading -secret:"Ada Lovelace"',
+      ])
+    },
+    BOOT,
+  )
+
+  test(
+    'a negated filter only narrows: a list the session cannot query still returns nothing',
+    async () => {
+      expect((await filtered('Ledger', '-name:nothing', auditor)).map((row) => row.name)).toEqual([
+        'private',
+      ])
+      await expect(filtered('Ledger', '-name:nothing')).resolves.toEqual([])
+      await expect(filtered('Ledger', 'name:!')).resolves.toEqual([])
+    },
+    BOOT,
+  )
+})
+
+describe('a negated range over the secured surface (ADR-0083)', () => {
+  const priorities = async (query: string) =>
+    (await filtered('Setting', query)).map((row) => String(row.priority)).sort()
+
+  test(
+    '`-field:a..b` excludes the range and keeps the rows with no value',
+    async () => {
+      await seed('Setting', { due: '2026-12-01' })
+      expect(await priorities('-priority:2..9')).toEqual(['1', 'null'])
+      expect(await priorities('-due:2026-11-02..2026-11-30')).toEqual(['1', 'null'])
+    },
+    BOOT,
+  )
+
+  test(
+    'a negated range that cannot map is searched as its literal, never negated',
+    async () => {
+      await expect(filtered('Setting', '-priority:one..2')).resolves.toEqual([])
+      await seed('Post', { title: 'Reading -secret:a..b', secret: 'q' })
+      expect(titles(await filtered('Post', '-secret:a..b'))).toEqual(['Reading -secret:a..b'])
+    },
+    BOOT,
+  )
+
+  test(
+    '`-field:a..b` on a field with no range is that field’s negated eq on `a..b`',
+    async () => {
+      await seed('Post', { title: 'post-x', slug: 'v1..v2' })
+      await seed('Post', { title: 'post-y', slug: 'other' })
+      const excluded = titles(await filtered('Post', '-slug:v1..v2'))
+      expect(excluded).toEqual(titles(await filtered('Post', '-slug:"v1..v2"')))
+      expect(excluded).not.toContain('post-x')
+      expect(excluded).toContain('post-y')
     },
     BOOT,
   )

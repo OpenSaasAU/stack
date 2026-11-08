@@ -15,6 +15,15 @@ export type FilterAccessArgs = {
   context: AccessContext & { _isSudo?: boolean }
 }
 
+async function canQueryList(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  listConfig: ListConfig<any>,
+  args: FilterAccessArgs,
+): Promise<boolean> {
+  if (args.context._isSudo === true) return true
+  return (await checkAccess(listConfig.access?.operation?.query, args)) !== false
+}
+
 /**
  * Resolve every field's {@link FilterSpec} for a list by delegating to each
  * field's optional `getFilterSpec` method. A field without the method (or one
@@ -48,10 +57,7 @@ export async function collectFilterSpecs(
   args: FilterAccessArgs,
 ): Promise<Record<string, FilterSpec>> {
   const specs: Record<string, FilterSpec> = {}
-  if (args.context._isSudo !== true) {
-    const access = await checkAccess(listConfig.access?.operation?.query, args)
-    if (access === false) return specs
-  }
+  if (!(await canQueryList(listConfig, args))) return specs
   const filterableFields = Object.entries(listConfig.fields).filter(
     ([, field]) => typeof field.getFilterSpec === 'function',
   )
@@ -115,6 +121,30 @@ export async function collectFilterSuggestions(
     }
     if (spec.suggestions.valueFormat) suggestion.valueFormat = spec.suggestions.valueFormat
     if (spec.suggestions.datePicker) suggestion.datePicker = spec.suggestions.datePicker
+    if (spec.toIdCondition) suggestion.matchesById = true
+    if (spec.empty !== undefined) suggestion.canBeEmpty = true
+    if (spec.negation !== undefined) suggestion.negation = spec.negation
     return suggestion
   })
+}
+
+/**
+ * Whether this session may filter one field of a list by a related record's id
+ * (`field:#id`): it may query the list, read the field in a predicate, and the
+ * field's {@link FilterSpec} has `toIdCondition`. Asks only that field's rules.
+ */
+export async function isFieldFilterableById(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  listConfig: ListConfig<any>,
+  listKey: string,
+  fieldName: string,
+  config: OpenSaasConfig,
+  args: FilterAccessArgs,
+): Promise<boolean> {
+  if (!Object.hasOwn(listConfig.fields, fieldName)) return false
+  const field = listConfig.fields[fieldName]
+  if (typeof field.getFilterSpec !== 'function') return false
+  if (!(await canQueryList(listConfig, args))) return false
+  if (!(await isFieldReadableForPredicate(field.access, args))) return false
+  return field.getFilterSpec(fieldName, listKey, config)?.toIdCondition !== undefined
 }

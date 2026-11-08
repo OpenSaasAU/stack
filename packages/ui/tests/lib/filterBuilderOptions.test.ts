@@ -214,15 +214,17 @@ describe('a typed range on a timestamp', () => {
         field: 'at',
         operator: 'range',
         negated: false,
-        values: [dayBoundary('2026-01-01', false), dayBoundary('2026-01-31', true)],
-        quoted: false,
+        values: [
+          { text: dayBoundary('2026-01-01', false), quoted: false },
+          { text: dayBoundary('2026-01-31', true), quoted: false },
+        ],
       },
     ])
   })
 
   it('reads an is draft that splits into two days as a range too', () => {
     const { options } = draftOptions(
-      { field: 'at', operator: 'eq' },
+      { field: 'at', condition: 'eq' },
       '2026-01-01 to 2026-01-31',
       everyField,
       undefined,
@@ -232,7 +234,7 @@ describe('a typed range on a timestamp', () => {
 
   it('keeps a single day an is on that whole local day', () => {
     const [first] = applied(rootOptions('at 2026-01-01', everyField).options)
-    expect(first?.[0].values).toEqual([
+    expect(first?.[0].values.map((value) => value.text)).toEqual([
       dayBoundary('2026-01-01', false),
       dayBoundary('2026-01-01', true),
     ])
@@ -271,7 +273,7 @@ describe('instant bounds', () => {
     const [first] = applied(
       rootOptions('at 2026-01-01 10:00 to 2026-01-02 12:30', everyField).options,
     )
-    expect(first?.[0].values).toEqual([
+    expect(first?.[0].values.map((value) => value.text)).toEqual([
       localInstant(new Date(2026, 0, 1, 10, 0)),
       localInstant(new Date(2026, 0, 2, 12, 30)),
     ])
@@ -289,7 +291,7 @@ describe('instant bounds', () => {
 
   it('refuses a range whose bounds would not read back as the same range', () => {
     const { options, hint } = draftOptions(
-      { field: 'score', operator: 'range' },
+      { field: 'score', condition: 'range' },
       'a b..c',
       everyField,
       undefined,
@@ -329,7 +331,7 @@ describe('instant bounds', () => {
           ...applied(rootOptions(`${suggestion.field}:${typed}`, everyField).options),
           ...applied(
             draftOptions(
-              { field: suggestion.field, operator: 'range' },
+              { field: suggestion.field, condition: 'range' },
               typed,
               everyField,
               undefined,
@@ -354,7 +356,7 @@ describe('editing a chip', () => {
     const [chip] = chipsOf(tokens, everyField)
     expect(chip.description.sentence).toBe(`At is ${instant}`)
     expect(chipEditText(chip, tokens[0], everyField)).toEqual({
-      draft: { field: 'at', operator: 'eq' },
+      draft: { field: 'at', condition: 'eq' },
       text: instant,
     })
   })
@@ -381,8 +383,42 @@ describe('`field:a..b` on a field with no range', () => {
     const tokens = hydrateTokens('title:wait...what')
     const [chip] = chipsOf(tokens, everyField)
     expect(chipEditText(chip, tokens[0], everyField)).toEqual({
-      draft: { field: 'title', operator: 'eq' },
+      draft: { field: 'title', condition: 'eq' },
       text: 'wait...what',
     })
+  })
+})
+
+describe('negation with ranges and dates', () => {
+  it('writes "is not" a day on a timestamp as the negated range of that local day', () => {
+    const { options } = draftOptions(
+      { field: 'at', condition: 'not' },
+      '2026-01-01',
+      everyField,
+      undefined,
+    )
+    expect(filterQuery(applied(options)[0] ?? [])).toBe(
+      `-at:${dayBoundary('2026-01-01', false)}..${dayBoundary('2026-01-01', true)}`,
+    )
+  })
+
+  it('keeps the negation when a comparison is typed under "is not"', () => {
+    const { options } = draftOptions(
+      { field: 'views', condition: 'not' },
+      '>5',
+      everyField,
+      undefined,
+    )
+    expect(filterQuery(applied(options)[0] ?? [])).toBe('-views:>5')
+  })
+
+  it('never pairs a negated comparison into a between chip', () => {
+    const chips = chipsOf(hydrateTokens('-views:>=1 views:<=5'), everyField)
+    expect(chips.map((chip) => chip.count)).toEqual([1, 1])
+  })
+
+  it('describes a range on a field with no range, negated, as its negated literal condition', () => {
+    const [token] = hydrateTokens('-title:v1..v2')
+    expect(describeToken(token, everyField).sentence).toBe('Title does not contain v1..v2')
   })
 })

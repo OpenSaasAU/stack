@@ -1,22 +1,34 @@
 import {
+  FILTER_COMPARISON_PREFIXES,
   effectiveFilterToken,
-  filterTokenOperators,
+  filterTokenFreeTextWord,
+  filterTokenRecordId,
+  filterValueRecordId,
   isEmptyFilterToken,
   isFieldConditionToken,
   parseFilterQuery,
+  recordIdFilterToken,
   serializeFilterQuery,
+  supportsFilterRange,
   type FilterFieldSuggestion,
   type FilterOperator,
   type FilterToken,
-  type FilterTokenOperator,
 } from '@opensaas/stack-core'
 import { formatFieldName } from './utils.js'
 
 export type FilterFields = ReadonlyMap<string, FilterFieldSuggestion>
 
+/**
+ * A condition the Filter builder offers for a field: one of the field's own
+ * operators, `range` ("between") on a field comparing both ways, or one the
+ * engine composes around them.
+ */
+export type FilterBuilderCondition =
+  FilterOperator | 'range' | 'not' | 'anyOf' | 'empty' | 'notEmpty'
+
 export interface FilterDraft {
   field: string
-  operator: FilterTokenOperator
+  condition: FilterBuilderCondition
 }
 
 export interface FilterRange {
@@ -37,9 +49,35 @@ export interface DatePreset {
   to: string
 }
 
+export interface FilterRecord {
+  id: string
+  label: string
+}
+
+export interface ResolvedFilterRecord {
+  id: string
+  label: string | null
+}
+
+export type RecordOf = (field: string, id: string) => ResolvedFilterRecord | undefined
+
+export interface RecordLookup {
+  records: FilterRecord[]
+  loading: boolean
+  searched: boolean
+}
+
 export type FilterOption =
   | { kind: 'field'; field: string; group: string }
-  | { kind: 'apply'; tokens: FilterToken[]; label: string; group: string; selected?: boolean }
+  | {
+      kind: 'apply'
+      tokens: FilterToken[]
+      label: string
+      group: string
+      selected?: boolean
+      record?: { field: string } & FilterRecord
+    }
+  | { kind: 'toggle'; tokens: FilterToken[]; label: string; group: string; selected: boolean }
 
 export interface FilterOptions {
   options: FilterOption[]
@@ -53,56 +91,96 @@ export interface TokenDescription {
   sentence: string
 }
 
-const COMPARISON_LABELS: Record<Exclude<FilterTokenOperator, 'eq'>, string> = {
+const COMPARISON_LABELS: Record<Exclude<FilterOperator, 'eq'>, string> = {
   gt: 'greater than',
   gte: 'at least',
   lt: 'less than',
   lte: 'at most',
-  range: 'between',
 }
 
-const COMPARISON_PREFIXES: ReadonlyArray<readonly [string, FilterOperator]> = [
-  ['>=', 'gte'],
-  ['<=', 'lte'],
-  ['>', 'gt'],
-  ['<', 'lt'],
-]
-
-const PHRASE_OPERATORS: Record<string, FilterOperator> = {
-  '>=': 'gte',
-  '<=': 'lte',
-  '>': 'gt',
-  '<': 'lt',
-  '=': 'eq',
-  is: 'eq',
-  contains: 'eq',
-  after: 'gt',
-  before: 'lt',
+interface PhraseCondition {
+  operator: FilterOperator
+  negated: boolean
 }
 
-const SYMBOL_PHRASE = /^(.+?)\s*(>=|<=|>|<|=)\s*(.+)$/
-const WORD_PHRASE = /^(.+?)\s+(is|contains|after|before)\s+(.+)$/i
+const PHRASE_CONDITIONS: Record<string, PhraseCondition> = {
+  ...Object.fromEntries(
+    FILTER_COMPARISON_PREFIXES.map(([prefix, operator]) => [prefix, { operator, negated: false }]),
+  ),
+  '=': { operator: 'eq', negated: false },
+  '!=': { operator: 'eq', negated: true },
+  is: { operator: 'eq', negated: false },
+  contains: { operator: 'eq', negated: false },
+  'is not': { operator: 'eq', negated: true },
+  'does not contain': { operator: 'eq', negated: true },
+  after: { operator: 'gt', negated: false },
+  before: { operator: 'lt', negated: false },
+}
+
+const SYMBOL_PHRASE = /^(.+?)\s*(>=|<=|!=|>|<|=)\s*(.+)$/
+const WORD_PHRASE = /^(.+?)\s+(is not|does not contain|is|contains|after|before)\s+(.+)$/i
+const EMPTY_PHRASE = /^(.+?)\s+is\s+(not\s+)?empty$/i
 const BETWEEN_PHRASE = /^(.+?)\s+between\s+(.+)$/i
 const RANGE_WORDS = /\s+(?:to|and)\s+/i
-const RANGE_DASHES = /[-\u2013]/g
+const RANGE_DASHES = /[-–]/g
 const PLAIN_DATE = /^(\d{4})-(\d{2})-(\d{2})$/
 const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/
 const FIELD_TOKEN_SHAPE = /[A-Za-z_][A-Za-z0-9_]*:\S/
 const VALUE_FIRST_MIN_LENGTH = 2
 
-export function fieldToken(field: string, operator: FilterOperator, value: string): FilterToken {
-  return { kind: 'token', field, operator, negated: false, values: [value], quoted: false }
+export function fieldToken(
+  field: string,
+  operator: FilterOperator,
+  value: string,
+  negated = false,
+): FilterToken {
+  const quoted = operator === 'eq' && filterValueRecordId({ text: value, quoted: false }) !== null
+  return { kind: 'token', field, operator, negated, values: [{ text: value, quoted }] }
 }
 
-export function rangeToken(field: string, low: string, high: string): FilterToken {
+export function rangeToken(field: string, low: string, high: string, negated = false): FilterToken {
   return {
     kind: 'token',
     field,
     operator: 'range',
-    negated: false,
-    values: [low, high],
-    quoted: false,
+    negated,
+    values: [
+      { text: low, quoted: false },
+      { text: high, quoted: false },
+    ],
   }
+}
+
+export function recordIdOf(
+  token: FilterToken,
+  fields: FilterFields,
+  negated = false,
+): string | null {
+  if (token.field === null || token.negated !== negated) return null
+  if (fields.get(token.field)?.matchesById !== true) return null
+  return filterTokenRecordId({ ...token, negated: false })
+}
+
+export function isRecordLookupField(suggestion: FilterFieldSuggestion | undefined): boolean {
+  return (
+    suggestion?.matchesById === true &&
+    suggestion.valueSource.kind === 'relationship' &&
+    !suggestion.valueSource.many
+  )
+}
+
+function anyOfToken(field: string, values: readonly string[]): FilterToken {
+  return {
+    kind: 'token',
+    field,
+    operator: 'eq',
+    negated: false,
+    values: values.map((text) => ({ text, quoted: false })),
+  }
+}
+
+function emptyToken(field: string, negated: boolean): FilterToken {
+  return { kind: 'token', field, operator: 'empty', negated, values: [] }
 }
 
 export function textToken(value: string): FilterToken {
@@ -111,8 +189,7 @@ export function textToken(value: string): FilterToken {
     field: null,
     operator: 'eq',
     negated: false,
-    values: [value],
-    quoted: false,
+    values: [{ text: value, quoted: false }],
   }
 }
 
@@ -134,12 +211,82 @@ export function editableText(token: FilterToken): string {
   return serializeFilterQuery({ terms: [token] })
 }
 
-export function operatorsOf(fields: FilterFields) {
-  return (field: string) => fields.get(field)?.operators
+function valueTexts(token: FilterToken): string[] {
+  return token.values.map((value) => value.text).filter((text) => text !== '')
 }
 
-export function conditionsOf(suggestion: FilterFieldSuggestion): FilterTokenOperator[] {
-  return filterTokenOperators(suggestion.operators)
+function eqMatchesPart(suggestion: FilterFieldSuggestion): boolean {
+  return suggestion.freeText || suggestion.valueSource.kind === 'relationship'
+}
+
+/**
+ * The conditions the Filter builder offers for a field, in Tab order. They
+ * derive from the field's Filter spec alone: its own operators, "between" on a
+ * field comparing both ways, "is not" (unless the spec says negation is
+ * redundant) and, for an enumerated field, "is any of" around equality, and
+ * "is empty" / "is not empty" where the field can be empty.
+ */
+export function conditionsOf(suggestion: FilterFieldSuggestion): FilterBuilderCondition[] {
+  const conditions: FilterBuilderCondition[] = [...suggestion.operators]
+  if (supportsFilterRange(suggestion.operators)) conditions.push('range')
+  if (suggestion.operators.includes('eq')) {
+    if (suggestion.negation !== 'redundant') conditions.push('not')
+    if (suggestion.valueSource.kind === 'enum') conditions.push('anyOf')
+  }
+  if (suggestion.canBeEmpty === true) conditions.push('empty', 'notEmpty')
+  return conditions
+}
+
+/** Whether a condition takes a typed value, rather than standing on its own. */
+export function conditionTakesValue(condition: FilterBuilderCondition): boolean {
+  return condition !== 'empty' && condition !== 'notEmpty'
+}
+
+function shapeLabel(
+  suggestion: FilterFieldSuggestion,
+  operator: FilterOperator,
+  negated: boolean,
+  many: boolean,
+): string {
+  if (operator !== 'eq') {
+    return `${negated ? 'not ' : ''}${COMPARISON_LABELS[operator]}${many ? ' any of' : ''}`
+  }
+  const part = eqMatchesPart(suggestion)
+  if (!negated) return `${part ? 'contains' : 'is'}${many ? ' any of' : ''}`
+  if (many) return part ? 'contains none of' : 'is none of'
+  return part ? 'does not contain' : 'is not'
+}
+
+export function conditionLabel(
+  suggestion: FilterFieldSuggestion,
+  condition: FilterBuilderCondition,
+): string {
+  if (condition === 'empty') return 'is empty'
+  if (condition === 'notEmpty') return 'is not empty'
+  if (condition === 'range') return 'between'
+  if (condition === 'not') return shapeLabel(suggestion, 'eq', true, false)
+  if (condition === 'anyOf') return shapeLabel(suggestion, 'eq', false, true)
+  return shapeLabel(suggestion, condition, false, false)
+}
+
+/**
+ * The builder condition a field-condition token is edited under, or `null`
+ * when the builder has no single condition for its shape (such as "is none of"
+ * or "not between").
+ */
+export function conditionOfToken(token: FilterToken): FilterBuilderCondition | null {
+  if (token.operator === 'empty') return token.negated ? 'notEmpty' : 'empty'
+  if (token.operator === 'range') return token.negated ? null : 'range'
+  const many = valueTexts(token).length > 1
+  if (token.operator === 'eq') {
+    if (token.negated) return many ? null : 'not'
+    return many ? 'anyOf' : 'eq'
+  }
+  return token.negated || many ? null : token.operator
+}
+
+export function fieldLabel(field: string): string {
+  return formatFieldName(field)
 }
 
 const pad = (value: number, width = 2) => String(Math.abs(value)).padStart(width, '0')
@@ -204,23 +351,26 @@ export function conditionTokens(
   suggestion: FilterFieldSuggestion,
   operator: FilterOperator,
   value: string,
+  negated = false,
 ): FilterToken[] {
   if (operator === 'eq' && suggestion.datePicker === 'instant') {
     const from = dayBoundary(value, false)
     const to = dayBoundary(value, true)
-    if (from && to) return [rangeToken(suggestion.field, from, to)]
+    if (from && to) return [rangeToken(suggestion.field, from, to, negated)]
   }
-  return [fieldToken(suggestion.field, operator, boundOf(suggestion, value, endsTheDay(operator)))]
+  const bound = boundOf(suggestion, value, endsTheDay(operator))
+  return [fieldToken(suggestion.field, operator, bound, negated)]
 }
 
 export function rangeTokens(
   suggestion: FilterFieldSuggestion,
   low: string,
   high: string,
+  negated = false,
 ): FilterToken[] {
-  return [
-    rangeToken(suggestion.field, boundOf(suggestion, low, false), boundOf(suggestion, high, true)),
-  ]
+  const from = boundOf(suggestion, low, false)
+  const to = boundOf(suggestion, high, true)
+  return [rangeToken(suggestion.field, from, to, negated)]
 }
 
 function shiftDays(date: Date, days: number): Date {
@@ -253,22 +403,6 @@ export function datePresets(today: Date): DatePreset[] {
   ]
 }
 
-function eqMatchesPart(suggestion: FilterFieldSuggestion): boolean {
-  return suggestion.freeText || suggestion.valueSource.kind === 'relationship'
-}
-
-export function conditionLabel(
-  suggestion: FilterFieldSuggestion,
-  operator: FilterTokenOperator,
-): string {
-  if (operator !== 'eq') return COMPARISON_LABELS[operator]
-  return eqMatchesPart(suggestion) ? 'contains' : 'is'
-}
-
-export function fieldLabel(field: string): string {
-  return formatFieldName(field)
-}
-
 function optionLabel(suggestion: FilterFieldSuggestion, value: string): string {
   if (suggestion.valueSource.kind !== 'enum') return value
   const needle = value.toLowerCase()
@@ -287,54 +421,100 @@ export function isFieldCondition(
   token: FilterToken,
   fields: FilterFields,
 ): token is FilterToken & { field: string } {
-  if (!isFieldConditionToken(token, operatorsOf(fields))) return false
+  if (!isFieldConditionToken(token, (field) => fields.get(field))) return false
   const suggestion = fields.get(token.field)
   if (suggestion === undefined) return false
   const mapped = effectiveFilterToken(token, suggestion.operators)
-  if (mapped.operator === 'range') {
+  const operator = mapped.operator
+  if (operator === 'empty') return true
+  if (operator === 'range') {
     const [low, high] = mapped.values
-    return checkValue(suggestion, 'gte', low).ok && checkValue(suggestion, 'lte', high).ok
+    return (
+      low !== undefined &&
+      high !== undefined &&
+      checkValue(suggestion, 'gte', low.text).ok &&
+      checkValue(suggestion, 'lte', high.text).ok
+    )
   }
-  return mapped.values.length === 1 && checkValue(suggestion, mapped.operator, mapped.values[0]).ok
+  return valueTexts(mapped).every((text) => checkValue(suggestion, operator, text).ok)
 }
 
-function describeRange(suggestion: FilterFieldSuggestion, range: FilterRange): TokenDescription {
+function idConditionLabel(negated: boolean, many: boolean): string {
+  if (negated) return many ? 'is none of' : 'is not'
+  return many ? 'is any of' : 'is'
+}
+
+function describeRange(
+  suggestion: FilterFieldSuggestion,
+  range: FilterRange,
+  negated = false,
+): TokenDescription {
   const field = fieldLabel(suggestion.field)
   const low = displayBound(suggestion, range.low, false)
   const high = displayBound(suggestion, range.high, true)
+  const condition = negated ? 'not between' : 'between'
   return {
     field,
-    condition: 'between',
+    condition,
     value: `${low} – ${high}`,
-    sentence: `${field} between ${low} and ${high}`,
+    sentence: `${field} ${condition} ${low} and ${high}`,
   }
 }
 
-function displayValue(suggestion: FilterFieldSuggestion, token: FilterToken): string {
-  const value = token.values[0]
-  if (token.operator === 'eq' || token.operator === 'range') return value
-  return displayBound(suggestion, value, endsTheDay(token.operator))
+function displayValue(suggestion: FilterFieldSuggestion, operator: FilterOperator, value: string) {
+  if (operator === 'eq') return optionLabel(suggestion, value)
+  return displayBound(suggestion, value, endsTheDay(operator))
 }
 
-export function describeToken(token: FilterToken, fields: FilterFields): TokenDescription {
+function rangeOf(token: FilterToken): FilterRange | null {
+  if (token.operator !== 'range') return null
+  const [low, high] = token.values
+  return low && high ? { low: low.text, high: high.text } : null
+}
+
+export function describeToken(
+  token: FilterToken,
+  fields: FilterFields,
+  recordOf: RecordOf = () => undefined,
+): TokenDescription {
   const suggestion = token.field === null ? undefined : fields.get(token.field)
   if (suggestion && isFieldCondition(token, fields)) {
-    const mapped = effectiveToken(token, fields)
-    if (mapped.operator === 'range') {
-      return describeRange(suggestion, { low: mapped.values[0], high: mapped.values[1] })
+    const mapped = effectiveFilterToken(token, suggestion.operators)
+    const operator = mapped.operator
+    if (operator === 'range') {
+      const [low, high] = mapped.values
+      return describeRange(suggestion, { low: low.text, high: high.text }, mapped.negated)
     }
     const field = fieldLabel(suggestion.field)
-    const condition = conditionLabel(suggestion, mapped.operator)
-    const value =
-      suggestion.valueSource.kind === 'enum'
-        ? optionLabel(suggestion, mapped.values[0])
-        : displayValue(suggestion, mapped)
-    return { field, condition, value, sentence: `${field} ${condition} ${value}` }
+    const values = mapped.values.filter((value) => value.text !== '')
+    const ids =
+      mapped.operator === 'eq' && suggestion.matchesById === true
+        ? values.map(filterValueRecordId)
+        : values.map(() => null)
+    const records = ids.map((id) => (id === null ? null : recordOf(suggestion.field, id)))
+    if (!records.includes(undefined)) {
+      const byId = ids.length > 0 && ids.every((id) => id !== null)
+      const many = values.length > 1
+      const condition =
+        operator === 'empty'
+          ? conditionLabel(suggestion, mapped.negated ? 'notEmpty' : 'empty')
+          : byId
+            ? idConditionLabel(mapped.negated, many)
+            : shapeLabel(suggestion, operator, mapped.negated, many)
+      const value = values
+        .map((written, index) => {
+          const record = records[index]
+          if (record) return record.label ?? record.id
+          return operator === 'empty'
+            ? written.text
+            : displayValue(suggestion, operator, written.text)
+        })
+        .join(', ')
+      const sentence = value ? `${field} ${condition} ${value}` : `${field} ${condition}`
+      return { field, condition, value, sentence }
+    }
   }
-  const value =
-    token.field === null && !token.negated && token.values.length === 1
-      ? token.values[0]
-      : serializeFilterQuery({ terms: [token] })
+  const value = filterTokenFreeTextWord(token)
   return { field: 'Text', condition: 'contains', value, sentence: `Text contains ${value}` }
 }
 
@@ -344,17 +524,21 @@ function pairedRange(
   fields: FilterFields,
 ): FilterRange | null {
   if (!first || !second || first.field === null || first.field !== second.field) return null
+  if (first.negated || second.negated) return null
+  if (first.values.length !== 1 || second.values.length !== 1) return null
   if (!isFieldCondition(first, fields) || !isFieldCondition(second, fields)) return null
-  if (first.operator === 'gte' && second.operator === 'lte') {
-    return { low: first.values[0], high: second.values[0] }
-  }
-  if (first.operator === 'lte' && second.operator === 'gte') {
-    return { low: second.values[0], high: first.values[0] }
-  }
+  const [a] = first.values
+  const [b] = second.values
+  if (first.operator === 'gte' && second.operator === 'lte') return { low: a.text, high: b.text }
+  if (first.operator === 'lte' && second.operator === 'gte') return { low: b.text, high: a.text }
   return null
 }
 
-export function chipsOf(tokens: readonly FilterToken[], fields: FilterFields): FilterChip[] {
+export function chipsOf(
+  tokens: readonly FilterToken[],
+  fields: FilterFields,
+  recordOf: RecordOf = () => undefined,
+): FilterChip[] {
   const chips: FilterChip[] = []
   for (let start = 0; start < tokens.length; start++) {
     const token = tokens[start]
@@ -366,11 +550,8 @@ export function chipsOf(tokens: readonly FilterToken[], fields: FilterFields): F
       continue
     }
     const mapped = effectiveToken(token, fields)
-    const range =
-      mapped.operator === 'range' && isFieldCondition(token, fields)
-        ? { low: mapped.values[0], high: mapped.values[1] }
-        : null
-    chips.push({ start, count: 1, description: describeToken(token, fields), range })
+    const range = !mapped.negated && isFieldCondition(token, fields) ? rangeOf(mapped) : null
+    chips.push({ start, count: 1, description: describeToken(token, fields, recordOf), range })
   }
   return chips
 }
@@ -387,19 +568,38 @@ export function chipEditText(
   if (chip.range) {
     const low = displayBound(suggestion, chip.range.low, false)
     const high = displayBound(suggestion, chip.range.high, true)
-    return { draft: { field: suggestion.field, operator: 'range' }, text: `${low}..${high}` }
+    return { draft: { field: suggestion.field, condition: 'range' }, text: `${low}..${high}` }
   }
-  const mapped = effectiveToken(token, fields)
-  const draft = { field: suggestion.field, operator: mapped.operator }
-  if (suggestion.valueSource.kind === 'enum') return { draft, text: '' }
-  return { draft, text: displayValue(suggestion, mapped) }
+  if (recordIdOf(token, fields, token.negated) !== null) {
+    return { draft: { field: suggestion.field, condition: token.negated ? 'not' : 'eq' }, text: '' }
+  }
+  const mapped = effectiveFilterToken(token, suggestion.operators)
+  const condition = conditionOfToken(mapped)
+  if (condition === null || !conditionsOf(suggestion).includes(condition)) {
+    return { draft: null, text: editableText(token) }
+  }
+  const draft = { field: suggestion.field, condition }
+  const operator = mapped.operator
+  const [first] = mapped.values
+  if (
+    suggestion.valueSource.kind === 'enum' ||
+    operator === 'empty' ||
+    operator === 'range' ||
+    first === undefined
+  ) {
+    return { draft, text: '' }
+  }
+  return {
+    draft,
+    text: operator === 'eq' ? first.text : displayValue(suggestion, operator, first.text),
+  }
 }
 
 function isSingleChoice(token: FilterToken, fields: FilterFields): boolean {
-  if (token.field === null || !isFieldCondition(token, fields)) return false
-  if (effectiveToken(token, fields).operator !== 'eq') {
-    return false
-  }
+  if (recordIdOf(token, fields) !== null) return true
+  if (token.field === null || token.negated || !isFieldCondition(token, fields)) return false
+  const mapped = effectiveToken(token, fields)
+  if (mapped.operator !== 'eq' || mapped.values.length !== 1) return false
   const suggestion = fields.get(token.field)
   return suggestion !== undefined && !eqMatchesPart(suggestion)
 }
@@ -480,6 +680,8 @@ export function checkValue(
 
 type RangeCheck = { ok: true; low: string; high: string } | { ok: false; message: string }
 
+type TokensCheck = { ok: true; tokens: FilterToken[] } | { ok: false; message: string }
+
 interface RangeSplit {
   bounds: [string, string]
   dashed: boolean
@@ -533,14 +735,16 @@ export function checkedRangeTokens(
   suggestion: FilterFieldSuggestion,
   low: string,
   high: string,
+  negated = false,
 ): TokensCheck {
-  const tokens = rangeTokens(suggestion, low, high)
+  const tokens = rangeTokens(suggestion, low, high, negated)
   const [written] = hydrateTokens(filterQuery(tokens))
   const faithful =
     written !== undefined &&
     written.operator === 'range' &&
-    written.values[0] === tokens[0].values[0] &&
-    written.values[1] === tokens[0].values[1]
+    written.negated === negated &&
+    written.values[0]?.text === tokens[0].values[0]?.text &&
+    written.values[1]?.text === tokens[0].values[1]?.text
   if (faithful) return { ok: true, tokens }
   return {
     ok: false,
@@ -558,11 +762,17 @@ export function normaliseTokens(
       return [token]
     }
     const mapped = effectiveFilterToken(token, suggestion.operators)
-    if (mapped.operator !== 'range') {
-      return conditionTokens(suggestion, mapped.operator, mapped.values[0])
+    const operator = mapped.operator
+    if (operator === 'empty') return [token]
+    if (operator === 'range') {
+      const range = rangeOf(mapped)
+      if (!range) return [token]
+      const checked = checkedRangeTokens(suggestion, range.low, range.high, mapped.negated)
+      return checked.ok ? checked.tokens : [token]
     }
-    const range = checkedRangeTokens(suggestion, mapped.values[0], mapped.values[1])
-    return range.ok ? range.tokens : [token]
+    const [value] = mapped.values
+    if (mapped.values.length !== 1 || value === undefined) return [token]
+    return conditionTokens(suggestion, operator, value.text, mapped.negated)
   })
 }
 
@@ -571,7 +781,7 @@ export function splitComparison(
   text: string,
 ): { operator: FilterOperator; rest: string } | null {
   const trimmed = text.trimStart()
-  for (const [prefix, operator] of COMPARISON_PREFIXES) {
+  for (const [prefix, operator] of FILTER_COMPARISON_PREFIXES) {
     if (trimmed.startsWith(prefix) && suggestion.operators.includes(operator)) {
       return { operator, rest: trimmed.slice(prefix.length).trimStart() }
     }
@@ -594,11 +804,18 @@ export function findField(fields: FilterFields, name: string): FilterFieldSugges
 
 type PhraseResult = { kind: 'token'; tokens: FilterToken[] } | { kind: 'invalid'; message: string }
 
-function parseBetween(text: string, fields: FilterFields): PhraseResult | null {
+function emptyPhrase(text: string, fields: FilterFields): PhraseResult | null {
+  const match = EMPTY_PHRASE.exec(text.trim())
+  const suggestion = match ? findField(fields, match[1]) : undefined
+  if (!match || !suggestion?.canBeEmpty) return null
+  return { kind: 'token', tokens: [emptyToken(suggestion.field, match[2] !== undefined)] }
+}
+
+function betweenPhrase(text: string, fields: FilterFields): PhraseResult | null {
   const match = BETWEEN_PHRASE.exec(text.trim())
   const suggestion = match ? findField(fields, match[1]) : undefined
   if (!match || !suggestion) return null
-  if (!conditionsOf(suggestion).includes('range')) {
+  if (!supportsFilterRange(suggestion.operators)) {
     return { kind: 'invalid', message: `${fieldLabel(suggestion.field)} has no range.` }
   }
   const check = checkRange(suggestion, match[2])
@@ -609,7 +826,9 @@ function parseBetween(text: string, fields: FilterFields): PhraseResult | null {
 }
 
 export function parsePhrase(text: string, fields: FilterFields): PhraseResult | null {
-  const between = parseBetween(text, fields)
+  const empty = emptyPhrase(text, fields)
+  if (empty) return empty
+  const between = betweenPhrase(text, fields)
   if (between) return between
   let match: RegExpExecArray | null = null
   let suggestion: FilterFieldSuggestion | undefined
@@ -623,15 +842,20 @@ export function parsePhrase(text: string, fields: FilterFields): PhraseResult | 
     }
   }
   if (!match || !suggestion) return null
-  const operator = PHRASE_OPERATORS[match[2].toLowerCase()]
-  if (operator === undefined) return null
+  const phrase = Object.hasOwn(PHRASE_CONDITIONS, match[2].toLowerCase())
+    ? PHRASE_CONDITIONS[match[2].toLowerCase()]
+    : undefined
+  if (phrase === undefined) return null
   const label = fieldLabel(suggestion.field)
-  if (!suggestion.operators.includes(operator)) {
+  if (!suggestion.operators.includes(phrase.operator)) {
     return { kind: 'invalid', message: `${label} cannot be compared with “${match[2]}”.` }
   }
-  const check = checkValue(suggestion, operator, match[3])
+  const check = checkValue(suggestion, phrase.operator, match[3])
   if (!check.ok) return { kind: 'invalid', message: check.message }
-  return { kind: 'token', tokens: conditionTokens(suggestion, operator, check.value) }
+  return {
+    kind: 'token',
+    tokens: conditionTokens(suggestion, phrase.operator, check.value, phrase.negated),
+  }
 }
 
 function fieldValuePrefix(
@@ -716,7 +940,7 @@ export function rootOptions(text: string, fields: FilterFields): FilterOptions {
       const check = checkValue(suggestion, operator, comparison?.rest ?? rest)
       const tryRange =
         !comparison &&
-        conditionsOf(suggestion).includes('range') &&
+        supportsFilterRange(suggestion.operators) &&
         (splitsAsRange(suggestion, rest) || suggestion.datePicker !== undefined)
       const range = tryRange ? checkRange(suggestion, rest) : null
       const ranged = range?.ok ? checkedRangeTokens(suggestion, range.low, range.high) : null
@@ -751,47 +975,88 @@ export function rootOptions(text: string, fields: FilterFields): FilterOptions {
   return { options, hint }
 }
 
-type TokensCheck = { ok: true; tokens: FilterToken[] } | { ok: false; message: string }
-
+/**
+ * The tokens a typed value writes under a value-taking condition, or why it
+ * cannot: `range` reads two bounds, `not` writes the negated form of the
+ * comparison it is given, and a date field reads a typed span of two days as
+ * a range under "is".
+ */
 export function draftTokens(
   suggestion: FilterFieldSuggestion,
-  operator: FilterTokenOperator,
+  condition: FilterBuilderCondition,
   typed: string,
 ): TokensCheck {
-  if (operator === 'range') {
+  if (condition === 'range') {
     const range = checkRange(suggestion, typed)
     if (!range.ok) return range
     return checkedRangeTokens(suggestion, range.low, range.high)
   }
+  const negated = condition === 'not'
+  const comparison = negated ? splitComparison(suggestion, typed) : null
+  const operator: FilterOperator | null = negated
+    ? (comparison?.operator ?? 'eq')
+    : condition === 'anyOf' || condition === 'empty' || condition === 'notEmpty'
+      ? null
+      : condition
+  if (operator === null)
+    return { ok: false, message: `Choose a value for ${fieldLabel(suggestion.field)}.` }
+  const value = comparison?.rest ?? typed
   if (
     operator === 'eq' &&
     suggestion.datePicker !== undefined &&
-    conditionsOf(suggestion).includes('range') &&
-    splitsAsRange(suggestion, typed)
+    supportsFilterRange(suggestion.operators) &&
+    splitsAsRange(suggestion, value)
   ) {
-    const range = checkRange(suggestion, typed)
-    if (range.ok) return checkedRangeTokens(suggestion, range.low, range.high)
+    const range = checkRange(suggestion, value)
+    if (range.ok) return checkedRangeTokens(suggestion, range.low, range.high, negated)
   }
-  const single = checkValue(suggestion, operator, typed)
+  const single = checkValue(suggestion, operator, value)
   if (!single.ok) return single
-  return { ok: true, tokens: conditionTokens(suggestion, operator, single.value) }
+  return { ok: true, tokens: conditionTokens(suggestion, operator, single.value, negated) }
 }
 
 function presetOptions(
   suggestion: FilterFieldSuggestion,
   typed: string,
   today: Date,
+  negated: boolean,
 ): FilterOption[] {
-  if (!suggestion.datePicker) return []
+  if (!suggestion.datePicker || !supportsFilterRange(suggestion.operators)) return []
   const needle = typed.toLowerCase()
   return datePresets(today)
     .filter((preset) => needle === '' || preset.label.toLowerCase().includes(needle))
     .map((preset) => ({
       kind: 'apply',
-      tokens: rangeTokens(suggestion, preset.from, preset.to),
-      label: `${preset.label} (${preset.from} – ${preset.to})`,
+      tokens: rangeTokens(suggestion, preset.from, preset.to, negated),
+      label: `${negated ? 'Not ' : ''}${preset.label} (${preset.from} – ${preset.to})`,
       group: 'Presets',
     }))
+}
+
+function anyOfOptions(
+  suggestion: FilterFieldSuggestion,
+  typed: string,
+  current: FilterToken | undefined,
+): FilterOption[] {
+  const chosen =
+    current && current.field === suggestion.field && current.operator === 'eq' && !current.negated
+      ? valueTexts(current)
+      : []
+  const isChosen = (value: string) =>
+    chosen.some((text) => text.toLowerCase() === value.toLowerCase())
+  return enumMatches(suggestion, typed).map((option) => {
+    const selected = isChosen(option.value)
+    const next = selected
+      ? chosen.filter((text) => text.toLowerCase() !== option.value.toLowerCase())
+      : [...chosen, option.value]
+    return {
+      kind: 'toggle',
+      tokens: next.length > 0 ? [anyOfToken(suggestion.field, next)] : [],
+      label: option.label,
+      group: `${fieldLabel(suggestion.field)} is any of`,
+      selected,
+    }
+  })
 }
 
 export function draftOptions(
@@ -799,6 +1064,7 @@ export function draftOptions(
   text: string,
   fields: FilterFields,
   current: FilterToken | undefined,
+  lookup: RecordLookup | null = null,
   today: Date = new Date(),
 ): FilterOptions {
   const suggestion = fields.get(draft.field)
@@ -806,15 +1072,68 @@ export function draftOptions(
   const typed = text.trim()
   const options: FilterOption[] = []
   let hint: string | null = null
+  const { condition } = draft
 
-  if (suggestion.valueSource.kind === 'enum') {
-    const operator = draft.operator === 'range' ? 'eq' : draft.operator
+  if (lookup && isRecordLookupField(suggestion) && (condition === 'eq' || condition === 'not')) {
+    const negated = condition === 'not'
+    const currentId =
+      current && current.field === draft.field ? recordIdOf(current, fields, negated) : null
+    const group = fieldLabel(suggestion.field)
+    const showRecords = typed === '' || lookup.searched
+    for (const record of showRecords ? lookup.records : []) {
+      options.push({
+        kind: 'apply',
+        tokens: [recordIdFilterToken(suggestion.field, record.id, negated)],
+        label: record.label,
+        group,
+        selected: record.id === currentId,
+        record: { field: suggestion.field, ...record },
+      })
+    }
+    if (lookup.loading) hint = `Searching ${group.toLowerCase()}…`
+    else if (showRecords && lookup.records.length === 0) {
+      hint =
+        typed === ''
+          ? `No ${group.toLowerCase()} to choose from.`
+          : `No ${group.toLowerCase()} matches “${typed}”.`
+    }
+    if (typed !== '') {
+      const token = fieldToken(suggestion.field, 'eq', typed, negated)
+      options.push({
+        kind: 'apply',
+        tokens: [token],
+        label: describeToken(token, fields).sentence,
+        group: 'Text',
+      })
+      options.push(searchOption(typed))
+    }
+    return { options, hint }
+  }
+
+  if (condition === 'empty' || condition === 'notEmpty') {
+    const token = emptyToken(suggestion.field, condition === 'notEmpty')
+    options.push({
+      kind: 'apply',
+      tokens: [token],
+      label: describeToken(token, fields).sentence,
+      group: fieldLabel(suggestion.field),
+    })
+  } else if (condition === 'anyOf') {
+    options.push(...anyOfOptions(suggestion, typed, current))
+    if (options.length === 0 && typed !== '') {
+      hint = `No ${fieldLabel(suggestion.field).toLowerCase()} matches “${typed}”.`
+    }
+  } else if (suggestion.valueSource.kind === 'enum') {
+    const negated = condition === 'not'
+    const operator: FilterOperator = condition === 'not' || condition === 'range' ? 'eq' : condition
     const currentValue =
-      current && current.field === draft.field ? current.values[0]?.toLowerCase() : undefined
+      current && current.field === draft.field && conditionOfToken(current) === condition
+        ? current.values[0]?.text.toLowerCase()
+        : undefined
     for (const option of enumMatches(suggestion, typed)) {
       options.push({
         kind: 'apply',
-        tokens: [fieldToken(suggestion.field, operator, option.value)],
+        tokens: [fieldToken(suggestion.field, operator, option.value, negated)],
         label: option.label,
         group: fieldLabel(suggestion.field),
         selected: option.value.toLowerCase() === currentValue,
@@ -824,13 +1143,13 @@ export function draftOptions(
       hint = `No ${fieldLabel(suggestion.field).toLowerCase()} matches “${typed}”.`
     }
   } else {
-    const presets = presetOptions(suggestion, typed, today)
-    const check = draftTokens(suggestion, draft.operator, typed)
+    const presets = presetOptions(suggestion, typed, today, condition === 'not')
+    const check = draftTokens(suggestion, condition, typed)
     if (check.ok) {
       options.push({
         kind: 'apply',
         tokens: check.tokens,
-        label: check.tokens.map((token) => describeToken(token, fields).sentence).join(' and '),
+        label: sentenceOf(check.tokens, fields),
         group: fieldLabel(suggestion.field),
       })
     } else if (typed !== '' || presets.length === 0) {

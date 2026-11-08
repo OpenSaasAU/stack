@@ -1,4 +1,4 @@
-import type { FilterOperator, FilterQuery, FilterToken } from './types.js'
+import type { FilterOperator, FilterQuery, FilterToken, FilterValue } from './types.js'
 
 const FIELD_PREFIX_RE = /([A-Za-z_][A-Za-z0-9_]*):/y
 
@@ -6,12 +6,31 @@ const WHITESPACE_RE = /\s/
 
 const RANGE_SEPARATOR = '..'
 
-const COMPARISON_PREFIXES: ReadonlyArray<readonly [string, FilterOperator]> = [
-  ['>=', 'gte'],
-  ['<=', 'lte'],
-  ['>', 'gt'],
-  ['<', 'lt'],
-]
+const FILTER_OPERATORS: readonly FilterOperator[] = ['eq', 'gt', 'gte', 'lt', 'lte']
+
+/**
+ * The prefix each {@link FilterOperator} is written with after `field:`: none
+ * for `eq`, and `>`, `>=`, `<`, `<=` for the comparisons.
+ */
+export const FILTER_OPERATOR_PREFIXES: Readonly<Record<FilterOperator, string>> = {
+  eq: '',
+  gt: '>',
+  gte: '>=',
+  lt: '<',
+  lte: '<=',
+}
+
+/**
+ * Every comparison prefix and its operator, longest prefix first, so a reader
+ * matching them in order takes `>=` before `>`.
+ */
+export const FILTER_COMPARISON_PREFIXES: ReadonlyArray<readonly [string, FilterOperator]> =
+  FILTER_OPERATORS.filter((operator) => FILTER_OPERATOR_PREFIXES[operator] !== '')
+    .map((operator): readonly [string, FilterOperator] => [
+      FILTER_OPERATOR_PREFIXES[operator],
+      operator,
+    ])
+    .sort((a, b) => b[0].length - a[0].length)
 
 export function isFilterWhitespace(ch: string): boolean {
   return WHITESPACE_RE.test(ch)
@@ -29,7 +48,7 @@ export function fieldPrefixLength(text: string, start = 0): number {
 }
 
 /**
- * The two bounds of an unquoted `eq` value written as an inclusive range
+ * The two bounds of an unquoted single value written as an inclusive range
  * (`a..b`), split at its first `..`, or `null` when it is not one: a bound is
  * missing, or the value holds a comma.
  */
@@ -46,24 +65,28 @@ export function splitRangeValue(value: string): [string, string] | null {
  *
  * - `field:value` is a field token with the `eq` operator, and `field:>value`,
  *   `field:>=value`, `field:<value`, `field:<=value` are comparisons.
- * - `field:a..b` is an inclusive `range` token whose values are its two bounds,
- *   split at the first `..`. A quoted value is never a range.
- * - A value in double quotes keeps its spaces and is literal: `"status:draft"`
- *   is a free-text word. Inside quotes, `\"` is a quote and `\\` a backslash;
- *   any other backslash is itself.
- * - A leading `-` and a `,` are ordinary characters of a value.
- * - Anything else (`beta`, `>5`, `http://x`) is a free-text word (`field: null`).
+ * - `field:a,b` carries several values, and `field:!` is the `empty` operator.
+ * - `field:a..b` is an inclusive `range` token whose two values are its
+ *   bounds, split at the first `..`. A quoted value is never a range, and
+ *   neither is a list: `field:a..b,c` is `eq` on `a..b` and `c`.
+ * - A leading `-` followed by more of the token negates it: `-field:value`.
+ *   A `-` on its own is a free-text word.
+ * - A value in double quotes keeps its spaces and commas and is literal:
+ *   `"status:draft"` is a free-text word and `field:"!"` the text `!`. Inside
+ *   quotes, `\"` is a quote and `\\` a backslash; any other backslash is itself.
+ * - Anything else (`beta`, `>5`, `http://x`) is a free-text word (`field: null`),
+ *   whose commas are ordinary characters.
  *
  * Validating fields and values is the engine's job, where a token that cannot
  * map degrades to free text. {@link serializeFilterQuery} is the inverse.
  *
  * @example
- * parseFilterQuery('role:Editor orders:>5 name:"Ada Lovelace" beta')
+ * parseFilterQuery('-role:Editor status:draft,review name:"Ada Lovelace" beta')
  * // { terms: [
- * //   { kind: 'token', field: 'role',   operator: 'eq', negated: false, values: ['Editor'],       quoted: false },
- * //   { kind: 'token', field: 'orders', operator: 'gt', negated: false, values: ['5'],            quoted: false },
- * //   { kind: 'token', field: 'name',   operator: 'eq', negated: false, values: ['Ada Lovelace'], quoted: true },
- * //   { kind: 'token', field: null,     operator: 'eq', negated: false, values: ['beta'],         quoted: false },
+ * //   { kind: 'token', field: 'role',   operator: 'eq', negated: true,  values: [{ text: 'Editor', quoted: false }] },
+ * //   { kind: 'token', field: 'status', operator: 'eq', negated: false, values: [{ text: 'draft', quoted: false }, { text: 'review', quoted: false }] },
+ * //   { kind: 'token', field: 'name',   operator: 'eq', negated: false, values: [{ text: 'Ada Lovelace', quoted: true }] },
+ * //   { kind: 'token', field: null,     operator: 'eq', negated: false, values: [{ text: 'beta', quoted: false }] },
  * // ] }
  */
 export function parseFilterQuery(query: string): FilterQuery {
@@ -71,55 +94,84 @@ export function parseFilterQuery(query: string): FilterQuery {
   const n = query.length
   let i = 0
 
-  const readValue = (): { value: string; quoted: boolean } => {
+  const endsToken = (at: number) => at >= n || isFilterWhitespace(query[at])
+
+  const readValue = (inList: boolean): FilterValue => {
     if (query[i] !== '"') {
       const start = i
-      while (i < n && !isFilterWhitespace(query[i])) i++
-      return { value: query.slice(start, i), quoted: false }
+      while (!endsToken(i) && !(inList && query[i] === ',')) i++
+      return { text: query.slice(start, i), quoted: false }
     }
     i++
-    let value = ''
+    let text = ''
     while (i < n && query[i] !== '"') {
       const next = query[i + 1]
       if (query[i] === '\\' && (next === '"' || next === '\\')) {
-        value += next
+        text += next
         i += 2
       } else {
-        value += query[i]
+        text += query[i]
         i++
       }
     }
     if (i < n) i++
-    return { value, quoted: true }
+    return { text, quoted: true }
   }
 
   while (i < n) {
     while (i < n && isFilterWhitespace(query[i])) i++
     if (i >= n) break
 
-    let field: string | null = null
+    const negated = query[i] === '-' && !endsToken(i + 1)
+    if (negated) i++
+
     const prefixLength = fieldPrefixLength(query, i)
-    if (prefixLength > 0) {
-      field = query.slice(i, i + prefixLength - 1)
-      i += prefixLength
+    if (prefixLength === 0) {
+      terms.push({
+        kind: 'token',
+        field: null,
+        operator: 'eq',
+        negated,
+        values: [readValue(false)],
+      })
+      continue
     }
+    const field = query.slice(i, i + prefixLength - 1)
+    i += prefixLength
 
     let operator: FilterOperator = 'eq'
-    if (field !== null) {
-      const comparison = COMPARISON_PREFIXES.find(([prefix]) => query.startsWith(prefix, i))
-      if (comparison) {
-        operator = comparison[1]
-        i += comparison[0].length
-      }
+    const comparison = FILTER_COMPARISON_PREFIXES.find(([prefix]) => query.startsWith(prefix, i))
+    if (comparison) {
+      operator = comparison[1]
+      i += comparison[0].length
     }
 
-    const { value, quoted } = readValue()
-    const range = field !== null && operator === 'eq' && !quoted ? splitRangeValue(value) : null
-    if (range) {
-      terms.push({ kind: 'token', field, operator: 'range', negated: false, values: range, quoted })
-    } else {
-      terms.push({ kind: 'token', field, operator, negated: false, values: [value], quoted })
+    if (operator === 'eq' && query[i] === '!' && endsToken(i + 1)) {
+      i++
+      terms.push({ kind: 'token', field, operator: 'empty', negated, values: [] })
+      continue
     }
+
+    const values = [readValue(true)]
+    while (query[i] === ',') {
+      i++
+      values.push(readValue(true))
+    }
+    const range =
+      operator === 'eq' && values.length === 1 && !values[0].quoted
+        ? splitRangeValue(values[0].text)
+        : null
+    if (range) {
+      terms.push({
+        kind: 'token',
+        field,
+        operator: 'range',
+        negated,
+        values: range.map((text) => ({ text, quoted: false })),
+      })
+      continue
+    }
+    terms.push({ kind: 'token', field, operator, negated, values })
   }
 
   return { terms }
