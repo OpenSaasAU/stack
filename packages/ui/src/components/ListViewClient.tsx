@@ -48,7 +48,7 @@ import {
 import { DEFAULT_PAGE_SIZE } from '../lib/pageSize.js'
 import { CARD_CELL, CARD_PINNED_CELL, CARD_ROW, CARD_TITLE_CELL } from '../lib/tableClasses.js'
 import type { ServerActionInput } from '../server/types.js'
-import type { FilterRecord } from '../lib/filterBuilderOptions.js'
+import type { ResolvedFilterRecord } from '../lib/filterBuilderOptions.js'
 import {
   recordIdFilterToken,
   serializeFilterQuery,
@@ -228,11 +228,11 @@ export interface ListViewClientProps {
    */
   filterSuggestions?: FilterFieldSuggestion[]
   /**
-   * The Item labels of the records the `field:#id` tokens in `search` name,
-   * keyed by field, resolved server-side through the secured context. A record
-   * the session cannot read is absent, and its chip shows the raw id.
+   * The records the `field:#id` tokens in `search` name, keyed by field: each
+   * id the related list accepts, with the Item label resolved server-side
+   * through the secured context, or `null` when the session cannot read it.
    */
-  recordLabels?: Record<string, FilterRecord[]>
+  recordLabels?: Record<string, ResolvedFilterRecord[]>
   /**
    * The to-many columns whose count links to the matching rows on the other
    * list, filtered by `field:#id`, keyed by column.

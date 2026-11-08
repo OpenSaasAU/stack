@@ -617,15 +617,22 @@ describe('FilterBuilder', () => {
     function setupLookup(
       props: {
         defaultValue?: string
-        recordLabels?: Record<string, Array<{ id: string; label: string }>>
+        recordLabels?: Record<string, Array<{ id: string; label: string | null }>>
         withServerAction?: boolean
+        searchable?: boolean
       } = {},
     ) {
-      const { withServerAction = true, ...rest } = props
+      const { withServerAction = true, searchable = true, ...rest } = props
       const onApply = vi.fn<(query: string) => void>()
       const serverAction = vi.fn(async (input: ServerActionInput) => {
         const search = 'search' in input && input.search ? input.search.toLowerCase() : ''
-        return { options: people.filter((person) => person.label.toLowerCase().includes(search)) }
+        const searched = searchable && search !== ''
+        return {
+          options: people.filter(
+            (person) => !searched || person.label.toLowerCase().includes(search),
+          ),
+          searched,
+        }
       })
       const user = userEvent.setup()
       render(
@@ -653,6 +660,7 @@ describe('FilterBuilder', () => {
         listKey: 'Post',
         action: 'relationshipOptions',
         field: 'author',
+        selectedIds: [],
         take: 10,
       })
       expect(optionNames()).toEqual(['Priya Nair', 'Priya Nair-Reed', 'Sam Okafor'])
@@ -675,6 +683,7 @@ describe('FilterBuilder', () => {
         action: 'relationshipOptions',
         field: 'author',
         search: 'sam',
+        selectedIds: [],
         take: 10,
       })
     })
@@ -716,9 +725,37 @@ describe('FilterBuilder', () => {
     it('shows the resolved label of a record in the URL, and the raw id of one it could not read', () => {
       setupLookup({
         defaultValue: 'author:#u1 author:#u9',
-        recordLabels: { author: [{ id: 'u1', label: 'Priya Nair' }] },
+        recordLabels: {
+          author: [
+            { id: 'u1', label: 'Priya Nair' },
+            { id: 'u9', label: null },
+          ],
+        },
       })
       expect(chipNames()).toEqual(['Author is Priya Nair', 'Author is u9'])
+    })
+
+    it('shows an id the server did not accept as the free text it searches for', () => {
+      setupLookup({
+        defaultValue: 'author:#u1 author:#notanid',
+        recordLabels: { author: [{ id: 'u1', label: 'Priya Nair' }] },
+      })
+      expect(chipNames()).toEqual(['Author is Priya Nair', 'Text contains #notanid'])
+    })
+
+    it('hides the records while typing when the server did not apply the search', async () => {
+      const { user, bar, onApply, serverAction } = setupLookup({ searchable: false })
+      await user.type(bar, 'auth{Enter}')
+      await screen.findByRole('option', { name: 'Sam Okafor' })
+      await user.type(bar, 'pri')
+      await waitFor(() =>
+        expect(serverAction).toHaveBeenCalledWith(expect.objectContaining({ search: 'pri' })),
+      )
+      await waitFor(() => expect(screen.queryByText(/Searching/)).not.toBeInTheDocument())
+      expect(optionNames()).toEqual(['Author contains pri', 'Search all text for “pri”'])
+      expect(screen.queryByText(/No author matches/)).not.toBeInTheDocument()
+      await user.click(screen.getByRole('option', { name: 'Author contains pri' }))
+      expect(onApply).toHaveBeenCalledWith('author:pri')
     })
 
     it('reopens a record chip on the record list', async () => {

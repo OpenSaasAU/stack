@@ -23,11 +23,17 @@ export interface FilterRecord {
   label: string
 }
 
-export type RecordLabelOf = (field: string, id: string) => string | undefined
+export interface ResolvedFilterRecord {
+  id: string
+  label: string | null
+}
+
+export type RecordOf = (field: string, id: string) => ResolvedFilterRecord | undefined
 
 export interface RecordLookup {
   records: FilterRecord[]
   loading: boolean
+  searched: boolean
 }
 
 export type FilterOption =
@@ -180,13 +186,18 @@ export function isFieldCondition(
 export function describeToken(
   token: FilterToken,
   fields: FilterFields,
-  labelOf: RecordLabelOf = () => undefined,
+  recordOf: RecordOf = () => undefined,
 ): TokenDescription {
   const suggestion = token.field === null ? undefined : fields.get(token.field)
   const recordId = recordIdOf(token, fields)
   if (suggestion && recordId !== null) {
+    const record = recordOf(suggestion.field, recordId)
+    if (record === undefined) {
+      const [value] = token.values
+      return { field: 'Text', condition: 'contains', value, sentence: `Text contains ${value}` }
+    }
     const field = fieldLabel(suggestion.field)
-    const value = labelOf(suggestion.field, recordId) ?? recordId
+    const value = record.label ?? recordId
     return { field, condition: 'is', value, sentence: `${field} is ${value}` }
   }
   if (suggestion && isFieldCondition(token, fields)) {
@@ -459,7 +470,8 @@ export function draftOptions(
   if (lookup && isRecordLookupField(suggestion) && draft.operator === 'eq') {
     const currentId = current && current.field === draft.field ? recordIdOf(current, fields) : null
     const group = fieldLabel(suggestion.field)
-    for (const record of lookup.records) {
+    const showRecords = typed === '' || lookup.searched
+    for (const record of showRecords ? lookup.records : []) {
       options.push({
         kind: 'apply',
         tokens: [recordIdFilterToken(suggestion.field, record.id)],
@@ -470,7 +482,7 @@ export function draftOptions(
       })
     }
     if (lookup.loading) hint = `Searching ${group.toLowerCase()}…`
-    else if (lookup.records.length === 0) {
+    else if (showRecords && lookup.records.length === 0) {
       hint =
         typed === ''
           ? `No ${group.toLowerCase()} to choose from.`

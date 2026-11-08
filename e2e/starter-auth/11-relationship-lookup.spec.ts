@@ -1,13 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { signUp, generateTestUser } from '../utils/auth.js'
 
-/**
- * Relationship lookup in the Filter builder (#2253, part of #2246): choosing
- * the Author field browses and searches users, and picking one writes
- * `author:#id`, which matches exactly that user's posts even where another
- * user's name contains it. A to-many count on the User list links to the same
- * filter.
- */
+/** Relationship lookup in the Filter builder (#2253). */
 test.describe('Relationship lookup', () => {
   async function createPost(page: Page, { title, slug }: { title: string; slug: string }) {
     await page.goto('/admin/post')

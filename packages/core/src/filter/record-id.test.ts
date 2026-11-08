@@ -5,7 +5,7 @@ import { checkbox, relationship, text } from '../fields/index.js'
 import { withOrigin } from '../origin.js'
 import { engineContextOf } from '../context/engine-context.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
-import { buildListFilterWhere } from './collect.js'
+import { buildListFilterWhere, isFieldFilterableById } from './collect.js'
 
 const BOOT = 120_000
 
@@ -175,6 +175,47 @@ describe('`field:#id` over the secured surface', () => {
         author: { some: { name: { contains: `#${ids.ada}` } } },
       })
       expect(await titles(`author:"#${ids.ada}"`)).toEqual([])
+    },
+    BOOT,
+  )
+})
+
+describe('isFieldFilterableById', () => {
+  async function filterable(
+    listConfig: OpenSaasConfig['lists'][string],
+    field: string,
+    session: Session = reader,
+  ): Promise<boolean> {
+    const context = engineContextOf(database.context(session))
+    return isFieldFilterableById(listConfig, 'Post', field, config, {
+      session: context.session,
+      context,
+    })
+  }
+
+  test(
+    'is true for a readable to-one relationship and false for any other field',
+    async () => {
+      expect(await filterable(config.lists.Post, 'author')).toBe(true)
+      expect(await filterable(config.lists.Post, 'title')).toBe(false)
+      expect(await filterable(config.lists.Post, 'missing')).toBe(false)
+    },
+    BOOT,
+  )
+
+  test(
+    'is false when the session may not query the list or read the field',
+    async () => {
+      const denied = { ...config.lists.Post, access: { operation: { query: () => false } } }
+      const unreadable = {
+        ...config.lists.Post,
+        fields: {
+          ...config.lists.Post.fields,
+          author: relationship({ ref: 'User.posts', access: { read: () => false } }),
+        },
+      }
+      expect(await filterable(denied, 'author')).toBe(false)
+      expect(await filterable(unreadable, 'author')).toBe(false)
     },
     BOOT,
   )

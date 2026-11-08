@@ -389,6 +389,7 @@ export {
   collectFilterSpecs,
   buildListFilterWhere,
   collectFilterSuggestions,
+  isFieldFilterableById,
 } from './filter/index.js'
 export type {
   FilterOperator,

@@ -13,6 +13,7 @@ import {
   virtual,
 } from '@opensaas/stack-core/fields'
 import { createTestDatabase, type TestDatabase } from '@opensaas/stack-core/testing'
+import { RELATIONSHIP_OPTIONS_MAX_TAKE } from '@opensaas/stack-core/internal'
 import { notFound, redirect } from 'next/navigation.js'
 import { ListView } from '../../src/components/ListView.js'
 import { ListViewClient, type ListViewClientProps } from '../../src/components/ListViewClient.js'
@@ -22,6 +23,11 @@ vi.mock('next/navigation.js', async (importOriginal) => ({
   useRouter: () => ({ push: vi.fn() }),
   usePathname: () => '/admin/fragile',
   useSearchParams: () => new URLSearchParams(),
+}))
+
+vi.mock('@opensaas/stack-core/internal', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@opensaas/stack-core/internal')>()),
+  RELATIONSHIP_OPTIONS_MAX_TAKE: 2,
 }))
 
 vi.mock('next/link.js', () => ({
@@ -121,6 +127,33 @@ const config: OpenSaasConfig = {
     },
     Crate: {
       fields: { name: text(), shelf: relationship({ ref: 'Shelf.crates' }) },
+    },
+    Bin: {
+      fields: {
+        name: text(),
+        boxes: relationship({ ref: 'Box.bin', many: true }),
+        notices: relationship({ ref: 'Notice.bin', many: true }),
+      },
+      access: { operation: { query: () => true } },
+    },
+    Box: {
+      fields: {
+        name: text(),
+        bin: relationship({
+          ref: 'Bin.boxes',
+          access: {
+            read: () => {
+              throw new Error('box rule failed')
+            },
+          },
+        }),
+      },
+      access: { operation: { query: () => true } },
+    },
+    Notice: {
+      fields: { body: text(), bin: relationship({ ref: 'Bin.notices' }) },
+      access: { operation: { query: () => true } },
+      isSingleton: true,
     },
     Gadget: {
       fields: {
@@ -419,6 +452,28 @@ describe('ListView relationship lookup by id', () => {
   )
 
   it(
+    'reads labels for at most RELATIONSHIP_OPTIONS_MAX_TAKE ids, and past that shows the raw id',
+    async () => {
+      expect(RELATIONSHIP_OPTIONS_MAX_TAKE).toBe(2)
+      const unknownIds = [
+        '0190a3c2-7b1e-7000-8000-000000000001',
+        '0190a3c2-7b1e-7000-8000-000000000002',
+      ]
+      const adaId = String(ada.userId)
+      const search = [...unknownIds, adaId].map((id) => `author:#${id}`).join(' ')
+      const props = await render(ada, { listKey: 'Post', search })
+      const records = props.recordLabels?.author ?? []
+      expect(records).toHaveLength(RELATIONSHIP_OPTIONS_MAX_TAKE + 1)
+      expect(records.every((record) => record.label === null)).toBe(true)
+      expect(records.at(-1)).toEqual({ id: adaId, label: null })
+
+      const within = await render(ada, { listKey: 'Post', search: `author:#${adaId}` })
+      expect(within.recordLabels).toEqual({ author: [{ id: adaId, label: 'Ada' }] })
+    },
+    BOOT,
+  )
+
+  it(
     'links a to-many count to the other list filtered by the row id',
     async () => {
       const props = await render(ada, { listKey: 'User' })
@@ -438,6 +493,26 @@ describe('ListView relationship lookup by id', () => {
       const props = await render(ada, { listKey: 'Shelf' })
       expect(props.items.map((item) => item.crates)).toEqual([0])
       expect(props.countLinks).toEqual({})
+    },
+    BOOT,
+  )
+
+  it(
+    'renders without a link when the other list’s field rule throws, and links no singleton',
+    async () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+      try {
+        await create('Bin', { name: 'Blue' })
+        const props = await render(ada, { listKey: 'Bin', columns: ['name', 'boxes', 'notices'] })
+        expect(props.items.map((item) => item.name)).toEqual(['Blue'])
+        expect(props.countLinks).toEqual({})
+        expect(consoleError).toHaveBeenCalledWith(
+          'Count link to "Box.bin" could not be resolved:',
+          expect.any(Error),
+        )
+      } finally {
+        consoleError.mockRestore()
+      }
     },
     BOOT,
   )

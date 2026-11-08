@@ -28,6 +28,7 @@ import {
   getItemLabel,
   getLabelFieldName,
   getUrlKey,
+  isFieldFilterableById,
   isRelationshipLabelReadable,
   isToManyRelationshipField,
   OpenSaasConfig,
@@ -36,8 +37,8 @@ import {
 } from '@opensaas/stack-core'
 import type { FilterFieldSuggestion, SecuredQuery } from '@opensaas/stack-core'
 import type { CountFilterLink } from './ListViewClient.js'
-import type { FilterRecord } from '../lib/filterBuilderOptions.js'
-import { isRowActionAvailable } from '@opensaas/stack-core/internal'
+import type { ResolvedFilterRecord } from '../lib/filterBuilderOptions.js'
+import { isRowActionAvailable, RELATIONSHIP_OPTIONS_MAX_TAKE } from '@opensaas/stack-core/internal'
 
 /**
  * Whether the list's delete access is NOT statically false (issue #733).
@@ -170,7 +171,7 @@ async function resolveRecordLabels(
   listConfig: OpenSaasConfig['lists'][string],
   config: OpenSaasConfig,
   context: AccessContext,
-): Promise<Record<string, FilterRecord[]>> {
+): Promise<Record<string, ResolvedFilterRecord[]>> {
   if (!search || !search.trim()) return {}
   const lookupFields = new Set(
     suggestions.filter((suggestion) => suggestion.matchesById).map(({ field }) => field),
@@ -184,7 +185,7 @@ async function resolveRecordLabels(
   }
 
   const entries = await Promise.all(
-    [...idsByField].map(async ([field, ids]): Promise<[string, FilterRecord[]]> => {
+    [...idsByField].map(async ([field, ids]): Promise<[string, ResolvedFilterRecord[]]> => {
       const relatedListKey = relatedListKeyOf(listConfig.fields[field])
       const relatedListConfig =
         relatedListKey && Object.hasOwn(config.lists, relatedListKey)
@@ -195,29 +196,52 @@ async function resolveRecordLabels(
         const result = parseListId(config, relatedListKey, id)
         return result.ok ? [{ id, value: result.value }] : []
       })
-      if (parsed.length === 0) return [field, []]
-      try {
-        const labelReadable = await isRelationshipLabelReadable(context, config, relatedListKey)
-        const labelField = getLabelFieldName(relatedListConfig)
-        const read = context.db[relatedListKey].where({
-          id: { in: parsed.map(({ value }) => value) },
-        })
-        const rows = await (labelReadable ? read.select('id', labelField) : read.select('id')).all()
-        return [
-          field,
-          parsed.flatMap(({ id, value }) => {
-            const row = rows.find((candidate) => String(candidate.id) === String(value))
-            return row ? [{ id, label: getItemLabel(relatedListConfig, row) }] : []
-          }),
-        ]
-      } catch (error) {
-        unstable_rethrow(error)
-        console.error(`Filter labels for "${field}" could not be read:`, error)
-        return [field, []]
+      const looked = parsed.slice(0, RELATIONSHIP_OPTIONS_MAX_TAKE)
+      let rows: Array<Record<string, unknown>> = []
+      if (looked.length > 0) {
+        try {
+          const labelReadable = await isRelationshipLabelReadable(context, config, relatedListKey)
+          const labelField = getLabelFieldName(relatedListConfig)
+          const read = context.db[relatedListKey].where({
+            id: { in: looked.map(({ value }) => value) },
+          })
+          rows = await (labelReadable ? read.select('id', labelField) : read.select('id')).all()
+        } catch (error) {
+          unstable_rethrow(error)
+          console.error(`Filter labels for "${field}" could not be read:`, error)
+        }
       }
+      return [
+        field,
+        parsed.map(({ id, value }) => {
+          const row = rows.find((candidate) => String(candidate.id) === String(value))
+          return { id, label: row ? getItemLabel(relatedListConfig, row) : null }
+        }),
+      ]
     }),
   )
   return Object.fromEntries(entries.filter(([, records]) => records.length > 0))
+}
+
+async function isCountLinkable(
+  otherListKey: string,
+  otherField: string,
+  config: OpenSaasConfig,
+  context: AccessContext,
+): Promise<boolean> {
+  if (!Object.hasOwn(config.lists, otherListKey)) return false
+  const otherListConfig = config.lists[otherListKey]
+  if (otherListConfig.isSingleton) return false
+  try {
+    return await isFieldFilterableById(otherListConfig, otherListKey, otherField, config, {
+      session: context.session,
+      context,
+    })
+  } catch (error) {
+    unstable_rethrow(error)
+    console.error(`Count link to "${otherListKey}.${otherField}" could not be resolved:`, error)
+    return false
+  }
 }
 
 async function resolveCountLinks(
@@ -226,22 +250,19 @@ async function resolveCountLinks(
   config: OpenSaasConfig,
   context: AccessContext,
 ): Promise<Record<string, CountFilterLink>> {
+  const checks = new Map<string, Promise<boolean>>()
   const entries = await Promise.all(
     [...countedRelations].map(async (fieldName): Promise<[string, CountFilterLink] | null> => {
       const field = listConfig.fields[fieldName]
       if (!('ref' in field) || typeof field.ref !== 'string') return null
       const [otherListKey, otherField] = field.ref.split('.')
-      if (!otherField || !Object.hasOwn(config.lists, otherListKey)) return null
-      const otherSuggestions = await collectFilterSuggestions(
-        config.lists[otherListKey],
-        otherListKey,
-        config,
-        { session: context.session, context },
-      )
-      const filterable = otherSuggestions.some(
-        (suggestion) => suggestion.field === otherField && suggestion.matchesById,
-      )
-      return filterable ? [fieldName, { urlKey: getUrlKey(otherListKey), field: otherField }] : null
+      if (!otherField) return null
+      const key = JSON.stringify([otherListKey, otherField])
+      const check = checks.get(key) ?? isCountLinkable(otherListKey, otherField, config, context)
+      checks.set(key, check)
+      return (await check)
+        ? [fieldName, { urlKey: getUrlKey(otherListKey), field: otherField }]
+        : null
     }),
   )
   return Object.fromEntries(entries.filter((entry) => entry !== null))
@@ -358,6 +379,7 @@ export async function ListView({
   const skip = (currentPage - 1) * pageSize
   let items: Array<Record<string, unknown>> = []
   let total = 0
+  let countLinks: Record<string, CountFilterLink> = {}
   let activeSort: ListViewSort | undefined
   let sortableFields: Record<string, boolean> = {}
 
@@ -413,12 +435,14 @@ export async function ListView({
 
     // The total is the same scoped read, counted in the database — so it can
     // only ever equal the number of rows this session may page through.
-    const [rows, totals] = await Promise.all([
+    const [rows, totals, links] = await Promise.all([
       sorted.offset(skip).limit(pageSize).all(),
       scoped.aggregate((aggregate) => ({ total: aggregate.count() })),
+      resolveCountLinks(countedRelations, listConfig, config, context),
     ])
     items = rows
     total = totals.total
+    countLinks = links
   } catch (error) {
     unstable_rethrow(error)
     console.error(`Failed to fetch ${listKey}:`, error)
@@ -490,10 +514,13 @@ export async function ListView({
     session: context.session,
     context,
   })
-  const [recordLabels, countLinks] = await Promise.all([
-    resolveRecordLabels(search, filterSuggestions, listConfig, config, context),
-    resolveCountLinks(countedRelations, listConfig, config, context),
-  ])
+  const recordLabels = await resolveRecordLabels(
+    search,
+    filterSuggestions,
+    listConfig,
+    config,
+    context,
+  )
 
   // When the list opts into avatars (issue #735), the label column renders with
   // an initials bubble ahead of the emphasized Item label. The label column is

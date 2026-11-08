@@ -480,17 +480,20 @@ quoted `"Ada Lovelace"` stays one phrase.
 Choosing a to-one relationship field lists the first page of its records, from
 the same access-scoped search the item form's relationship picker uses, and
 typing searches them. Relationships are searched only once their field is
-named. Picking a record writes `field:#id` and its chip shows the record's Item
+named. When the related list's label cannot be searched for this session, typing
+hides the records and offers only the "contains" text. Picking a record writes `field:#id` and its chip shows the record's Item
 label ("Author is Priya Nair"), while the URL carries the id. Typing without
 picking writes label text instead, shown as "contains". The list view resolves
 the label of each id in the URL through the secured context, so a bookmarked
 link shows the label too, and a record the session cannot read shows its raw
-id. Without a `serverAction` the builder cannot search, and a relationship
+id. An id the related list cannot hold is shown as the free text the list
+searches for ("Text contains #abc"). Without a `serverAction` the builder cannot search, and a relationship
 field takes typed label text only.
 
 On a to-many count Cell, the count links to the other list filtered to this row
 (`/admin/post?search=author:%23<id>`), where the relationship names its other
-side and the session can filter that side by id.
+side, the other list has a list view (it is not a singleton), and the session
+may query that list and filter that side by id.
 
 Each committed Filter token becomes a chip, and the list updates at once: the
 builder navigates with `router.push` inside a transition, so the current rows
@@ -526,7 +529,8 @@ it the builder navigates to `?search=` on the current path itself. Optional
 `label`, `placeholder` and `resultCount` name the combobox, prompt the empty
 bar and announce the row count. With `listKey` and `serverAction` it looks up
 relationship records, and `recordLabels` (keyed by field, `{ id, label }`
-pairs) names the records the `field:#id` tokens in `defaultValue` point at. Its
+pairs, with a `null` label for a record the session cannot read) names the
+records the `field:#id` tokens in `defaultValue` point at. Its
 slots are `filter-builder` (root),
 `filter-builder-bar`, `filter-builder-chip` (with `data-armed` and
 `data-editing`), `filter-builder-chip-field`, `filter-builder-chip-condition`,
