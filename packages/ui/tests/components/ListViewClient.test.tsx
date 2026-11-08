@@ -347,7 +347,7 @@ describe('ListViewClient', () => {
     it('should announce the result count', () => {
       render(<ListViewClient {...defaultProps} total={7} search="existing" />)
 
-      expect(screen.getByText('7 results')).toHaveAttribute('role', 'status')
+      expect(screen.getByText('7 results')).toHaveAttribute('aria-live', 'polite')
     })
   })
 

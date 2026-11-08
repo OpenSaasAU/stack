@@ -661,7 +661,7 @@ export function FilterBuilder({
           </p>
         </PopoverContent>
       </Popover>
-      <div role="status" className="sr-only" data-slot="filter-builder-status">
+      <div aria-live="polite" className="sr-only" data-slot="filter-builder-status">
         {armedSentence
           ? `${armedSentence} selected. Backspace removes it, Enter edits it.`
           : resultMessage}

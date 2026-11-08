@@ -448,7 +448,7 @@ describe('FilterBuilder', () => {
 
     it('announces the result count', () => {
       setup({ resultCount: 3 })
-      expect(screen.getByText('3 results')).toHaveAttribute('role', 'status')
+      expect(screen.getByText('3 results')).toHaveAttribute('aria-live', 'polite')
     })
   })
 
