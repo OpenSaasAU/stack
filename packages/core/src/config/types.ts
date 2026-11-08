@@ -2794,6 +2794,64 @@ export interface RowAction<TTypeInfo extends TypeInfo = TypeInfo> {
 }
 
 /**
+ * A Preset view declared in `ui.listView.presets`, shown as a tab above the
+ * list view's Filter builder and opened by `?preset=<key>`.
+ *
+ * Only `key` and `label` cross to the client. `search` and `hasAccess` run on
+ * the server for each request, so a shared `?preset=` link resolves against
+ * the recipient's own session. The resolved `search` runs through the same
+ * filter engine and secured context as a typed `?search=`, so a preset can
+ * only narrow what the session may already see.
+ */
+export interface PresetView {
+  /**
+   * Stable identifier carried in `?preset=<key>`. Must be unique within the
+   * list.
+   */
+  key: string
+  /** Tab label. */
+  label: string
+  /**
+   * The preset's filter query in the `?search=` grammar, or a function of the
+   * session returning one. Resolved on the server per request; a throw falls
+   * back to the plain list.
+   *
+   * @example
+   * ```typescript
+   * search: ({ session }) => `status:draft author:"${session?.name}"`
+   * ```
+   */
+  search:
+    | string
+    | ((args: {
+        session: import('../access/types.js').Session | null
+        context: import('../access/types.js').AccessContext
+        listKey: string
+      }) => string | Promise<string>)
+  /**
+   * Optional sort applied while the preset is open. It goes through the same
+   * sort validation as `initialSort` and `?sort=`, so a field this session
+   * cannot order by is ignored. When omitted, `initialSort` applies.
+   */
+  sort?: {
+    /** The field to sort by. */
+    field: string
+    /** The sort direction. */
+    direction: 'asc' | 'desc'
+  }
+  /**
+   * Optional visibility gate, resolved per request against the session.
+   * Returning `false` (or throwing) hides the tab, and a `?preset=` link to it
+   * opens the plain list instead.
+   */
+  hasAccess?: (args: {
+    session: import('../access/types.js').Session | null
+    context: import('../access/types.js').AccessContext
+    listKey: string
+  }) => boolean | Promise<boolean>
+}
+
+/**
  * Default list-view (table) configuration for a list, mirroring Keystone's
  * `ui.listView`.
  *
@@ -2897,6 +2955,31 @@ export type ListViewUIConfig<TTypeInfo extends TypeInfo = TypeInfo> = {
    * ```
    */
   rowActions?: RowAction<TTypeInfo>[]
+  /**
+   * Preset views offered as tabs above the Filter builder, in declaration
+   * order, after an implicit "All" tab. `?preset=<key>` opens one; the first
+   * change to the filter, sort, columns or page size expands it to the
+   * equivalent `?search=` and leaves the preset. An unknown key, or one whose
+   * `hasAccess` denies the session, opens the plain list.
+   *
+   * @example
+   * ```typescript
+   * ui: {
+   *   listView: {
+   *     presets: [
+   *       {
+   *         key: 'my-drafts',
+   *         label: 'My drafts',
+   *         search: ({ session }) => `status:draft author:"${session?.name}"`,
+   *         sort: { field: 'title', direction: 'asc' },
+   *         hasAccess: ({ session }) => session !== null,
+   *       },
+   *     ],
+   *   },
+   * }
+   * ```
+   */
+  presets?: PresetView[]
 }
 
 /**

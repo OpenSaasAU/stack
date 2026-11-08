@@ -31,7 +31,7 @@ import {
   OpenSaasConfig,
 } from '@opensaas/stack-core'
 import type { SecuredQuery } from '@opensaas/stack-core'
-import { isRowActionAvailable } from '@opensaas/stack-core/internal'
+import { isRowActionAvailable, resolvePresetViews } from '@opensaas/stack-core/internal'
 
 /**
  * Whether the list's delete access is NOT statically false (issue #733).
@@ -192,6 +192,12 @@ export interface ListViewProps {
    */
   sort?: ListViewSort
   /**
+   * The Preset view key from the `?preset=` URL param. A key this session may
+   * open replaces `search` with the preset's resolved query and sorts by its
+   * `sort` unless `sort` is given; any other key is ignored.
+   */
+  preset?: string
+  /**
    * The generic server action (rebuilds the session context server-side).
    * Threaded to the client table for the built-in Bulk action Delete. When
    * omitted, no bulk delete is offered.
@@ -212,6 +218,7 @@ export async function ListView({
   search,
   initialSort,
   sort,
+  preset,
   serverAction,
 }: ListViewProps) {
   const context = engineContextOf(appContext)
@@ -258,6 +265,11 @@ export async function ListView({
     Math.max(1, Math.floor(requestedPageSize) || DEFAULT_PAGE_SIZE),
     MAX_PAGE_SIZE,
   )
+  const presetViews = await resolvePresetViews(listConfig, listKey, context, preset)
+  const activePreset = presetViews.active
+  const activeSearch = activePreset ? activePreset.search : search
+  const sortCandidates = [sort, activePreset?.sort, initialSort]
+
   const currentPage = Number.isSafeInteger(page) && page >= 1 ? page : 1
   const skip = (currentPage - 1) * pageSize
   let items: Array<Record<string, unknown>> = []
@@ -274,11 +286,9 @@ export async function ListView({
     const orderable =
       (await context._orderableKeys?.(listKey, [
         ...displayedColumns,
-        ...[sort, initialSort].flatMap((candidate) => (candidate ? [candidate.field] : [])),
+        ...sortCandidates.flatMap((candidate) => (candidate ? [candidate.field] : [])),
       ])) ?? new Set<string>()
-    activeSort = [sort, initialSort].find(
-      (candidate) => candidate && orderable.has(candidate.field),
-    )
+    activeSort = sortCandidates.find((candidate) => candidate && orderable.has(candidate.field))
     sortableFields = Object.fromEntries(
       [...displayedColumns].map((column) => [column, orderable.has(column)]),
     )
@@ -290,8 +300,8 @@ export async function ListView({
     // secured `context.db` below, which ANDs it with the access filter, so the
     // filter can only ever narrow (never widen) what this session may see.
     const parsedWhere =
-      search && search.trim()
-        ? await buildListFilterWhere(search, listConfig, listKey, config, {
+      activeSearch && activeSearch.trim()
+        ? await buildListFilterWhere(activeSearch, listConfig, listKey, config, {
             session: context.session,
             context,
           })
@@ -471,7 +481,9 @@ export async function ListView({
         page={currentPage}
         pageSize={pageSize}
         total={total || 0}
-        search={search}
+        search={activeSearch}
+        presets={presetViews.tabs}
+        activePreset={activePreset?.key}
         filterSuggestions={filterSuggestions}
         serverAction={serverAction}
         canDelete={!hideDelete && canDeleteList(listConfig.access?.operation?.delete)}

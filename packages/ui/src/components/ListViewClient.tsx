@@ -35,6 +35,7 @@ import { AvatarLabelCell } from './cells/AvatarLabelCell.js'
 import { RowSelectionBar } from './RowSelectionBar.js'
 import { BulkActions, type SerializedBulkAction } from './BulkActions.js'
 import { RowActions, type SerializedRowAction } from './RowActions.js'
+import { PresetTabs, type SerializedPresetView } from './PresetTabs.js'
 import { useRowSelection, getPageCheckboxState } from '../lib/useRowSelection.js'
 import { useBulkStatus } from '../lib/useBulkStatus.js'
 import type { SerializableFieldConfig } from '../lib/serializeFieldConfig.js'
@@ -146,6 +147,7 @@ function SegmentedControl<T extends string | number>({
 }
 
 interface ListUrlState {
+  preset: string | null
   search: string
   sort: { field: string; direction: 'asc' | 'desc' } | null
   page: number
@@ -217,6 +219,18 @@ export interface ListViewClientProps {
    */
   filterSuggestions?: FilterFieldSuggestion[]
   /**
+   * The Preset views this session may open, as `{ key, label }`, in
+   * declaration order. When non-empty, they render as tabs after an implicit
+   * "All" tab.
+   */
+  presets?: SerializedPresetView[]
+  /**
+   * The key of the open Preset view. `search` and `initialSort` then carry its
+   * resolved query and sort, so the first edit writes them out as `?search=`
+   * and `?sort=` and drops `?preset=`, leaving the rows on screen unchanged.
+   */
+  activePreset?: string
+  /**
    * The generic server action (rebuilds the session context server-side). Used
    * by the built-in Bulk action Delete to remove each selected row through the
    * secured context. When omitted, no bulk delete is offered.
@@ -282,6 +296,8 @@ export function ListViewClient({
   total,
   search: initialSearch,
   filterSuggestions = [],
+  presets = [],
+  activePreset,
   serverAction,
   canDelete = false,
   canCreate = true,
@@ -338,6 +354,7 @@ export function ListViewClient({
   const hasPrevPage = page > 1
 
   const current: ListUrlState = {
+    preset: activePreset ?? null,
     search: initialSearch ?? '',
     sort: sortBy ? { field: sortBy, direction: sortOrder } : null,
     page,
@@ -349,7 +366,8 @@ export function ListViewClient({
     const next = { ...current, ...changes }
     const params = new URLSearchParams()
     const search = next.search.trim()
-    if (search) params.set('search', search)
+    if (next.preset) params.set('preset', next.preset)
+    else if (search) params.set('search', search)
     if (next.sort) params.set('sort', `${next.sort.field}:${next.sort.direction}`)
     params.set('page', String(next.page))
     if (next.pageSize !== DEFAULT_PAGE_SIZE) params.set('pageSize', String(next.pageSize))
@@ -357,15 +375,20 @@ export function ListViewClient({
     return `${basePath}/${urlKey}?${params.toString()}`
   }
 
+  const editUrl = (changes: Partial<ListUrlState>) => buildUrl({ ...changes, preset: null })
+
+  const presetHref = (key: string | null) =>
+    buildUrl({ preset: key, search: '', sort: null, page: 1 })
+
   const sortTo = (field: string, direction: 'asc' | 'desc') =>
-    router.push(buildUrl({ sort: { field, direction }, page: 1 }))
+    router.push(editUrl({ sort: { field, direction }, page: 1 }))
 
   const handleSort = (column: string) => {
     sortTo(column, sortBy === column ? (sortOrder === 'asc' ? 'desc' : 'asc') : 'asc')
   }
 
   const applyQuery = (query: string) => {
-    startFiltering(() => router.push(buildUrl({ search: query, page: 1 })))
+    startFiltering(() => router.push(editUrl({ search: query, page: 1 })))
   }
 
   const buildPaginationUrl = (newPage: number) => buildUrl({ page: newPage })
@@ -412,12 +435,12 @@ export function ListViewClient({
       over: confirmedColumns,
       columns: backToDefault && defaultColumns ? defaultColumns : next,
     })
-    router.push(buildUrl({ columns: backToDefault ? null : next }))
+    router.push(editUrl({ columns: backToDefault ? null : next }))
   }
 
   const resetColumns = () => {
     setPendingColumns(null)
-    router.push(buildUrl({ columns: null }))
+    router.push(editUrl({ columns: null }))
   }
 
   const canResetColumns = pending ? !isDefaultSet(pending) : columnsChosen
@@ -568,6 +591,14 @@ export function ListViewClient({
 
   return (
     <div className="space-y-4">
+      {presets.length > 0 && (
+        <PresetTabs
+          presets={presets}
+          activePreset={activePreset}
+          hrefFor={presetHref}
+          label={`${formatFieldName(listKey)} views`}
+        />
+      )}
       <FilterBuilder
         suggestions={filterSuggestions}
         defaultValue={initialSearch ?? ''}
@@ -937,7 +968,7 @@ export function ListViewClient({
                 slot="list-view-page-size"
                 options={pageSizeOptions}
                 value={pageSize}
-                onChange={(size) => router.push(buildUrl({ page: 1, pageSize: size }))}
+                onChange={(size) => router.push(editUrl({ page: 1, pageSize: size }))}
                 className="min-w-10 tabular-nums"
               />
             )}

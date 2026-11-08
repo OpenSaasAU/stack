@@ -321,6 +321,15 @@ export default config({
               },
             },
           ],
+          presets: [
+            {
+              key: 'my-drafts',
+              label: 'My drafts',
+              search: ({ session }) => `status:draft author:${JSON.stringify(session?.name ?? '')}`,
+              sort: { field: 'title', direction: 'asc' },
+              hasAccess: ({ session }) => session !== null,
+            },
+          ],
         },
       },
       hooks: {

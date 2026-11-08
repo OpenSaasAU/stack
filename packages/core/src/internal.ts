@@ -80,3 +80,9 @@ export { findDatabaseConnection, connectionStringFault } from './db/url.js'
 export { processGlobal, processGlobalKey } from './lib/process-global.js'
 
 export { isRowActionAvailable } from './config/row-action-availability.js'
+export { resolvePresetViews } from './config/preset-views.js'
+export type {
+  PresetViewTab,
+  ResolvedPresetView,
+  ResolvedPresetViews,
+} from './config/preset-views.js'

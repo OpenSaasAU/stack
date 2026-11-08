@@ -9,6 +9,7 @@ import { executePlugins, getPluginData } from './plugin-engine.js'
 import { assertUniqueMcpToolNames } from './mcp-tool-names.js'
 import { assertValidHookOnlyFields } from './hook-only-fields.js'
 import { assertUniqueRowActionKeys } from './row-action-keys.js'
+import { assertUniquePresetKeys } from './preset-views.js'
 import type { AccessControl } from '../access/types.js'
 
 function normalizeListAccess<T>(
@@ -40,8 +41,8 @@ function normalizeListAccess<T>(
  */
 export function config(userConfig: OpenSaasConfig): OpenSaasConfig | Promise<OpenSaasConfig> {
   if (!userConfig.plugins || userConfig.plugins.length === 0) {
-    return assertUniqueRowActionKeys(
-      assertValidHookOnlyFields(assertUniqueMcpToolNames(userConfig)),
+    return assertUniquePresetKeys(
+      assertUniqueRowActionKeys(assertValidHookOnlyFields(assertUniqueMcpToolNames(userConfig))),
     )
   }
 
@@ -49,6 +50,7 @@ export function config(userConfig: OpenSaasConfig): OpenSaasConfig | Promise<Ope
     .then(assertUniqueMcpToolNames)
     .then(assertValidHookOnlyFields)
     .then(assertUniqueRowActionKeys)
+    .then(assertUniquePresetKeys)
 }
 
 export { getPluginData }
@@ -177,6 +179,7 @@ export type {
   RowActionIcon,
   RowActionId,
   RowActionResult,
+  PresetView,
   ItemViewUIConfig,
   ListUIOption,
   RelationshipItemViewConfig,

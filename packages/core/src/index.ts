@@ -49,6 +49,7 @@ export type {
   RowActionIcon,
   RowActionId,
   RowActionResult,
+  PresetView,
 } from './config/index.js'
 
 // Access control — the types a consumer writes against
