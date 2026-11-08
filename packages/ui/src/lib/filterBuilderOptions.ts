@@ -1,9 +1,12 @@
 import {
   FILTER_COMPARISON_PREFIXES,
   filterTokenFreeTextWord,
+  filterTokenRecordId,
+  filterValueRecordId,
   isEmptyFilterToken,
   isFieldConditionToken,
   parseFilterQuery,
+  recordIdFilterToken,
   serializeFilterQuery,
   type FilterFieldSuggestion,
   type FilterOperator,
@@ -24,9 +27,34 @@ export interface FilterDraft {
   condition: FilterBuilderCondition
 }
 
+export interface FilterRecord {
+  id: string
+  label: string
+}
+
+export interface ResolvedFilterRecord {
+  id: string
+  label: string | null
+}
+
+export type RecordOf = (field: string, id: string) => ResolvedFilterRecord | undefined
+
+export interface RecordLookup {
+  records: FilterRecord[]
+  loading: boolean
+  searched: boolean
+}
+
 export type FilterOption =
   | { kind: 'field'; field: string; group: string }
-  | { kind: 'apply'; tokens: FilterToken[]; label: string; group: string; selected?: boolean }
+  | {
+      kind: 'apply'
+      tokens: FilterToken[]
+      label: string
+      group: string
+      selected?: boolean
+      record?: { field: string } & FilterRecord
+    }
   | { kind: 'toggle'; tokens: FilterToken[]; label: string; group: string; selected: boolean }
 
 export interface FilterOptions {
@@ -79,7 +107,26 @@ export function fieldToken(
   value: string,
   negated = false,
 ): FilterToken {
-  return { kind: 'token', field, operator, negated, values: [{ text: value, quoted: false }] }
+  const quoted = operator === 'eq' && filterValueRecordId({ text: value, quoted: false }) !== null
+  return { kind: 'token', field, operator, negated, values: [{ text: value, quoted }] }
+}
+
+export function recordIdOf(
+  token: FilterToken,
+  fields: FilterFields,
+  negated = false,
+): string | null {
+  if (token.field === null || token.negated !== negated) return null
+  if (fields.get(token.field)?.matchesById !== true) return null
+  return filterTokenRecordId({ ...token, negated: false })
+}
+
+export function isRecordLookupField(suggestion: FilterFieldSuggestion | undefined): boolean {
+  return (
+    suggestion?.matchesById === true &&
+    suggestion.valueSource.kind === 'relationship' &&
+    !suggestion.valueSource.many
+  )
 }
 
 function anyOfToken(field: string, values: readonly string[]): FilterToken {
@@ -214,24 +261,50 @@ export function isFieldCondition(
   return valueTexts(token).every((text) => checkValue(suggestion, operator, text).ok)
 }
 
-export function describeToken(token: FilterToken, fields: FilterFields): TokenDescription {
+function idConditionLabel(negated: boolean, many: boolean): string {
+  if (negated) return many ? 'is none of' : 'is not'
+  return many ? 'is any of' : 'is'
+}
+
+export function describeToken(
+  token: FilterToken,
+  fields: FilterFields,
+  recordOf: RecordOf = () => undefined,
+): TokenDescription {
   const suggestion = token.field === null ? undefined : fields.get(token.field)
   if (suggestion && isFieldCondition(token, fields)) {
     const field = fieldLabel(suggestion.field)
-    const texts = valueTexts(token)
-    const condition =
-      token.operator === 'empty'
-        ? conditionLabel(suggestion, token.negated ? 'notEmpty' : 'empty')
-        : shapeLabel(suggestion, token.operator, token.negated, texts.length > 1)
-    const value = texts.map((text) => optionLabel(suggestion, text)).join(', ')
-    const sentence = value ? `${field} ${condition} ${value}` : `${field} ${condition}`
-    return { field, condition, value, sentence }
+    const values = token.values.filter((value) => value.text !== '')
+    const ids =
+      token.operator === 'eq' && suggestion.matchesById === true
+        ? values.map(filterValueRecordId)
+        : values.map(() => null)
+    const records = ids.map((id) => (id === null ? null : recordOf(suggestion.field, id)))
+    if (!records.includes(undefined)) {
+      const byId = ids.length > 0 && ids.every((id) => id !== null)
+      const many = values.length > 1
+      const condition =
+        token.operator === 'empty'
+          ? conditionLabel(suggestion, token.negated ? 'notEmpty' : 'empty')
+          : byId
+            ? idConditionLabel(token.negated, many)
+            : shapeLabel(suggestion, token.operator, token.negated, many)
+      const value = values
+        .map((written, index) => {
+          const record = records[index]
+          return record ? (record.label ?? record.id) : optionLabel(suggestion, written.text)
+        })
+        .join(', ')
+      const sentence = value ? `${field} ${condition} ${value}` : `${field} ${condition}`
+      return { field, condition, value, sentence }
+    }
   }
   const value = filterTokenFreeTextWord(token)
   return { field: 'Text', condition: 'contains', value, sentence: `Text contains ${value}` }
 }
 
 function isSingleChoice(token: FilterToken, fields: FilterFields): boolean {
+  if (recordIdOf(token, fields) !== null) return true
   if (
     token.field === null ||
     token.negated ||
@@ -521,6 +594,7 @@ export function draftOptions(
   text: string,
   fields: FilterFields,
   current: FilterToken | undefined,
+  lookup: RecordLookup | null = null,
 ): FilterOptions {
   const suggestion = fields.get(draft.field)
   if (!suggestion) return { options: [], hint: null }
@@ -528,6 +602,42 @@ export function draftOptions(
   const options: FilterOption[] = []
   let hint: string | null = null
   const { condition } = draft
+
+  if (lookup && isRecordLookupField(suggestion) && (condition === 'eq' || condition === 'not')) {
+    const negated = condition === 'not'
+    const currentId =
+      current && current.field === draft.field ? recordIdOf(current, fields, negated) : null
+    const group = fieldLabel(suggestion.field)
+    const showRecords = typed === '' || lookup.searched
+    for (const record of showRecords ? lookup.records : []) {
+      options.push({
+        kind: 'apply',
+        tokens: [recordIdFilterToken(suggestion.field, record.id, negated)],
+        label: record.label,
+        group,
+        selected: record.id === currentId,
+        record: { field: suggestion.field, ...record },
+      })
+    }
+    if (lookup.loading) hint = `Searching ${group.toLowerCase()}…`
+    else if (showRecords && lookup.records.length === 0) {
+      hint =
+        typed === ''
+          ? `No ${group.toLowerCase()} to choose from.`
+          : `No ${group.toLowerCase()} matches “${typed}”.`
+    }
+    if (typed !== '') {
+      const token = fieldToken(suggestion.field, 'eq', typed, negated)
+      options.push({
+        kind: 'apply',
+        tokens: [token],
+        label: describeToken(token, fields).sentence,
+        group: 'Text',
+      })
+      options.push(searchOption(typed))
+    }
+    return { options, hint }
+  }
 
   if (condition === 'empty' || condition === 'notEmpty') {
     const token = emptyToken(suggestion.field, condition === 'notEmpty')

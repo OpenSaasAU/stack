@@ -54,6 +54,12 @@ const config: OpenSaasConfig = {
               hasAccess: ({ session }) => session !== null,
             },
             { key: 'drafts', label: 'Drafts', search: 'status:draft' },
+            {
+              key: 'mine',
+              label: 'Mine',
+              search: ({ session }) => `status:draft author:#${String(session?.userId)}`,
+              hasAccess: ({ session }) => typeof session?.userId === 'string',
+            },
           ],
         },
       },
@@ -184,6 +190,30 @@ describe('ListView Preset views', () => {
       expect(denied.activePreset).toBeUndefined()
       expect(denied.search).toBeUndefined()
       expect(denied.total).toBe(2)
+    },
+    BOOT,
+  )
+
+  it(
+    'matches the session’s own records by id, and labels the preset’s id chip',
+    async () => {
+      const db = database.context(null).sudo().db
+      const lovelace = await db.User.create({ data: { name: 'Ada Lovelace' } })
+      await db.Post.create({
+        data: {
+          title: 'Lovelace draft',
+          status: 'draft',
+          author: { connect: { id: lovelace?.id } },
+        },
+      })
+      const ada = await db.User.where({ name: { equals: 'Ada' } }).first()
+      const adaId = String(ada?.id)
+
+      const mine = await render({ role: 'editor', userId: adaId }, { preset: 'mine' })
+      expect(mine.activePreset).toBe('mine')
+      expect(mine.search).toBe(`status:draft author:#${adaId}`)
+      expect(titles(mine).sort()).toEqual(['Ada draft A', 'Ada draft B'])
+      expect(mine.recordLabels).toEqual({ author: [{ id: adaId, label: 'Ada' }] })
     },
     BOOT,
   )

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { parseFilterQuery } from './parse.js'
 import { quoteFilterValue, serializeFilterQuery } from './serialize.js'
+import { filterTokenRecordId, recordIdFilterToken } from './record-id.js'
 import { buildFilterWhere } from './map.js'
 import type {
   FilterOperator,
@@ -206,6 +207,9 @@ describe('parse/serialize round-trip on written queries', () => {
     'http://x',
     'status:"a,b" "a,b" "-status:draft" "-beta" - "--x"',
     '"C:\\Users me"',
+    'author:#0190a3c2-7b1e-7000-8000-000000000001',
+    'author:"#42" owner:#42 #42',
+    '-author:#42 author:#1,#2 author:#1,"#2"',
     '-status:draft -beta --x -"a b"',
     'status:draft,review status:a,"b c" status:a,b c',
     'status:! -status:! status:"!" status:!,a status:!x',
@@ -284,6 +288,8 @@ const TRICKY_PREFIXES = [
   ',',
   '-status:',
   'a,',
+  '#',
+  '"#',
   'a:!',
   '!',
   '-a:!',
@@ -367,6 +373,53 @@ describe('parse/serialize is an inverse on what the parser produces (property)',
       })
     }
   })
+
+  it('a related record id reads back as the same id, and label text never becomes one', () => {
+    for (let run = 0; run < RUNS; run++) {
+      const original = generate.query()
+      const readBack = parseFilterQuery(serializeFilterQuery(original))
+      const label = JSON.stringify(original)
+      readBack.terms.forEach((term, index) => {
+        const source = original.terms[index]
+        const id = filterTokenRecordId(source)
+        if (source.values.some((value) => value.quoted)) {
+          expect(filterTokenRecordId(term), label).toBeNull()
+        }
+        if (id !== null && !/[\s,"]/.test(id)) {
+          expect(filterTokenRecordId(term), label).toBe(id)
+        }
+      })
+    }
+  })
+})
+
+describe('a related record id token', () => {
+  it('serialises as field:#id and reads back as that id', () => {
+    const written = serializeFilterQuery(query(recordIdFilterToken('author', '42')))
+    expect(written).toBe('author:#42')
+    expect(parseFilterQuery(written).terms.map(filterTokenRecordId)).toEqual(['42'])
+  })
+
+  it('is not read from a quoted value, a free-text word or a comparison', () => {
+    expect(parseFilterQuery('author:"#42" #42 views:>#42').terms.map(filterTokenRecordId)).toEqual([
+      null,
+      null,
+      null,
+    ])
+  })
+
+  it('names no single record when negated or listing several ids', () => {
+    expect(parseFilterQuery('-author:#42 author:#1,#2').terms.map(filterTokenRecordId)).toEqual([
+      null,
+      null,
+    ])
+  })
+
+  it('serialises negated as -field:#id', () => {
+    expect(serializeFilterQuery(query(recordIdFilterToken('author', '42', true)))).toBe(
+      '-author:#42',
+    )
+  })
 })
 
 describe('quoteFilterValue reads back as exactly one value (property)', () => {
@@ -400,9 +453,10 @@ describe('quoteFilterValue reads back as exactly one value (property)', () => {
     const texts = [...fixed, ...Array.from({ length: RUNS }, () => generate.string())]
     for (const text of texts) {
       for (const field of FIELDS) {
-        expect(parseFilterQuery(`${field}:${quoteFilterValue(text)}`), JSON.stringify(text)).toEqual(
-          query(token({ field, values: [v(text, true)] })),
-        )
+        expect(
+          parseFilterQuery(`${field}:${quoteFilterValue(text)}`),
+          JSON.stringify(text),
+        ).toEqual(query(token({ field, values: [v(text, true)] })))
       }
     }
   })

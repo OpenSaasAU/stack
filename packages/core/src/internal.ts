@@ -88,3 +88,5 @@ export type {
   ResolvedPresetView,
   ResolvedPresetViews,
 } from './config/preset-views.js'
+
+export { MAX_TAKE as RELATIONSHIP_OPTIONS_MAX_TAKE } from './query/relationship-options.js'

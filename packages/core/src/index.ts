@@ -388,10 +388,14 @@ export {
   buildFilterWhere,
   filterTokenFreeTextWord,
   isEmptyFilterToken,
+  filterTokenRecordId,
+  filterValueRecordId,
+  recordIdFilterToken,
   isFieldConditionToken,
   collectFilterSpecs,
   buildListFilterWhere,
   collectFilterSuggestions,
+  isFieldFilterableById,
 } from './filter/index.js'
 export type {
   FilterOperator,

@@ -109,3 +109,54 @@ describe('useRelationshipSearch — loadOnOpen (#1365)', () => {
     consoleError.mockRestore()
   })
 })
+
+describe('useRelationshipSearch — a caller-owned query over a changing field', () => {
+  it('loads each field its own window, passes take, and reports whether the search applied', async () => {
+    const serverAction = vi.fn(async (input: ServerActionInput) => {
+      if (input.action !== 'relationshipOptions') return {}
+      const search = input.search ?? ''
+      return {
+        options: [{ id: `${input.field}-1`, label: `${input.field} ${search}`.trim() }],
+        searched: input.field === 'author' && search !== '',
+      }
+    })
+
+    const { result, rerender } = renderHook(
+      (props: { fieldName: string; query: string }) =>
+        useRelationshipSearch({
+          initialItems: [],
+          listKey: 'Post',
+          fieldName: props.fieldName,
+          serverAction,
+          loadOnOpen: true,
+          query: props.query,
+          take: 10,
+          debounceMs: 0,
+        }),
+      { initialProps: { fieldName: 'author', query: '' } },
+    )
+    await act(async () => {})
+    expect(result.current.searchResults).toEqual([{ id: 'author-1', label: 'author' }])
+    expect(serverAction).toHaveBeenLastCalledWith(expect.objectContaining({ take: 10 }))
+
+    rerender({ fieldName: 'editor', query: '' })
+    expect(result.current.searchResults).toEqual([])
+    await act(async () => {})
+    expect(result.current.searchResults).toEqual([{ id: 'editor-1', label: 'editor' }])
+
+    rerender({ fieldName: 'editor', query: 'ada' })
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(result.current.searchResults).toEqual([{ id: 'editor-1', label: 'editor ada' }])
+    expect(result.current.searchApplied).toBe(false)
+
+    rerender({ fieldName: 'author', query: 'ada' })
+    expect(result.current.searchResults).toEqual([])
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(result.current.searchResults).toEqual([{ id: 'author-1', label: 'author ada' }])
+    expect(result.current.searchApplied).toBe(true)
+  })
+})

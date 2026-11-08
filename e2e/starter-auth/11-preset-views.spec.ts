@@ -47,7 +47,7 @@ test.describe('Preset views', () => {
     await page.getByRole('button', { name: /^Title/ }).click()
     await page.waitForURL((url) => !url.searchParams.has('preset'))
     const expanded = new URL(page.url())
-    expect(expanded.searchParams.get('search')).toBe(`status:draft author:"${ada}"`)
+    expect(expanded.searchParams.get('search')).toMatch(/^status:draft author:#[^\s"]+$/)
     expect(expanded.searchParams.get('sort')).toBe('title:desc')
     await expect(rowTitles(page)).toHaveText(titled(`Ada beta ${stamp}`, `Ada alpha ${stamp}`))
     for (const tab of await views.getByRole('link').all()) {

@@ -2,6 +2,7 @@
 
 export { parseFilterQuery, FILTER_OPERATOR_PREFIXES, FILTER_COMPARISON_PREFIXES } from './parse.js'
 export { serializeFilterQuery, quoteFilterValue } from './serialize.js'
+export { filterTokenRecordId, filterValueRecordId, recordIdFilterToken } from './record-id.js'
 export {
   buildFilterWhere,
   filterTokenFreeTextWord,
@@ -9,7 +10,12 @@ export {
   isFieldConditionToken,
 } from './map.js'
 export type { FilterFieldCapabilities } from './map.js'
-export { collectFilterSpecs, buildListFilterWhere, collectFilterSuggestions } from './collect.js'
+export {
+  collectFilterSpecs,
+  buildListFilterWhere,
+  collectFilterSuggestions,
+  isFieldFilterableById,
+} from './collect.js'
 export type { FilterAccessArgs } from './collect.js'
 export type {
   FilterOperator,

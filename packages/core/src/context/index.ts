@@ -33,6 +33,7 @@ import {
   getRelationshipOptions,
   type RelationshipOption,
   isRelationshipLabelReadable,
+  relationshipSearchWhere,
 } from '../query/relationship-options.js'
 import {
   runWritePipeline,
@@ -147,8 +148,9 @@ export type ServerActionProps =
       field: string
       parentId: string
     }
-  // Returns a distinct `{ options }` shape, never `success`, so a UI wrapper
-  // that redirects on `success` does not navigate away mid-edit.
+  // Returns a distinct `{ options, searched }` shape, never `success`, so a UI
+  // wrapper that redirects on `success` does not navigate away mid-edit.
+  // `searched` is false when `search` was not applied to the options.
   | {
       listKey: string
       action: 'relationshipOptions'
@@ -853,7 +855,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
         code?: string
       }
     | { linked: boolean; error?: string; fieldErrors?: Record<string, string>; code?: string }
-    | { options: RelationshipOption[] }
+    | { options: RelationshipOption[]; searched: boolean }
   > {
     if (!Object.hasOwn(config.lists, props.listKey)) {
       return {
@@ -1324,8 +1326,13 @@ export function getContext<TConfig extends OpenSaasConfig>(
           take: props.take,
           selectedIds: props.selectedIds,
         })
+        const searched =
+          relationshipSearchWhere(config, relatedListKey, {
+            search: props.search,
+            labelReadable,
+          }) !== undefined
 
-        return { options }
+        return { options, searched }
       }
 
       let result: WrittenRow = null

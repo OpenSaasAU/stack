@@ -2814,14 +2814,18 @@ export interface PresetView<TTypeInfo extends TypeInfo = TypeInfo> {
   /**
    * The preset's filter query in the `?search=` grammar, or a function of the
    * session returning one. Resolved on the server per request; a throw falls
-   * back to the plain list. Quote any value built from data with
-   * `quoteFilterValue`, so it reads back as exactly one value. A relationship
-   * value such as `author:` matches the related record's label as a
-   * case-insensitive substring, not its id.
+   * back to the plain list. `author:#<id>` matches exactly one related record;
+   * any other value built from data goes through `quoteFilterValue`, so it
+   * reads back as exactly one value however it is spelled.
    *
    * @example
    * ```typescript
-   * search: ({ session }) => `status:draft author:${quoteFilterValue(String(session?.name ?? ''))}`
+   * search: ({ session }) => `status:draft author:#${session?.userId ?? ''}`
+   * ```
+   *
+   * @example
+   * ```typescript
+   * search: ({ session }) => `title:${quoteFilterValue(String(session?.name ?? ''))}`
    * ```
    */
   search:
@@ -2973,10 +2977,14 @@ export type ListViewUIConfig<TTypeInfo extends TypeInfo = TypeInfo> = {
    *       {
    *         key: 'my-drafts',
    *         label: 'My drafts',
-   *         search: ({ session }) =>
-   *           `status:draft author:${quoteFilterValue(String(session?.name ?? ''))}`,
+   *         search: ({ session }) => `status:draft author:#${session?.userId ?? ''}`,
    *         sort: { field: 'title', direction: 'asc' },
-   *         hasAccess: ({ session }) => session !== null,
+   *         hasAccess: ({ session }) => typeof session?.userId === 'string',
+   *       },
+   *       {
+   *         key: 'named-for-me',
+   *         label: 'Named for me',
+   *         search: ({ session }) => `title:${quoteFilterValue(String(session?.name ?? ''))}`,
    *       },
    *     ],
    *   },

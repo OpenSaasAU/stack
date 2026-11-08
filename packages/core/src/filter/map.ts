@@ -1,4 +1,5 @@
 import { parseFilterQuery } from './parse.js'
+import { filterValueRecordId } from './record-id.js'
 import { serializeFilterToken } from './serialize.js'
 import type {
   FilterCondition,
@@ -85,7 +86,11 @@ function fieldCondition(token: FilterToken, spec: FilterSpec): FilterCondition |
   const conditions: FilterCondition[] = []
   for (const value of token.values) {
     if (value.text === '') continue
-    const condition = spec.toCondition(operator, value.text)
+    const recordId = operator === 'eq' ? filterValueRecordId(value) : null
+    const condition =
+      recordId !== null && spec.toIdCondition
+        ? spec.toIdCondition(recordId)
+        : spec.toCondition(operator, value.text)
     if (condition === null) return null
     conditions.push(condition)
   }
@@ -115,6 +120,10 @@ function fieldCondition(token: FilterToken, spec: FilterSpec): FilterCondition |
  *   condition when it states one, so "is not" keeps the rows with no value.
  *   A spec stating a `negation` says `NOT` alone already does, and gets no `OR`.
  * - `field:!` is the field's `empty` condition and `-field:!` its `NOT`.
+ * - An unquoted `#id` value on a field whose spec has `toIdCondition` maps
+ *   through it instead, matching exactly that related record, so
+ *   `field:#a,#b` matches either and `-field:#id` excludes it. An id the
+ *   related list cannot hold makes the token free text.
  *
  * A token that cannot map in any part (an unknown or unreadable field, an
  * unsupported operator, a value the field rejects, any one value of a list, or

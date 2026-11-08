@@ -450,9 +450,14 @@ ui: {
         key: 'my-drafts',
         label: 'My drafts',
         // A string, or a function of the session returning one
-        search: ({ session }) => `status:draft author:${quoteFilterValue(session?.name ?? '')}`,
+        search: ({ session }) => `status:draft author:#${session?.userId ?? ''}`,
         sort: { field: 'title', direction: 'asc' }, // optional
-        hasAccess: ({ session }) => session !== null, // optional
+        hasAccess: ({ session }) => typeof session?.userId === 'string', // optional
+      },
+      {
+        key: 'named-for-me',
+        label: 'Named for me',
+        search: ({ session }) => `title:${quoteFilterValue(session?.name ?? '')}`,
       },
     ],
   },
@@ -463,14 +468,12 @@ ui: {
   or a function of `{ session, context, listKey }` returning one. It is
   resolved on the server for every request, then runs through the same filter
   engine and secured `context.db` as a typed `?search=`, so a preset can only
-  narrow what the session may already see. Quote any value built from session
-  data with `quoteFilterValue` from `@opensaas/stack-core`: it always reads back
-  as exactly one value, whatever quotes, backslashes, commas or operators the
-  data holds.
-- **A relationship value matches by label.** `author:"Ada"` matches every post
-  whose author's name contains "Ada", case-insensitively, so the example above
-  also shows drafts by "Ada Lovelace". It is a label match, not an ownership
-  check, until `author:#<id>` (#2266) lands.
+  narrow what the session may already see. To match the session's own records,
+  use `author:#<id>`: it matches exactly that related record, where
+  `author:"Ada"` would match every author whose name contains "Ada". Quote any
+  other value built from session data with `quoteFilterValue` from
+  `@opensaas/stack-core`: it always reads back as exactly one value, whatever
+  quotes, backslashes, commas or operators the data holds.
 - **`sort`** applies while the preset is open. It goes through the same check as
   `?sort=`, so a field the session cannot order by is ignored. An explicit
   `?sort=` wins over it; without either, `initialSort` applies.
@@ -538,6 +541,16 @@ and calendar days accept `eq`, `gt`, `gte`, `lt` and `lte`. A timestamp takes
 anything JavaScript's `Date` parses; a calendar day takes a `YYYY-MM-DD` date, and
 one the month does not have, such as `2026-02-31`, degrades to free text.
 
+A to-one relationship takes the related record's Item label, matched as
+`contains` (`author:pri`), or one record by its id, written `field:#id`
+(`author:#0190a3c2-…`). An id token matches exactly that record through the
+relation, so the related list's `query` access applies and a record the session
+cannot read matches nothing. The id is parsed as the related list's id
+strategy declares (`uuid7`, `cuid2`, `int autoincrement`); one that list cannot
+hold degrades to free text. `-author:#id` excludes that record, keeping the rows
+with no author, and `author:#a,#b` matches either. A quoted `author:"#42"` is
+label text, never an id.
+
 #### The Filter builder bar
 
 The Filter builder is one bar at the top of the list. Focusing it lists every
@@ -559,6 +572,25 @@ at the start of a value sets the comparison. A value that does not fit the
 field (`abc` for a whole number) is explained under the suggestions instead of
 being applied. "Search all text" reads what was typed in the URL grammar, so a
 quoted `"Ada Lovelace"` stays one phrase.
+
+Choosing a to-one relationship field lists the first page of its records, from
+the same access-scoped search the item form's relationship picker uses, and
+typing searches them. Relationships are searched only once their field is
+named. When the related list's label cannot be searched for this session, typing
+hides the records and offers only the "contains" text. Picking a record writes `field:#id` and its chip shows the record's Item
+label ("Author is Priya Nair"), while the URL carries the id. Picking under
+"does not contain" writes `-field:#id` ("Author is not Priya Nair"). Typing without
+picking writes label text instead, shown as "contains". The list view resolves
+the label of each id in the URL through the secured context, so a bookmarked
+link shows the label too, and a record the session cannot read shows its raw
+id. An id the related list cannot hold is shown as the free text the list
+searches for ("Text contains #abc"). Without a `serverAction` the builder cannot search, and a relationship
+field takes typed label text only.
+
+On a to-many count Cell, the count links to the other list filtered to this row
+(`/admin/post?search=author:%23<id>`), where the relationship names its other
+side, the other list has a list view (it is not a singleton), and the session
+may query that list and filter that side by id.
 
 Each committed Filter token becomes a chip, and the list updates at once: the
 builder navigates with `router.push` inside a transition, so the current rows
@@ -593,7 +625,11 @@ and the list's result count are announced through live regions.
 optional `onApply(query)`, called inside a transition on every commit; without
 it the builder navigates to `?search=` on the current path itself. Optional
 `label`, `placeholder` and `resultCount` name the combobox, prompt the empty
-bar and announce the row count. Its slots are `filter-builder` (root),
+bar and announce the row count. With `listKey` and `serverAction` it looks up
+relationship records, and `recordLabels` (keyed by field, `{ id, label }`
+pairs, with a `null` label for a record the session cannot read) names the
+records the `field:#id` tokens in `defaultValue` point at. Its
+slots are `filter-builder` (root),
 `filter-builder-bar`, `filter-builder-chip` (with `data-armed` and
 `data-editing`), `filter-builder-chip-field`, `filter-builder-chip-condition`,
 `filter-builder-chip-value`, `filter-builder-chip-remove`,
