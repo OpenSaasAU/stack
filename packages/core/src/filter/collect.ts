@@ -114,6 +114,7 @@ export async function collectFilterSuggestions(
       valueSource: spec.suggestions.valueSource,
     }
     if (spec.suggestions.valueFormat) suggestion.valueFormat = spec.suggestions.valueFormat
+    if (spec.toIdCondition) suggestion.matchesById = true
     return suggestion
   })
 }

@@ -112,6 +112,16 @@ const config: OpenSaasConfig = {
         posts: relationship({ ref: 'Post.vault', many: true }),
       },
     },
+    Shelf: {
+      fields: {
+        name: text(),
+        crates: relationship({ ref: 'Crate.shelf', many: true }),
+      },
+      access: { operation: { query: () => true } },
+    },
+    Crate: {
+      fields: { name: text(), shelf: relationship({ ref: 'Shelf.crates' }) },
+    },
     Gadget: {
       fields: {
         name: text({ validation: { isRequired: true } }),
@@ -164,6 +174,7 @@ const config: OpenSaasConfig = {
 
 let database: TestDatabase
 let ada: Session = {}
+let vaultId = ''
 
 /**
  * ListView returns `<div className="p-8">{header}<ListViewClient ... /></div>`.
@@ -218,6 +229,7 @@ beforeEach(async () => {
   await create('User', { name: 'Grace' })
   const editor = await create('Editor', { name: 'Editor', email: 'editor@example.com' })
   const vault = await create('Vault', { note: 'sealed' })
+  vaultId = String(vault.id)
   await create('Post', {
     title: 'On Engines',
     published: true,
@@ -369,6 +381,63 @@ describe('ListView server-side filtering (filter engine over the secured surface
       const props = await render(ada, { listKey: 'Post', search: 'vault:sealed' })
       expect(props.items).toEqual([])
       expect(props.total).toBe(0)
+    },
+    BOOT,
+  )
+})
+
+describe('ListView relationship lookup by id', () => {
+  it(
+    'filters to exactly the record a `field:#id` token names and resolves its label',
+    async () => {
+      await create('User', { name: 'Ada Reed' })
+      const props = await render(ada, { listKey: 'Post', search: `author:#${ada.userId}` })
+      expect(props.items.map((item) => item.title).sort()).toEqual(['On Engines', 'On Looms'])
+      expect(props.recordLabels).toEqual({ author: [{ id: String(ada.userId), label: 'Ada' }] })
+    },
+    BOOT,
+  )
+
+  it(
+    'matches nothing and resolves no label for a record the session cannot read',
+    async () => {
+      const props = await render(ada, { listKey: 'Post', search: `vault:#${vaultId}` })
+      expect(props.items).toEqual([])
+      expect(props.recordLabels).toEqual({})
+    },
+    BOOT,
+  )
+
+  it(
+    'resolves no label for an id the related list cannot hold, which searches as text',
+    async () => {
+      const props = await render(ada, { listKey: 'Post', search: 'author:#nope' })
+      expect(props.items).toEqual([])
+      expect(props.recordLabels).toEqual({})
+    },
+    BOOT,
+  )
+
+  it(
+    'links a to-many count to the other list filtered by the row id',
+    async () => {
+      const props = await render(ada, { listKey: 'User' })
+      expect(props.countLinks).toEqual({ posts: { urlKey: 'post', field: 'author' } })
+      const markup = renderToStaticMarkup(<ListViewClient {...props} />)
+      expect(markup).toContain(
+        `href="/admin/post?search=${encodeURIComponent(`author:#${ada.userId}`)}"`,
+      )
+    },
+    BOOT,
+  )
+
+  it(
+    'links no count whose other list the session cannot filter',
+    async () => {
+      await create('Shelf', { name: 'Top' })
+      const props = await render(ada, { listKey: 'Shelf' })
+      expect(props.items.map((item) => item.crates)).toEqual([0])
+      expect(props.countLinks).toEqual({})
     },
     BOOT,
   )

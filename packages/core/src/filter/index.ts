@@ -2,6 +2,7 @@
 
 export { parseFilterQuery } from './parse.js'
 export { serializeFilterQuery } from './serialize.js'
+export { filterTokenRecordId, recordIdFilterToken } from './record-id.js'
 export { buildFilterWhere, isEmptyFilterToken, isFieldConditionToken } from './map.js'
 export { collectFilterSpecs, buildListFilterWhere, collectFilterSuggestions } from './collect.js'
 export type { FilterAccessArgs } from './collect.js'

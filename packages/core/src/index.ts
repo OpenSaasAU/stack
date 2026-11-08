@@ -383,6 +383,8 @@ export {
   serializeFilterQuery,
   buildFilterWhere,
   isEmptyFilterToken,
+  filterTokenRecordId,
+  recordIdFilterToken,
   isFieldConditionToken,
   collectFilterSpecs,
   buildListFilterWhere,

@@ -110,6 +110,15 @@ export interface FilterSpec {
    * degrades to free text. MUST stay free of DB/Prisma imports.
    */
   toCondition: (operator: FilterOperator, value: string) => FilterCondition | null
+  /**
+   * Map a related record's id, written `field:#id`, to a condition matching
+   * exactly that record, or `null` when the id is not one the related list can
+   * hold, in which case the token degrades to free text. Lower it through the
+   * relation, never the foreign key column, so the related list's `query`
+   * access applies inside the predicate and a record the session cannot read
+   * matches nothing. Without it, `#id` is an ordinary `eq` value.
+   */
+  toIdCondition?: (id: string) => FilterCondition | null
   /** Serializable suggestion metadata for the client. */
   suggestions: {
     valueSource: FilterValueSource
@@ -137,4 +146,6 @@ export interface FilterFieldSuggestion {
   valueSource: FilterValueSource
   /** The shape a typed value must take, when the field states one. */
   valueFormat?: FilterValueFormat
+  /** Set when the field matches a related record by id (`field:#id`). */
+  matchesById?: boolean
 }

@@ -452,6 +452,14 @@ and calendar days accept `eq`, `gt`, `gte`, `lt` and `lte`. A timestamp takes
 anything JavaScript's `Date` parses; a calendar day takes a `YYYY-MM-DD` date, and
 one the month does not have, such as `2026-02-31`, degrades to free text.
 
+A to-one relationship takes the related record's Item label, matched as
+`contains` (`author:pri`), or one record by its id, written `field:#id`
+(`author:#0190a3c2-…`). An id token matches exactly that record through the
+relation, so the related list's `query` access applies and a record the session
+cannot read matches nothing. The id is parsed as the related list's id
+strategy declares (`uuid7`, `cuid2`, `int autoincrement`); one that list cannot
+hold degrades to free text. A quoted `author:"#42"` is label text, never an id.
+
 #### The Filter builder bar
 
 The Filter builder is one bar at the top of the list. Focusing it lists every
@@ -468,6 +476,21 @@ at the start of a value sets the comparison. A value that does not fit the
 field (`abc` for a whole number) is explained under the suggestions instead of
 being applied. "Search all text" reads what was typed in the URL grammar, so a
 quoted `"Ada Lovelace"` stays one phrase.
+
+Choosing a to-one relationship field lists the first page of its records, from
+the same access-scoped search the item form's relationship picker uses, and
+typing searches them. Relationships are searched only once their field is
+named. Picking a record writes `field:#id` and its chip shows the record's Item
+label ("Author is Priya Nair"), while the URL carries the id. Typing without
+picking writes label text instead, shown as "contains". The list view resolves
+the label of each id in the URL through the secured context, so a bookmarked
+link shows the label too, and a record the session cannot read shows its raw
+id. Without a `serverAction` the builder cannot search, and a relationship
+field takes typed label text only.
+
+On a to-many count Cell, the count links to the other list filtered to this row
+(`/admin/post?search=author:%23<id>`), where the relationship names its other
+side and the session can filter that side by id.
 
 Each committed Filter token becomes a chip, and the list updates at once: the
 builder navigates with `router.push` inside a transition, so the current rows
@@ -501,7 +524,10 @@ and the list's result count are announced through live regions.
 optional `onApply(query)`, called inside a transition on every commit; without
 it the builder navigates to `?search=` on the current path itself. Optional
 `label`, `placeholder` and `resultCount` name the combobox, prompt the empty
-bar and announce the row count. Its slots are `filter-builder` (root),
+bar and announce the row count. With `listKey` and `serverAction` it looks up
+relationship records, and `recordLabels` (keyed by field, `{ id, label }`
+pairs) names the records the `field:#id` tokens in `defaultValue` point at. Its
+slots are `filter-builder` (root),
 `filter-builder-bar`, `filter-builder-chip` (with `data-armed` and
 `data-editing`), `filter-builder-chip-field`, `filter-builder-chip-condition`,
 `filter-builder-chip-value`, `filter-builder-chip-remove`,

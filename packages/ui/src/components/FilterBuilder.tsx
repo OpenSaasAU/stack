@@ -15,12 +15,17 @@ import {
   filterQuery,
   hydrateTokens,
   isFieldCondition,
+  isRecordLookupField,
   placeTokens,
+  recordIdOf,
   rootOptions,
   splitComparison,
   type FilterDraft,
   type FilterOption,
+  type FilterRecord,
 } from '../lib/filterBuilderOptions.js'
+import { useFilterRecordLookup } from '../lib/useFilterRecordLookup.js'
+import type { ServerActionInput } from '../server/types.js'
 
 /**
  * Per-part `classNames` slots for {@link FilterBuilder}. Each merges onto its
@@ -72,6 +77,24 @@ export interface FilterBuilderProps {
   label?: string
   /** The number of rows the applied query returns, announced when it changes. */
   resultCount?: number
+  /**
+   * The list being filtered. With {@link serverAction}, choosing a to-one
+   * relationship field browses and searches its records, and picking one
+   * writes `field:#id`.
+   */
+  listKey?: string
+  /**
+   * The generic server action, asked for a relationship field's records via
+   * its `relationshipOptions` operation. Without it, a relationship field takes
+   * typed label text, matched as contains.
+   */
+  serverAction?: (input: ServerActionInput) => Promise<unknown>
+  /**
+   * The Item labels of the records the `field:#id` tokens in
+   * {@link defaultValue} name, keyed by field. A chip whose record is absent
+   * shows the raw id.
+   */
+  recordLabels?: Record<string, FilterRecord[]>
   className?: string
   /** Structured per-part class overrides; each merges onto its `data-slot` part. */
   classNames?: FilterBuilderClassNames
@@ -110,6 +133,9 @@ export function FilterBuilder({
   placeholder = 'Filter or search…',
   label = 'Filter',
   resultCount,
+  listKey,
+  serverAction,
+  recordLabels,
   className,
   classNames,
 }: FilterBuilderProps) {
@@ -147,13 +173,28 @@ export function FilterBuilder({
   const listId = `${baseId}-list`
   const optionId = (index: number) => `${baseId}-option-${index}`
 
+  const [picked, setPicked] = React.useState<ReadonlyMap<string, string>>(() => new Map())
+  const labelOf = React.useCallback(
+    (field: string, id: string) =>
+      picked.get(JSON.stringify([field, id])) ??
+      recordLabels?.[field]?.find((record) => record.id === id)?.label,
+    [picked, recordLabels],
+  )
+
   const editingToken = editing === null ? undefined : tokens[editing]
+  const draftField = draft ? fields.get(draft.field) : undefined
+  const lookup = useFilterRecordLookup({
+    serverAction,
+    listKey,
+    field: draft && draft.operator === 'eq' && isRecordLookupField(draftField) ? draft.field : null,
+    query: text,
+  })
   const { options, hint } = React.useMemo(
-    () => (draft ? draftOptions(draft, text, fields, editingToken) : rootOptions(text, fields)),
-    [draft, text, fields, editingToken],
+    () =>
+      draft ? draftOptions(draft, text, fields, editingToken, lookup) : rootOptions(text, fields),
+    [draft, text, fields, editingToken, lookup],
   )
   const active = options.length === 0 ? -1 : Math.min(activeIndex, options.length - 1)
-  const draftField = draft ? fields.get(draft.field) : undefined
   const conditions = draftField?.operators ?? []
 
   React.useEffect(() => {
@@ -222,8 +263,17 @@ export function FilterBuilder({
   }
 
   const choose = (option: FilterOption) => {
-    if (option.kind === 'field') stageField(option.field)
-    else commit(option.tokens)
+    if (option.kind === 'field') {
+      stageField(option.field)
+      return
+    }
+    const { record } = option
+    if (record) {
+      setPicked((previous) =>
+        new Map(previous).set(JSON.stringify([record.field, record.id]), record.label),
+      )
+    }
+    commit(option.tokens)
   }
 
   const editChip = (index: number) => {
@@ -234,7 +284,10 @@ export function FilterBuilder({
     setActiveIndex(0)
     setOpen(true)
     const suggestion = token.field === null ? undefined : fields.get(token.field)
-    if (suggestion && isFieldCondition(token, fields)) {
+    if (suggestion && recordIdOf(token, fields) !== null) {
+      setDraft({ field: suggestion.field, operator: 'eq' })
+      setText('')
+    } else if (suggestion && isFieldCondition(token, fields)) {
       setDraft({ field: suggestion.field, operator: token.operator })
       setText(suggestion.valueSource.kind === 'enum' ? '' : token.values[0])
     } else {
@@ -373,7 +426,7 @@ export function FilterBuilder({
     commit(pasted, false)
   }
 
-  const describedTokens = tokens.map((token) => describeToken(token, fields))
+  const describedTokens = tokens.map((token) => describeToken(token, fields, labelOf))
   const armedSentence = armed === null ? null : describedTokens[armed]?.sentence
   const resultMessage =
     resultCount === undefined ? '' : `${resultCount} ${resultCount === 1 ? 'result' : 'results'}`

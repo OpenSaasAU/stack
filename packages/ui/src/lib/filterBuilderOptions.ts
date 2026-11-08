@@ -1,7 +1,9 @@
 import {
+  filterTokenRecordId,
   isEmptyFilterToken,
   isFieldConditionToken,
   parseFilterQuery,
+  recordIdFilterToken,
   serializeFilterQuery,
   type FilterFieldSuggestion,
   type FilterOperator,
@@ -16,9 +18,28 @@ export interface FilterDraft {
   operator: FilterOperator
 }
 
+export interface FilterRecord {
+  id: string
+  label: string
+}
+
+export type RecordLabelOf = (field: string, id: string) => string | undefined
+
+export interface RecordLookup {
+  records: FilterRecord[]
+  loading: boolean
+}
+
 export type FilterOption =
   | { kind: 'field'; field: string; group: string }
-  | { kind: 'apply'; tokens: FilterToken[]; label: string; group: string; selected?: boolean }
+  | {
+      kind: 'apply'
+      tokens: FilterToken[]
+      label: string
+      group: string
+      selected?: boolean
+      record?: { field: string } & FilterRecord
+    }
 
 export interface FilterOptions {
   options: FilterOption[]
@@ -64,7 +85,29 @@ const FIELD_TOKEN_SHAPE = /[A-Za-z_][A-Za-z0-9_]*:\S/
 const VALUE_FIRST_MIN_LENGTH = 2
 
 export function fieldToken(field: string, operator: FilterOperator, value: string): FilterToken {
-  return { kind: 'token', field, operator, negated: false, values: [value], quoted: false }
+  const token: FilterToken = {
+    kind: 'token',
+    field,
+    operator,
+    negated: false,
+    values: [value],
+    quoted: false,
+  }
+  return filterTokenRecordId(token) === null ? token : { ...token, quoted: true }
+}
+
+export function recordIdOf(token: FilterToken, fields: FilterFields): string | null {
+  if (token.field === null || token.negated) return null
+  if (fields.get(token.field)?.matchesById !== true) return null
+  return filterTokenRecordId(token)
+}
+
+export function isRecordLookupField(suggestion: FilterFieldSuggestion | undefined): boolean {
+  return (
+    suggestion?.matchesById === true &&
+    suggestion.valueSource.kind === 'relationship' &&
+    !suggestion.valueSource.many
+  )
 }
 
 export function textToken(value: string): FilterToken {
@@ -134,8 +177,18 @@ export function isFieldCondition(
   return suggestion !== undefined && checkValue(suggestion, token.operator, token.values[0]).ok
 }
 
-export function describeToken(token: FilterToken, fields: FilterFields): TokenDescription {
+export function describeToken(
+  token: FilterToken,
+  fields: FilterFields,
+  labelOf: RecordLabelOf = () => undefined,
+): TokenDescription {
   const suggestion = token.field === null ? undefined : fields.get(token.field)
+  const recordId = recordIdOf(token, fields)
+  if (suggestion && recordId !== null) {
+    const field = fieldLabel(suggestion.field)
+    const value = labelOf(suggestion.field, recordId) ?? recordId
+    return { field, condition: 'is', value, sentence: `${field} is ${value}` }
+  }
   if (suggestion && isFieldCondition(token, fields)) {
     const field = fieldLabel(suggestion.field)
     const condition = conditionLabel(suggestion, token.operator)
@@ -150,6 +203,7 @@ export function describeToken(token: FilterToken, fields: FilterFields): TokenDe
 }
 
 function isSingleChoice(token: FilterToken, fields: FilterFields): boolean {
+  if (recordIdOf(token, fields) !== null) return true
   if (token.field === null || token.operator !== 'eq' || !isFieldCondition(token, fields)) {
     return false
   }
@@ -394,12 +448,46 @@ export function draftOptions(
   text: string,
   fields: FilterFields,
   current: FilterToken | undefined,
+  lookup: RecordLookup | null = null,
 ): FilterOptions {
   const suggestion = fields.get(draft.field)
   if (!suggestion) return { options: [], hint: null }
   const typed = text.trim()
   const options: FilterOption[] = []
   let hint: string | null = null
+
+  if (lookup && isRecordLookupField(suggestion) && draft.operator === 'eq') {
+    const currentId = current && current.field === draft.field ? recordIdOf(current, fields) : null
+    const group = fieldLabel(suggestion.field)
+    for (const record of lookup.records) {
+      options.push({
+        kind: 'apply',
+        tokens: [recordIdFilterToken(suggestion.field, record.id)],
+        label: record.label,
+        group,
+        selected: record.id === currentId,
+        record: { field: suggestion.field, ...record },
+      })
+    }
+    if (lookup.loading) hint = `Searching ${group.toLowerCase()}…`
+    else if (lookup.records.length === 0) {
+      hint =
+        typed === ''
+          ? `No ${group.toLowerCase()} to choose from.`
+          : `No ${group.toLowerCase()} matches “${typed}”.`
+    }
+    if (typed !== '') {
+      const token = fieldToken(suggestion.field, 'eq', typed)
+      options.push({
+        kind: 'apply',
+        tokens: [token],
+        label: describeToken(token, fields).sentence,
+        group: 'Text',
+      })
+      options.push(searchOption(typed))
+    }
+    return { options, hint }
+  }
 
   if (suggestion.valueSource.kind === 'enum') {
     const currentValue =

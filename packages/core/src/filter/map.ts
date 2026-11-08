@@ -1,4 +1,5 @@
 import { parseFilterQuery } from './parse.js'
+import { filterTokenRecordId } from './record-id.js'
 import { serializeFilterToken } from './serialize.js'
 import type {
   FilterCondition,
@@ -44,6 +45,12 @@ export function isFieldConditionToken(
   return operatorsFor(token.field)?.includes(token.operator) ?? false
 }
 
+function fieldCondition(spec: FilterSpec, token: FilterToken): FilterCondition | null {
+  const recordId = filterTokenRecordId(token)
+  if (recordId !== null && spec.toIdCondition) return spec.toIdCondition(recordId)
+  return spec.toCondition(token.operator, token.values[0])
+}
+
 /**
  * Map a parsed {@link FilterQuery} to a single Where fragment, given the
  * fields' {@link FilterSpec}s (ADR-0017).
@@ -56,7 +63,9 @@ export function isFieldConditionToken(
  * `parseFilterQuery(serializeFilterQuery({ terms: [token] }))` reads back, so it
  * filters the same rows as its own URL; it is never dropped or negated. A token
  * degrades to free text (never an error) when its field is unknown, has no
- * spec, uses an unsupported operator, or maps to `null`. Bare words (and
+ * spec, uses an unsupported operator, or maps to `null`. A `field:#id` token
+ * on a field whose spec has `toIdCondition` matches exactly that related record,
+ * and an id the related list cannot hold degrades to free text. Bare words (and
  * degraded tokens) are OR-matched across every free-text field, and each such
  * word is ANDed with the rest — so `beta gamma` requires both. A word that
  * reaches this stage but cannot be matched against any free-text field —
@@ -103,7 +112,7 @@ export function buildFilterWhere(
       continue
     }
 
-    const condition = specs[token.field].toCondition(token.operator, value)
+    const condition = fieldCondition(specs[token.field], token)
     if (condition === null) {
       freeTextWords.push(value)
       continue
