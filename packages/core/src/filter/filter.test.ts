@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { parseFilterQuery } from './parse.js'
+import { filterQueryTokens, parseFilterQuery } from './parse.js'
 import {
   buildFilterWhere,
   effectiveFilterToken,
   filterTokenFreeTextWord,
   isFieldConditionToken,
 } from './map.js'
-import { serializeFilterQuery } from './serialize.js'
+import { serializeFilterQuery, serializeFilterToken } from './serialize.js'
 import {
   buildListFilterWhere,
   collectFilterSpecs,
@@ -28,6 +28,8 @@ import {
 } from '../fields/index.js'
 import type { OpenSaasConfig } from '../config/types.js'
 import type { AccessContext } from '../access/types.js'
+
+const tokensOf = (written: string) => filterQueryTokens(parseFilterQuery(written))
 
 // A permissive session/context — no field on any list under test declares
 // field-level `read` access unless a test says so, so every field is
@@ -74,9 +76,9 @@ describe('parseFilterQuery', () => {
     expect(parseFilterQuery('orders:>5')).toEqual({
       terms: [tok('orders', '5', { operator: 'gt' })],
     })
-    expect(parseFilterQuery('orders:>=5').terms[0].operator).toBe('gte')
-    expect(parseFilterQuery('orders:<5').terms[0].operator).toBe('lt')
-    expect(parseFilterQuery('orders:<=5').terms[0].operator).toBe('lte')
+    expect(tokensOf('orders:>=5')[0].operator).toBe('gte')
+    expect(tokensOf('orders:<5')[0].operator).toBe('lt')
+    expect(tokensOf('orders:<=5')[0].operator).toBe('lte')
   })
 
   it('keeps spaces inside a quoted value', () => {
@@ -92,9 +94,7 @@ describe('parseFilterQuery', () => {
   })
 
   it('parses implicit-AND: multiple whitespace-separated tokens', () => {
-    const { terms } = parseFilterQuery(
-      'role:Editor status:Active orders:>5 name:"Ada Lovelace" beta',
-    )
+    const terms = tokensOf('role:Editor status:Active orders:>5 name:"Ada Lovelace" beta')
     expect(terms.map((t) => ({ field: t.field, operator: t.operator, values: texts(t) }))).toEqual([
       { field: 'role', operator: 'eq', values: ['Editor'] },
       { field: 'status', operator: 'eq', values: ['Active'] },
@@ -105,7 +105,7 @@ describe('parseFilterQuery', () => {
   })
 
   it('collapses surrounding / repeated whitespace', () => {
-    expect(parseFilterQuery('   a    b  ').terms.map(texts)).toEqual([['a'], ['b']])
+    expect(tokensOf('   a    b  ').map(texts)).toEqual([['a'], ['b']])
   })
 
   it('returns no terms for an empty query', () => {
@@ -175,7 +175,7 @@ describe('parseFilterQuery', () => {
   })
 
   it('splits tokens on every whitespace character', () => {
-    expect(parseFilterQuery('a\u00a0b\fc\vd\u2028e').terms.map(texts)).toEqual([
+    expect(tokensOf('a\u00a0b\fc\vd\u2028e').map(texts)).toEqual([
       ['a'],
       ['b'],
       ['c'],
@@ -432,7 +432,7 @@ describe('buildFilterWhere', () => {
 
   it('searches the word its chip shows', () => {
     for (const written of ['status:active,pending', '-secret:x', 'role:"a b"', 'views:!']) {
-      const [token] = parseFilterQuery(written).terms
+      const [token] = tokensOf(written)
       expect(buildFilterWhere({ terms: [token] }, specs), written).toEqual({
         name: { contains: filterTokenFreeTextWord(token) },
       })
@@ -1285,12 +1285,10 @@ describe('collectFilterSuggestions', () => {
 
 describe('ranges (`field:a..b`)', () => {
   it('parses an unquoted field value with `..` as one inclusive range token', () => {
-    expect(parseFilterQuery('orders:5..10').terms).toEqual([
+    expect(tokensOf('orders:5..10')).toEqual([
       tok('orders', '', { operator: 'range', values: [v('5'), v('10')] }),
     ])
-    expect(
-      parseFilterQuery('at:2026-11-01T00:00:00.000+11:00..2026-11-01T23:59:59.999+11:00').terms,
-    ).toEqual([
+    expect(tokensOf('at:2026-11-01T00:00:00.000+11:00..2026-11-01T23:59:59.999+11:00')).toEqual([
       tok('at', '', {
         operator: 'range',
         values: [v('2026-11-01T00:00:00.000+11:00'), v('2026-11-01T23:59:59.999+11:00')],
@@ -1299,7 +1297,7 @@ describe('ranges (`field:a..b`)', () => {
   })
 
   it('splits at the first `..`', () => {
-    expect(parseFilterQuery('orders:1...5').terms).toEqual([
+    expect(tokensOf('orders:1...5')).toEqual([
       tok('orders', '', { operator: 'range', values: [v('1'), v('.5')] }),
     ])
   })
@@ -1307,20 +1305,18 @@ describe('ranges (`field:a..b`)', () => {
   it.each(['orders:..5', 'orders:5..', 'orders:..', 'orders:"5..10"'])(
     'reads %s as a single literal value, never a range',
     (written) => {
-      const [term] = parseFilterQuery(written).terms
+      const [term] = tokensOf(written)
       expect(term.operator).toBe('eq')
       expect(term.values).toHaveLength(1)
     },
   )
 
   it.each(['5..10', '>5..10', '"5..10"'])('never reads the free-text word %s as a range', (w) => {
-    expect(parseFilterQuery(w).terms[0].field).toBeNull()
+    expect(tokensOf(w)[0].field).toBeNull()
   })
 
   it('keeps a comparison operator ahead of `..` as a comparison on the literal value', () => {
-    expect(parseFilterQuery('orders:>=5..10').terms).toEqual([
-      tok('orders', '5..10', { operator: 'gte' }),
-    ])
+    expect(tokensOf('orders:>=5..10')).toEqual([tok('orders', '5..10', { operator: 'gte' })])
   })
 
   it.each([
@@ -1341,7 +1337,7 @@ describe('ranges (`field:a..b`)', () => {
     const range = tok('title', '', { operator: 'range', values: [v('a b'), v('c')] })
     const written = serializeFilterQuery({ terms: [range] })
     expect(written).toBe('title:"a b..c"')
-    expect(parseFilterQuery(written).terms[0].operator).toBe('eq')
+    expect(tokensOf(written)[0].operator).toBe('eq')
   })
 
   it('lowers a range to the field’s own gte and lte conditions, ANDed', () => {
@@ -1400,12 +1396,12 @@ describe('ranges (`field:a..b`)', () => {
       const spec = lookup[field]
       return spec === undefined ? undefined : { operators: spec.operators }
     }
-    const [token] = parseFilterQuery('name:v1..v2').terms
+    const [token] = tokensOf('name:v1..v2')
     expect(isFieldConditionToken(token, operatorsFor)).toBe(true)
     expect(effectiveFilterToken(token, specs.name.operators)).toEqual(
       tok('name', 'v1..v2', { operator: 'eq' }),
     )
-    const [ranged] = parseFilterQuery('orders:1..2').terms
+    const [ranged] = tokensOf('orders:1..2')
     expect(effectiveFilterToken(ranged, specs.orders.operators)).toBe(ranged)
   })
 
@@ -1417,7 +1413,7 @@ describe('ranges (`field:a..b`)', () => {
   })
 
   it('reads a negated range as one negated range token, written back as it was', () => {
-    expect(parseFilterQuery('-orders:5..10').terms).toEqual([
+    expect(tokensOf('-orders:5..10')).toEqual([
       tok('orders', '', { operator: 'range', negated: true, values: [v('5'), v('10')] }),
     ])
     expect(serializeFilterQuery(parseFilterQuery('-orders:5..10'))).toBe('-orders:5..10')
@@ -1438,7 +1434,7 @@ describe('ranges (`field:a..b`)', () => {
   })
 
   it('searches a negated range that cannot map as its whole literal, never negated', () => {
-    const [token] = parseFilterQuery('-orders:abc..10').terms
+    const [token] = tokensOf('-orders:abc..10')
     expect(filterTokenFreeTextWord(token)).toBe('-orders:abc..10')
     expect(buildFilterWhere(parseFilterQuery('-orders:abc..10'), specs)).toEqual({
       name: { contains: '-orders:abc..10' },
@@ -1446,7 +1442,7 @@ describe('ranges (`field:a..b`)', () => {
   })
 
   it('searches a positive range that cannot map as its literal `a..b`', () => {
-    const [token] = parseFilterQuery('nosuch:1..2').terms
+    const [token] = tokensOf('nosuch:1..2')
     expect(filterTokenFreeTextWord(token)).toBe('1..2')
   })
 
@@ -1457,7 +1453,7 @@ describe('ranges (`field:a..b`)', () => {
   })
 
   it('never reads a list as a range: `a..b,c` is eq on each value', () => {
-    const [token] = parseFilterQuery('orders:1..2,3').terms
+    const [token] = tokensOf('orders:1..2,3')
     expect(token.operator).toBe('eq')
     expect(texts(token)).toEqual(['1..2', '3'])
     expect(serializeFilterQuery(parseFilterQuery('orders:1..2,3'))).toBe('orders:1..2,3')
@@ -1489,6 +1485,236 @@ describe('ranges (`field:a..b`)', () => {
       at: 'instant',
       day: 'day',
       count: undefined,
+    })
+  })
+})
+
+// ─────────────────────────────────────────────────────────────
+// OR groups (ADR-0083): `(a OR b)`
+// ─────────────────────────────────────────────────────────────
+
+const orGroup = (...tokens: FilterToken[]) => ({ kind: 'group' as const, tokens })
+
+describe('parseFilterQuery reads OR groups', () => {
+  it('reads `(a OR b)` as one group term', () => {
+    expect(parseFilterQuery('(status:active OR name:ada) orders:>5')).toEqual({
+      terms: [
+        orGroup(tok('status', 'active'), tok('name', 'ada')),
+        tok('orders', '5', { operator: 'gt' }),
+      ],
+    })
+  })
+
+  it('reads every token shape inside a group', () => {
+    expect(
+      parseFilterQuery(
+        '(-status:active OR status:a,b OR status:! OR orders:1..5 OR author:#42 OR beta)',
+      ),
+    ).toEqual({
+      terms: [
+        orGroup(
+          tok('status', 'active', { negated: true }),
+          tok('status', '', { values: [v('a'), v('b')] }),
+          tok('status', '', { operator: 'empty', values: [] }),
+          tok('orders', '', { operator: 'range', values: [v('1'), v('5')] }),
+          tok('author', '#42'),
+          tok(null, 'beta'),
+        ),
+      ],
+    })
+  })
+
+  it('reads a quoted member, including one ending in `)`, and a closing `)` after a quote', () => {
+    expect(parseFilterQuery('(name:"Ada (Countess)" OR "OR")')).toEqual({
+      terms: [
+        orGroup(tok('name', 'Ada (Countess)', { quoted: true }), tok(null, 'OR', { quoted: true })),
+      ],
+    })
+  })
+
+  it.each([
+    ['(a OR f(x) y)', ['(a', 'OR', 'f(x)', 'y)']],
+    ['(see OR note(1) later)', ['(see', 'OR', 'note(1)', 'later)']],
+    ['(a OR b))', ['(a', 'OR', 'b))']],
+    ['(a OR status:x(1))', ['(a', 'OR', 'status:x(1))']],
+  ])('keeps %s as the literal words it was before groups existed', (written, words) => {
+    const { terms } = parseFilterQuery(written)
+    expect(terms.every((term) => term.kind === 'token')).toBe(true)
+    expect(filterQueryTokens({ terms }).map(serializeFilterToken)).toEqual(words)
+    expect(serializeFilterQuery(parseFilterQuery(written))).toBe(written)
+  })
+
+  it('reads a member whose parenthesis is quoted', () => {
+    expect(parseFilterQuery('("f(x)" OR name:"a)")')).toEqual({
+      terms: [orGroup(tok(null, 'f(x)', { quoted: true }), tok('name', 'a)', { quoted: true }))],
+    })
+  })
+
+  it.each([
+    '(a OR f(x) y)',
+    '(see OR note(1) later)',
+    '(a OR b))',
+    '((a OR b))',
+    '(a) OR (b)',
+    '(a OR (b) OR c)',
+    '(f(x) OR y)',
+    '(a OR b)(c OR d)',
+    '(a OR b)) (c OR d',
+    '(x:(1 OR y:2))',
+    '(-(a OR b))',
+    'f(x) (g OR h(i))',
+    '(status:a,b(c) OR d)',
+    '(a OR "b" c)',
+  ])('reads %s as the same terms as before groups existed', (written) => {
+    const wordByWord = written
+      .split(/\s+/)
+      .filter((word) => word !== '')
+      .flatMap((word) => parseFilterQuery(word).terms)
+    expect(parseFilterQuery(written).terms).toEqual(wordByWord)
+  })
+
+  it.each([
+    ['a lowercase keyword', '(a or b)', ['(a', 'or', 'b)']],
+    ['a quoted keyword', '(a "OR" b)', ['(a', 'OR', 'b)']],
+    ['no parentheses', 'a OR b', ['a', 'OR', 'b']],
+    ['an unmatched opening parenthesis', '(a OR b', ['(a', 'OR', 'b']],
+    ['an unmatched closing parenthesis', 'a OR b)', ['a', 'OR', 'b)']],
+    ['a nested group', '((a OR b) OR c)', ['((a', 'OR', 'b)', 'OR', 'c)']],
+    ['a group of one', '(a)', ['(a)']],
+    ['a space inside the parentheses', '( a OR b )', ['(', 'a', 'OR', 'b', ')']],
+    ['a dangling keyword', '(a OR)', ['(a', 'OR)']],
+    ['text after the closer', '(a OR b)c', ['(a', 'OR', 'b)c']],
+    ['a negated group', '-(a OR b)', ['(a', 'OR', 'b)']],
+  ])('degrades %s to literal words', (_case, written, words) => {
+    const { terms } = parseFilterQuery(written)
+    expect(terms.every((term) => term.kind === 'token')).toBe(true)
+    expect(filterQueryTokens({ terms }).map((token) => token.values[0]?.text)).toEqual(words)
+    expect(serializeFilterQuery(parseFilterQuery(written))).toBe(written)
+  })
+
+  it('finds a valid group after an unmatched parenthesis', () => {
+    expect(parseFilterQuery('(a (b OR c)').terms).toEqual([
+      tok(null, '(a'),
+      orGroup(tok(null, 'b'), tok(null, 'c')),
+    ])
+  })
+})
+
+describe('serializeFilterQuery writes OR groups', () => {
+  it.each([
+    '(status:active OR name:ada) orders:>5',
+    '(-status:active OR status:a,b OR status:! OR orders:1..5 OR author:#42 OR beta)',
+    '(name:"Ada (Countess)" OR "OR")',
+    '(a OR b))',
+    '(a OR OR OR b)',
+    '"OR" (a OR -)',
+  ])('reproduces %s', (written) => {
+    expect(serializeFilterQuery(parseFilterQuery(written))).toBe(written)
+  })
+
+  it('writes a range inside a group as one `a..b` token', () => {
+    expect(
+      serializeFilterQuery({
+        terms: [
+          orGroup(
+            tok('orders', '', { operator: 'range', values: [v('1'), v('5')] }),
+            tok('status', 'active'),
+          ),
+        ],
+      }),
+    ).toBe('(orders:1..5 OR status:active)')
+  })
+
+  it('writes a group of one as its token, and an empty group as nothing', () => {
+    expect(serializeFilterQuery({ terms: [orGroup(tok('status', 'active')), orGroup()] })).toBe(
+      'status:active',
+    )
+  })
+
+  it('quotes a member that would end the group early or open a nested one', () => {
+    expect(
+      serializeFilterQuery({
+        terms: [orGroup(tok(null, 'a)'), tok(null, '(b'), tok('x', 'c)'))],
+      }),
+    ).toBe('("a)" OR "(b" OR x:"c)")')
+  })
+
+  it('quotes a free-text word outside a group that would read back as one', () => {
+    const words = { terms: [tok(null, '(a'), tok(null, 'OR'), tok(null, 'b)')] }
+    expect(serializeFilterQuery(words)).toBe('"(a" OR b)')
+    expect(parseFilterQuery(serializeFilterQuery(words)).terms).toHaveLength(3)
+  })
+})
+
+describe('buildFilterWhere lowers OR groups', () => {
+  it('ORs each member through its own condition', () => {
+    expect(buildFilterWhere(parseFilterQuery('(status:active OR orders:>5)'), specs)).toEqual({
+      OR: [{ status: { equals: 'active' } }, { orders: { gt: 5 } }],
+    })
+  })
+
+  it('ANDs a group with the rest of the query', () => {
+    expect(
+      buildFilterWhere(parseFilterQuery('(status:active OR orders:>5) name:ada'), specs),
+    ).toEqual({
+      AND: [
+        { OR: [{ status: { equals: 'active' } }, { orders: { gt: 5 } }] },
+        { name: { contains: 'ada' } },
+      ],
+    })
+  })
+
+  it('keeps two values on one field in a group', () => {
+    expect(buildFilterWhere(parseFilterQuery('(status:active OR status:inactive)'), specs)).toEqual(
+      {
+        OR: [{ status: { equals: 'active' } }, { status: { equals: 'inactive' } }],
+      },
+    )
+  })
+
+  it('negates a member by the same rules as outside a group', () => {
+    expect(buildFilterWhere(parseFilterQuery('(-status:active OR orders:1..5)'), specs)).toEqual({
+      OR: [
+        { NOT: { status: { equals: 'active' } } },
+        { AND: [{ orders: { gte: 1 } }, { orders: { lte: 5 } }] },
+      ],
+    })
+  })
+
+  it('keeps an unmappable member in place as its free-text alternative', () => {
+    expect(buildFilterWhere(parseFilterQuery('(status:active OR nosuch:Findable)'), specs)).toEqual(
+      {
+        OR: [{ status: { equals: 'active' } }, { name: { contains: 'Findable' } }],
+      },
+    )
+  })
+
+  it('keeps a negated unmappable member as its literal word, never negated', () => {
+    expect(buildFilterWhere(parseFilterQuery('(status:active OR -secret:x)'), specs)).toEqual({
+      OR: [{ status: { equals: 'active' } }, { name: { contains: '-secret:x' } }],
+    })
+  })
+
+  it('narrows an unmappable member to nothing where there is no free-text field', () => {
+    expect(
+      buildFilterWhere(parseFilterQuery('(orders:>5 OR nosuch:x)'), { orders: ordersSpec }),
+    ).toEqual({ OR: [{ orders: { gt: 5 } }, { NOT: {} }] })
+  })
+
+  it('skips an empty member, and a group of empty members filters nothing', () => {
+    expect(buildFilterWhere(parseFilterQuery('(status:active OR status:)'), specs)).toEqual({
+      status: { equals: 'active' },
+    })
+    expect(buildFilterWhere(parseFilterQuery('(status: OR "")'), specs)).toBeUndefined()
+  })
+
+  it('searches degraded parentheses as the literal words they are', () => {
+    expect(buildFilterWhere(parseFilterQuery('(a OR b'), specs)).toEqual({
+      AND: [
+        { name: { contains: '(a' } },
+        { name: { contains: 'OR' } },
+        { name: { contains: 'b' } },
+      ],
     })
   })
 })

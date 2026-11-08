@@ -52,10 +52,10 @@ import type { ServerActionInput } from '../server/types.js'
 import {
   describeToken,
   fieldToken,
-  filterQuery,
-  hydrateTokens,
+  entriesQuery,
+  hydrateEntries,
   isRecordLookupField,
-  placeTokens,
+  placeEntries,
   type FilterFields,
   type ResolvedFilterRecord,
 } from '../lib/filterBuilderOptions.js'
@@ -399,7 +399,7 @@ export function ListViewClient({
     () => new Map(filterSuggestions.map((suggestion) => [suggestion.field, suggestion])),
     [filterSuggestions],
   )
-  const appliedTokens = React.useMemo(() => hydrateTokens(initialSearch ?? ''), [initialSearch])
+  const appliedEntries = React.useMemo(() => hydrateEntries(initialSearch ?? ''), [initialSearch])
   const [isFiltering, startFiltering] = React.useTransition()
   const sortBy = initialSort?.field ?? null
   const sortOrder = initialSort?.direction ?? 'asc'
@@ -493,10 +493,12 @@ export function ListViewClient({
     startFiltering(() => router.push(editUrl({ search: query, page: 1 })))
   }
 
-  const appliedQuery = filterQuery(appliedTokens)
+  const appliedQuery = entriesQuery(appliedEntries)
 
   const isAppliedFilter = (token: FilterToken) =>
-    filterQuery(placeTokens(appliedTokens, [token], null, filterFields, true)) === appliedQuery
+    entriesQuery(
+      placeEntries(appliedEntries, [{ token, group: null }], null, filterFields, true),
+    ) === appliedQuery
 
   const removal = filterRemoval && filterRemoval.search === appliedQuery ? filterRemoval : null
 

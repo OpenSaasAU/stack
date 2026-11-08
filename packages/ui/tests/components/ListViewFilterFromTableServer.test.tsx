@@ -189,6 +189,21 @@ describe('the zero-results removal', () => {
   )
 
   it(
+    'treats an OR group as one term, removed whole',
+    async () => {
+      const props = await render(editor, { search: '(views:>100 OR title:zzz) status:draft' })
+      expect(props.total).toBe(0)
+      expect(props.filterRemoval).toEqual({
+        search: '(views:>100 OR title:zzz) status:draft',
+        query: 'status:draft',
+        sentence: 'Views greater than 100 or Title contains zzz',
+        rows: 3,
+      })
+    },
+    BOOT,
+  )
+
+  it(
     'is null when no single removal returns rows',
     async () => {
       const props = await render(editor, { search: 'status:draft views:>100 title:zzz' })

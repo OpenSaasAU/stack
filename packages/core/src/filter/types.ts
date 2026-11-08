@@ -59,10 +59,18 @@ export interface FilterToken {
 }
 
 /**
- * One term of a {@link FilterQuery}'s conjunction. A term is a
- * {@link FilterToken}; ADR-0083's OR group joins this union under its own `kind`.
+ * ADR-0083's OR group, written `(a OR b)`: it matches a row any one of its
+ * tokens matches. Groups do not nest, and a group holds at least two tokens
+ * when the parser produces it.
  */
-export type FilterTerm = FilterToken
+export interface FilterGroup {
+  kind: 'group'
+  /** The alternatives, in the order written. */
+  tokens: FilterToken[]
+}
+
+/** One term of a {@link FilterQuery}'s conjunction: a {@link FilterToken} or a {@link FilterGroup}. */
+export type FilterTerm = FilterToken | FilterGroup
 
 /**
  * A structured filter query: an AND of {@link FilterTerm}s. Produced by

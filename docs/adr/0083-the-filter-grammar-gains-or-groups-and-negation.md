@@ -35,3 +35,19 @@ Literal text stays reachable by quoting, so `"OR"` and `"(draft"` are still free
 - Unmatched or nested parentheses degrade to literal words.
 - Core owns the tree, parser and serialiser, and parse-then-serialise is a true inverse. The admin UI carries no grammar of its own.
 - Filtering can still only narrow: the query is ANDed with the Access Filter however it is built.
+
+## Amendment — exactly what reads as a group (issue #2251)
+
+Only a matched group changes meaning. A group is `(` directly before its first token, two or more tokens separated by whitespace, uppercase `OR` and whitespace, and `)` directly after the last token, ending its word. **Every member word must be free of unquoted parentheses**, apart from that opening `(` on the first word and that closing `)` on the last. A parenthesis inside quotes is part of the value and does not count.
+
+Anything short of that reads exactly as it did before groups existed, as literal words:
+
+- `a OR b` without parentheses, `(a or b)`, `"OR"`, `( a OR b )`, `(a)` and `-(a OR b)`
+- an unmatched parenthesis and a nested group
+- a member holding a parenthesis of its own: `(a OR f(x) y)`, `(see OR note(1) later)` and `(a OR b))` are the same words they were before, so a bookmarked search with a parenthesised word keeps its meaning
+
+A valid group after an unmatched `(` still reads as a group.
+
+The serialiser quotes whatever would otherwise change shape on the way back: a group member's value that holds a parenthesis, and a free-text word outside a group that would open one, quoted as the text it is written as. A range member whose bounds hold a parenthesis cannot be written as a range inside a group, since a quoted value is never a range; it is written as its quoted literal `"a..b"`, which is what its URL means. The Filter builder never produces one: it refuses to put a range it cannot write as `a..b` into a group. The engine reads a structured group as its serialised form reads back, so a query built in code filters the same rows as its URL.
+
+In the Filter builder, a lowercase `or` typed between two filters stays literal by default, as it is in the URL. The builder offers the OR group as a secondary suggestion after the literal search, and never splits an `or` inside quotes or inside an enumerated value's exact label. Text typed or pasted in the URL grammar, `(a OR b)`, is offered first as exactly that group. Groups do not nest, so an alternative added to a group is exactly one filter.

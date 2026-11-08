@@ -1,12 +1,14 @@
-import { parseFilterQuery } from './parse.js'
+import { filterQueryTokens, parseFilterQuery } from './parse.js'
 import { filterValueRecordId } from './record-id.js'
-import { serializeFilterToken } from './serialize.js'
+import { serializeFilterQuery, serializeFilterToken } from './serialize.js'
 import type {
   FilterCondition,
   FilterFieldSuggestion,
   FilterOperator,
   FilterQuery,
+  FilterGroup,
   FilterSpec,
+  FilterTerm,
   FilterToken,
   FilterTokenOperator,
 } from './types.js'
@@ -203,6 +205,12 @@ function fieldCondition(written: FilterToken, spec: FilterSpec): FilterCondition
  * is read as its serialised form reads back, so a structured one with several
  * values is the words its URL holds.
  *
+ * An OR group, `(a OR b)`, is the `OR` of its tokens, each mapped exactly as
+ * it would be on its own and negated by the same rules. A token in a group
+ * that cannot map stays in place as its free-text alternative, never dropped,
+ * so it can only add rows the free-text search finds; an empty token in a
+ * group is skipped, and a group of nothing but empty tokens filters nothing.
+ *
  * Bare words (and degraded tokens) are OR-matched across every free-text
  * field, and each such word is ANDed with the rest — so `beta gamma` requires
  * both. A word that cannot be matched against any free-text field — because
@@ -232,11 +240,19 @@ export function buildFilterWhere(
     return conditions.length > 0 ? anyOf(conditions) : NEVER_MATCHES
   }
 
-  const terms = query.terms.flatMap((token) =>
-    token.field === null ? parseFilterQuery(serializeFilterToken(token)).terms : [token],
-  )
+  const tokenCondition = (token: FilterToken): FilterCondition | null => {
+    const spec = token.field === null ? undefined : specFor(token.field)
+    return spec === undefined ? null : fieldCondition(token, spec)
+  }
 
-  for (const token of terms) {
+  const groupCondition = (term: FilterGroup): FilterCondition | null => {
+    const alternatives = term.tokens
+      .filter((token) => !isEmptyFilterToken(token))
+      .map((token) => tokenCondition(token) ?? freeText(filterTokenFreeTextWord(token)))
+    return alternatives.length === 0 ? null : anyOf(alternatives)
+  }
+
+  const addToken = (token: FilterToken): void => {
     // An empty value is incomplete input, not a constraint the engine failed
     // to honour: `role:` (or a bare `""`) says nothing to filter on, so it is
     // inert by design rather than narrowed away (#1509). This must be checked
@@ -245,15 +261,29 @@ export function buildFilterWhere(
     // `''` matches every row, not none. That is the opposite of #1356's
     // narrow-on-failure rule, which only ever applies to a token that DOES
     // carry a value the system cannot compile.
-    if (isEmptyFilterToken(token)) continue
+    if (isEmptyFilterToken(token)) return
+    const condition = tokenCondition(token)
+    if (condition !== null) fieldConditions.push(condition)
+    else textConditions.push(freeText(filterTokenFreeTextWord(token)))
+  }
 
-    const spec = token.field === null ? undefined : specFor(token.field)
-    const condition = spec === undefined ? null : fieldCondition(token, spec)
-    if (condition !== null) {
-      fieldConditions.push(condition)
-      continue
+  const addTerm = (term: FilterTerm): void => {
+    if (term.kind === 'token') {
+      addToken(term)
+      return
     }
-    textConditions.push(freeText(filterTokenFreeTextWord(token)))
+    const condition = groupCondition(term)
+    if (condition !== null) fieldConditions.push(condition)
+  }
+
+  for (const term of query.terms) {
+    if (term.kind === 'group') {
+      parseFilterQuery(serializeFilterQuery({ terms: [term] })).terms.forEach(addTerm)
+    } else if (term.field === null) {
+      filterQueryTokens(parseFilterQuery(serializeFilterToken(term))).forEach(addToken)
+    } else {
+      addToken(term)
+    }
   }
 
   const andConditions = [...fieldConditions, ...textConditions]

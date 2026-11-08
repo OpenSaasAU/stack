@@ -39,10 +39,12 @@ import type { FilterSpec, FilterToken, SecuredQuery } from '@opensaas/stack-core
 import type { CountFilterLink, FilterRemoval } from './ListViewClient.js'
 import {
   chipsOf,
-  filterQuery,
-  hydrateTokens,
+  entriesQuery,
+  entriesTerms,
+  hydrateEntries,
   isFieldCondition,
-  withoutChip,
+  removableTerms,
+  type FilterEntry,
   type FilterFields,
   type RecordOf,
   type ResolvedFilterRecord,
@@ -222,23 +224,25 @@ function filteredFields(tokens: readonly FilterToken[], fields: FilterFields): s
 }
 
 async function resolveFilterRemoval(
-  tokens: FilterToken[],
+  entries: FilterEntry[],
   fields: FilterFields,
   specs: Record<string, FilterSpec>,
   recordOf: RecordOf,
   list: SecuredQuery,
   listKey: string,
 ): Promise<FilterRemoval | null> {
-  const terms = chipsOf(tokens, fields, recordOf).slice(0, FILTER_REMOVAL_TERMS)
+  const terms = removableTerms(entries, chipsOf(entries, fields, recordOf)).slice(
+    0,
+    FILTER_REMOVAL_TERMS,
+  )
   if (terms.length === 0) return null
   try {
     const removals = await Promise.all(
-      terms.map(async (chip) => {
-        const rest = withoutChip(tokens, chip)
-        const where = buildFilterWhere({ terms: rest }, specs)
+      terms.map(async ({ sentence, rest }) => {
+        const where = buildFilterWhere({ terms: entriesTerms(rest) }, specs)
         const scoped = where ? list.where(where) : list
         const { rows } = await scoped.aggregate((aggregate) => ({ rows: aggregate.count() }))
-        return { sentence: chip.description.sentence, rest, rows }
+        return { sentence, rest, rows }
       }),
     )
     const best = removals.reduce<(typeof removals)[number] | null>(
@@ -247,8 +251,8 @@ async function resolveFilterRemoval(
     )
     if (!best) return null
     return {
-      search: filterQuery(tokens),
-      query: filterQuery(best.rest),
+      search: entriesQuery(entries),
+      query: entriesQuery(best.rest),
       sentence: best.sentence,
       rows: best.rows,
     }
@@ -421,7 +425,8 @@ export async function ListView({
   const filterFields: FilterFields = new Map(
     filterSuggestions.map((suggestion) => [suggestion.field, suggestion]),
   )
-  const searchTokens = activeSearch ? hydrateTokens(activeSearch) : []
+  const searchEntries = activeSearch ? hydrateEntries(activeSearch) : []
+  const searchTokens = searchEntries.map((entry) => entry.token)
   const autoColumns = filteredFields(searchTokens, filterFields).filter(
     (name) => Object.hasOwn(displayFields, name) && !baseColumns.includes(name),
   )
@@ -467,7 +472,9 @@ export async function ListView({
     // secured `context.db` below, which ANDs it with the access filter, so the
     // filter can only ever narrow (never widen) what this session may see.
     const parsedWhere =
-      searchTokens.length > 0 ? buildFilterWhere({ terms: searchTokens }, filterSpecs) : undefined
+      searchEntries.length > 0
+        ? buildFilterWhere({ terms: entriesTerms(searchEntries) }, filterSpecs)
+        : undefined
 
     // A to-one relationship fetches the related row (for its Item label); a
     // to-many displayed as a count reduces to the count of the related rows
@@ -569,7 +576,7 @@ export async function ListView({
   const filterRemoval =
     total === 0 && searchTokens.length > 0 && filterSuggestions.length > 0
       ? await resolveFilterRemoval(
-          searchTokens,
+          searchEntries,
           filterFields,
           filterSpecs,
           (field, id) => recordLabels[field]?.find((record) => record.id === id),

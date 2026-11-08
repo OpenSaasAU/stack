@@ -1,6 +1,8 @@
 import {
   FILTER_COMPARISON_PREFIXES,
   effectiveFilterToken,
+  filterQueryTokens,
+  filterTermTokens,
   filterTokenFreeTextWord,
   filterTokenRecordId,
   filterValueRecordId,
@@ -12,6 +14,7 @@ import {
   supportsFilterRange,
   type FilterFieldSuggestion,
   type FilterOperator,
+  type FilterTerm,
   type FilterToken,
 } from '@opensaas/stack-core'
 import { formatFieldName } from './utils.js'
@@ -36,12 +39,29 @@ export interface FilterRange {
   high: string
 }
 
+export interface FilterEntry {
+  token: FilterToken
+  group: number | null
+}
+
 export interface FilterChip {
   start: number
   count: number
   description: TokenDescription
   range: FilterRange | null
+  group: number | null
 }
+
+export interface ChipUnit {
+  first: number
+  last: number
+  group: number | null
+}
+
+export type GroupEdit = { ok: true; entries: FilterEntry[] } | { ok: false; message: string }
+
+export const ALTERNATIVE_HINT =
+  'An alternative is one filter. Choose a single filter, or quote words to search them as one phrase.'
 
 export interface DatePreset {
   label: string
@@ -76,6 +96,7 @@ export type FilterOption =
       group: string
       selected?: boolean
       record?: { field: string } & FilterRecord
+      entries?: FilterEntry[]
     }
   | { kind: 'toggle'; tokens: FilterToken[]; label: string; group: string; selected: boolean }
 
@@ -198,7 +219,59 @@ export function filterQuery(tokens: readonly FilterToken[]): string {
 }
 
 export function hydrateTokens(query: string): FilterToken[] {
-  return parseFilterQuery(query).terms.filter((token) => !isEmptyFilterToken(token))
+  return filterQueryTokens(parseFilterQuery(query)).filter((token) => !isEmptyFilterToken(token))
+}
+
+export function normaliseGroups(entries: readonly FilterEntry[]): FilterEntry[] {
+  let id = -1
+  return entries.map((entry, index) => {
+    if (entry.group === null) return entry
+    const previous = entries[index - 1]
+    const next = entries[index + 1]
+    const continues = previous !== undefined && previous.group === entry.group
+    if (!continues) id++
+    const alone = !continues && (next === undefined || next.group !== entry.group)
+    const group = alone ? null : id
+    return group === entry.group ? entry : { token: entry.token, group }
+  })
+}
+
+export function nextGroupId(entries: readonly FilterEntry[]): number {
+  return entries.reduce((max, entry) => Math.max(max, entry.group ?? -1), -1) + 1
+}
+
+export function hydrateEntries(query: string): FilterEntry[] {
+  const entries = parseFilterQuery(query).terms.flatMap((term, index) =>
+    filterTermTokens(term)
+      .filter((token) => !isEmptyFilterToken(token))
+      .map((token) => ({ token, group: term.kind === 'group' ? index : null })),
+  )
+  return normaliseGroups(entries)
+}
+
+export function entriesQuery(entries: readonly FilterEntry[]): string {
+  return serializeFilterQuery({ terms: entriesTerms(entries) })
+}
+
+export function entriesTerms(entries: readonly FilterEntry[]): FilterTerm[] {
+  const terms: FilterTerm[] = []
+  let open: FilterToken[] | null = null
+  normaliseGroups(entries.filter((entry) => !isEmptyFilterToken(entry.token))).forEach(
+    (entry, index, all) => {
+      if (entry.group === null) {
+        open = null
+        terms.push(entry.token)
+        return
+      }
+      if (open === null || all[index - 1]?.group !== entry.group) {
+        open = [entry.token]
+        terms.push({ kind: 'group', tokens: open })
+        return
+      }
+      open.push(entry.token)
+    },
+  )
+  return terms
 }
 
 export function freeTextTokens(text: string): FilterToken[] {
@@ -535,33 +608,249 @@ function pairedRange(
 }
 
 export function chipsOf(
-  tokens: readonly FilterToken[],
+  entries: readonly FilterEntry[],
   fields: FilterFields,
   recordOf: RecordOf = () => undefined,
 ): FilterChip[] {
   const chips: FilterChip[] = []
-  for (let start = 0; start < tokens.length; start++) {
-    const token = tokens[start]
+  for (let start = 0; start < entries.length; start++) {
+    const { token, group } = entries[start]
+    const following = entries[start + 1]
     const suggestion = token.field === null ? undefined : fields.get(token.field)
-    const paired = suggestion ? pairedRange(token, tokens[start + 1], fields) : null
+    const paired =
+      suggestion && group === null && following?.group === null
+        ? pairedRange(token, following.token, fields)
+        : null
     if (suggestion && paired) {
-      chips.push({ start, count: 2, description: describeRange(suggestion, paired), range: paired })
+      chips.push({
+        start,
+        count: 2,
+        description: describeRange(suggestion, paired),
+        range: paired,
+        group: null,
+      })
       start++
       continue
     }
     const mapped = effectiveToken(token, fields)
     const range = !mapped.negated && isFieldCondition(token, fields) ? rangeOf(mapped) : null
-    chips.push({ start, count: 1, description: describeToken(token, fields, recordOf), range })
+    chips.push({
+      start,
+      count: 1,
+      description: describeToken(token, fields, recordOf),
+      range,
+      group,
+    })
   }
   return chips
 }
 
+export function unitsOf(chips: readonly FilterChip[]): ChipUnit[] {
+  const units: ChipUnit[] = []
+  chips.forEach((chip, index) => {
+    const last = units.at(-1)
+    if (last && chip.group !== null && last.group === chip.group) last.last = index
+    else units.push({ first: index, last: index, group: chip.group })
+  })
+  return units
+}
+
+function unitAt(chips: readonly FilterChip[], index: number): ChipUnit | undefined {
+  return unitsOf(chips).find((unit) => unit.first <= index && index <= unit.last)
+}
+
+function chipEntries(entries: readonly FilterEntry[], chip: FilterChip): FilterEntry[] {
+  const own = entries.slice(chip.start, chip.start + chip.count)
+  const field = own[0]?.token.field ?? null
+  if (own.length !== 2 || chip.range === null || field === null) return own
+  return [{ token: rangeToken(field, chip.range.low, chip.range.high), group: null }]
+}
+
+function memberRefusal(token: FilterToken, sentence: string): string | null {
+  if (readsBackAs(token, true)) return null
+  const fix =
+    token.operator === 'range'
+      ? ' Write each end of its range without spaces, commas or parentheses.'
+      : ''
+  return `“${sentence}” cannot be one alternative of an or group.${fix}`
+}
+
+function unitRefusal(
+  entries: readonly FilterEntry[],
+  chips: readonly FilterChip[],
+  unit: ChipUnit,
+): string | null {
+  for (const chip of chips.slice(unit.first, unit.last + 1)) {
+    for (const { token } of chipEntries(entries, chip)) {
+      const refusal = memberRefusal(token, chip.description.sentence)
+      if (refusal !== null) return refusal
+    }
+  }
+  return null
+}
+
+export function alternativeRefusal(
+  entries: readonly FilterEntry[],
+  chips: readonly FilterChip[],
+  index: number,
+): string | null {
+  const unit = unitAt(chips, index)
+  return unit ? unitRefusal(entries, chips, unit) : null
+}
+
+function regroup(
+  entries: readonly FilterEntry[],
+  chips: readonly FilterChip[],
+  groupOf: (index: number) => number | null | undefined,
+  insert: { after: number; entries: FilterEntry[] } | null = null,
+): FilterEntry[] {
+  const next = chips.flatMap((chip, index) => {
+    const group = groupOf(index)
+    const own =
+      group === undefined
+        ? entries.slice(chip.start, chip.start + chip.count)
+        : chipEntries(entries, chip).map((entry) => ({ token: entry.token, group }))
+    return insert && insert.after === index ? [...own, ...insert.entries] : own
+  })
+  return normaliseGroups(next)
+}
+
+export function joinChips(
+  entries: readonly FilterEntry[],
+  chips: readonly FilterChip[],
+  index: number,
+): GroupEdit {
+  const units = unitsOf(chips)
+  const at = units.findIndex((unit) => unit.last === index)
+  const left = units[at]
+  const right = units[at + 1]
+  if (left === undefined || right === undefined) return { ok: true, entries: [...entries] }
+  const refusal = unitRefusal(entries, chips, left) ?? unitRefusal(entries, chips, right)
+  if (refusal !== null) return { ok: false, message: refusal }
+  const id = nextGroupId(entries)
+  return {
+    ok: true,
+    entries: regroup(entries, chips, (chip) =>
+      left.first <= chip && chip <= right.last ? id : undefined,
+    ),
+  }
+}
+
+export function splitChips(
+  entries: readonly FilterEntry[],
+  chips: readonly FilterChip[],
+  index: number,
+): FilterEntry[] {
+  const unit = unitAt(chips, index)
+  if (!unit || unit.group === null || index >= unit.last) return [...entries]
+  const id = nextGroupId(entries)
+  return regroup(entries, chips, (at) => (index < at && at <= unit.last ? id : undefined))
+}
+
+export function addAlternatives(
+  entries: readonly FilterEntry[],
+  chips: readonly FilterChip[],
+  index: number,
+  added: readonly FilterToken[],
+  fields: FilterFields,
+): GroupEdit {
+  const [token, ...more] = added
+  if (token === undefined || more.length > 0) return { ok: false, message: ALTERNATIVE_HINT }
+  const unit = unitAt(chips, index)
+  const refusal =
+    memberRefusal(token, describeToken(token, fields).sentence) ??
+    (unit ? unitRefusal(entries, chips, unit) : null)
+  if (refusal !== null) return { ok: false, message: refusal }
+  if (!unit) return { ok: true, entries: normaliseGroups([...entries, { token, group: null }]) }
+  const id = unit.group ?? nextGroupId(entries)
+  return {
+    ok: true,
+    entries: regroup(
+      entries,
+      chips,
+      (at) => (unit.first <= at && at <= unit.last ? id : undefined),
+      {
+        after: unit.last,
+        entries: [{ token, group: id }],
+      },
+    ),
+  }
+}
+
+export function placeChoice(
+  entries: readonly FilterEntry[],
+  chips: readonly FilterChip[],
+  added: readonly FilterEntry[],
+  target: { alternativeOf: number | null; editing: FilterChip | null },
+  fields: FilterFields,
+  replace: boolean,
+): GroupEdit {
+  const { alternativeOf, editing } = target
+  if (editing === null && alternativeOf !== null) {
+    return addAlternatives(
+      entries,
+      chips,
+      alternativeOf,
+      added.map((entry) => entry.token),
+      fields,
+    )
+  }
+  if (editing !== null && editing.group !== null) {
+    const [entry, ...more] = added
+    if (entry === undefined || more.length > 0) return { ok: false, message: ALTERNATIVE_HINT }
+    const refusal = memberRefusal(entry.token, describeToken(entry.token, fields).sentence)
+    if (refusal !== null) return { ok: false, message: refusal }
+    return {
+      ok: true,
+      entries: placeEntries(
+        entries,
+        [{ token: entry.token, group: editing.group }],
+        editing,
+        fields,
+        false,
+      ),
+    }
+  }
+  const offset = nextGroupId(entries)
+  const shifted = added.map((entry) => ({
+    token: entry.token,
+    group: entry.group === null ? null : entry.group + offset,
+  }))
+  return { ok: true, entries: placeEntries(entries, shifted, editing, fields, replace) }
+}
+
+export function singleTokenOptions({ options, hint }: FilterOptions): FilterOptions {
+  const single = options.filter((option) => option.kind !== 'apply' || option.tokens.length === 1)
+  return {
+    options: single,
+    hint: single.length < options.length ? (hint ?? ALTERNATIVE_HINT) : hint,
+  }
+}
+
 export function withoutChip(
-  tokens: readonly FilterToken[],
+  entries: readonly FilterEntry[],
   chip: { start: number; count: number } | null | undefined,
-): FilterToken[] {
-  if (!chip) return [...tokens]
-  return tokens.filter((_, index) => index < chip.start || index >= chip.start + chip.count)
+): FilterEntry[] {
+  if (!chip) return [...entries]
+  return normaliseGroups(
+    entries.filter((_, index) => index < chip.start || index >= chip.start + chip.count),
+  )
+}
+
+export function removableTerms(
+  entries: readonly FilterEntry[],
+  chips: readonly FilterChip[],
+): Array<{ sentence: string; rest: FilterEntry[] }> {
+  return unitsOf(chips).map((unit) => {
+    const members = chips.slice(unit.first, unit.last + 1)
+    const first = members[0]?.start ?? 0
+    const last = members.at(-1)
+    const count = last === undefined ? 0 : last.start + last.count - first
+    return {
+      sentence: members.map((chip) => chip.description.sentence).join(' or '),
+      rest: withoutChip(entries, { start: first, count }),
+    }
+  })
 }
 
 export function chipEditText(
@@ -625,27 +914,36 @@ export function lastChoicePerField(
   )
 }
 
-export function placeTokens(
-  tokens: readonly FilterToken[],
-  added: readonly FilterToken[],
+export function placeEntries(
+  entries: readonly FilterEntry[],
+  added: readonly FilterEntry[],
   at: { start: number; count: number } | null,
   fields: FilterFields,
   replace: boolean,
-): FilterToken[] {
-  const placed = replace ? lastChoicePerField(added, fields) : [...added]
-  const next = [...tokens]
+): FilterEntry[] {
+  const loose = added.filter((entry) => entry.group === null).map((entry) => entry.token)
+  const kept = replace ? new Set(lastChoicePerField(loose, fields)) : null
+  const placed = added.filter(
+    (entry) => entry.group !== null || kept === null || kept.has(entry.token),
+  )
+  const next = [...entries]
   if (at !== null && at.start < next.length) next.splice(at.start, at.count, ...placed)
   else next.push(...placed)
-  if (!replace) return next
+  if (!replace) return normaliseGroups(next)
   const chosen = new Set(
-    placed.filter((token) => isSingleChoice(token, fields)).map((token) => token.field),
+    placed
+      .filter((entry) => entry.group === null && isSingleChoice(entry.token, fields))
+      .map((entry) => entry.token.field),
   )
-  return next.filter(
-    (other) =>
-      placed.includes(other) ||
-      other.field === null ||
-      !chosen.has(other.field) ||
-      !isSingleChoice(other, fields),
+  return normaliseGroups(
+    next.filter(
+      (other) =>
+        placed.includes(other) ||
+        other.group !== null ||
+        other.token.field === null ||
+        !chosen.has(other.token.field) ||
+        !isSingleChoice(other.token, fields),
+    ),
   )
 }
 
@@ -739,6 +1037,21 @@ export function checkRange(suggestion: FilterFieldSuggestion, raw: string): Rang
   return { ok: false, message: fits.length > 1 ? shape : (firstMiss ?? shape) }
 }
 
+function readsBackAs(token: FilterToken, inGroup: boolean): boolean {
+  const terms: FilterTerm[] = inGroup ? [{ kind: 'group', tokens: [token, token] }] : [token]
+  const [term, ...rest] = parseFilterQuery(serializeFilterQuery({ terms })).terms
+  if (term === undefined || rest.length > 0 || (term.kind === 'group') !== inGroup) return false
+  return filterTermTokens(term).every(
+    (written) =>
+      written.field === token.field &&
+      written.operator === token.operator &&
+      written.negated === token.negated &&
+      written.values.length === token.values.length &&
+      written.values.every((value, at) => value.text === token.values[at]?.text) &&
+      filterTokenRecordId(written) === filterTokenRecordId(token),
+  )
+}
+
 export function checkedRangeTokens(
   suggestion: FilterFieldSuggestion,
   low: string,
@@ -746,14 +1059,7 @@ export function checkedRangeTokens(
   negated = false,
 ): TokensCheck {
   const tokens = rangeTokens(suggestion, low, high, negated)
-  const [written] = hydrateTokens(filterQuery(tokens))
-  const faithful =
-    written !== undefined &&
-    written.operator === 'range' &&
-    written.negated === negated &&
-    written.values[0]?.text === tokens[0].values[0]?.text &&
-    written.values[1]?.text === tokens[0].values[1]?.text
-  if (faithful) return { ok: true, tokens }
+  if (readsBackAs(tokens[0], false)) return { ok: true, tokens }
   return {
     ok: false,
     message: `${fieldLabel(suggestion.field)} cannot take that range. Write each end without spaces or commas.`,
@@ -914,6 +1220,10 @@ export function rootOptions(text: string, fields: FilterFields): FilterOptions {
     }
   }
 
+  if (parseFilterQuery(typed).terms.some((term) => term.kind === 'group')) {
+    return { options: groupedOptions(typed, fields), hint: null }
+  }
+
   const options: FilterOption[] = []
   const seen = new Set<string>()
   let hint: string | null = null
@@ -980,7 +1290,138 @@ export function rootOptions(text: string, fields: FilterFields): FilterOptions {
   }
 
   options.push(searchOption(typed))
+  const alternatives = alternativesOption(typed, fields)
+  if (alternatives) options.push(alternatives)
   return { options, hint }
+}
+
+function entriesSentence(entries: readonly FilterEntry[], fields: FilterFields): string {
+  const units: FilterEntry[][] = []
+  entries.forEach((entry, index) => {
+    const previous = entries[index - 1]
+    const unit = units.at(-1)
+    if (unit && entry.group !== null && previous?.group === entry.group) unit.push(entry)
+    else units.push([entry])
+  })
+  const sentences = units.map((unit) => {
+    const sentence = unit.map((entry) => describeToken(entry.token, fields).sentence).join(' or ')
+    return unit.length > 1 && units.length > 1 ? `(${sentence})` : sentence
+  })
+  return sentences.join(' and ')
+}
+
+function entriesOption(entries: FilterEntry[], label: string, group: string): FilterOption {
+  return { kind: 'apply', tokens: entries.map((entry) => entry.token), label, group, entries }
+}
+
+function typedEntries(typed: string, fields: FilterFields): FilterEntry[] {
+  const entries = hydrateEntries(typed).map((entry) => ({
+    token: normaliseTokens([entry.token], fields)[0] ?? entry.token,
+    group: entry.group,
+  }))
+  const loose = entries.filter((entry) => entry.group === null).map((entry) => entry.token)
+  const kept = new Set(lastChoicePerField(loose, fields))
+  return entries.filter((entry) => entry.group !== null || kept.has(entry.token))
+}
+
+function groupedOptions(typed: string, fields: FilterFields): FilterOption[] {
+  const entries = typedEntries(typed, fields)
+  const searched = hydrateEntries(typed).map((entry) => ({
+    token:
+      entry.token.field === null
+        ? entry.token
+        : textToken(serializeFilterQuery({ terms: [entry.token] })),
+    group: entry.group,
+  }))
+  const options = [entriesOption(entries, entriesSentence(entries, fields), 'Suggestions')]
+  if (entriesQuery(searched) !== entriesQuery(entries)) {
+    options.push(entriesOption(searched, `Search all text for “${typed}”`, 'Search'))
+  }
+  return options
+}
+
+const OR_WORD = /\s+or\s+/gi
+
+function unquotedSides(text: string): Array<{ from: number; to: number; next: number }> {
+  const quoted: boolean[] = []
+  let inside = false
+  for (let at = 0; at < text.length; at++) {
+    if (text[at] === '\\' && inside) {
+      quoted.push(true, true)
+      at++
+      continue
+    }
+    if (text[at] === '"') inside = !inside
+    quoted.push(inside || text[at] === '"')
+  }
+  const sides: Array<{ from: number; to: number; next: number }> = []
+  let from = 0
+  for (const match of text.matchAll(OR_WORD)) {
+    if (quoted[match.index]) continue
+    sides.push({ from, to: match.index, next: match.index + match[0].length })
+    from = match.index + match[0].length
+  }
+  sides.push({ from, to: text.length, next: text.length })
+  return sides
+}
+
+function exactEnumTokens(typed: string, fields: FilterFields): FilterToken[] {
+  const needle = typed.toLowerCase()
+  return [...fields.values()].flatMap((suggestion) =>
+    suggestion.valueSource.kind === 'enum'
+      ? suggestion.valueSource.options
+          .filter(
+            (option) =>
+              option.value.toLowerCase() === needle || option.label.toLowerCase() === needle,
+          )
+          .map((option) => fieldToken(suggestion.field, 'eq', option.value))
+      : [],
+  )
+}
+
+function alternativeTokens(text: string, fields: FilterFields): FilterToken[] {
+  const typed = text.trim()
+  if (FIELD_TOKEN_SHAPE.test(typed)) {
+    const terms = hydrateTokens(typed)
+    if (terms.length === 1 && isFieldCondition(terms[0], fields)) {
+      return normaliseTokens(terms, fields)
+    }
+  }
+  const phrase = parsePhrase(typed, fields)
+  if (phrase?.kind === 'token') return phrase.tokens
+  if (phrase?.kind === 'invalid') return []
+  const values = exactEnumTokens(typed, fields)
+  if (values.length > 0) return values
+  return freeTextTokens(typed)
+}
+
+export function alternativesOption(text: string, fields: FilterFields): FilterOption | null {
+  const typed = text.trim()
+  const pieces = unquotedSides(typed)
+  const sides: string[] = []
+  for (let first = 0; first < pieces.length;) {
+    let last = first
+    for (let end = pieces.length - 1; end > first; end--) {
+      if (exactEnumTokens(typed.slice(pieces[first].from, pieces[end].to), fields).length > 0) {
+        last = end
+        break
+      }
+    }
+    sides.push(typed.slice(pieces[first].from, pieces[last].to))
+    first = last + 1
+  }
+  if (sides.length < 2 || sides.some((side) => side.trim() === '')) return null
+  const tokens: FilterToken[] = []
+  for (const side of sides) {
+    const [token, ...more] = alternativeTokens(side, fields)
+    if (token === undefined || more.length > 0 || !readsBackAs(token, true)) return null
+    tokens.push(token)
+  }
+  return entriesOption(
+    tokens.map((token) => ({ token, group: 0 })),
+    tokens.map((token) => describeToken(token, fields).sentence).join(' or '),
+    'Any of',
+  )
 }
 
 /**

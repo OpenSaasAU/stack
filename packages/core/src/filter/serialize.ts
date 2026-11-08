@@ -1,19 +1,29 @@
 import {
+  FILTER_GROUP_KEYWORD,
   FILTER_OPERATOR_PREFIXES,
   fieldPrefixLength,
   isFilterWhitespace,
+  readFilterGroup,
   splitRangeValue,
 } from './parse.js'
-import type { FilterQuery, FilterToken, FilterValue } from './types.js'
+import type { FilterQuery, FilterTerm, FilterToken, FilterValue } from './types.js'
+
+type Placement = 'top' | 'member'
 
 function hasWhitespace(text: string): boolean {
   for (const ch of text) if (isFilterWhitespace(ch)) return true
   return false
 }
 
-function mustQuote(token: FilterToken, value: FilterValue, index: number): boolean {
+function mustQuote(
+  token: FilterToken,
+  value: FilterValue,
+  index: number,
+  placement: Placement,
+): boolean {
   const { text } = value
   if (value.quoted || text.startsWith('"') || hasWhitespace(text)) return true
+  if (placement === 'member' && /[()]/.test(text)) return true
   if (token.field === null) {
     if (text === '' || fieldPrefixLength(text) > 0) return true
     return !token.negated && text.startsWith('-') && text !== '-'
@@ -57,15 +67,17 @@ export function quoteFilterValue(text: string): string {
   return quote(text)
 }
 
-function serializeValues(token: FilterToken): string {
+function serializeValues(token: FilterToken, placement: Placement): string {
   const values: FilterValue[] =
     token.values.length > 0 ? token.values : [{ text: '', quoted: false }]
   return values
-    .map((value, index) => (mustQuote(token, value, index) ? quote(value.text) : value.text))
+    .map((value, index) =>
+      mustQuote(token, value, index, placement) ? quote(value.text) : value.text,
+    )
     .join(',')
 }
 
-function rangeText(token: FilterToken): string | null {
+function rangeText(token: FilterToken, placement: Placement): string | null {
   if (token.field === null || token.values.length !== 2) return null
   const [low, high] = token.values
   if (low.quoted || high.quoted) return null
@@ -73,6 +85,7 @@ function rangeText(token: FilterToken): string | null {
   const bounds = splitRangeValue(text)
   if (bounds === null || bounds[0] !== low.text) return null
   if (text.startsWith('"') || hasWhitespace(text) || /^(?:[<>]|\/\/)/.test(text)) return null
+  if (placement === 'member' && /[()]/.test(text)) return null
   return text
 }
 
@@ -81,23 +94,36 @@ function rangeLiteral(token: FilterToken): FilterToken {
   return { ...token, operator: 'eq', values: [{ text, quoted: false }] }
 }
 
-/**
- * Serialise one {@link FilterToken} to its query-string form, as
- * {@link serializeFilterQuery} writes it.
- */
-export function serializeFilterToken(token: FilterToken): string {
+function writeToken(token: FilterToken, placement: Placement): string {
   const negation = token.negated ? '-' : ''
   if (token.operator === 'empty') {
     return token.field === null ? `${negation}!` : `${negation}${token.field}:!`
   }
   if (token.operator === 'range') {
-    const range = rangeText(token)
+    const range = rangeText(token, placement)
     if (range !== null && token.field !== null) return `${negation}${token.field}:${range}`
-    return serializeFilterToken(rangeLiteral(token))
+    return writeToken(rangeLiteral(token), placement)
   }
-  const text = serializeValues(token)
+  const text = serializeValues(token, placement)
   if (token.field === null) return `${negation}${text}`
   return `${negation}${token.field}:${FILTER_OPERATOR_PREFIXES[token.operator]}${text}`
+}
+
+function writeGroup(tokens: readonly FilterToken[]): string {
+  const members = tokens.map((token) => writeToken(token, 'member'))
+  return `(${members.join(` ${FILTER_GROUP_KEYWORD} `)})`
+}
+
+function writeTerm(term: FilterTerm): string {
+  return term.kind === 'group' ? writeGroup(term.tokens) : writeToken(term, 'top')
+}
+
+/**
+ * Serialise one {@link FilterToken} to its query-string form, as
+ * {@link serializeFilterQuery} writes it outside a group.
+ */
+export function serializeFilterToken(token: FilterToken): string {
+  return writeToken(token, 'top')
 }
 
 /**
@@ -105,7 +131,7 @@ export function serializeFilterToken(token: FilterToken): string {
  * terms with the grammar's implicit AND (a space). The inverse of
  * {@link parseFilterQuery}: for every query `parseFilterQuery` returns,
  * `parseFilterQuery(serializeFilterQuery(query))` is that query again, quoting
- * included. Every term is written, including one whose values are empty or
+ * included. Every token is written, including one whose values are empty or
  * absent (`field:` or `""`).
  *
  * A value is quoted when it says so or when it would otherwise read back as
@@ -117,10 +143,29 @@ export function serializeFilterToken(token: FilterToken): string {
  * range. Inside quotes a quote is written `\"`, and a backslash that precedes
  * a quote or ends the value is written `\\`.
  *
+ * An OR group is written `(a OR b)`, quoting every member value that holds a
+ * parenthesis, since a member word with an unquoted parenthesis is no group.
+ * A `range` member whose bounds hold one cannot be written as a range inside
+ * a group, and is written as its quoted literal `"a..b"`. A group of one
+ * token is written as that token, and an empty group is not written. A
+ * free-text word outside a group that would read back as the start of a
+ * group is written quoted, as the word it is.
+ *
  * @example
- * serializeFilterQuery(parseFilterQuery('-name:"Ada \\"the Countess\\"",Grace "status:draft"'))
- * // '-name:"Ada \\"the Countess\\"",Grace "status:draft"'
+ * serializeFilterQuery(parseFilterQuery('-name:"Ada \\"the Countess\\"",Grace (status:draft OR "OR")'))
+ * // '-name:"Ada \\"the Countess\\"",Grace (status:draft OR "OR")'
  */
 export function serializeFilterQuery(query: FilterQuery): string {
-  return query.terms.map(serializeFilterToken).join(' ')
+  const terms = query.terms.flatMap((term) =>
+    term.kind === 'group' && term.tokens.length < 2 ? term.tokens : [term],
+  )
+  const parts = terms.map(writeTerm)
+  for (let index = parts.length - 1; index >= 0; index--) {
+    const term = terms[index]
+    if (term.kind === 'group' || term.field !== null || term.negated) continue
+    if (!parts[index].startsWith('(')) continue
+    const offset = parts.slice(0, index).reduce((length, part) => length + part.length + 1, 0)
+    if (readFilterGroup(parts.join(' '), offset) !== null) parts[index] = quote(parts[index])
+  }
+  return parts.join(' ')
 }

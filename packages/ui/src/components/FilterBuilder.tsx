@@ -7,6 +7,7 @@ import type { FilterFieldSuggestion, FilterToken } from '@opensaas/stack-core'
 import { Popover, PopoverAnchor, PopoverContent } from '../primitives/popover.js'
 import { cn } from '../lib/utils.js'
 import {
+  alternativeRefusal,
   chipEditText,
   chipsOf,
   conditionLabel,
@@ -14,20 +15,28 @@ import {
   conditionTakesValue,
   draftOptions,
   draftTokens,
+  entriesQuery,
   fieldLabel,
-  filterQuery,
-  hydrateTokens,
+  hydrateEntries,
   isFieldCondition,
   isRecordLookupField,
+  joinChips,
   normaliseTokens,
-  placeTokens,
+  placeChoice,
+  placeEntries,
   rootOptions,
+  singleTokenOptions,
+  splitChips,
   splitComparison,
+  unitsOf,
   withoutChip,
   type FilterBuilderCondition,
+  type FilterChip,
   type FilterDraft,
+  type FilterEntry,
   type FilterOption,
   type FilterRecord,
+  type GroupEdit,
   type RecordLookup,
   type ResolvedFilterRecord,
 } from '../lib/filterBuilderOptions.js'
@@ -36,6 +45,10 @@ import type { ServerActionInput } from '../server/types.js'
 
 const NO_RECORDS: FilterRecord[] = []
 const LOOKUP_PAGE_SIZE = 10
+const OR_PREFIX = /^or\s$/i
+
+const loose = (tokens: readonly FilterToken[]): FilterEntry[] =>
+  tokens.map((token) => ({ token, group: null }))
 
 /**
  * Per-part `classNames` slots for {@link FilterBuilder}. Each merges onto its
@@ -51,6 +64,10 @@ export interface FilterBuilderClassNames {
   chip?: string
   /** A chip's remove button (`data-slot="filter-builder-chip-remove"`). */
   chipRemove?: string
+  /** An OR group of chips, bounded as one unit (`data-slot="filter-builder-group"`). */
+  group?: string
+  /** The `and` or `or` button between chips (`data-slot="filter-builder-connector"`). */
+  connector?: string
   /** The field being built, before its value (`data-slot="filter-builder-draft"`). */
   draft?: string
   /** The combobox input (`data-slot="filter-builder-input"`). */
@@ -181,13 +198,15 @@ export function FilterBuilder({
     [suggestions],
   )
 
-  const [tokens, setTokens] = React.useState(() => hydrateTokens(defaultValue))
+  const [entries, setEntries] = React.useState(() => hydrateEntries(defaultValue))
   const [seenValue, setSeenValue] = React.useState(defaultValue)
   const [pendingQueries, setPendingQueries] = React.useState<readonly string[]>([])
   const [text, setText] = React.useState('')
   const [draft, setDraft] = React.useState<FilterDraft | null>(null)
   const [editing, setEditing] = React.useState<number | null>(null)
   const [armed, setArmed] = React.useState<number | null>(null)
+  const [alternativeOf, setAlternativeOf] = React.useState<number | null>(null)
+  const [refusal, setRefusal] = React.useState<string | null>(null)
   const [open, setOpen] = React.useState(false)
   const [activeIndex, setActiveIndex] = React.useState(0)
   const [dates, setDates] = React.useState({ from: '', to: '' })
@@ -197,11 +216,13 @@ export function FilterBuilder({
     const landed = pendingQueries.indexOf(defaultValue.trim())
     if (landed >= 0) {
       setPendingQueries(pendingQueries.slice(landed + 1))
-    } else if (filterQuery(tokens) !== defaultValue.trim()) {
+    } else if (entriesQuery(entries) !== defaultValue.trim()) {
       setPendingQueries([])
-      setTokens(hydrateTokens(defaultValue))
+      setEntries(hydrateEntries(defaultValue))
       setEditing(null)
       setArmed(null)
+      setAlternativeOf(null)
+      setRefusal(null)
       setDraft(null)
     }
   }
@@ -222,9 +243,10 @@ export function FilterBuilder({
     [picked, recordLabels],
   )
 
-  const chips = React.useMemo(() => chipsOf(tokens, fields, recordOf), [tokens, fields, recordOf])
+  const chips = React.useMemo(() => chipsOf(entries, fields, recordOf), [entries, fields, recordOf])
+  const units = React.useMemo(() => unitsOf(chips), [chips])
   const editingChip = editing === null ? undefined : chips[editing]
-  const editingToken = editingChip ? tokens[editingChip.start] : undefined
+  const editingToken = editingChip ? entries[editingChip.start]?.token : undefined
   const draftField = draft ? fields.get(draft.field) : undefined
   const lookupField =
     draft &&
@@ -249,11 +271,16 @@ export function FilterBuilder({
         : null,
     [serverAction, listKey, lookupField, searchResults, isSearching, searchApplied],
   )
-  const { options, hint } = React.useMemo(
-    () =>
-      draft ? draftOptions(draft, text, fields, editingToken, lookup) : rootOptions(text, fields),
-    [draft, text, fields, editingToken, lookup],
-  )
+  const oneMember =
+    (alternativeOf !== null && editingChip === undefined) ||
+    (editingChip !== undefined && editingChip.group !== null)
+  const { options, hint: optionsHint } = React.useMemo(() => {
+    const offered = draft
+      ? draftOptions(draft, text, fields, editingToken, lookup)
+      : rootOptions(text, fields)
+    return oneMember ? singleTokenOptions(offered) : offered
+  }, [draft, text, fields, editingToken, lookup, oneMember])
+  const hint = refusal ?? optionsHint
   const active = options.length === 0 ? -1 : Math.min(activeIndex, options.length - 1)
   const conditions = React.useMemo(() => (draftField ? conditionsOf(draftField) : []), [draftField])
   const hasDateForm =
@@ -294,13 +321,16 @@ export function FilterBuilder({
     setText('')
     setEditing(null)
     setArmed(null)
+    setAlternativeOf(null)
+    setRefusal(null)
     setActiveIndex(0)
     setDates({ from: '', to: '' })
   }
 
-  const apply = (next: FilterToken[]) => {
-    setTokens(next)
-    const query = filterQuery(next)
+  const apply = (next: FilterEntry[]) => {
+    setEntries(next)
+    setRefusal(null)
+    const query = entriesQuery(next)
     setPendingQueries((pending) => (query === seenValue.trim() ? [] : [...pending, query]))
     startTransition(() => {
       if (onApply) onApply(query)
@@ -308,8 +338,29 @@ export function FilterBuilder({
     })
   }
 
-  const commit = (added: FilterToken[], replace = true) => {
-    apply(placeTokens(tokens, added, editingChip ?? null, fields, replace))
+  const place = (added: readonly FilterEntry[], replace: boolean): GroupEdit =>
+    placeChoice(
+      entries,
+      chips,
+      added,
+      { alternativeOf, editing: editingChip ?? null },
+      fields,
+      replace,
+    )
+
+  const refuse = (message: string) => {
+    setRefusal(message)
+    setOpen(true)
+    focusInput()
+  }
+
+  const commit = (added: readonly FilterEntry[], replace = true) => {
+    const placed = place(added, replace)
+    if (!placed.ok) {
+      refuse(placed.message)
+      return
+    }
+    apply(placed.entries)
     reset()
     setOpen(false)
     focusInput()
@@ -327,9 +378,9 @@ export function FilterBuilder({
     focusInput()
   }
 
-  const latest = React.useRef({ tokens, fields, apply, stageField })
+  const latest = React.useRef({ entries, fields, apply, stageField })
   React.useEffect(() => {
-    latest.current = { tokens, fields, apply, stageField }
+    latest.current = { entries, fields, apply, stageField }
   })
 
   React.useImperativeHandle(
@@ -340,31 +391,36 @@ export function FilterBuilder({
         setEditing(null)
         latest.current.stageField(field)
       },
-      currentQuery: () => filterQuery(latest.current.tokens),
+      currentQuery: () => entriesQuery(latest.current.entries),
       addTokens: (added: FilterToken[]) => {
         const current = latest.current
         setEditing(null)
         setArmed(null)
-        current.apply(placeTokens(current.tokens, added, null, current.fields, true))
+        setAlternativeOf(null)
+        current.apply(placeEntries(current.entries, loose(added), null, current.fields, true))
       },
       applyQuery: (query: string) => {
         setEditing(null)
         setArmed(null)
-        latest.current.apply(hydrateTokens(query))
+        setAlternativeOf(null)
+        latest.current.apply(hydrateEntries(query))
       },
     }),
     [],
   )
 
   const toggle = (chosen: FilterToken[]) => {
-    const next =
-      chosen.length > 0
-        ? placeTokens(tokens, chosen, editingChip ?? null, fields, true)
-        : withoutChip(tokens, editingChip)
+    const placed = chosen.length > 0 ? place(loose(chosen), true) : null
+    if (placed !== null && !placed.ok) {
+      refuse(placed.message)
+      return
+    }
+    const next = placed === null ? withoutChip(entries, editingChip) : placed.entries
     apply(next)
-    const at = chosen.length > 0 ? next.indexOf(chosen[0]) : -1
+    const at = chosen.length > 0 ? next.findIndex((entry) => entry.token === chosen[0]) : -1
     const chip = chipsOf(next, fields, recordOf).findIndex(({ start }) => start === at)
     setEditing(chip >= 0 ? chip : null)
+    setAlternativeOf(null)
     setText('')
     setArmed(null)
     focusInput()
@@ -388,14 +444,15 @@ export function FilterBuilder({
         }),
       )
     }
-    commit(option.tokens)
+    commit(option.entries ?? loose(option.tokens))
   }
 
   const editChip = (index: number) => {
     const chip = chips[index]
-    const token = chip ? tokens[chip.start] : undefined
+    const token = chip ? entries[chip.start]?.token : undefined
     if (!chip || !token) return
     setArmed(null)
+    setAlternativeOf(null)
     setEditing(index)
     setActiveIndex(0)
     setOpen(true)
@@ -409,7 +466,7 @@ export function FilterBuilder({
   const removeChip = (index: number) => {
     const chip = chips[index]
     if (!chip) return
-    apply(withoutChip(tokens, chip))
+    apply(withoutChip(entries, chip))
     reset()
     focusInput()
   }
@@ -420,7 +477,19 @@ export function FilterBuilder({
     if (!draft || !draftField) return
     const typed = draft.condition === 'range' ? `${dates.from}..${dates.to}` : dates.from
     const check = draftTokens(draftField, draft.condition, typed)
-    if (check.ok) commit(check.tokens)
+    if (check.ok) commit(loose(check.tokens))
+  }
+
+  const joinAfter = (index: number) => {
+    const joined = joinChips(entries, chips, index)
+    setArmed(null)
+    if (joined.ok) apply(joined.entries)
+    else refuse(joined.message)
+  }
+
+  const splitAfter = (index: number) => {
+    apply(splitChips(entries, chips, index))
+    setArmed(null)
   }
 
   const clearAll = () => {
@@ -485,7 +554,7 @@ export function FilterBuilder({
         break
       case 'Escape':
         event.preventDefault()
-        if (draft || editing !== null || !empty) cancel()
+        if (draft || editing !== null || alternativeOf !== null || !empty) cancel()
         else if (open) setOpen(false)
         else setArmed(null)
         break
@@ -494,6 +563,9 @@ export function FilterBuilder({
         if (draft || editing !== null) {
           event.preventDefault()
           reset()
+        } else if (alternativeOf !== null) {
+          event.preventDefault()
+          setAlternativeOf(null)
         } else if (armed !== null) {
           event.preventDefault()
           removeChip(armed)
@@ -535,9 +607,24 @@ export function FilterBuilder({
 
   const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     let value = event.target.value
-    setArmed(null)
     setOpen(true)
     setActiveIndex(0)
+    setRefusal(null)
+    if (!draft && editing === null && alternativeOf === null && OR_PREFIX.test(value)) {
+      if (chips.length > 0) {
+        const refused = alternativeRefusal(entries, chips, chips.length - 1)
+        setArmed(null)
+        if (refused !== null) {
+          setRefusal(refused)
+          setText(value)
+          return
+        }
+        setAlternativeOf(chips.length - 1)
+        setText('')
+        return
+      }
+    }
+    setArmed(null)
     if (draft && draftField && draft.condition !== 'not') {
       const comparison = splitComparison(draftField, value)
       if (comparison) {
@@ -557,10 +644,17 @@ export function FilterBuilder({
 
   const handlePaste = (event: React.ClipboardEvent<HTMLInputElement>) => {
     if (draft) return
-    const pasted = hydrateTokens(event.clipboardData.getData('text'))
-    if (!pasted.some((token) => isFieldCondition(token, fields))) return
+    const pasted = hydrateEntries(event.clipboardData.getData('text'))
+    const grouped = pasted.some(({ group }) => group !== null)
+    if (!grouped && !pasted.some(({ token }) => isFieldCondition(token, fields))) return
     event.preventDefault()
-    commit(normaliseTokens(pasted, fields), false)
+    commit(
+      pasted.map(({ token, group }) => ({
+        token: normaliseTokens([token], fields)[0] ?? token,
+        group,
+      })),
+      false,
+    )
   }
 
   const armedSentence = armed === null ? null : chips[armed]?.description.sentence
@@ -568,6 +662,87 @@ export function FilterBuilder({
     resultCount === undefined ? '' : `${resultCount} ${resultCount === 1 ? 'result' : 'results'}`
   const chipPart =
     'inline-flex h-full items-center px-1.5 hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+
+  const renderChip = ({ description }: FilterChip, index: number) => (
+    <span
+      key={`chip-${index}-${description.sentence}`}
+      role="group"
+      aria-label={description.sentence}
+      data-slot="filter-builder-chip"
+      data-armed={armed === index ? '' : undefined}
+      data-editing={editing === index ? '' : undefined}
+      className={cn(
+        'inline-flex h-7 max-w-full items-center overflow-hidden rounded-md border border-border bg-muted text-xs text-foreground',
+        'data-[armed]:ring-2 data-[armed]:ring-ring data-[editing]:border-primary data-[editing]:bg-accent',
+        classNames?.chip,
+      )}
+    >
+      <button
+        type="button"
+        tabIndex={-1}
+        data-slot="filter-builder-chip-field"
+        aria-label={`Edit ${description.sentence}`}
+        onClick={() => editChip(index)}
+        className={cn(chipPart, 'font-medium')}
+      >
+        {description.field}
+      </button>
+      <button
+        type="button"
+        tabIndex={-1}
+        data-slot="filter-builder-chip-condition"
+        aria-label={`Change condition of ${description.sentence}`}
+        onClick={() => editChip(index)}
+        className={cn(chipPart, 'text-muted-foreground')}
+      >
+        {description.condition}
+      </button>
+      {description.value !== '' && (
+        <button
+          type="button"
+          tabIndex={-1}
+          data-slot="filter-builder-chip-value"
+          aria-label={`Change value of ${description.sentence}`}
+          onClick={() => editChip(index)}
+          className={cn(chipPart, 'min-w-0 truncate font-semibold')}
+        >
+          <span className="truncate">{description.value}</span>
+        </button>
+      )}
+      <button
+        type="button"
+        data-slot="filter-builder-chip-remove"
+        aria-label={`Remove ${description.sentence}`}
+        onClick={() => removeChip(index)}
+        className={cn(chipPart, 'text-muted-foreground max-md:px-2.5', classNames?.chipRemove)}
+      >
+        <X className="h-3.5 w-3.5" aria-hidden="true" />
+      </button>
+    </span>
+  )
+
+  const renderConnector = (index: number, joined: boolean) => {
+    const left = chips[index]?.description.sentence ?? ''
+    const right = chips[index + 1]?.description.sentence ?? ''
+    const word = joined ? 'or' : 'and'
+    return (
+      <button
+        key={`connector-${index}`}
+        type="button"
+        data-slot="filter-builder-connector"
+        data-joined={joined ? '' : undefined}
+        aria-label={`Change ${word} to ${joined ? 'and' : 'or'} between ${left} and ${right}`}
+        onClick={() => (joined ? splitAfter(index) : joinAfter(index))}
+        className={cn(
+          'inline-flex h-6 items-center rounded-md px-1 text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          'data-[joined]:font-medium data-[joined]:text-primary',
+          classNames?.connector,
+        )}
+      >
+        {word}
+      </button>
+    )
+  }
 
   return (
     <div data-slot="filter-builder" className={cn('relative', className, classNames?.root)}>
@@ -597,69 +772,50 @@ export function FilterBuilder({
             )}
           >
             <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-            {chips.map(({ description }, index) => {
+            {units.map((unit, unitIndex) => {
+              const members = chips.slice(unit.first, unit.last + 1)
+              const rendered = members.flatMap((chip, offset) => {
+                const index = unit.first + offset
+                const chipNode = renderChip(chip, index)
+                return offset === 0 ? [chipNode] : [renderConnector(index - 1, true), chipNode]
+              })
               return (
-                <span
-                  key={`${index}-${description.sentence}`}
-                  role="group"
-                  aria-label={description.sentence}
-                  data-slot="filter-builder-chip"
-                  data-armed={armed === index ? '' : undefined}
-                  data-editing={editing === index ? '' : undefined}
-                  className={cn(
-                    'inline-flex h-7 max-w-full items-center overflow-hidden rounded-md border border-border bg-muted text-xs text-foreground',
-                    'data-[armed]:ring-2 data-[armed]:ring-ring data-[editing]:border-primary data-[editing]:bg-accent',
-                    classNames?.chip,
-                  )}
-                >
-                  <button
-                    type="button"
-                    tabIndex={-1}
-                    data-slot="filter-builder-chip-field"
-                    aria-label={`Edit ${description.sentence}`}
-                    onClick={() => editChip(index)}
-                    className={cn(chipPart, 'font-medium')}
-                  >
-                    {description.field}
-                  </button>
-                  <button
-                    type="button"
-                    tabIndex={-1}
-                    data-slot="filter-builder-chip-condition"
-                    aria-label={`Change condition of ${description.sentence}`}
-                    onClick={() => editChip(index)}
-                    className={cn(chipPart, 'text-muted-foreground')}
-                  >
-                    {description.condition}
-                  </button>
-                  {description.value !== '' && (
-                    <button
-                      type="button"
-                      tabIndex={-1}
-                      data-slot="filter-builder-chip-value"
-                      aria-label={`Change value of ${description.sentence}`}
-                      onClick={() => editChip(index)}
-                      className={cn(chipPart, 'min-w-0 truncate font-semibold')}
+                <React.Fragment key={`unit-${unit.first}`}>
+                  {unitIndex > 0 && renderConnector(unit.first - 1, false)}
+                  {unit.group === null ? (
+                    rendered
+                  ) : (
+                    <span
+                      role="group"
+                      aria-label={`Any of: ${members.map((chip) => chip.description.sentence).join(' or ')}`}
+                      data-slot="filter-builder-group"
+                      data-alternative={
+                        alternativeOf !== null &&
+                        unit.first <= alternativeOf &&
+                        alternativeOf <= unit.last
+                          ? ''
+                          : undefined
+                      }
+                      className={cn(
+                        'inline-flex max-w-full flex-wrap items-center gap-1 rounded-lg border border-dashed border-primary/60 bg-primary/5 p-0.5',
+                        'data-[alternative]:border-solid data-[alternative]:border-primary',
+                        classNames?.group,
+                      )}
                     >
-                      <span className="truncate">{description.value}</span>
-                    </button>
+                      {rendered}
+                    </span>
                   )}
-                  <button
-                    type="button"
-                    data-slot="filter-builder-chip-remove"
-                    aria-label={`Remove ${description.sentence}`}
-                    onClick={() => removeChip(index)}
-                    className={cn(
-                      chipPart,
-                      'text-muted-foreground max-md:px-2.5',
-                      classNames?.chipRemove,
-                    )}
-                  >
-                    <X className="h-3.5 w-3.5" aria-hidden="true" />
-                  </button>
-                </span>
+                </React.Fragment>
               )
             })}
+            {alternativeOf !== null && (
+              <span
+                data-slot="filter-builder-alternative"
+                className="inline-flex h-7 items-center rounded-md px-1 text-xs font-medium text-primary"
+              >
+                or
+              </span>
+            )}
             {draft && (
               <span
                 data-slot="filter-builder-draft"
@@ -690,7 +846,13 @@ export function FilterBuilder({
               data-slot="filter-builder-input"
               value={text}
               placeholder={
-                draft ? 'Type a value…' : tokens.length > 0 ? 'Add a filter…' : placeholder
+                draft
+                  ? 'Type a value…'
+                  : alternativeOf !== null
+                    ? 'Add an alternative…'
+                    : entries.length > 0
+                      ? 'Add a filter…'
+                      : placeholder
               }
               onChange={handleChange}
               onKeyDown={handleKeyDown}
@@ -704,7 +866,7 @@ export function FilterBuilder({
                 classNames?.input,
               )}
             />
-            {tokens.length > 0 ? (
+            {entries.length > 0 ? (
               <button
                 type="button"
                 data-slot="filter-builder-clear"
