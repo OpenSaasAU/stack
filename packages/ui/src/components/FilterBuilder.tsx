@@ -7,19 +7,20 @@ import type { FilterFieldSuggestion, FilterToken } from '@opensaas/stack-core'
 import { Popover, PopoverAnchor, PopoverContent } from '../primitives/popover.js'
 import { cn } from '../lib/utils.js'
 import {
+  chipEditText,
+  chipsOf,
   conditionLabel,
-  conditionOfToken,
   conditionsOf,
-  describeToken,
+  conditionTakesValue,
   draftOptions,
-  editableText,
+  draftTokens,
   fieldLabel,
   filterQuery,
   hydrateTokens,
   isFieldCondition,
   isRecordLookupField,
+  normaliseTokens,
   placeTokens,
-  recordIdOf,
   rootOptions,
   splitComparison,
   type FilterBuilderCondition,
@@ -61,6 +62,8 @@ export interface FilterBuilderClassNames {
   option?: string
   /** The in-place explanation of a value that does not fit (`data-slot="filter-builder-hint"`). */
   hint?: string
+  /** The date inputs offered for a date field (`data-slot="filter-builder-dates"`). */
+  dates?: string
 }
 
 export interface FilterBuilderProps {
@@ -165,6 +168,7 @@ export function FilterBuilder({
   const [armed, setArmed] = React.useState<number | null>(null)
   const [open, setOpen] = React.useState(false)
   const [activeIndex, setActiveIndex] = React.useState(0)
+  const [dates, setDates] = React.useState({ from: '', to: '' })
 
   if (defaultValue !== seenValue) {
     setSeenValue(defaultValue)
@@ -182,6 +186,7 @@ export function FilterBuilder({
 
   const inputRef = React.useRef<HTMLInputElement>(null)
   const barRef = React.useRef<HTMLDivElement>(null)
+  const dateFromRef = React.useRef<HTMLInputElement>(null)
   const quietFocus = React.useRef(false)
   const baseId = React.useId()
   const listId = `${baseId}-list`
@@ -195,7 +200,9 @@ export function FilterBuilder({
     [picked, recordLabels],
   )
 
-  const editingToken = editing === null ? undefined : tokens[editing]
+  const chips = React.useMemo(() => chipsOf(tokens, fields, recordOf), [tokens, fields, recordOf])
+  const editingChip = editing === null ? undefined : chips[editing]
+  const editingToken = editingChip ? tokens[editingChip.start] : undefined
   const draftField = draft ? fields.get(draft.field) : undefined
   const lookupField =
     draft &&
@@ -227,6 +234,8 @@ export function FilterBuilder({
   )
   const active = options.length === 0 ? -1 : Math.min(activeIndex, options.length - 1)
   const conditions = React.useMemo(() => (draftField ? conditionsOf(draftField) : []), [draftField])
+  const hasDateForm =
+    draft !== null && draftField?.datePicker !== undefined && conditionTakesValue(draft.condition)
 
   React.useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -264,6 +273,7 @@ export function FilterBuilder({
     setEditing(null)
     setArmed(null)
     setActiveIndex(0)
+    setDates({ from: '', to: '' })
   }
 
   const apply = (next: FilterToken[]) => {
@@ -277,7 +287,7 @@ export function FilterBuilder({
   }
 
   const commit = (added: FilterToken[], replace = true) => {
-    apply(placeTokens(tokens, added, editing, fields, replace))
+    apply(placeTokens(tokens, added, editingChip ?? null, fields, replace))
     reset()
     setOpen(false)
     focusInput()
@@ -288,19 +298,25 @@ export function FilterBuilder({
     if (!suggestion) return
     setDraft({ field, condition: conditionsOf(suggestion)[0] ?? 'eq' })
     setText('')
+    setDates({ from: '', to: '' })
     setArmed(null)
     setActiveIndex(0)
     setOpen(true)
     focusInput()
   }
 
+  const withoutChip = (chip: { start: number; count: number } | undefined) =>
+    chip ? tokens.filter((_, i) => i < chip.start || i >= chip.start + chip.count) : tokens
+
   const toggle = (chosen: FilterToken[]) => {
     const next =
       chosen.length > 0
-        ? placeTokens(tokens, chosen, editing, fields, true)
-        : tokens.filter((_, i) => i !== editing)
+        ? placeTokens(tokens, chosen, editingChip ?? null, fields, true)
+        : withoutChip(editingChip)
     apply(next)
-    setEditing(chosen.length > 0 ? next.indexOf(chosen[0]) : null)
+    const at = chosen.length > 0 ? next.indexOf(chosen[0]) : -1
+    const chip = chipsOf(next, fields, recordOf).findIndex(({ start }) => start === at)
+    setEditing(chip >= 0 ? chip : null)
     setText('')
     setArmed(null)
     focusInput()
@@ -328,37 +344,35 @@ export function FilterBuilder({
   }
 
   const editChip = (index: number) => {
-    const token = tokens[index]
-    if (!token) return
+    const chip = chips[index]
+    const token = chip ? tokens[chip.start] : undefined
+    if (!chip || !token) return
     setArmed(null)
     setEditing(index)
     setActiveIndex(0)
     setOpen(true)
-    const suggestion = token.field === null ? undefined : fields.get(token.field)
-    const condition = conditionOfToken(token)
-    if (suggestion && recordIdOf(token, fields, token.negated) !== null) {
-      setDraft({ field: suggestion.field, condition: token.negated ? 'not' : 'eq' })
-      setText('')
-    } else if (
-      suggestion &&
-      condition !== null &&
-      isFieldCondition(token, fields) &&
-      conditionsOf(suggestion).includes(condition)
-    ) {
-      setDraft({ field: suggestion.field, condition })
-      const typed = suggestion.valueSource.kind !== 'enum' && token.operator !== 'empty'
-      setText(typed ? (token.values[0]?.text ?? '') : '')
-    } else {
-      setDraft(null)
-      setText(editableText(token))
-    }
+    setDates({ from: '', to: '' })
+    const edit = chipEditText(chip, token, fields)
+    setDraft(edit.draft)
+    setText(edit.text)
     focusInput()
   }
 
   const removeChip = (index: number) => {
-    apply(tokens.filter((_, i) => i !== index))
+    const chip = chips[index]
+    if (!chip) return
+    apply(withoutChip(chip))
     reset()
     focusInput()
+  }
+
+  const applyDates = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+    if (!draft || !draftField) return
+    const typed = draft.condition === 'range' ? `${dates.from}..${dates.to}` : dates.from
+    const check = draftTokens(draftField, draft.condition, typed)
+    if (check.ok) commit(check.tokens)
   }
 
   const clearAll = () => {
@@ -378,6 +392,12 @@ export function FilterBuilder({
     setDraft({ ...draft, condition })
     setActiveIndex(0)
     focusInput()
+  }
+
+  const stepCondition = (step: number) => {
+    if (!draft) return
+    const at = conditions.indexOf(draft.condition)
+    setCondition(conditions[(at + step + conditions.length) % conditions.length])
   }
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -405,11 +425,12 @@ export function FilterBuilder({
         else setOpen(true)
         break
       case 'Tab':
-        if (draft && conditions.length > 1) {
+        if (hasDateForm && open && !event.shiftKey) {
           event.preventDefault()
-          const at = conditions.indexOf(draft.condition)
-          const step = event.shiftKey ? -1 : 1
-          setCondition(conditions[(at + step + conditions.length) % conditions.length])
+          dateFromRef.current?.focus()
+        } else if (!hasDateForm && draft && conditions.length > 1) {
+          event.preventDefault()
+          stepCondition(event.shiftKey ? -1 : 1)
         } else {
           setOpen(false)
         }
@@ -428,9 +449,9 @@ export function FilterBuilder({
         } else if (armed !== null) {
           event.preventDefault()
           removeChip(armed)
-        } else if (tokens.length > 0) {
+        } else if (chips.length > 0) {
           event.preventDefault()
-          setArmed(tokens.length - 1)
+          setArmed(chips.length - 1)
           setOpen(false)
         }
         break
@@ -441,15 +462,25 @@ export function FilterBuilder({
         }
         break
       case 'ArrowLeft':
-        if (!empty || draft || tokens.length === 0) break
+        if (event.altKey && draft && conditions.length > 1) {
+          event.preventDefault()
+          stepCondition(-1)
+          break
+        }
+        if (!empty || draft || chips.length === 0) break
         event.preventDefault()
         setOpen(false)
-        setArmed(armed === null ? tokens.length - 1 : Math.max(0, armed - 1))
+        setArmed(armed === null ? chips.length - 1 : Math.max(0, armed - 1))
         break
       case 'ArrowRight':
+        if (event.altKey && draft && conditions.length > 1) {
+          event.preventDefault()
+          stepCondition(1)
+          break
+        }
         if (!empty || armed === null) break
         event.preventDefault()
-        setArmed(armed + 1 >= tokens.length ? null : armed + 1)
+        setArmed(armed + 1 >= chips.length ? null : armed + 1)
         break
     }
   }
@@ -481,11 +512,10 @@ export function FilterBuilder({
     const pasted = hydrateTokens(event.clipboardData.getData('text'))
     if (!pasted.some((token) => isFieldCondition(token, fields))) return
     event.preventDefault()
-    commit(pasted, false)
+    commit(normaliseTokens(pasted, fields), false)
   }
 
-  const describedTokens = tokens.map((token) => describeToken(token, fields, recordOf))
-  const armedSentence = armed === null ? null : describedTokens[armed]?.sentence
+  const armedSentence = armed === null ? null : chips[armed]?.description.sentence
   const resultMessage =
     resultCount === undefined ? '' : `${resultCount} ${resultCount === 1 ? 'result' : 'results'}`
   const chipPart =
@@ -519,8 +549,7 @@ export function FilterBuilder({
             )}
           >
             <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-            {tokens.map((token, index) => {
-              const description = describedTokens[index]
+            {chips.map(({ description }, index) => {
               return (
                 <span
                   key={`${index}-${description.sentence}`}
@@ -675,6 +704,54 @@ export function FilterBuilder({
             classNames?.menu,
           )}
         >
+          {draft && hasDateForm && (
+            <form
+              aria-label={`${fieldLabel(draft.field)} dates`}
+              data-slot="filter-builder-dates"
+              onSubmit={applyDates}
+              className={cn(
+                'flex flex-wrap items-end gap-2 border-b border-border p-2 text-xs',
+                classNames?.dates,
+              )}
+            >
+              <label className="flex flex-col gap-1">
+                <span className="text-muted-foreground">
+                  {draft.condition === 'range' ? 'From' : 'Date'}
+                </span>
+                <input
+                  ref={dateFromRef}
+                  type="date"
+                  required
+                  value={dates.from}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Tab' || !event.shiftKey) return
+                    event.preventDefault()
+                    inputRef.current?.focus()
+                  }}
+                  onChange={(event) => setDates({ ...dates, from: event.target.value })}
+                  className="h-8 rounded-md border border-input bg-background px-2"
+                />
+              </label>
+              {draft.condition === 'range' && (
+                <label className="flex flex-col gap-1">
+                  <span className="text-muted-foreground">To</span>
+                  <input
+                    type="date"
+                    required
+                    value={dates.to}
+                    onChange={(event) => setDates({ ...dates, to: event.target.value })}
+                    className="h-8 rounded-md border border-input bg-background px-2"
+                  />
+                </label>
+              )}
+              <button
+                type="submit"
+                className="h-8 rounded-md border border-border px-3 hover:bg-accent hover:text-accent-foreground"
+              >
+                Apply dates
+              </button>
+            </form>
+          )}
           {draft && draftField && conditions.length > 1 && (
             <div
               role="group"
@@ -775,7 +852,10 @@ export function FilterBuilder({
           >
             <span>↑↓ move</span>
             <span>Enter select</span>
-            {conditions.length > 1 && <span>Tab change condition</span>}
+            {hasDateForm && <span>Tab dates</span>}
+            {conditions.length > 1 && (
+              <span>{hasDateForm ? 'Alt+←→ change condition' : 'Tab change condition'}</span>
+            )}
             <span>Esc {draft || editing !== null ? 'cancel' : 'close'}</span>
           </p>
         </PopoverContent>

@@ -392,6 +392,9 @@ export {
   filterValueRecordId,
   recordIdFilterToken,
   isFieldConditionToken,
+  supportsFilterRange,
+  filterTokenOperators,
+  effectiveFilterToken,
   collectFilterSpecs,
   buildListFilterWhere,
   collectFilterSuggestions,
@@ -400,6 +403,7 @@ export {
 export type {
   FilterOperator,
   FilterTokenOperator,
+  FilterDatePicker,
   FilterToken,
   FilterValue,
   FilterFieldCapabilities,

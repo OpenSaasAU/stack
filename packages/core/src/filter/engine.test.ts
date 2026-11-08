@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
 import type { OpenSaasConfig } from '../config/types.js'
 import type { AccessContext, Session } from '../access/types.js'
-import { integer, relationship, select, text } from '../fields/index.js'
+import { calendarDay, integer, relationship, select, text, timestamp } from '../fields/index.js'
 import { withOrigin } from '../origin.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
 import { buildListFilterWhere } from './collect.js'
@@ -24,6 +24,7 @@ const config: OpenSaasConfig = {
     Post: {
       fields: {
         title: text({ validation: { isRequired: true } }),
+        slug: text(),
         author: relationship({ ref: 'User.posts' }),
         ledger: relationship({ ref: 'Ledger.posts' }),
         category: select({
@@ -47,7 +48,7 @@ const config: OpenSaasConfig = {
     // nowhere to search, and must narrow the read to nothing rather than
     // silently dropping the token and returning every row.
     Setting: {
-      fields: { priority: integer() },
+      fields: { priority: integer(), due: calendarDay(), at: timestamp() },
       access: { operation: { query: () => true } },
     },
   },
@@ -113,8 +114,16 @@ beforeEach(async () => {
   await seed('Post', { title: 'On Looms', authorId: author.id, category: 'news', secret: 'y' })
   const ledger = await seed('Ledger', { name: 'private' })
   await seed('Post', { title: 'On Ledgers', ledgerId: ledger.id })
-  await seed('Setting', { priority: 1 })
-  await seed('Setting', { priority: 2 })
+  await seed('Setting', {
+    priority: 1,
+    due: '2026-11-01',
+    at: '2026-11-01T13:00:00.000Z',
+  })
+  await seed('Setting', {
+    priority: 2,
+    due: '2026-11-02',
+    at: '2026-11-01T12:59:59.999Z',
+  })
 })
 
 describe('the filter engine over the secured surface', () => {
@@ -202,6 +211,53 @@ describe('the filter engine over the secured surface', () => {
       // Renders without error rather than throwing — the #1127 story 13
       // "never break the page on a bookmarked filter" guarantee still holds.
       await expect(filtered('Setting', 'priority:>lots')).resolves.toEqual([])
+    },
+    BOOT,
+  )
+
+  test(
+    'a range is inclusive at both ends, and an invalid one narrows rather than widens',
+    async () => {
+      const priorities = async (query: string) =>
+        (await filtered('Setting', query)).map((row) => row.priority).sort()
+      expect(await priorities('priority:1..2')).toEqual([1, 2])
+      expect(await priorities('priority:2..9')).toEqual([2])
+      expect(await priorities('priority:>=2 priority:<=9')).toEqual([2])
+      expect(await priorities('due:2026-11-02..2026-11-30')).toEqual([2])
+      expect(await priorities('due:2026-11-01..2026-11-01')).toEqual([1])
+      await expect(filtered('Setting', 'priority:one..2')).resolves.toEqual([])
+      await expect(filtered('Setting', 'due:2026-02-31..2026-03-01')).resolves.toEqual([])
+    },
+    BOOT,
+  )
+
+  test(
+    '`field:a..b` on a field with no range keeps its field scope, as that field’s eq on `a..b`',
+    async () => {
+      await seed('Post', { title: 'wait...what', slug: 'post-a' })
+      await seed('Post', { title: 'post-b', slug: 'wait...what' })
+      await seed('Post', { title: 'v1..v2 notes', slug: 'post-c' })
+      await seed('Post', { title: 'post-d', slug: 'v1..v2' })
+      const titles = async (query: string) =>
+        (await filtered('Post', query)).map((row) => row.title).sort()
+      expect(await titles('title:wait...what')).toEqual(['wait...what'])
+      expect(await titles('title:wait...what')).toEqual(await titles('title:"wait...what"'))
+      expect(await titles('slug:v1..v2')).toEqual(['post-d'])
+      expect(await titles('slug:v1..v2')).toEqual(await titles('slug:"v1..v2"'))
+      expect(await titles('v1..v2')).toEqual(['post-d', 'v1..v2 notes'])
+    },
+    BOOT,
+  )
+
+  test(
+    'a timestamp range follows the offset its instants carry, end of day inclusive',
+    async () => {
+      const priorities = async (query: string) =>
+        (await filtered('Setting', query)).map((row) => row.priority).sort()
+      const sydneyDay = 'at:2026-11-02T00:00:00.000+11:00..2026-11-02T23:59:59.999+11:00'
+      const utcDay = 'at:2026-11-01T00:00:00.000+00:00..2026-11-01T23:59:59.999+00:00'
+      expect(await priorities(sydneyDay)).toEqual([1])
+      expect(await priorities(utcDay)).toEqual([1, 2])
     },
     BOOT,
   )
@@ -311,6 +367,44 @@ describe('is not, any of and is empty over the secured surface (ADR-0083)', () =
       ])
       await expect(filtered('Ledger', '-name:nothing')).resolves.toEqual([])
       await expect(filtered('Ledger', 'name:!')).resolves.toEqual([])
+    },
+    BOOT,
+  )
+})
+
+describe('a negated range over the secured surface (ADR-0083)', () => {
+  const priorities = async (query: string) =>
+    (await filtered('Setting', query)).map((row) => String(row.priority)).sort()
+
+  test(
+    '`-field:a..b` excludes the range and keeps the rows with no value',
+    async () => {
+      await seed('Setting', { due: '2026-12-01' })
+      expect(await priorities('-priority:2..9')).toEqual(['1', 'null'])
+      expect(await priorities('-due:2026-11-02..2026-11-30')).toEqual(['1', 'null'])
+    },
+    BOOT,
+  )
+
+  test(
+    'a negated range that cannot map is searched as its literal, never negated',
+    async () => {
+      await expect(filtered('Setting', '-priority:one..2')).resolves.toEqual([])
+      await seed('Post', { title: 'Reading -secret:a..b', secret: 'q' })
+      expect(titles(await filtered('Post', '-secret:a..b'))).toEqual(['Reading -secret:a..b'])
+    },
+    BOOT,
+  )
+
+  test(
+    '`-field:a..b` on a field with no range is that field’s negated eq on `a..b`',
+    async () => {
+      await seed('Post', { title: 'post-x', slug: 'v1..v2' })
+      await seed('Post', { title: 'post-y', slug: 'other' })
+      const excluded = titles(await filtered('Post', '-slug:v1..v2'))
+      expect(excluded).toEqual(titles(await filtered('Post', '-slug:"v1..v2"')))
+      expect(excluded).not.toContain('post-x')
+      expect(excluded).toContain('post-y')
     },
     BOOT,
   )

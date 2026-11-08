@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import { parseFilterQuery } from './parse.js'
-import { buildFilterWhere, filterTokenFreeTextWord } from './map.js'
+import {
+  buildFilterWhere,
+  effectiveFilterToken,
+  filterTokenFreeTextWord,
+  isFieldConditionToken,
+} from './map.js'
 import { serializeFilterQuery } from './serialize.js'
 import {
   buildListFilterWhere,
@@ -1275,5 +1280,215 @@ describe('collectFilterSuggestions', () => {
         expect(spec?.toCondition(operator, value), `${operator} ${value}`).toBeNull()
       }
     }
+  })
+})
+
+describe('ranges (`field:a..b`)', () => {
+  it('parses an unquoted field value with `..` as one inclusive range token', () => {
+    expect(parseFilterQuery('orders:5..10').terms).toEqual([
+      tok('orders', '', { operator: 'range', values: [v('5'), v('10')] }),
+    ])
+    expect(
+      parseFilterQuery('at:2026-11-01T00:00:00.000+11:00..2026-11-01T23:59:59.999+11:00').terms,
+    ).toEqual([
+      tok('at', '', {
+        operator: 'range',
+        values: [v('2026-11-01T00:00:00.000+11:00'), v('2026-11-01T23:59:59.999+11:00')],
+      }),
+    ])
+  })
+
+  it('splits at the first `..`', () => {
+    expect(parseFilterQuery('orders:1...5').terms).toEqual([
+      tok('orders', '', { operator: 'range', values: [v('1'), v('.5')] }),
+    ])
+  })
+
+  it.each(['orders:..5', 'orders:5..', 'orders:..', 'orders:"5..10"'])(
+    'reads %s as a single literal value, never a range',
+    (written) => {
+      const [term] = parseFilterQuery(written).terms
+      expect(term.operator).toBe('eq')
+      expect(term.values).toHaveLength(1)
+    },
+  )
+
+  it.each(['5..10', '>5..10', '"5..10"'])('never reads the free-text word %s as a range', (w) => {
+    expect(parseFilterQuery(w).terms[0].field).toBeNull()
+  })
+
+  it('keeps a comparison operator ahead of `..` as a comparison on the literal value', () => {
+    expect(parseFilterQuery('orders:>=5..10').terms).toEqual([
+      tok('orders', '5..10', { operator: 'gte' }),
+    ])
+  })
+
+  it.each([
+    'orders:5..10',
+    'orders:1...5',
+    'orders:"5..10"',
+    'orders:>=5..10',
+    'orders:5..10 beta',
+  ])('serialize(parse(%s)) reproduces the query', (written) => {
+    expect(serializeFilterQuery(parseFilterQuery(written))).toBe(written)
+  })
+
+  it('quotes an eq value that would otherwise read back as a range', () => {
+    expect(serializeFilterQuery({ terms: [tok('orders', '5..10')] })).toBe('orders:"5..10"')
+  })
+
+  it('writes a range whose bounds cannot be written bare as one literal value', () => {
+    const range = tok('title', '', { operator: 'range', values: [v('a b'), v('c')] })
+    const written = serializeFilterQuery({ terms: [range] })
+    expect(written).toBe('title:"a b..c"')
+    expect(parseFilterQuery(written).terms[0].operator).toBe('eq')
+  })
+
+  it('lowers a range to the field’s own gte and lte conditions, ANDed', () => {
+    expect(buildFilterWhere(parseFilterQuery('orders:5..10'), specs)).toEqual({
+      AND: [{ orders: { gte: 5 } }, { orders: { lte: 10 } }],
+    })
+  })
+
+  it('maps a range through any spec comparing both ways, never a hard-coded field type', () => {
+    const calls: Array<[FilterOperator, string]> = []
+    const thirdParty: FilterSpec = {
+      operators: ['gte', 'lte'],
+      toCondition: (operator, value) => {
+        calls.push([operator, value])
+        return { score: { [operator]: value } }
+      },
+      suggestions: { valueSource: { kind: 'none' } },
+    }
+    expect(buildFilterWhere(parseFilterQuery('score:b..y'), { score: thirdParty })).toEqual({
+      AND: [{ score: { gte: 'b' } }, { score: { lte: 'y' } }],
+    })
+    expect(calls).toEqual([
+      ['gte', 'b'],
+      ['lte', 'y'],
+    ])
+  })
+
+  it.each([
+    ['orders:abc..10', 'abc..10'],
+    ['orders:5..ten', '5..ten'],
+    ['status:a..b', 'a..b'],
+    ['nosuch:1..2', '1..2'],
+  ])('degrades the invalid range %s to free text', (written, word) => {
+    expect(buildFilterWhere(parseFilterQuery(written), specs)).toEqual({
+      name: { contains: word },
+    })
+  })
+
+  it.each(['name:wait...what', 'name:v1..v2', 'name:a..b@x'])(
+    'keeps %s on a field with no range as that field’s eq on the literal value',
+    (written) => {
+      const literal = written.slice('name:'.length)
+      expect(buildFilterWhere(parseFilterQuery(written), specs)).toEqual({
+        name: { contains: literal },
+      })
+      expect(buildFilterWhere(parseFilterQuery(written), specs)).toEqual(
+        buildFilterWhere(parseFilterQuery(`name:"${literal}"`), specs),
+      )
+      expect(serializeFilterQuery(parseFilterQuery(written))).toBe(written)
+    },
+  )
+
+  it('reads a range token on a field with no range as a field condition, on its literal', () => {
+    const lookup: Record<string, FilterSpec> = specs
+    const operatorsFor = (field: string) => {
+      const spec = lookup[field]
+      return spec === undefined ? undefined : { operators: spec.operators }
+    }
+    const [token] = parseFilterQuery('name:v1..v2').terms
+    expect(isFieldConditionToken(token, operatorsFor)).toBe(true)
+    expect(effectiveFilterToken(token, specs.name.operators)).toEqual(
+      tok('name', 'v1..v2', { operator: 'eq' }),
+    )
+    const [ranged] = parseFilterQuery('orders:1..2').terms
+    expect(effectiveFilterToken(ranged, specs.orders.operators)).toBe(ranged)
+  })
+
+  it('degrades a structured range with an empty bound as its serialised URL reads back', () => {
+    const range = tok('orders', '', { operator: 'range', values: [v(''), v('10')] })
+    expect(buildFilterWhere({ terms: [range] }, specs)).toEqual({
+      name: { contains: '..10' },
+    })
+  })
+
+  it('reads a negated range as one negated range token, written back as it was', () => {
+    expect(parseFilterQuery('-orders:5..10').terms).toEqual([
+      tok('orders', '', { operator: 'range', negated: true, values: [v('5'), v('10')] }),
+    ])
+    expect(serializeFilterQuery(parseFilterQuery('-orders:5..10'))).toBe('-orders:5..10')
+  })
+
+  it('lowers a negated range to NOT of the ANDed bounds, keeping the rows with no value', () => {
+    const range = { AND: [{ orders: { gte: 5 } }, { orders: { lte: 10 } }] }
+    const nullable: FilterSpec = { ...specs.orders, empty: { orders: { equals: null } } }
+    expect(buildFilterWhere(parseFilterQuery('-orders:5..10'), specs)).toEqual({ NOT: range })
+    expect(buildFilterWhere(parseFilterQuery('-orders:5..10'), { orders: nullable })).toEqual({
+      OR: [{ NOT: range }, { orders: { equals: null } }],
+    })
+    expect(
+      buildFilterWhere(parseFilterQuery('-orders:5..10'), {
+        orders: { ...nullable, negation: 'includesEmpty' },
+      }),
+    ).toEqual({ NOT: range })
+  })
+
+  it('searches a negated range that cannot map as its whole literal, never negated', () => {
+    const [token] = parseFilterQuery('-orders:abc..10').terms
+    expect(filterTokenFreeTextWord(token)).toBe('-orders:abc..10')
+    expect(buildFilterWhere(parseFilterQuery('-orders:abc..10'), specs)).toEqual({
+      name: { contains: '-orders:abc..10' },
+    })
+  })
+
+  it('searches a positive range that cannot map as its literal `a..b`', () => {
+    const [token] = parseFilterQuery('nosuch:1..2').terms
+    expect(filterTokenFreeTextWord(token)).toBe('1..2')
+  })
+
+  it('reads a negated range on a field with no range as that field’s negated eq on its literal', () => {
+    expect(buildFilterWhere(parseFilterQuery('-name:v1..v2'), specs)).toEqual(
+      buildFilterWhere(parseFilterQuery('-name:"v1..v2"'), specs),
+    )
+  })
+
+  it('never reads a list as a range: `a..b,c` is eq on each value', () => {
+    const [token] = parseFilterQuery('orders:1..2,3').terms
+    expect(token.operator).toBe('eq')
+    expect(texts(token)).toEqual(['1..2', '3'])
+    expect(serializeFilterQuery(parseFilterQuery('orders:1..2,3'))).toBe('orders:1..2,3')
+  })
+
+  it('filters a range the same rows as the two comparisons it stands for', () => {
+    expect(buildFilterWhere(parseFilterQuery('orders:>=5 orders:<=10'), specs)).toEqual(
+      buildFilterWhere(parseFilterQuery('orders:5..10'), specs),
+    )
+  })
+
+  it('states a date picker on timestamp and calendarDay suggestions, and none elsewhere', async () => {
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql' },
+      lists: {
+        Thing: list({
+          access: READABLE,
+          fields: { at: timestamp(), day: calendarDay(), count: integer() },
+        }),
+      },
+    }
+    const suggestions = await collectFilterSuggestions(
+      config.lists.Thing,
+      'Thing',
+      config,
+      noAccessArgs,
+    )
+    expect(Object.fromEntries(suggestions.map((s) => [s.field, s.datePicker]))).toEqual({
+      at: 'instant',
+      day: 'day',
+      count: undefined,
+    })
   })
 })

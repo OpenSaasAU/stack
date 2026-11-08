@@ -207,6 +207,8 @@ describe('parse/serialize round-trip on written queries', () => {
     'http://x',
     'status:"a,b" "a,b" "-status:draft" "-beta" - "--x"',
     '"C:\\Users me"',
+    'views:5..10',
+    'at:2026-11-01T00:00:00.000+11:00..2026-11-01T23:59:59.999+11:00 title:"1..2"',
     'author:#0190a3c2-7b1e-7000-8000-000000000001',
     'author:"#42" owner:#42 #42',
     '-author:#42 author:#1,#2 author:#1,"#2"',
@@ -215,6 +217,7 @@ describe('parse/serialize round-trip on written queries', () => {
     'status:! -status:! status:"!" status:!,a status:!x',
     ', a,b role:, role:a,',
     '-http://x -orders:>5,6',
+    '-views:5..10 title:a..b,c views:1..2,"3..4" views:"1..2" -at:a..b..c',
   ]
 
   it.each(queries)('serialize(parse(%s)) reproduces the query', (written) => {
@@ -288,6 +291,10 @@ const TRICKY_PREFIXES = [
   ',',
   '-status:',
   'a,',
+  '..',
+  'a..',
+  'status:1..',
+  '-status:1..',
   '#',
   '"#',
   'a:!',
@@ -298,6 +305,8 @@ const TRICKY_PREFIXES = [
 const OPERATORS: FilterTokenOperator[] = ['eq', 'gt', 'gte', 'lt', 'lte', 'empty']
 const FIELDS = ['status', 'a', '_b1', 'http', 'OR']
 const RUNS = 2000
+const LOW_BOUND = ['a', 'Z', '1', '_', '-', ':', '+', 'T', '=', '#', '!', 'é']
+const HIGH_BOUND = [...LOW_BOUND, '.', '"', '>', '<', '/']
 
 function arbitrary(random: () => number) {
   const pick = <T>(items: readonly T[]): T => items[Math.floor(random() * items.length)]
@@ -319,11 +328,21 @@ function arbitrary(random: () => number) {
       negated: random() < 0.3,
       values: Array.from({ length: 1 + Math.floor(random() * 3) }, value),
     })
+  const bound = (alphabet: readonly string[]) =>
+    Array.from({ length: 1 + Math.floor(random() * 6) }, () => pick(alphabet)).join('')
+  const rangeToken = (): FilterToken =>
+    token({
+      field: pick(FIELDS),
+      operator: 'range',
+      negated: random() < 0.3,
+      values: [v(bound(LOW_BOUND)), v(bound(HIGH_BOUND))],
+    })
+  const anyToken = () => (random() < 0.2 ? rangeToken() : parserShapedToken())
   return {
     string: () => text(24),
     token: parserShapedToken,
     freeTextToken,
-    query: () => query(...Array.from({ length: Math.floor(random() * 5) }, parserShapedToken)),
+    query: () => query(...Array.from({ length: Math.floor(random() * 5) }, anyToken)),
   }
 }
 
@@ -346,6 +365,17 @@ describe('parse/serialize is an inverse on what the parser produces (property)',
     expect(terms.some((term) => term.negated)).toBe(true)
     expect(terms.some((term) => term.values.length > 1)).toBe(true)
     expect(terms.some((term) => term.operator === 'empty')).toBe(true)
+    expect(terms.some((term) => term.operator === 'range')).toBe(true)
+    expect(terms.some((term) => term.operator === 'range' && term.negated)).toBe(true)
+    expect(terms.some((term) => filterTokenRecordId(term) !== null)).toBe(true)
+  })
+
+  it('generates negated, multi-value, empty, #id and range tokens together', () => {
+    const terms = Array.from({ length: RUNS }, () => generate.query().terms).flat()
+    expect(terms.some((term) => term.negated && term.values.length > 1)).toBe(true)
+    expect(terms.some((term) => term.operator === 'empty')).toBe(true)
+    expect(terms.some((term) => term.values.some((value) => value.text.startsWith('#')))).toBe(true)
+    expect(terms.some((term) => term.operator === 'range' && term.negated)).toBe(true)
   })
 
   it('serialize ∘ parse is the identity on serialised queries', () => {
@@ -389,6 +419,28 @@ describe('parse/serialize is an inverse on what the parser produces (property)',
           expect(filterTokenRecordId(term), label).toBe(id)
         }
       })
+    }
+  })
+})
+
+describe('a range reads back as one range token (property)', () => {
+  const generate = arbitrary(seededRandom(2252))
+
+  it('every parsed range has two unquoted, comma-free bounds and writes back bare', () => {
+    for (let run = 0; run < RUNS; run++) {
+      const written = generate.string()
+      for (const term of parseFilterQuery(written).terms) {
+        if (term.operator !== 'range') continue
+        expect(term.values, JSON.stringify(written)).toHaveLength(2)
+        expect(
+          term.values.every((value) => !value.quoted && !value.text.includes(',')),
+          JSON.stringify(written),
+        ).toBe(true)
+        const [low, high] = term.values
+        expect(serializeFilterQuery(query(term)), JSON.stringify(written)).toBe(
+          `${term.negated ? '-' : ''}${term.field}:${low.text}..${high.text}`,
+        )
+      }
     }
   })
 })
@@ -467,6 +519,13 @@ const PROPERTY_SPECS: Record<string, FilterSpec> = {
     operators: ['eq'],
     freeText: true,
     toCondition: (operator, value) => (operator === 'eq' ? { title: { contains: value } } : null),
+    suggestions: { valueSource: { kind: 'none' } },
+  },
+  a: {
+    operators: ['eq', 'gte', 'lte'],
+    toCondition: (operator, value) =>
+      /^\d+$/.test(value) ? { a: { [operator === 'eq' ? 'equals' : operator]: value } } : null,
+    empty: { a: { equals: null } },
     suggestions: { valueSource: { kind: 'none' } },
   },
   status: {

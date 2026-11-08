@@ -8,6 +8,9 @@ export {
   filterTokenFreeTextWord,
   isEmptyFilterToken,
   isFieldConditionToken,
+  supportsFilterRange,
+  filterTokenOperators,
+  effectiveFilterToken,
 } from './map.js'
 export type { FilterFieldCapabilities } from './map.js'
 export {
@@ -20,6 +23,7 @@ export type { FilterAccessArgs } from './collect.js'
 export type {
   FilterOperator,
   FilterTokenOperator,
+  FilterDatePicker,
   FilterToken,
   FilterValue,
   FilterTerm,

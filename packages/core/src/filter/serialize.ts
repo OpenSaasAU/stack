@@ -1,4 +1,9 @@
-import { FILTER_OPERATOR_PREFIXES, fieldPrefixLength, isFilterWhitespace } from './parse.js'
+import {
+  FILTER_OPERATOR_PREFIXES,
+  fieldPrefixLength,
+  isFilterWhitespace,
+  splitRangeValue,
+} from './parse.js'
 import type { FilterQuery, FilterToken, FilterValue } from './types.js'
 
 function hasWhitespace(text: string): boolean {
@@ -16,7 +21,8 @@ function mustQuote(token: FilterToken, value: FilterValue, index: number): boole
   if (text.includes(',')) return true
   if (index > 0) return false
   if (token.operator === 'eq') {
-    return /^(?:[<>]|\/\/)/.test(text) || (text === '!' && token.values.length === 1)
+    if (/^(?:[<>]|\/\/)/.test(text)) return true
+    return token.values.length === 1 && (text === '!' || splitRangeValue(text) !== null)
   }
   if (token.operator === 'gt' || token.operator === 'lt') return text.startsWith('=')
   return false
@@ -59,6 +65,22 @@ function serializeValues(token: FilterToken): string {
     .join(',')
 }
 
+function rangeText(token: FilterToken): string | null {
+  if (token.field === null || token.values.length !== 2) return null
+  const [low, high] = token.values
+  if (low.quoted || high.quoted) return null
+  const text = `${low.text}..${high.text}`
+  const bounds = splitRangeValue(text)
+  if (bounds === null || bounds[0] !== low.text) return null
+  if (text.startsWith('"') || hasWhitespace(text) || /^(?:[<>]|\/\/)/.test(text)) return null
+  return text
+}
+
+function rangeLiteral(token: FilterToken): FilterToken {
+  const text = token.values.map((value) => value.text).join('..')
+  return { ...token, operator: 'eq', values: [{ text, quoted: false }] }
+}
+
 /**
  * Serialise one {@link FilterToken} to its query-string form, as
  * {@link serializeFilterQuery} writes it.
@@ -67,6 +89,11 @@ export function serializeFilterToken(token: FilterToken): string {
   const negation = token.negated ? '-' : ''
   if (token.operator === 'empty') {
     return token.field === null ? `${negation}!` : `${negation}${token.field}:!`
+  }
+  if (token.operator === 'range') {
+    const range = rangeText(token)
+    if (range !== null && token.field !== null) return `${negation}${token.field}:${range}`
+    return serializeFilterToken(rangeLiteral(token))
   }
   const text = serializeValues(token)
   if (token.field === null) return `${negation}${text}`
@@ -84,9 +111,11 @@ export function serializeFilterToken(token: FilterToken): string {
  * A value is quoted when it says so or when it would otherwise read back as
  * different syntax: whitespace, a leading quote, a comma in a field token's
  * value, a free-text word that looks like `field:value` or starts with `-`, a
- * lone `!`, or a value an operator prefix would swallow. Inside quotes a quote
- * is written `\"`, and a backslash that precedes a quote or ends the value is
- * written `\\`.
+ * lone `!` or `a..b`, or a value an operator prefix would swallow. A `range`
+ * token is written `field:a..b`; one whose bounds cannot be written that way
+ * is written as the single literal value `"a..b"`, which never reads back as a
+ * range. Inside quotes a quote is written `\"`, and a backslash that precedes
+ * a quote or ends the value is written `\\`.
  *
  * @example
  * serializeFilterQuery(parseFilterQuery('-name:"Ada \\"the Countess\\"",Grace "status:draft"'))

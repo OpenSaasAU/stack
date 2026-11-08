@@ -4,9 +4,11 @@ import { serializeFilterToken } from './serialize.js'
 import type {
   FilterCondition,
   FilterFieldSuggestion,
+  FilterOperator,
   FilterQuery,
   FilterSpec,
   FilterToken,
+  FilterTokenOperator,
 } from './types.js'
 
 /**
@@ -35,11 +37,46 @@ export function isEmptyFilterToken(token: FilterToken): boolean {
 }
 
 /**
+ * Whether a field whose Filter spec declares `operators` takes an inclusive
+ * `range` token: it compares both ways, with `gte` and `lte`.
+ */
+export function supportsFilterRange(operators: readonly FilterOperator[]): boolean {
+  return operators.includes('gte') && operators.includes('lte')
+}
+
+/**
+ * The token operators a field whose Filter spec declares `operators` accepts
+ * on its values: its own, and `range` when it {@link supportsFilterRange}.
+ */
+export function filterTokenOperators(operators: readonly FilterOperator[]): FilterTokenOperator[] {
+  return supportsFilterRange(operators) ? [...operators, 'range'] : [...operators]
+}
+
+/**
+ * The token a field whose Filter spec declares `operators` actually maps: a
+ * `range` token (`field:a..b`) on a field that does not
+ * {@link supportsFilterRange} keeps the meaning it had before ranges existed,
+ * `eq` on its literal `a..b`, negated or not. Any other token is returned as
+ * it is.
+ */
+export function effectiveFilterToken(
+  token: FilterToken,
+  operators: readonly FilterOperator[],
+): FilterToken {
+  if (token.operator !== 'range' || supportsFilterRange(operators)) return token
+  const text = token.values.map((value) => value.text).join('..')
+  return { ...token, operator: 'eq', values: [{ text, quoted: false }] }
+}
+
+/**
  * Whether a {@link FilterToken} is a field condition the engine maps through
  * its field's Filter spec: not empty, and naming a field that, as `fieldFor`
  * reports it, supports the token's operator, or can be empty for an `empty`
- * token. Negation and several values are composed around the field's own
- * condition, so neither decides this. Any other token is searched as free text.
+ * token. A `range` token needs exactly two non-empty bounds, and on a field
+ * that takes no range it is that field's `eq` on the literal `a..b` (see
+ * {@link effectiveFilterToken}). Negation and several values are composed
+ * around the field's own condition, so neither decides this. Any other token
+ * is searched as free text.
  */
 export function isFieldConditionToken(
   token: FilterToken,
@@ -48,9 +85,10 @@ export function isFieldConditionToken(
   if (token.field === null || isEmptyFilterToken(token)) return false
   const capabilities = fieldFor(token.field)
   if (!capabilities) return false
-  return token.operator === 'empty'
-    ? capabilities.canBeEmpty === true
-    : capabilities.operators.includes(token.operator)
+  if (token.operator === 'empty') return capabilities.canBeEmpty === true
+  if (token.operator !== 'range') return capabilities.operators.includes(token.operator)
+  if (token.values.length !== 2 || token.values.some((value) => value.text === '')) return false
+  return supportsFilterRange(capabilities.operators) || capabilities.operators.includes('eq')
 }
 
 /**
@@ -59,13 +97,15 @@ export function isFieldConditionToken(
  *
  * - A positive field token searches its values, written as one comma list
  *   with the field name dropped: `nosuchfield:Findable` is `Findable`, and
- *   `status:draft,bogus` is `draft,bogus`.
+ *   `status:draft,bogus` is `draft,bogus`. A positive `range` token searches
+ *   its literal `a..b`.
  * - A negated token, or a `field:!`, searches its whole serialised literal
  *   (`-secret:x`), so a token that cannot map is never negated.
  * - A bare word searches its own text.
  */
 export function filterTokenFreeTextWord(token: FilterToken): string {
   if (token.negated || token.operator === 'empty') return serializeFilterToken(token)
+  if (token.operator === 'range') return token.values.map((value) => value.text).join('..')
   return token.values
     .map((value) => value.text)
     .filter((text) => text !== '')
@@ -76,13 +116,20 @@ function anyOf(conditions: FilterCondition[]): FilterCondition {
   return conditions.length === 1 ? conditions[0] : { OR: conditions }
 }
 
-function fieldCondition(token: FilterToken, spec: FilterSpec): FilterCondition | null {
-  if (token.operator === 'empty') {
-    if (spec.empty === undefined) return null
-    return token.negated ? { NOT: spec.empty } : spec.empty
-  }
-  if (!spec.operators.includes(token.operator)) return null
-  const operator = token.operator
+function rangeCondition(token: FilterToken, spec: FilterSpec): FilterCondition | null {
+  if (token.values.length !== 2) return null
+  const [low, high] = token.values
+  if (low.text === '' || high.text === '') return null
+  const lower = spec.toCondition('gte', low.text)
+  const upper = lower === null ? null : spec.toCondition('lte', high.text)
+  return lower === null || upper === null ? null : { AND: [lower, upper] }
+}
+
+function valuesCondition(
+  token: FilterToken,
+  operator: FilterOperator,
+  spec: FilterSpec,
+): FilterCondition | null {
   const conditions: FilterCondition[] = []
   for (const value of token.values) {
     if (value.text === '') continue
@@ -94,8 +141,22 @@ function fieldCondition(token: FilterToken, spec: FilterSpec): FilterCondition |
     if (condition === null) return null
     conditions.push(condition)
   }
-  if (conditions.length === 0) return null
-  const matched = anyOf(conditions)
+  return conditions.length === 0 ? null : anyOf(conditions)
+}
+
+function fieldCondition(written: FilterToken, spec: FilterSpec): FilterCondition | null {
+  const token = effectiveFilterToken(written, spec.operators)
+  if (token.operator === 'empty') {
+    if (spec.empty === undefined) return null
+    return token.negated ? { NOT: spec.empty } : spec.empty
+  }
+  const matched =
+    token.operator === 'range'
+      ? rangeCondition(token, spec)
+      : spec.operators.includes(token.operator)
+        ? valuesCondition(token, token.operator, spec)
+        : null
+  if (matched === null) return null
   if (!token.negated) return matched
   const excluded: FilterCondition = { NOT: matched }
   return spec.empty === undefined || spec.negation !== undefined
@@ -120,6 +181,11 @@ function fieldCondition(token: FilterToken, spec: FilterSpec): FilterCondition |
  *   condition when it states one, so "is not" keeps the rows with no value.
  *   A spec stating a `negation` says `NOT` alone already does, and gets no `OR`.
  * - `field:!` is the field's `empty` condition and `-field:!` its `NOT`.
+ * - `field:a..b` ANDs the field's own `gte` on `a` and `lte` on `b`, on any
+ *   field comparing both ways, and `-field:a..b` is `NOT` of that, composed
+ *   like any other negation. On a field that takes no range it is that
+ *   field's `eq` on the literal `a..b`, as it was before ranges existed
+ *   ({@link effectiveFilterToken}).
  * - An unquoted `#id` value on a field whose spec has `toIdCondition` maps
  *   through it instead, matching exactly that related record, so
  *   `field:#a,#b` matches either and `-field:#id` excludes it. An id the
@@ -127,7 +193,8 @@ function fieldCondition(token: FilterToken, spec: FilterSpec): FilterCondition |
  *
  * A token that cannot map in any part (an unknown or unreadable field, an
  * unsupported operator, a value the field rejects, any one value of a list, or
- * `field:!` on a field that cannot be empty) is searched as one free-text word,
+ * `field:!` on a field that cannot be empty, or either bound of a range) is
+ * searched as one free-text word,
  * {@link filterTokenFreeTextWord}, which is also what the Filter builder's chip
  * shows. A positive token searches its values with the field name dropped
  * (`status:draft,bogus` searches `draft,bogus`); a negated one searches its

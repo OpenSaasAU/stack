@@ -4,6 +4,8 @@ const FIELD_PREFIX_RE = /([A-Za-z_][A-Za-z0-9_]*):/y
 
 const WHITESPACE_RE = /\s/
 
+const RANGE_SEPARATOR = '..'
+
 const FILTER_OPERATORS: readonly FilterOperator[] = ['eq', 'gt', 'gte', 'lt', 'lte']
 
 /**
@@ -46,6 +48,17 @@ export function fieldPrefixLength(text: string, start = 0): number {
 }
 
 /**
+ * The two bounds of an unquoted single value written as an inclusive range
+ * (`a..b`), split at its first `..`, or `null` when it is not one: a bound is
+ * missing, or the value holds a comma.
+ */
+export function splitRangeValue(value: string): [string, string] | null {
+  const at = value.indexOf(RANGE_SEPARATOR)
+  if (at <= 0 || at + RANGE_SEPARATOR.length >= value.length || value.includes(',')) return null
+  return [value.slice(0, at), value.slice(at + RANGE_SEPARATOR.length)]
+}
+
+/**
  * Parse a filter query string into a structured {@link FilterQuery}
  * (ADR-0017, ADR-0083). Never throws: input it cannot read as syntax parses as
  * bare free-text words.
@@ -53,6 +66,9 @@ export function fieldPrefixLength(text: string, start = 0): number {
  * - `field:value` is a field token with the `eq` operator, and `field:>value`,
  *   `field:>=value`, `field:<value`, `field:<=value` are comparisons.
  * - `field:a,b` carries several values, and `field:!` is the `empty` operator.
+ * - `field:a..b` is an inclusive `range` token whose two values are its
+ *   bounds, split at the first `..`. A quoted value is never a range, and
+ *   neither is a list: `field:a..b,c` is `eq` on `a..b` and `c`.
  * - A leading `-` followed by more of the token negates it: `-field:value`.
  *   A `-` on its own is a free-text word.
  * - A value in double quotes keeps its spaces and commas and is literal:
@@ -140,6 +156,20 @@ export function parseFilterQuery(query: string): FilterQuery {
     while (query[i] === ',') {
       i++
       values.push(readValue(true))
+    }
+    const range =
+      operator === 'eq' && values.length === 1 && !values[0].quoted
+        ? splitRangeValue(values[0].text)
+        : null
+    if (range) {
+      terms.push({
+        kind: 'token',
+        field,
+        operator: 'range',
+        negated,
+        values: range.map((text) => ({ text, quoted: false })),
+      })
+      continue
     }
     terms.push({ kind: 'token', field, operator, negated, values })
   }

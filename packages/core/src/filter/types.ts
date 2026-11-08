@@ -14,11 +14,14 @@ import type { Where } from '../secured/vocabulary.js'
 export type FilterOperator = 'eq' | 'gt' | 'gte' | 'lt' | 'lte'
 
 /**
- * What a token asks of its field: a {@link FilterOperator} on its values, or
+ * What a token asks of its field: a {@link FilterOperator} on its values,
  * `empty` for `field:!`, which carries no values and matches the rows where
- * the field has no value.
+ * the field has no value, or `range` for ADR-0083's inclusive `field:a..b`,
+ * whose two values are its bounds. A field never declares `range`: it
+ * supports it when its operators include both `gte` and `lte`, and the engine
+ * lowers each bound through the field's own `toCondition`.
  */
-export type FilterTokenOperator = FilterOperator | 'empty'
+export type FilterTokenOperator = FilterOperator | 'empty' | 'range'
 
 /** One value of a {@link FilterToken}, as written. */
 export interface FilterValue {
@@ -36,14 +39,18 @@ export interface FilterValue {
  * One Filter token: a field, an operator and its values.
  *
  * A bare free-text word has `field: null`. `negated` is ADR-0083's
- * `-field:value`, a `values` list longer than one its `field:a,b`, and the
- * `empty` operator its `field:!`.
+ * `-field:value`, a `values` list longer than one its `field:a,b`, the
+ * `empty` operator its `field:!`, and the `range` operator its `field:a..b`.
  */
 export interface FilterToken {
   kind: 'token'
   /** Field key the token targets, or `null` for a bare free-text word. */
   field: string | null
-  /** `eq` for a plain `field:value`, comparisons for prefixed values, `empty` for `field:!`. */
+  /**
+   * `eq` for a plain `field:value`, comparisons for prefixed values, `empty`
+   * for `field:!`, and `range` for `field:a..b`, whose `values` are its two
+   * bounds.
+   */
   operator: FilterTokenOperator
   /** Whether the token is negated (`-field:value`). */
   negated: boolean
@@ -170,8 +177,18 @@ export interface FilterSpec {
      * that does not match rather than applying it. Omit it when any text maps.
      */
     valueFormat?: FilterValueFormat
+    /**
+     * Whether the Filter builder offers date inputs and presets for this
+     * field, and what they write: `day` writes plain `YYYY-MM-DD` dates, and
+     * `instant` writes ISO instants carrying the browser's offset, with a
+     * day's end inclusive.
+     */
+    datePicker?: FilterDatePicker
   }
 }
+
+/** What a field's date inputs and presets write: plain dates, or instants. */
+export type FilterDatePicker = 'day' | 'instant'
 
 /**
  * Collected, client-serializable suggestion metadata for one filterable field.
@@ -189,6 +206,8 @@ export interface FilterFieldSuggestion {
   valueSource: FilterValueSource
   /** The shape a typed value must take, when the field states one. */
   valueFormat?: FilterValueFormat
+  /** What the field's date inputs and presets write, when it offers them. */
+  datePicker?: FilterDatePicker
   /** Set when the field matches a related record by id (`field:#id`). */
   matchesById?: boolean
   /** Whether the field can be empty, and so takes `field:!` and `-field:!`. */

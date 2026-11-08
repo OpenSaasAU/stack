@@ -101,6 +101,7 @@ export type {
   FilterSpec,
   FilterNegation,
   FilterOperator,
+  FilterDatePicker,
   FilterCondition,
   FilterValueSource,
   FilterValueFormat,

@@ -541,6 +541,18 @@ and calendar days accept `eq`, `gt`, `gte`, `lt` and `lte`. A timestamp takes
 anything JavaScript's `Date` parses; a calendar day takes a `YYYY-MM-DD` date, and
 one the month does not have, such as `2026-02-31`, degrades to free text.
 
+`field:a..b` is an inclusive range in one token: `views:1000..5000` is
+`views:>=1000 views:<=5000`. It splits at the first `..`, and any field that
+accepts both `gte` and `lte` takes one, because the engine lowers each bound
+through that field's own `gte` and `lte` conditions. A range with a bound the
+field does not take (`views:ten..20`) degrades to free text as `ten..20`, like
+any other unmappable token, and a quoted `"1..2"` is always a literal value.
+On a field that takes no range, `field:a..b` keeps the meaning it always had:
+that field's own `is`/`contains` on the literal `a..b`, so `title:wait...what`
+is still "Title contains wait...what". The two-token form stays valid and is
+never rewritten. `-views:1000..5000` excludes the range, keeping the rows with
+no value like any other "is not", and a list is never a range:
+`title:a..b,c` matches either of the literal values `a..b` and `c`.
 A to-one relationship takes the related record's Item label, matched as
 `contains` (`author:pri`), or one record by its id, written `field:#id`
 (`author:#0190a3c2-…`). An id token matches exactly that record through the
@@ -561,10 +573,11 @@ search for exactly what was typed. Suggestions come from each field's Filter
 spec and the config only, never from the list's data.
 
 Choosing a field goes straight to its values with the field's default
-condition. A condition row above the values switches it by click or by Tab:
+condition. A condition row above the values switches it by click, by Tab or by
+Alt+← →:
 the field's own operators, then "is not" (or "does not contain"), "is any of"
 on a field with enumerated values, and "is empty" and "is not empty" on a field
-that can be empty. "Is any of" turns the values into a multi-select list: each
+that can be empty, and "between" on a field that takes ranges. "Is any of" turns the values into a multi-select list: each
 tick updates the one chip and the list at once, and the menu stays open for
 the next. Phrases such as `status is not draft`, `views != 3` and
 `author is empty` read the same way. Typing `>`, `>=`, `<` or `<=`
@@ -573,6 +586,36 @@ field (`abc` for a whole number) is explained under the suggestions instead of
 being applied. "Search all text" reads what was typed in the URL grammar, so a
 quoted `"Ada Lovelace"` stays one phrase.
 
+A field that takes ranges also offers **between**. Its value is typed as
+`1000-5000`, `1000 to 5000` or `1000..5000` (the dash that leaves two values
+the field takes is the separator, so `-10--5` and `2026-01-01-2026-01-31`
+read as expected), and the plain phrase `views between 1000 and 5000` works
+too. A range is always written to the URL as one `a..b` token. Pasted `>=` and
+`<=` tokens on one field, side by side, read back as one "between" chip, while
+the URL keeps the two tokens exactly as written; editing that chip writes it
+back as one range.
+
+Timestamp and calendar day fields add date inputs and presets: Today, Last 7
+days, Last 30 days, This month, Last month and This year. A preset writes the
+absolute dates it covers on the day it is picked, and the chip shows them, so a
+bookmarked preset filter keeps its dates and reads as stale; there is no
+relative-date grammar. A calendar day is written as plain `YYYY-MM-DD` dates. A
+timestamp is written as full ISO instants in the browser's own offset, from the
+first millisecond of the first day to the last millisecond of the last, so the
+whole end day is included and results follow the admin's time zone:
+`publishedAt:2026-11-02T00:00:00.000+11:00..2026-11-08T23:59:59.999+11:00`. A
+plain date typed or pasted against a timestamp is read the same way: "is
+2026-11-03" covers that local day, "at most" runs to its end and "at least"
+from its start, and `created at 2026-01-01 to 2026-01-31` is a range. Any other
+time typed against a timestamp is written as an ISO instant in the browser's
+offset, and text that is not a time is explained rather than applied. A
+comparison or range chip shows an instant on a day boundary as its date, an
+"is" chip shows its instant as written, and a plain date already in a URL is
+shown as written until the chip is edited and applied again.
+
+On a field with date inputs, Tab moves from the bar into them and on to
+**Apply dates**, and Shift+Tab from the first date input returns to the bar.
+There, Alt+← → switches the condition instead of Tab.
 Choosing a to-one relationship field lists the first page of its records, from
 the same access-scoped search the item form's relationship picker uses, and
 typing searches them. Relationships are searched only once their field is
@@ -612,6 +655,8 @@ was read.
 | ↑ ↓             | Moves through the suggestions                                |
 | Enter           | Takes the active suggestion, or edits the selected chip      |
 | Tab / Shift+Tab | Switches the condition while a field is staged               |
+| Tab (dates)     | Moves into the date inputs of a field with dates             |
+| Alt+← →         | Switches the condition while a field is staged               |
 | Backspace, ← →  | Selects a chip from an empty bar; Backspace again removes it |
 | Esc             | Cancels the filter being built and closes the suggestions    |
 
@@ -636,7 +681,7 @@ slots are `filter-builder` (root),
 `filter-builder-draft`, `filter-builder-input`, `filter-builder-clear`,
 `filter-builder-progress`, `filter-builder-menu`,
 `filter-builder-menu-conditions`, `filter-builder-menu-condition`,
-`filter-builder-option` (with `data-active`), `filter-builder-option-check`
+`filter-builder-dates`, `filter-builder-option` (with `data-active`), `filter-builder-option-check`
 (the tick on an "is any of" value) and `filter-builder-hint`. An "is empty"
 chip has no `filter-builder-chip-value` part.
 

@@ -825,7 +825,7 @@ export function timestamp<
         return { [fieldName]: { [prismaComparisonKey(operator)]: date } }
       },
       empty: emptyWhenNullable(fieldName, nullable),
-      suggestions: { valueSource: { kind: 'none' } },
+      suggestions: { valueSource: { kind: 'none' }, datePicker: 'instant' },
     }),
   }
 }
@@ -958,7 +958,7 @@ export function calendarDay<
         fieldName,
         options?.db?.isNullable ?? !options?.validation?.isRequired,
       ),
-      suggestions: { valueSource: { kind: 'none' }, valueFormat: DATE_VALUE },
+      suggestions: { valueSource: { kind: 'none' }, valueFormat: DATE_VALUE, datePicker: 'day' },
     }),
   }
 }

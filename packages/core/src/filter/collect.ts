@@ -120,6 +120,7 @@ export async function collectFilterSuggestions(
       valueSource: spec.suggestions.valueSource,
     }
     if (spec.suggestions.valueFormat) suggestion.valueFormat = spec.suggestions.valueFormat
+    if (spec.suggestions.datePicker) suggestion.datePicker = spec.suggestions.datePicker
     if (spec.toIdCondition) suggestion.matchesById = true
     if (spec.empty !== undefined) suggestion.canBeEmpty = true
     if (spec.negation !== undefined) suggestion.negation = spec.negation
