@@ -25,7 +25,12 @@ import type {
 import { hashPassword, isHashedPassword, HashedPassword } from '../utils/password.js'
 import { getLabelFieldName } from '../config/label.js'
 import { parseListId } from '../contract/id-boundary.js'
-import type { FilterOperator, FilterSpec, FilterValueFormat } from '../filter/types.js'
+import type {
+  FilterCondition,
+  FilterOperator,
+  FilterSpec,
+  FilterValueFormat,
+} from '../filter/types.js'
 
 function quoteStringLiteral(value: string): string {
   const escaped = value
@@ -72,6 +77,10 @@ function formatMatcher(format: FilterValueFormat) {
 }
 
 const PRESENCE_COUNT_MATCH = formatMatcher(PRESENCE_COUNT)
+
+function emptyWhenNullable(fieldName: string, nullable: boolean): FilterCondition | undefined {
+  return nullable ? { [fieldName]: { equals: null } } : undefined
+}
 
 function prismaComparisonKey(operator: FilterOperator): string {
   return operator === 'eq' ? 'equals' : operator
@@ -364,6 +373,11 @@ export function text<
       freeText: true,
       toCondition: (operator, value) =>
         operator === 'eq' ? { [fieldName]: { contains: value } } : null,
+      empty: nullable
+        ? { OR: [{ [fieldName]: { equals: null } }, { [fieldName]: { equals: '' } }] }
+        : options?.validation?.isRequired
+          ? undefined
+          : { [fieldName]: { equals: '' } },
       suggestions: { valueSource: { kind: 'none' } },
     }),
   }
@@ -434,6 +448,10 @@ export function integer<
         if (!WHOLE_NUMBER_MATCH.test(trimmed)) return null
         return { [fieldName]: { [prismaComparisonKey(operator)]: Number(trimmed) } }
       },
+      empty: emptyWhenNullable(
+        fieldName,
+        options?.db?.isNullable ?? !options?.validation?.isRequired,
+      ),
       suggestions: { valueSource: { kind: 'none' }, valueFormat: WHOLE_NUMBER },
     }),
   }
@@ -585,6 +603,10 @@ export function decimal<
         if (!DECIMAL_VALUE_MATCH.test(trimmed)) return null
         return { [fieldName]: { [prismaComparisonKey(operator)]: trimmed } }
       },
+      empty: emptyWhenNullable(
+        fieldName,
+        options?.db?.isNullable ?? !options?.validation?.isRequired,
+      ),
       suggestions: { valueSource: { kind: 'none' }, valueFormat: DECIMAL_VALUE },
     }),
   }
@@ -696,6 +718,10 @@ export function bigInt<
         if (!WHOLE_NUMBER_MATCH.test(trimmed)) return null
         return { [fieldName]: { [prismaComparisonKey(operator)]: BigInt(trimmed) } }
       },
+      empty: emptyWhenNullable(
+        fieldName,
+        options?.db?.isNullable ?? !options?.validation?.isRequired,
+      ),
       suggestions: { valueSource: { kind: 'none' }, valueFormat: WHOLE_NUMBER },
     }),
   }
@@ -743,6 +769,7 @@ export function checkbox<
         if (normalized === 'false') return { [fieldName]: { equals: false } }
         return null
       },
+      empty: emptyWhenNullable(fieldName, options?.db?.isNullable === true),
       suggestions: {
         valueSource: {
           kind: 'enum',
@@ -766,6 +793,13 @@ export function timestamp<
 >(
   options?: Omit<TimestampField<TTypeInfo, TKey>, 'type' | 'nullable'>,
 ): TimestampField<TTypeInfo, TKey> {
+  const defaultValue = options?.defaultValue
+  const hasDefaultNow =
+    typeof defaultValue === 'object' &&
+    defaultValue !== null &&
+    'kind' in defaultValue &&
+    defaultValue.kind === 'now'
+  const nullable = options?.db?.isNullable ?? !hasDefaultNow
   return {
     type: 'timestamp',
     ...options,
@@ -773,15 +807,9 @@ export function timestamp<
       return z.union([z.date(), z.iso.datetime()]).optional().nullable()
     },
     getContractField: (fieldName: string) => {
-      const defaultValue = options?.defaultValue
-      const hasDefaultNow =
-        typeof defaultValue === 'object' &&
-        defaultValue !== null &&
-        'kind' in defaultValue &&
-        defaultValue.kind === 'now'
       return scalarColumn(fieldName, {
         type: pgType('dateTime'),
-        nullable: options?.db?.isNullable ?? !hasDefaultNow,
+        nullable,
         nativeType: options?.db?.nativeType,
         map: options?.db?.map,
         isIndexed: options?.isIndexed,
@@ -796,6 +824,7 @@ export function timestamp<
         if (Number.isNaN(date.getTime())) return null
         return { [fieldName]: { [prismaComparisonKey(operator)]: date } }
       },
+      empty: emptyWhenNullable(fieldName, nullable),
       suggestions: { valueSource: { kind: 'none' } },
     }),
   }
@@ -925,6 +954,10 @@ export function calendarDay<
         if (!DATE_VALUE_MATCH.test(trimmed) || !isCalendarDate(trimmed)) return null
         return { [fieldName]: { [prismaComparisonKey(operator)]: trimmed } }
       },
+      empty: emptyWhenNullable(
+        fieldName,
+        options?.db?.isNullable ?? !options?.validation?.isRequired,
+      ),
       suggestions: { valueSource: { kind: 'none' }, valueFormat: DATE_VALUE },
     }),
   }
@@ -1195,6 +1228,7 @@ export function select<
         if (!match) return null
         return { [fieldName]: { equals: match.value } }
       },
+      empty: emptyWhenNullable(fieldName, nullable),
       suggestions: {
         valueSource: {
           kind: 'enum',
@@ -1510,6 +1544,7 @@ export function relationship<
           if (operator === 'gt' || operator === 'gte') return { [_fieldName]: { some: {} } }
           return null
         },
+        negation: 'redundant',
         suggestions: { valueSource: { kind: 'none' }, valueFormat: PRESENCE_COUNT },
       }
     }
@@ -1524,6 +1559,9 @@ export function relationship<
     // integer, checkbox, select, etc.). None of these is filterable (#1359).
     if (labelFieldConfig?.type !== 'text' || labelFieldConfig.virtual === true) return undefined
 
+    const canBeEmpty =
+      !shouldHaveForeignKey(_listKey, _fieldName, field, config) || field.db?.isNullable !== false
+
     return {
       operators: ['eq'],
       toCondition: (operator, value) => {
@@ -1534,6 +1572,8 @@ export function relationship<
         const parsed = parseListId(config, targetList, id)
         return parsed.ok ? { [_fieldName]: { some: { id: { equals: parsed.value } } } } : null
       },
+      empty: canBeEmpty ? { [_fieldName]: { none: {} } } : undefined,
+      negation: 'includesEmpty',
       suggestions: { valueSource: { kind: 'relationship', listKey: targetList, many: false } },
     }
   }

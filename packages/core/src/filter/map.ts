@@ -1,9 +1,9 @@
 import { parseFilterQuery } from './parse.js'
-import { filterTokenRecordId } from './record-id.js'
+import { filterValueRecordId } from './record-id.js'
 import { serializeFilterToken } from './serialize.js'
 import type {
   FilterCondition,
-  FilterOperator,
+  FilterFieldSuggestion,
   FilterQuery,
   FilterSpec,
   FilterToken,
@@ -22,57 +22,126 @@ import type {
  */
 const NEVER_MATCHES: FilterCondition = { NOT: {} }
 
+/** What {@link isFieldConditionToken} needs to know about a field. */
+export type FilterFieldCapabilities = Pick<FilterFieldSuggestion, 'operators' | 'canBeEmpty'>
+
 /**
  * Whether a {@link FilterToken} was written with no characters at all (`role:`,
- * `""`, or no values). Such a token is incomplete input and filters nothing
- * (#1509).
+ * `""`, `a:,`, or no values). Such a token is incomplete input and filters
+ * nothing (#1509). An `empty` token (`field:!`) carries no values and is not one.
  */
 export function isEmptyFilterToken(token: FilterToken): boolean {
-  return token.values.length === 0 || (token.values.length === 1 && token.values[0] === '')
+  return token.operator !== 'empty' && token.values.every((value) => value.text === '')
 }
 
 /**
  * Whether a {@link FilterToken} is a field condition the engine maps through
- * its field's Filter spec: not empty, not negated, and naming a field whose
- * operators, as `operatorsFor` reports them, include the token's own. Any other
- * token is searched as free text.
+ * its field's Filter spec: not empty, and naming a field that, as `fieldFor`
+ * reports it, supports the token's operator, or can be empty for an `empty`
+ * token. Negation and several values are composed around the field's own
+ * condition, so neither decides this. Any other token is searched as free text.
  */
 export function isFieldConditionToken(
   token: FilterToken,
-  operatorsFor: (field: string) => readonly FilterOperator[] | undefined,
+  fieldFor: (field: string) => FilterFieldCapabilities | undefined,
 ): token is FilterToken & { field: string } {
-  if (token.field === null || token.negated || isEmptyFilterToken(token)) return false
-  return operatorsFor(token.field)?.includes(token.operator) ?? false
+  if (token.field === null || isEmptyFilterToken(token)) return false
+  const capabilities = fieldFor(token.field)
+  if (!capabilities) return false
+  return token.operator === 'empty'
+    ? capabilities.canBeEmpty === true
+    : capabilities.operators.includes(token.operator)
 }
 
-function fieldCondition(spec: FilterSpec, token: FilterToken): FilterCondition | null {
-  const recordId = filterTokenRecordId(token)
-  if (recordId !== null && spec.toIdCondition) return spec.toIdCondition(recordId)
-  return spec.toCondition(token.operator, token.values[0])
+/**
+ * The one free-text word a {@link FilterToken} is searched as when it cannot
+ * map to a field condition, and the text the Filter builder's chip shows for it.
+ *
+ * - A positive field token searches its values, written as one comma list
+ *   with the field name dropped: `nosuchfield:Findable` is `Findable`, and
+ *   `status:draft,bogus` is `draft,bogus`.
+ * - A negated token, or a `field:!`, searches its whole serialised literal
+ *   (`-secret:x`), so a token that cannot map is never negated.
+ * - A bare word searches its own text.
+ */
+export function filterTokenFreeTextWord(token: FilterToken): string {
+  if (token.negated || token.operator === 'empty') return serializeFilterToken(token)
+  return token.values
+    .map((value) => value.text)
+    .filter((text) => text !== '')
+    .join(',')
+}
+
+function anyOf(conditions: FilterCondition[]): FilterCondition {
+  return conditions.length === 1 ? conditions[0] : { OR: conditions }
+}
+
+function fieldCondition(token: FilterToken, spec: FilterSpec): FilterCondition | null {
+  if (token.operator === 'empty') {
+    if (spec.empty === undefined) return null
+    return token.negated ? { NOT: spec.empty } : spec.empty
+  }
+  if (!spec.operators.includes(token.operator)) return null
+  const operator = token.operator
+  const conditions: FilterCondition[] = []
+  for (const value of token.values) {
+    if (value.text === '') continue
+    const recordId = operator === 'eq' ? filterValueRecordId(value) : null
+    const condition =
+      recordId !== null && spec.toIdCondition
+        ? spec.toIdCondition(recordId)
+        : spec.toCondition(operator, value.text)
+    if (condition === null) return null
+    conditions.push(condition)
+  }
+  if (conditions.length === 0) return null
+  const matched = anyOf(conditions)
+  if (!token.negated) return matched
+  const excluded: FilterCondition = { NOT: matched }
+  return spec.empty === undefined || spec.negation !== undefined
+    ? excluded
+    : { OR: [excluded, spec.empty] }
 }
 
 /**
  * Map a parsed {@link FilterQuery} to a single Where fragment, given the
- * fields' {@link FilterSpec}s (ADR-0017).
+ * fields' {@link FilterSpec}s (ADR-0017, ADR-0083).
  *
  * Pure — no DB/Prisma imports. This is the unit-tested half of the filter seam.
  * Terms combine with implicit AND. An empty token is a deliberate no-op —
  * incomplete input expresses no constraint, so it contributes nothing and is
- * never handed to a free-text field (#1509). A negated token or a token with
- * several values is searched exactly as the terms
- * `parseFilterQuery(serializeFilterQuery({ terms: [token] }))` reads back, so it
- * filters the same rows as its own URL; it is never dropped or negated. A token
- * degrades to free text (never an error) when its field is unknown, has no
- * spec, uses an unsupported operator, or maps to `null`. A `field:#id` token
- * on a field whose spec has `toIdCondition` matches exactly that related record,
- * and an id the related list cannot hold degrades to free text. Bare words (and
- * degraded tokens) are OR-matched across every free-text field, and each such
- * word is ANDed with the rest — so `beta gamma` requires both. A word that
- * reaches this stage but cannot be matched against any free-text field —
- * because the list has none, or because every free-text field's own mapping
- * rejects it — narrows the chain to {@link NEVER_MATCHES} instead of being
- * dropped: a condition that cannot be honoured must never widen the result set
- * (#1356).
+ * never handed to a free-text field (#1509), and an empty value inside a list
+ * (`a:x,`) is skipped the same way.
+ *
+ * The engine composes around each field's own `toCondition`:
+ *
+ * - `field:a,b` ORs the field's condition once per value.
+ * - `-field:value` is `NOT` of that condition, ORed with the field's `empty`
+ *   condition when it states one, so "is not" keeps the rows with no value.
+ *   A spec stating a `negation` says `NOT` alone already does, and gets no `OR`.
+ * - `field:!` is the field's `empty` condition and `-field:!` its `NOT`.
+ * - An unquoted `#id` value on a field whose spec has `toIdCondition` maps
+ *   through it instead, matching exactly that related record, so
+ *   `field:#a,#b` matches either and `-field:#id` excludes it. An id the
+ *   related list cannot hold makes the token free text.
+ *
+ * A token that cannot map in any part (an unknown or unreadable field, an
+ * unsupported operator, a value the field rejects, any one value of a list, or
+ * `field:!` on a field that cannot be empty) is searched as one free-text word,
+ * {@link filterTokenFreeTextWord}, which is also what the Filter builder's chip
+ * shows. A positive token searches its values with the field name dropped
+ * (`status:draft,bogus` searches `draft,bogus`); a negated one searches its
+ * whole literal (`-secret:x`) and is never negated, because `NOT` of free text
+ * would turn a field the session cannot read into a filter. A free-text token
+ * is read as its serialised form reads back, so a structured one with several
+ * values is the words its URL holds.
+ *
+ * Bare words (and degraded tokens) are OR-matched across every free-text
+ * field, and each such word is ANDed with the rest — so `beta gamma` requires
+ * both. A word that cannot be matched against any free-text field — because
+ * the list has none, or because every free-text field's own mapping rejects
+ * it — narrows the chain to {@link NEVER_MATCHES} instead of being dropped: a
+ * condition that cannot be honoured must never widen the result set (#1356).
  *
  * @param query The structured query from {@link parseFilterQuery}.
  * @param specs Field-name → Filter spec (from {@link collectFilterSpecs}).
@@ -82,56 +151,45 @@ export function buildFilterWhere(
   query: FilterQuery,
   specs: Record<string, FilterSpec>,
 ): FilterCondition | undefined {
-  const andConditions: FilterCondition[] = []
-  const freeTextWords: string[] = []
+  const fieldConditions: FilterCondition[] = []
+  const textConditions: FilterCondition[] = []
 
   const freeTextFields = Object.keys(specs).filter((field) => specs[field].freeText)
   const specFor = (field: string): FilterSpec | undefined =>
     Object.hasOwn(specs, field) ? specs[field] : undefined
 
+  const freeText = (word: string): FilterCondition => {
+    const conditions = freeTextFields
+      .map((field) => specs[field].toCondition('eq', word))
+      .filter((condition): condition is FilterCondition => condition !== null)
+    return conditions.length > 0 ? anyOf(conditions) : NEVER_MATCHES
+  }
+
   const terms = query.terms.flatMap((token) =>
-    !isEmptyFilterToken(token) && (token.negated || token.values.length !== 1)
-      ? parseFilterQuery(serializeFilterToken(token)).terms
-      : [token],
+    token.field === null ? parseFilterQuery(serializeFilterToken(token)).terms : [token],
   )
 
   for (const token of terms) {
     // An empty value is incomplete input, not a constraint the engine failed
     // to honour: `role:` (or a bare `""`) says nothing to filter on, so it is
     // inert by design rather than narrowed away (#1509). This must be checked
-    // before a token ever reaches `freeTextWords` — an empty value degrading
-    // through the free-text path would call `toCondition('eq', '')`, and a
-    // `contains`-style mapping over `''` matches every row, not none. That is
-    // the opposite of #1356's narrow-on-failure rule, which only ever applies
-    // to a token that DOES carry a value the system cannot compile.
+    // before a token ever reaches the free-text path — an empty value there
+    // would call `toCondition('eq', '')`, and a `contains`-style mapping over
+    // `''` matches every row, not none. That is the opposite of #1356's
+    // narrow-on-failure rule, which only ever applies to a token that DOES
+    // carry a value the system cannot compile.
     if (isEmptyFilterToken(token)) continue
 
-    const [value] = token.values
-    if (!isFieldConditionToken(token, (field) => specFor(field)?.operators)) {
-      freeTextWords.push(value)
+    const spec = token.field === null ? undefined : specFor(token.field)
+    const condition = spec === undefined ? null : fieldCondition(token, spec)
+    if (condition !== null) {
+      fieldConditions.push(condition)
       continue
     }
-
-    const condition = fieldCondition(specs[token.field], token)
-    if (condition === null) {
-      freeTextWords.push(value)
-      continue
-    }
-
-    andConditions.push(condition)
+    textConditions.push(freeText(filterTokenFreeTextWord(token)))
   }
 
-  for (const word of freeTextWords) {
-    const orConditions = freeTextFields
-      .map((field) => specs[field].toCondition('eq', word))
-      .filter((condition): condition is FilterCondition => condition !== null)
-    if (orConditions.length > 0) {
-      andConditions.push(orConditions.length === 1 ? orConditions[0] : { OR: orConditions })
-    } else {
-      andConditions.push(NEVER_MATCHES)
-    }
-  }
-
+  const andConditions = [...fieldConditions, ...textConditions]
   if (andConditions.length === 0) return undefined
   if (andConditions.length === 1) return andConditions[0]
   return { AND: andConditions }

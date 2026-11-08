@@ -2,15 +2,24 @@ import { describe, it, expect } from 'vitest'
 import { parseFilterQuery } from './parse.js'
 import { serializeFilterQuery } from './serialize.js'
 import { filterTokenRecordId, recordIdFilterToken } from './record-id.js'
-import type { FilterOperator, FilterQuery, FilterToken } from './types.js'
+import { buildFilterWhere } from './map.js'
+import type {
+  FilterOperator,
+  FilterQuery,
+  FilterSpec,
+  FilterToken,
+  FilterTokenOperator,
+  FilterValue,
+} from './types.js'
+
+const v = (text: string, quoted = false): FilterValue => ({ text, quoted })
 
 const token = (partial: Partial<FilterToken>): FilterToken => ({
   kind: 'token',
   field: null,
   operator: 'eq',
   negated: false,
-  values: [''],
-  quoted: false,
+  values: [v('')],
   ...partial,
 })
 
@@ -18,11 +27,11 @@ const query = (...terms: FilterToken[]): FilterQuery => ({ terms })
 
 describe('serializeFilterQuery', () => {
   it('serialises a bare free-text word', () => {
-    expect(serializeFilterQuery(query(token({ values: ['beta'] })))).toBe('beta')
+    expect(serializeFilterQuery(query(token({ values: [v('beta')] })))).toBe('beta')
   })
 
   it('serialises a field:value token with the default eq operator', () => {
-    expect(serializeFilterQuery(query(token({ field: 'role', values: ['Editor'] })))).toBe(
+    expect(serializeFilterQuery(query(token({ field: 'role', values: [v('Editor')] })))).toBe(
       'role:Editor',
     )
   })
@@ -33,95 +42,129 @@ describe('serializeFilterQuery', () => {
     ['lt', 'orders:<5'],
     ['lte', 'orders:<=5'],
   ])('serialises the %s operator as its prefix', (operator, expected) => {
-    expect(serializeFilterQuery(query(token({ field: 'orders', operator, values: ['5'] })))).toBe(
-      expected,
-    )
+    expect(
+      serializeFilterQuery(query(token({ field: 'orders', operator, values: [v('5')] }))),
+    ).toBe(expected)
   })
 
   it('quotes a value containing whitespace', () => {
-    expect(serializeFilterQuery(query(token({ field: 'name', values: ['Ada Lovelace'] })))).toBe(
+    expect(serializeFilterQuery(query(token({ field: 'name', values: [v('Ada Lovelace')] })))).toBe(
       'name:"Ada Lovelace"',
     )
-    expect(serializeFilterQuery(query(token({ values: ['multi word'] })))).toBe('"multi word"')
+    expect(serializeFilterQuery(query(token({ values: [v('multi word')] })))).toBe('"multi word"')
   })
 
-  it('keeps a value quoted when the token says it was quoted', () => {
-    expect(serializeFilterQuery(query(token({ values: ['beta'], quoted: true })))).toBe('"beta"')
+  it('keeps a value quoted when it says it was quoted', () => {
+    expect(serializeFilterQuery(query(token({ values: [v('beta', true)] })))).toBe('"beta"')
   })
 
   it('escapes an embedded quote as \\"', () => {
     expect(
-      serializeFilterQuery(query(token({ field: 'name', values: ['Ada "the Countess"'] }))),
+      serializeFilterQuery(query(token({ field: 'name', values: [v('Ada "the Countess"')] }))),
     ).toBe('name:"Ada \\"the Countess\\""')
   })
 
   it('escapes a backslash only where it would otherwise read as an escape', () => {
-    expect(serializeFilterQuery(query(token({ values: ['ends in \\'] })))).toBe('"ends in \\\\"')
-    expect(serializeFilterQuery(query(token({ values: ['C:\\Users me'] })))).toBe('"C:\\Users me"')
+    expect(serializeFilterQuery(query(token({ values: [v('ends in \\')] })))).toBe('"ends in \\\\"')
+    expect(serializeFilterQuery(query(token({ values: [v('C:\\Users me')] })))).toBe(
+      '"C:\\Users me"',
+    )
   })
 
   it('quotes a free-text word that would otherwise read back as a field token', () => {
-    expect(serializeFilterQuery(query(token({ values: ['status:draft'] })))).toBe('"status:draft"')
+    expect(serializeFilterQuery(query(token({ values: [v('status:draft')] })))).toBe(
+      '"status:draft"',
+    )
   })
 
   it('leaves a URL bare, since its scheme is not a field prefix', () => {
-    expect(serializeFilterQuery(query(token({ values: ['http://x'] })))).toBe('http://x')
+    expect(serializeFilterQuery(query(token({ values: [v('http://x')] })))).toBe('http://x')
   })
 
   it('quotes an eq value that would otherwise read as a comparison operator', () => {
-    expect(serializeFilterQuery(query(token({ field: 'note', values: ['>5'] })))).toBe('note:">5"')
+    expect(serializeFilterQuery(query(token({ field: 'note', values: [v('>5')] })))).toBe(
+      'note:">5"',
+    )
     expect(
-      serializeFilterQuery(query(token({ field: 'orders', operator: 'gt', values: ['=5'] }))),
+      serializeFilterQuery(query(token({ field: 'orders', operator: 'gt', values: [v('=5')] }))),
     ).toBe('orders:>"=5"')
   })
 
   it('does NOT quote a leading > on a bare word (parser keeps it literal)', () => {
-    expect(serializeFilterQuery(query(token({ values: ['>5'] })))).toBe('>5')
+    expect(serializeFilterQuery(query(token({ values: [v('>5')] })))).toBe('>5')
   })
 
   it('writes an empty value as written: `field:` and `""`', () => {
-    expect(serializeFilterQuery(query(token({ field: 'role', values: [''] })))).toBe('role:')
-    expect(serializeFilterQuery(query(token({ values: [''] })))).toBe('""')
+    expect(serializeFilterQuery(query(token({ field: 'role', values: [v('')] })))).toBe('role:')
+    expect(serializeFilterQuery(query(token({ values: [v('')] })))).toBe('""')
   })
 
   it.each(['\u00a0', '\f', '\v', '\u2028', '\u3000'])(
     'quotes a value containing the whitespace %j',
     (space) => {
-      expect(serializeFilterQuery(query(token({ field: 'title', values: [`Ada${space}`] })))).toBe(
-        `title:"Ada${space}"`,
-      )
-      expect(serializeFilterQuery(query(token({ values: [space] })))).toBe(`"${space}"`)
+      expect(
+        serializeFilterQuery(query(token({ field: 'title', values: [v(`Ada${space}`)] }))),
+      ).toBe(`title:"Ada${space}"`)
+      expect(serializeFilterQuery(query(token({ values: [v(space)] })))).toBe(`"${space}"`)
     },
   )
 
-  it('quotes a value containing a comma, so it never reads as a list once #2250 lands', () => {
-    expect(serializeFilterQuery(query(token({ field: 'title', values: ['a,b'] })))).toBe(
+  it('writes several values as a comma list, quoting each one that needs it', () => {
+    expect(serializeFilterQuery(query(token({ field: 'title', values: [v('a,b')] })))).toBe(
       'title:"a,b"',
     )
-    expect(serializeFilterQuery(query(token({ field: 'title', values: ['a', 'b'] })))).toBe(
+    expect(serializeFilterQuery(query(token({ field: 'title', values: [v('a'), v('b')] })))).toBe(
       'title:a,b',
     )
-    expect(serializeFilterQuery(query(token({ field: 'title', values: ['a', 'b c,d'] })))).toBe(
-      'title:a,"b c,d"',
-    )
+    expect(
+      serializeFilterQuery(query(token({ field: 'title', values: [v('a'), v('b c,d')] }))),
+    ).toBe('title:a,"b c,d"')
+    expect(
+      serializeFilterQuery(query(token({ field: 'title', values: [v('a'), v('b', true)] }))),
+    ).toBe('title:a,"b"')
+  })
+
+  it('leaves a comma in a free-text word bare, since only a field value is a list', () => {
+    expect(serializeFilterQuery(query(token({ values: [v('a,b')] })))).toBe('a,b')
+  })
+
+  it('writes a negated token with a leading `-`', () => {
+    expect(
+      serializeFilterQuery(query(token({ field: 'status', values: [v('draft')], negated: true }))),
+    ).toBe('-status:draft')
+    expect(serializeFilterQuery(query(token({ values: [v('beta')], negated: true })))).toBe('-beta')
   })
 
   it('quotes a free-text word starting with `-`, so it never reads as negation', () => {
-    expect(serializeFilterQuery(query(token({ values: ['-beta'] })))).toBe('"-beta"')
-    expect(serializeFilterQuery(query(token({ values: ['beta'], negated: true })))).toBe('-beta')
-    expect(serializeFilterQuery(query(token({ values: ['-'] })))).toBe('-')
+    expect(serializeFilterQuery(query(token({ values: [v('-beta')] })))).toBe('"-beta"')
+    expect(serializeFilterQuery(query(token({ values: [v('-')] })))).toBe('-')
+    expect(serializeFilterQuery(query(token({ values: [v('-x')], negated: true })))).toBe('--x')
+  })
+
+  it('writes the empty operator as `field:!` and quotes a literal lone `!`', () => {
     expect(
-      serializeFilterQuery(query(token({ field: 'status', values: ['draft'], negated: true }))),
-    ).toBe('-status:draft')
+      serializeFilterQuery(query(token({ field: 'status', operator: 'empty', values: [] }))),
+    ).toBe('status:!')
+    expect(
+      serializeFilterQuery(
+        query(token({ field: 'status', operator: 'empty', values: [], negated: true })),
+      ),
+    ).toBe('-status:!')
+    expect(serializeFilterQuery(query(token({ field: 'status', values: [v('!')] })))).toBe(
+      'status:"!"',
+    )
+    expect(serializeFilterQuery(query(token({ field: 'status', values: [v('!'), v('a')] })))).toBe(
+      'status:!,a',
+    )
   })
 
   it('joins terms with the grammar implicit AND (a single space)', () => {
     expect(
       serializeFilterQuery(
         query(
-          token({ field: 'role', values: ['Editor'] }),
-          token({ field: 'orders', operator: 'gt', values: ['5'] }),
-          token({ values: ['beta'] }),
+          token({ field: 'role', values: [v('Editor')] }),
+          token({ field: 'orders', operator: 'gt', values: [v('5')] }),
+          token({ values: [v('beta')] }),
         ),
       ),
     ).toBe('role:Editor orders:>5 beta')
@@ -130,7 +173,7 @@ describe('serializeFilterQuery', () => {
 
 describe('serializing a token with no values', () => {
   it('writes it as an empty token, never as an empty term', () => {
-    expect(serializeFilterQuery(query(token({ values: [] }), token({ values: ['x'] })))).toBe(
+    expect(serializeFilterQuery(query(token({ values: [] }), token({ values: [v('x')] })))).toBe(
       '"" x',
     )
     expect(serializeFilterQuery(query(token({ field: 'role', values: [] })))).toBe('role:')
@@ -138,9 +181,12 @@ describe('serializing a token with no values', () => {
 
   it('reads back as the same number of terms, the first one empty', () => {
     const readBack = parseFilterQuery(
-      serializeFilterQuery(query(token({ values: [] }), token({ values: ['x'] }))),
+      serializeFilterQuery(query(token({ values: [] }), token({ values: [v('x')] }))),
     )
-    expect(readBack.terms.map((term) => term.values)).toEqual([[''], ['x']])
+    expect(readBack.terms.map((term) => term.values.map((value) => value.text))).toEqual([
+      [''],
+      ['x'],
+    ])
   })
 })
 
@@ -163,24 +209,24 @@ describe('parse/serialize round-trip on written queries', () => {
     '"C:\\Users me"',
     'author:#0190a3c2-7b1e-7000-8000-000000000001',
     'author:"#42" owner:#42 #42',
+    '-author:#42 author:#1,#2 author:#1,"#2"',
+    '-status:draft -beta --x -"a b"',
+    'status:draft,review status:a,"b c" status:a,b c',
+    'status:! -status:! status:"!" status:!,a status:!x',
+    ', a,b role:, role:a,',
+    '-http://x -orders:>5,6',
   ]
 
   it.each(queries)('serialize(parse(%s)) reproduces the query', (written) => {
     expect(serializeFilterQuery(parseFilterQuery(written))).toBe(written)
   })
 
-  it.each([
-    ['status:draft,review', 'status:"draft,review"'],
-    [',', '","'],
-    ['role:,', 'role:","'],
-    ['-beta', '"-beta"'],
-    ['-status:draft', '"-status:draft"'],
-  ])('canonicalises %s to %s, with the same meaning', (written, canonical) => {
-    const parsed = parseFilterQuery(written)
-    expect(serializeFilterQuery(parsed)).toBe(canonical)
-    expect(parseFilterQuery(canonical)).toEqual({
-      terms: parsed.terms.map((term) => ({ ...term, quoted: true })),
-    })
+  it('tells `a,"b c"` from `a,b c` by its per-value quoting', () => {
+    const quoted = parseFilterQuery('status:a,"b c"')
+    const split = parseFilterQuery('status:a,b c')
+    expect(quoted.terms).toHaveLength(1)
+    expect(quoted.terms[0].values).toEqual([v('a'), v('b c', true)])
+    expect(split.terms.map((term) => term.values)).toEqual([[v('a'), v('b')], [v('c')]])
   })
 })
 
@@ -238,13 +284,18 @@ const TRICKY_PREFIXES = [
   '\\',
   ' ',
   '-',
+  '--',
   ',',
   '-status:',
   'a,',
   '#',
   '"#',
+  'a:!',
+  '!',
+  '-a:!',
+  'a:x,',
 ]
-const OPERATORS: FilterOperator[] = ['eq', 'gt', 'gte', 'lt', 'lte']
+const OPERATORS: FilterTokenOperator[] = ['eq', 'gt', 'gte', 'lt', 'lte', 'empty']
 const FIELDS = ['status', 'a', '_b1', 'http', 'OR']
 const RUNS = 2000
 
@@ -253,38 +304,48 @@ function arbitrary(random: () => number) {
   const text = (max: number) =>
     pick(TRICKY_PREFIXES) +
     Array.from({ length: Math.floor(random() * (max + 1)) }, () => pick(ALPHABET)).join('')
+  const value = (): FilterValue => v(text(8), random() < 0.3)
   const parserShapedToken = (): FilterToken => {
-    const field = random() < 0.5 ? null : pick(FIELDS)
-    return token({
-      field,
-      operator: field === null ? 'eq' : pick(OPERATORS),
-      values: [text(8)],
-      quoted: random() < 0.3,
-    })
+    const field = random() < 0.4 ? null : pick(FIELDS)
+    const negated = random() < 0.3
+    if (field === null) return token({ negated, values: [value()] })
+    const operator = pick(OPERATORS)
+    if (operator === 'empty') return token({ field, operator, negated, values: [] })
+    const count = 1 + Math.floor(random() * 3)
+    return token({ field, operator, negated, values: Array.from({ length: count }, value) })
   }
+  const freeTextToken = (): FilterToken =>
+    token({
+      negated: random() < 0.3,
+      values: Array.from({ length: 1 + Math.floor(random() * 3) }, value),
+    })
   return {
     string: () => text(24),
     token: parserShapedToken,
+    freeTextToken,
     query: () => query(...Array.from({ length: Math.floor(random() * 5) }, parserShapedToken)),
   }
 }
 
-const quotedOnceSerialised = (term: FilterToken): boolean =>
-  term.quoted ||
-  term.values[0].includes(',') ||
-  (term.field === null && term.values[0].startsWith('-') && term.values[0] !== '-')
-
 describe('parse/serialize is an inverse on what the parser produces (property)', () => {
-  const generate = arbitrary(seededRandom(2248))
+  const generate = arbitrary(seededRandom(2250))
 
   it('the parser never throws, and parse ∘ serialize is the identity on parsed queries', () => {
     for (let run = 0; run < RUNS; run++) {
       const written = generate.string()
       const parsed = parseFilterQuery(written)
-      expect(parseFilterQuery(serializeFilterQuery(parsed)), JSON.stringify(written)).toEqual({
-        terms: parsed.terms.map((term) => ({ ...term, quoted: quotedOnceSerialised(term) })),
-      })
+      expect(parseFilterQuery(serializeFilterQuery(parsed)), JSON.stringify(written)).toEqual(
+        parsed,
+      )
     }
+  })
+
+  it('produces negated, multi-value and empty tokens from what it is given', () => {
+    const parsed = Array.from({ length: RUNS }, () => parseFilterQuery(generate.string()).terms)
+    const terms = parsed.flat()
+    expect(terms.some((term) => term.negated)).toBe(true)
+    expect(terms.some((term) => term.values.length > 1)).toBe(true)
+    expect(terms.some((term) => term.operator === 'empty')).toBe(true)
   })
 
   it('serialize ∘ parse is the identity on serialised queries', () => {
@@ -294,7 +355,7 @@ describe('parse/serialize is an inverse on what the parser produces (property)',
     }
   })
 
-  it('a structured query reads back with the same fields, operators and values', () => {
+  it('a structured query reads back with the same fields, operators, negation and values', () => {
     for (let run = 0; run < RUNS; run++) {
       const original = generate.query()
       const readBack = parseFilterQuery(serializeFilterQuery(original))
@@ -302,7 +363,13 @@ describe('parse/serialize is an inverse on what the parser produces (property)',
       expect(readBack.terms.length, label).toBe(original.terms.length)
       readBack.terms.forEach((term, index) => {
         const source = original.terms[index]
-        expect(term, label).toEqual({ ...source, quoted: source.quoted || term.quoted })
+        expect(term, label).toEqual({
+          ...source,
+          values: source.values.map((value, at) => ({
+            ...value,
+            quoted: value.quoted || term.values[at]?.quoted === true,
+          })),
+        })
       })
     }
   })
@@ -315,8 +382,10 @@ describe('parse/serialize is an inverse on what the parser produces (property)',
       readBack.terms.forEach((term, index) => {
         const source = original.terms[index]
         const id = filterTokenRecordId(source)
-        if (source.quoted) expect(filterTokenRecordId(term), label).toBeNull()
-        else if (id !== null && !/[\s,"]/.test(id)) {
+        if (source.values.some((value) => value.quoted)) {
+          expect(filterTokenRecordId(term), label).toBeNull()
+        }
+        if (id !== null && !/[\s,"]/.test(id)) {
           expect(filterTokenRecordId(term), label).toBe(id)
         }
       })
@@ -338,28 +407,59 @@ describe('a related record id token', () => {
       null,
     ])
   })
+
+  it('names no single record when negated or listing several ids', () => {
+    expect(parseFilterQuery('-author:#42 author:#1,#2').terms.map(filterTokenRecordId)).toEqual([
+      null,
+      null,
+    ])
+  })
+
+  it('serialises negated as -field:#id', () => {
+    expect(serializeFilterQuery(query(recordIdFilterToken('author', '42', true)))).toBe(
+      '-author:#42',
+    )
+  })
 })
 
-describe('serialising a token the parser never produces (property)', () => {
-  const generate = arbitrary(seededRandom(2250))
+const PROPERTY_SPECS: Record<string, FilterSpec> = {
+  title: {
+    operators: ['eq'],
+    freeText: true,
+    toCondition: (operator, value) => (operator === 'eq' ? { title: { contains: value } } : null),
+    suggestions: { valueSource: { kind: 'none' } },
+  },
+  status: {
+    operators: ['eq'],
+    toCondition: (_operator, value) => (value === 'a' ? { status: { equals: 'a' } } : null),
+    empty: { status: { equals: null } },
+    suggestions: { valueSource: { kind: 'none' } },
+  },
+}
 
-  it('writes a multi-value or negated token distinct from the single literal value it would join to', () => {
+describe('buildFilterWhere reads a structured token as its serialised URL reads back (property)', () => {
+  const generate = arbitrary(seededRandom(2265))
+
+  it('agrees on multi-value free-text tokens', () => {
+    let multiValue = 0
     for (let run = 0; run < RUNS; run++) {
-      const single = generate.token()
-      const [value] = single.values
-      const label = JSON.stringify(single)
-      if (value.includes(',')) {
-        const multi = { ...single, quoted: false, values: value.split(',') }
-        expect(serializeFilterQuery(query(multi)), label).not.toBe(
-          serializeFilterQuery(query({ ...single, quoted: false })),
-        )
-      }
-      if (single.field === null && value.startsWith('-') && value !== '-') {
-        const negated = { ...single, quoted: false, negated: true, values: [value.slice(1)] }
-        expect(serializeFilterQuery(query(negated)), label).not.toBe(
-          serializeFilterQuery(query({ ...single, quoted: false })),
-        )
-      }
+      const structured = query(generate.freeTextToken())
+      if (structured.terms[0].values.length > 1) multiValue++
+      const readBack = parseFilterQuery(serializeFilterQuery(structured))
+      expect(buildFilterWhere(structured, PROPERTY_SPECS), JSON.stringify(structured)).toEqual(
+        buildFilterWhere(readBack, PROPERTY_SPECS),
+      )
+    }
+    expect(multiValue).toBeGreaterThan(0)
+  })
+
+  it('agrees on parser-shaped queries', () => {
+    for (let run = 0; run < RUNS; run++) {
+      const structured = generate.query()
+      const readBack = parseFilterQuery(serializeFilterQuery(structured))
+      expect(buildFilterWhere(structured, PROPERTY_SPECS), JSON.stringify(structured)).toEqual(
+        buildFilterWhere(readBack, PROPERTY_SPECS),
+      )
     }
   })
 })

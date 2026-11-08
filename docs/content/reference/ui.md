@@ -446,6 +446,26 @@ AND. A token with an empty value (`title:` or `""`) filters nothing, and a token
 the list cannot honour — an unknown field or an unsupported operator — degrades
 to free text rather than erroring.
 
+| Syntax                 | Meaning                                                 |
+| ---------------------- | ------------------------------------------------------- |
+| `field:value`          | Is, or contains on a text or relationship field         |
+| `-field:value`         | Is not, or does not contain                             |
+| `field:a,b`            | Is any of these values; each value is quoted on its own |
+| `field:!` / `-field:!` | Is empty / is not empty, on a field that can be empty   |
+| `field:"!"`            | The literal text `!`                                    |
+
+"Is not" keeps the rows with no value: `-category:product` returns uncategorised
+rows too, which SQL's `NOT` alone would drop. `field:!` is understood only on a
+field whose Filter spec says what empty means; on any other field it degrades to
+free text. A token that cannot map in any part is searched as one free-text
+word, and its chip shows exactly that word. A positive token searches its
+values with the field name dropped: `nosuchfield:Findable` searches `Findable`,
+and `status:draft,bogus` searches `draft,bogus` rather than for drafts. A
+negated token searches its whole literal and is never negated: `-secret:x`, on
+a field the session cannot read or the list does not have, searches for
+`-secret:x`, so negation never turns an unreadable field into a filter. A comma
+in a free-text word is part of the word.
+
 Each field type declares which operators it accepts. Text fields accept `eq`
 only, and lower it to `contains`. Numbers, decimals, big integers, timestamps
 and calendar days accept `eq`, `gt`, `gte`, `lt` and `lte`. A timestamp takes
@@ -458,7 +478,9 @@ A to-one relationship takes the related record's Item label, matched as
 relation, so the related list's `query` access applies and a record the session
 cannot read matches nothing. The id is parsed as the related list's id
 strategy declares (`uuid7`, `cuid2`, `int autoincrement`); one that list cannot
-hold degrades to free text. A quoted `author:"#42"` is label text, never an id.
+hold degrades to free text. `-author:#id` excludes that record, keeping the rows
+with no author, and `author:#a,#b` matches either. A quoted `author:"#42"` is
+label text, never an id.
 
 #### The Filter builder bar
 
@@ -470,8 +492,13 @@ search for exactly what was typed. Suggestions come from each field's Filter
 spec and the config only, never from the list's data.
 
 Choosing a field goes straight to its values with the field's default
-condition. When the field has more than one condition, a condition row above
-the values switches it by click or by Tab, and typing `>`, `>=`, `<` or `<=`
+condition. A condition row above the values switches it by click or by Tab:
+the field's own operators, then "is not" (or "does not contain"), "is any of"
+on a field with enumerated values, and "is empty" and "is not empty" on a field
+that can be empty. "Is any of" turns the values into a multi-select list: each
+tick updates the one chip and the list at once, and the menu stays open for
+the next. Phrases such as `status is not draft`, `views != 3` and
+`author is empty` read the same way. Typing `>`, `>=`, `<` or `<=`
 at the start of a value sets the comparison. A value that does not fit the
 field (`abc` for a whole number) is explained under the suggestions instead of
 being applied. "Search all text" reads what was typed in the URL grammar, so a
@@ -482,7 +509,8 @@ the same access-scoped search the item form's relationship picker uses, and
 typing searches them. Relationships are searched only once their field is
 named. When the related list's label cannot be searched for this session, typing
 hides the records and offers only the "contains" text. Picking a record writes `field:#id` and its chip shows the record's Item
-label ("Author is Priya Nair"), while the URL carries the id. Typing without
+label ("Author is Priya Nair"), while the URL carries the id. Picking under
+"does not contain" writes `-field:#id` ("Author is not Priya Nair"). Typing without
 picking writes label text instead, shown as "contains". The list view resolves
 the label of each id in the URL through the secured context, so a bookmarked
 link shows the label too, and a record the session cannot read shows its raw
@@ -500,7 +528,8 @@ builder navigates with `router.push` inside a transition, so the current rows
 stay on screen with a progress indicator and Back steps through each change.
 There is no Apply button, and text still being typed never navigates. Clicking
 any part of a chip edits it in place, its × removes it, and **Clear** removes
-every chip. A second `is` filter on a field replaces the first, and typing two
+every chip. A second `is` or `is any of` filter on a field replaces the first,
+while an `is not` never does, and typing two
 at once (`status:draft status:published`) keeps the last; a hand-written pair in
 the URL stays as written and matches nothing. Pasting a query in the URL grammar
 turns it into chips, and a filtered URL reproduces the same chips. A token whose
@@ -538,7 +567,9 @@ slots are `filter-builder` (root),
 `filter-builder-draft`, `filter-builder-input`, `filter-builder-clear`,
 `filter-builder-progress`, `filter-builder-menu`,
 `filter-builder-menu-conditions`, `filter-builder-menu-condition`,
-`filter-builder-option` (with `data-active`) and `filter-builder-hint`.
+`filter-builder-option` (with `data-active`), `filter-builder-option-check`
+(the tick on an "is any of" value) and `filter-builder-hint`. An "is empty"
+chip has no `filter-builder-chip-value` part.
 
 #### What filtering costs
 

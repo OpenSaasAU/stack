@@ -121,6 +121,8 @@ export async function collectFilterSuggestions(
     }
     if (spec.suggestions.valueFormat) suggestion.valueFormat = spec.suggestions.valueFormat
     if (spec.toIdCondition) suggestion.matchesById = true
+    if (spec.empty !== undefined) suggestion.canBeEmpty = true
+    if (spec.negation !== undefined) suggestion.negation = spec.negation
     return suggestion
   })
 }

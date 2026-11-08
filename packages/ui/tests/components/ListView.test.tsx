@@ -432,6 +432,36 @@ describe('ListView relationship lookup by id', () => {
   )
 
   it(
+    'excludes the record a negated `-field:#id` names and resolves its label',
+    async () => {
+      const props = await render(ada, { listKey: 'Post', search: `-author:#${ada.userId}` })
+      const titles = props.items.map((item) => item.title)
+      expect(titles).not.toContain('On Engines')
+      expect(titles).not.toContain('On Looms')
+      expect(props.recordLabels).toEqual({ author: [{ id: String(ada.userId), label: 'Ada' }] })
+    },
+    BOOT,
+  )
+
+  it(
+    'resolves each label of a `field:#a,#b` token',
+    async () => {
+      const props = await render(ada, {
+        listKey: 'Post',
+        search: `author:#${ada.userId},#0190a3c2-7b1e-7000-8000-000000000001`,
+      })
+      expect(props.items.map((item) => item.title).sort()).toEqual(['On Engines', 'On Looms'])
+      expect(props.recordLabels).toEqual({
+        author: [
+          { id: String(ada.userId), label: 'Ada' },
+          { id: '0190a3c2-7b1e-7000-8000-000000000001', label: null },
+        ],
+      })
+    },
+    BOOT,
+  )
+
+  it(
     'matches nothing and resolves no label for a record the session cannot read',
     async () => {
       const props = await render(ada, { listKey: 'Post', search: `vault:#${vaultId}` })

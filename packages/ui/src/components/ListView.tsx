@@ -24,7 +24,7 @@ import {
   engineContextOf,
   buildListFilterWhere,
   collectFilterSuggestions,
-  filterTokenRecordId,
+  filterValueRecordId,
   getItemLabel,
   getLabelFieldName,
   getUrlKey,
@@ -178,10 +178,12 @@ async function resolveRecordLabels(
   )
   const idsByField = new Map<string, Set<string>>()
   for (const token of parseFilterQuery(search).terms) {
-    const id = filterTokenRecordId(token)
-    if (id === null || token.field === null || token.negated) continue
-    if (!lookupFields.has(token.field)) continue
-    idsByField.set(token.field, (idsByField.get(token.field) ?? new Set()).add(id))
+    const field = token.field
+    if (field === null || token.operator !== 'eq' || !lookupFields.has(field)) continue
+    for (const value of token.values) {
+      const id = filterValueRecordId(value)
+      if (id !== null) idsByField.set(field, (idsByField.get(field) ?? new Set()).add(id))
+    }
   }
 
   const entries = await Promise.all(

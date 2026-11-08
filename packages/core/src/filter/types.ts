@@ -14,25 +14,41 @@ import type { Where } from '../secured/vocabulary.js'
 export type FilterOperator = 'eq' | 'gt' | 'gte' | 'lt' | 'lte'
 
 /**
+ * What a token asks of its field: a {@link FilterOperator} on its values, or
+ * `empty` for `field:!`, which carries no values and matches the rows where
+ * the field has no value.
+ */
+export type FilterTokenOperator = FilterOperator | 'empty'
+
+/** One value of a {@link FilterToken}, as written. */
+export interface FilterValue {
+  /** The unquoted, unescaped text. */
+  text: string
+  /**
+   * Whether the value was written in double quotes, which keeps it literal: a
+   * quoted `"status:draft"` is a free-text word, never a field token, and a
+   * quoted `"!"` is the text `!`, never "is empty".
+   */
+  quoted: boolean
+}
+
+/**
  * One Filter token: a field, an operator and its values.
  *
- * A bare free-text word has `field: null`. `quoted` records that the value was
- * written in double quotes, which keeps it literal: a quoted `"status:draft"`
- * is a free-text word, never a field token. `negated` is ADR-0083's
- * `-field:value`, and a `values` list longer than one its `field:a,b`.
+ * A bare free-text word has `field: null`. `negated` is ADR-0083's
+ * `-field:value`, a `values` list longer than one its `field:a,b`, and the
+ * `empty` operator its `field:!`.
  */
 export interface FilterToken {
   kind: 'token'
   /** Field key the token targets, or `null` for a bare free-text word. */
   field: string | null
-  /** The operator: `eq` for a plain `field:value`, comparisons for prefixed values. */
-  operator: FilterOperator
+  /** `eq` for a plain `field:value`, comparisons for prefixed values, `empty` for `field:!`. */
+  operator: FilterTokenOperator
   /** Whether the token is negated (`-field:value`). */
   negated: boolean
-  /** The unquoted, unescaped values, in the order written. */
-  values: string[]
-  /** Whether the first value is written in double quotes. */
-  quoted: boolean
+  /** The values, in the order written. Empty for the `empty` operator. */
+  values: FilterValue[]
 }
 
 /**
@@ -91,6 +107,9 @@ export interface FilterValueFormat extends FilterValuePattern {
   operators?: Partial<Record<FilterOperator, FilterValuePattern>>
 }
 
+/** How a field's negated condition behaves; see {@link FilterSpec.negation}. */
+export type FilterNegation = 'includesEmpty' | 'redundant'
+
 /**
  * A field's self-declared filtering capability. Returned by the optional
  * `getFilterSpec` field-builder method.
@@ -116,9 +135,33 @@ export interface FilterSpec {
    * hold, in which case the token degrades to free text. Lower it through the
    * relation, never the foreign key column, so the related list's `query`
    * access applies inside the predicate and a record the session cannot read
-   * matches nothing. Without it, `#id` is an ordinary `eq` value.
+   * matches nothing. The engine composes it like `toCondition`, per value:
+   * `field:#a,#b` matches either record and `-field:#id` excludes it. Without
+   * it, `#id` is an ordinary `eq` value.
    */
   toIdCondition?: (id: string) => FilterCondition | null
+  /**
+   * What "no value" means for this field: a condition matching exactly the
+   * rows where it has none. Set it only on a field that can be empty. It is
+   * what offers `field:!` (is empty) and `-field:!` (is not empty), and the
+   * engine ORs it into every negated token on the field, so "is not" keeps the
+   * rows with no value that SQL's `NOT` would drop. Without it, `field:!`
+   * degrades to free text.
+   */
+  empty?: FilterCondition
+  /**
+   * How `NOT` of this field's condition already behaves, when the engine
+   * should not compose "is not" as `NOT cond OR empty`:
+   *
+   * - `'includesEmpty'`: `NOT cond` already matches the rows with no value
+   *   (a relation's `NOT some`), so `empty` is not ORed in.
+   * - `'redundant'`: `NOT cond` only restates one of the field's own
+   *   operators (a to-many presence count, where `-orders:0` is `orders:>0`),
+   *   so the Filter builder does not offer "is not".
+   *
+   * Omit it for the default: `NOT cond`, ORed with `empty` when set.
+   */
+  negation?: FilterNegation
   /** Serializable suggestion metadata for the client. */
   suggestions: {
     valueSource: FilterValueSource
@@ -148,4 +191,8 @@ export interface FilterFieldSuggestion {
   valueFormat?: FilterValueFormat
   /** Set when the field matches a related record by id (`field:#id`). */
   matchesById?: boolean
+  /** Whether the field can be empty, and so takes `field:!` and `-field:!`. */
+  canBeEmpty?: boolean
+  /** How the field's negated condition behaves, when its spec states it. */
+  negation?: FilterNegation
 }

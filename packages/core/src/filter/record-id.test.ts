@@ -108,6 +108,7 @@ beforeEach(async () => {
   const tag = await seed('Tag', { name: 'Engines' })
   const owner = await seed('Owner', { name: 'Babbage' })
   ids.ada = String(ada.id)
+  ids.adaReed = String(adaReed.id)
   ids.ghost = String(ghost.id)
   ids.tag = String(tag.id)
   ids.owner = String(owner.id)
@@ -175,6 +176,45 @@ describe('`field:#id` over the secured surface', () => {
         author: { some: { name: { contains: `#${ids.ada}` } } },
       })
       expect(await titles(`author:"#${ids.ada}"`)).toEqual([])
+    },
+    BOOT,
+  )
+})
+
+describe('negated and several `#id` values', () => {
+  test(
+    '`-field:#id` is NOT of the id condition, which already keeps the rows with no record',
+    async () => {
+      expect(await whereFor(`-author:#${ids.ada}`)).toEqual({
+        NOT: { author: { some: { id: { equals: ids.ada } } } },
+      })
+      expect(await titles(`-author:#${ids.ada}`)).toEqual(['Notes #1', 'On Ghosts', 'On Looms'])
+    },
+    BOOT,
+  )
+
+  test(
+    '`field:#a,#b` matches either record',
+    async () => {
+      expect(await whereFor(`author:#${ids.ada},#${ids.adaReed}`)).toEqual({
+        OR: [
+          { author: { some: { id: { equals: ids.ada } } } },
+          { author: { some: { id: { equals: ids.adaReed } } } },
+        ],
+      })
+      expect(await titles(`author:#${ids.ada},#${ids.adaReed}`)).toEqual(['On Engines', 'On Looms'])
+      expect(await titles(`-author:#${ids.ada},#${ids.adaReed}`)).toEqual(['Notes #1', 'On Ghosts'])
+    },
+    BOOT,
+  )
+
+  test(
+    'an id its list cannot hold makes the whole token free text, by the degrade rule',
+    async () => {
+      expect(await whereFor(`author:#${ids.ada},#1`)).toEqual({
+        title: { contains: `#${ids.ada},#1` },
+      })
+      expect(await whereFor('-author:#1')).toEqual({ title: { contains: '-author:#1' } })
     },
     BOOT,
   )
