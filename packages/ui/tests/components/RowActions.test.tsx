@@ -127,7 +127,7 @@ describe('Row actions', () => {
     )
   })
 
-  it('reports an action whose dispatch rejected as not run', async () => {
+  it('reports an action whose dispatch rejected as an unknown outcome and refreshes', async () => {
     const user = userEvent.setup()
     renderList(
       vi.fn(async () => {
@@ -138,12 +138,13 @@ describe('Row actions', () => {
     await user.click(trigger('Draft one'))
     await user.click(await screen.findByRole('menuitem', { name: 'Publish now' }))
 
-    expect(await screen.findByRole('status')).toHaveTextContent(
-      'Publish now: this action was not run',
-    )
+    const status = await screen.findByRole('status')
+    expect(status).toHaveTextContent('Publish now: the result is unknown — refresh to check')
+    expect(status).not.toHaveTextContent('not run')
+    expect(refresh).toHaveBeenCalled()
   })
 
-  it('reports a delete whose dispatch rejected as not deleted', async () => {
+  it('reports a delete whose dispatch rejected as an unknown outcome and refreshes', async () => {
     const user = userEvent.setup()
     renderList(
       vi.fn(async () => {
@@ -157,7 +158,10 @@ describe('Row actions', () => {
       within(await screen.findByRole('dialog')).getByRole('button', { name: 'Delete' }),
     )
 
-    expect(await screen.findByRole('status')).toHaveTextContent('“Live one” not deleted')
+    const status = await screen.findByRole('status')
+    expect(status).toHaveTextContent('Delete “Live one”: the result is unknown — refresh to check')
+    expect(status).not.toHaveTextContent('not deleted')
+    expect(refresh).toHaveBeenCalled()
     expect(push).not.toHaveBeenCalled()
   })
 
@@ -224,6 +228,64 @@ describe('Row actions', () => {
       'href',
       'https://example.com',
     )
+  })
+
+  it('titles a list whose displayed columns are all relationships with an Open link', () => {
+    const { container } = renderList(undefined, {
+      listKey: 'Audition',
+      urlKey: 'audition',
+      items: [{ id: 'a1', student: { id: 's1', label: 'Sam' }, production: null }],
+      fieldTypes: { student: 'relationship', production: 'relationship' },
+      relationshipRefs: { student: 'Student', production: 'Production' },
+      labelColumn: undefined,
+      rowActionKeys: {},
+    })
+
+    const titleLink = container.querySelector('[data-slot="row-title-link"]')
+    expect(titleLink).toHaveAttribute('href', '/admin/audition/a1')
+    expect(titleLink).toHaveTextContent('Open')
+    expect(container.querySelector('a a')).toBeNull()
+  })
+
+  it('never wraps a relationship title cell in the item link', () => {
+    const { container } = renderList(undefined, {
+      items: [{ id: '1', title: { id: 't1', label: 'Linked title' } }],
+      fieldTypes: { title: 'relationship' },
+      relationshipRefs: { title: 'Topic' },
+      labelColumn: 'title',
+      rowActionKeys: {},
+    })
+
+    expect(container.querySelector('a a')).toBeNull()
+    const titleLink = container.querySelector('[data-slot="row-title-link"]')
+    expect(titleLink).toHaveAttribute('href', '/admin/post/1')
+    expect(titleLink).toHaveTextContent('Open')
+  })
+
+  it('says so when a Delete is confirmed while an action is still running', async () => {
+    const user = userEvent.setup()
+    const pending = deferred<unknown>()
+    const serverAction = vi.fn(() => pending.promise)
+    renderList(serverAction)
+
+    await user.click(trigger('Draft one'))
+    await user.click(await screen.findByRole('menuitem', { name: 'Publish now' }))
+    await waitFor(() => expect(trigger('Draft one')).toHaveAttribute('aria-disabled', 'true'))
+
+    await user.click(trigger('Draft one'))
+    await user.click(await screen.findByRole('menuitem', { name: 'Delete' }))
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Delete' }),
+    )
+
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Another action on “Draft one” is still running',
+    )
+    expect(serverAction).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(trigger('Draft one')).toHaveFocus())
+
+    pending.resolve({ rowAction: true, message: 'Post published' })
+    expect(await screen.findByRole('status')).toHaveTextContent('Post published')
   })
 
   it('wraps a built-in title cell in the item link', () => {

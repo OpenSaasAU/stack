@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import {
-  builtInCellComponents,
+  anchorFreeCellComponents,
   getCellComponent,
   type CellComponent,
   type CellComponentProps,
@@ -19,12 +19,12 @@ function resolveCellComponent(field: SerializableFieldConfig): CellComponent {
 }
 
 /**
- * Whether `field` renders through one of the admin UI's own Cells, rather
- * than a `ui.cell` override or a Cell a package registered, whose markup
- * (an anchor, say) the caller cannot know.
+ * Whether `field` renders through one of the admin UI's own anchor-free Cells,
+ * rather than one that renders its own link (a relationship), a `ui.cell`
+ * override or a Cell a package registered, whose markup the caller cannot know.
  */
-export function rendersBuiltInCell(field: SerializableFieldConfig): boolean {
-  return builtInCellComponents.has(resolveCellComponent(field))
+export function rendersAnchorFreeCell(field: SerializableFieldConfig): boolean {
+  return anchorFreeCellComponents.has(resolveCellComponent(field))
 }
 
 function CellRendererInner({

@@ -69,8 +69,11 @@ const cellComponentRegistry: Record<string, CellComponent> = {
   json: JsonCell,
 }
 
-/** The admin UI's own Cells, which a package's {@link registerCellComponent} never adds to. */
-export const builtInCellComponents: ReadonlySet<CellComponent> = Object.freeze(
+/**
+ * The admin UI's own Cells that render no anchor of their own, so a row title
+ * may wrap them in a link. {@link registerCellComponent} never adds to it.
+ */
+export const anchorFreeCellComponents: ReadonlySet<CellComponent> = Object.freeze(
   new Set<CellComponent>([
     TextCell,
     IntegerCell,
@@ -78,7 +81,6 @@ export const builtInCellComponents: ReadonlySet<CellComponent> = Object.freeze(
     SelectCell,
     TimestampCell,
     CalendarDayCell,
-    RelationshipCell,
     PasswordCell,
     JsonCell,
   ]),

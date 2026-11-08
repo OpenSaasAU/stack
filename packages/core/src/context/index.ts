@@ -44,6 +44,7 @@ import { resolveJunctionEdge, ownsForeignKey } from './junction.js'
 import { isRelationshipField } from '../fields/index.js'
 import { parseListId, type ListIdValue } from '../contract/id-boundary.js'
 import { reportAfterTransactionFailures } from './transaction-boundary.js'
+import { isRowActionAvailable } from '../config/row-action-availability.js'
 import {
   TransactionRegistry,
   TransactionRolledBackError,
@@ -957,18 +958,16 @@ export function getContext<TConfig extends OpenSaasConfig>(
       }
       const id = parseId(props.listKey, props.id)
       if (id === null) return notRun
-      const passes = async (
-        name: 'hasAccess' | 'isAvailable',
-        check: () => boolean | Promise<boolean>,
-      ): Promise<boolean> => {
+      const { hasAccess } = action
+      if (hasAccess) {
+        let allowed = false
         try {
-          return await check()
+          allowed = await hasAccess({ session: context.session, context, listKey: props.listKey })
         } catch (error) {
-          console.error(`Row action "${props.key}" on "${props.listKey}" ${name} threw:`, error)
-          return false
+          console.error(`Row action "${props.key}" on "${props.listKey}" hasAccess threw:`, error)
         }
+        if (!allowed) return notRun
       }
-      const { hasAccess, isAvailable } = action
       try {
         return await transaction(async (tx) => {
           const list = tx.db[props.listKey]
@@ -980,18 +979,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
           const item = await list.where({ id: { equals: id } }).first()
           if (item === null) return notRun
           const txContext = engineContextOf(tx)
-          if (
-            hasAccess &&
-            !(await passes('hasAccess', () =>
-              hasAccess({ session: txContext.session, context: txContext, listKey: props.listKey }),
-            ))
-          ) {
-            return notRun
-          }
-          if (
-            isAvailable &&
-            !(await passes('isAvailable', () => isAvailable({ item, session: txContext.session })))
-          ) {
+          if (!isRowActionAvailable(action, props.listKey, item, txContext.session)) {
             return notRun
           }
           const result = await action.handler({

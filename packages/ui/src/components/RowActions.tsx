@@ -83,6 +83,8 @@ export interface RowActionsProps {
   onCopyLink: () => Promise<void>
   /** Delete the row; when omitted, Delete is not offered. */
   onDelete?: () => Promise<void>
+  /** Called when an action is chosen while another on this row is still running, and so is not run. */
+  onStillRunning?: () => void
   /** Noun for the delete confirm copy (e.g. "post"). Defaults to "item". */
   itemName?: string
   /** Optional class merged onto the trigger. */
@@ -103,6 +105,7 @@ export function RowActions({
   onRun,
   onCopyLink,
   onDelete,
+  onStillRunning,
   itemName = 'item',
   className,
 }: RowActionsProps) {
@@ -112,7 +115,10 @@ export function RowActions({
   const queued = React.useRef<Pending | null>(null)
 
   const run = async (work: () => Promise<void>) => {
-    if (running.current) return
+    if (running.current) {
+      onStillRunning?.()
+      return
+    }
     running.current = true
     setBusy(true)
     try {

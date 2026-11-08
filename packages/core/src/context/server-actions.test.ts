@@ -730,6 +730,74 @@ describe('context.serverAction', () => {
     )
 
     test(
+      'a session hasAccess refuses never reads or locks the row',
+      async () => {
+        const id = await seedPost('a', 'draft')
+        const handler = vi.fn(async () => ({ message: 'ran' }))
+        const query = vi.fn(() => true)
+        const refusing = withRowAction({ handler, hasAccess: () => false })
+        refusing.lists.Post.access = { operation: { ...OPEN, query } }
+        const throwing = withRowAction({
+          handler,
+          hasAccess: () => {
+            throw new Error('no role')
+          },
+        })
+        throwing.lists.Post.access = { operation: { ...OPEN, query } }
+        const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+        try {
+          const refused = await contextAt(refusing).serverAction({
+            listKey: 'Post',
+            action: 'rowAction',
+            key: 'publish',
+            id,
+          })
+          const threw = await contextAt(throwing).serverAction({
+            listKey: 'Post',
+            action: 'rowAction',
+            key: 'publish',
+            id,
+          })
+          expect(refused).toEqual({ rowAction: false, error: 'This action was not run' })
+          expect(threw).toEqual(refused)
+          expect(query).not.toHaveBeenCalled()
+          expect(handler).not.toHaveBeenCalled()
+        } finally {
+          logged.mockRestore()
+        }
+      },
+      BOOT,
+    )
+
+    test(
+      'an isAvailable that resolves asynchronously is not run and is logged',
+      async () => {
+        const id = await seedPost('a', 'draft')
+        const handler = vi.fn(async () => ({ message: 'ran' }))
+        const config = withRowAction({ handler })
+        const declared = config.lists.Post.ui?.listView?.rowActions?.[0]
+        if (!declared) throw new Error('row action missing')
+        Object.assign(declared, { isAvailable: async () => false })
+        const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+        try {
+          expect(
+            await contextAt(config).serverAction({
+              listKey: 'Post',
+              action: 'rowAction',
+              key: 'publish',
+              id,
+            }),
+          ).toEqual({ rowAction: false, error: 'This action was not run' })
+          expect(handler).not.toHaveBeenCalled()
+          expect(logged).toHaveBeenCalledWith(expect.stringContaining('non-boolean'))
+        } finally {
+          logged.mockRestore()
+        }
+      },
+      BOOT,
+    )
+
+    test(
       'a hasAccess that throws answers as Silent failure and is logged',
       async () => {
         const id = await seedPost('a', 'draft')

@@ -31,6 +31,7 @@ import {
   OpenSaasConfig,
 } from '@opensaas/stack-core'
 import type { SecuredQuery } from '@opensaas/stack-core'
+import { isRowActionAvailable } from '@opensaas/stack-core/internal'
 
 /**
  * Whether the list's delete access is NOT statically false (issue #733).
@@ -53,12 +54,6 @@ type ActionAccessGate = (args: {
   listKey: string
 }) => boolean | Promise<boolean>
 
-/**
- * The declared actions (Bulk or Row) whose `hasAccess` gate admits this
- * session, resolved once per request. A gate that throws hides its action
- * rather than failing the list page. The gate is re-checked on dispatch, so
- * hiding an action is a UX affordance, not the security boundary.
- */
 async function resolveVisibleActions<TAction extends { key: string; hasAccess?: ActionAccessGate }>(
   actions: TAction[] | undefined,
   context: AccessContext,
@@ -97,28 +92,9 @@ function serializeRowAction(action: RowAction): SerializedRowAction {
   }
 }
 
-function isRowActionAvailable(
-  action: RowAction,
-  item: Record<string, unknown>,
-  session: AccessContext['session'],
-): boolean {
-  if (!action.isAvailable) return true
-  try {
-    return action.isAvailable({ item, session })
-  } catch (error) {
-    console.error(`Row action "${action.key}" isAvailable threw:`, error)
-    return false
-  }
-}
-
-/**
- * The keys of the Row actions each row offers, keyed by row id. `isAvailable`
- * is evaluated over a read of the page's rows in the shape dispatch re-reads
- * one row in, with no includes, so a computed field sees the same
- * dependencies here as it does when the action runs.
- */
 async function availableRowActionKeys(
   actions: RowAction[],
+  listKey: string,
   read: SecuredQuery,
   ids: Array<string | number>,
   session: AccessContext['session'],
@@ -141,7 +117,7 @@ async function availableRowActionKeys(
   const keysById: Record<string, string[]> = {}
   for (const item of rows) {
     const keys = actions
-      .filter((action) => isRowActionAvailable(action, item, session))
+      .filter((action) => isRowActionAvailable(action, listKey, item, session))
       .map((action) => action.key)
     if (keys.length > 0) keysById[String(item.id)] = keys
   }
@@ -428,13 +404,23 @@ export async function ListView({
   const pageIds = items.flatMap((item) =>
     typeof item.id === 'string' || typeof item.id === 'number' ? [item.id] : [],
   )
-  const resolveRowActions = async () => {
+  const resolveRowActions = async (): Promise<{
+    visibleRowActions: RowAction[]
+    rowActionKeys: Record<string, string[]>
+  }> => {
+    if (!serverAction) return { visibleRowActions: [], rowActionKeys: {} }
     const visible = await resolveVisibleActions(
       listConfig.ui?.listView?.rowActions,
       context,
       listKey,
     )
-    const keys = await availableRowActionKeys(visible, context.db[key], pageIds, context.session)
+    const keys = await availableRowActionKeys(
+      visible,
+      listKey,
+      context.db[key],
+      pageIds,
+      context.session,
+    )
     return { visibleRowActions: visible, rowActionKeys: keys }
   }
   const [visibleBulkActions, { visibleRowActions, rowActionKeys }, { hideCreate, hideDelete }] =

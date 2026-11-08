@@ -28,7 +28,7 @@ import {
   DropdownMenuTrigger,
 } from '../primitives/dropdown-menu.js'
 import { EmptyState } from './EmptyState.js'
-import { CellRenderer, rendersBuiltInCell } from './cells/CellRenderer.js'
+import { CellRenderer, rendersAnchorFreeCell } from './cells/CellRenderer.js'
 import type { CellValue } from './cells/registry.js'
 import { FilterBuilder } from './FilterBuilder.js'
 import { AvatarLabelCell } from './cells/AvatarLabelCell.js'
@@ -81,11 +81,7 @@ function parseActionResult(
   { fallback, errorPrefix = '' }: { fallback: string; errorPrefix?: string },
 ): string {
   if (typeof result !== 'object' || result === null || !(key in result)) return fallback
-  const ran =
-    key === 'bulkAction'
-      ? 'bulkAction' in result && result.bulkAction
-      : 'rowAction' in result && result.rowAction
-  if (ran === true) {
+  if (Reflect.get(result, key) === true) {
     return 'message' in result && typeof result.message === 'string' && result.message.length > 0
       ? result.message
       : `${label} complete`
@@ -95,6 +91,8 @@ function parseActionResult(
   }
   return fallback
 }
+
+const OUTCOME_UNKNOWN = 'the result is unknown — refresh to check'
 
 const PAGE_SIZES = [
   { value: 25, label: '25' },
@@ -481,14 +479,15 @@ export function ListViewClient({
 
   const handleRowDelete = async (id: string, name: string) => {
     if (!serverAction) return
-    let deleted = 0
+    let result: unknown
     try {
-      const result = await serverAction({ listKey, action: 'bulkDelete', ids: [id] })
-      deleted = parseBulkDeleteResult(result, 1).deleted
+      result = await serverAction({ listKey, action: 'bulkDelete', ids: [id] })
     } catch {
-      setBulkStatus(`“${name}” not deleted`)
+      setBulkStatus(`Delete “${name}”: ${OUTCOME_UNKNOWN}`)
+      router.refresh()
       return
     }
+    const { deleted } = parseBulkDeleteResult(result, 1)
     setBulkStatus(deleted === 1 ? `“${name}” deleted` : `“${name}” not deleted`)
     if (deleted === 1 && selection.isSelected(id)) selection.toggle(id)
     if (deleted === 1 && items.length === 1 && page > 1) refreshFromFirstPage()
@@ -498,20 +497,19 @@ export function ListViewClient({
   const handleRowAction = async (id: string, key: string) => {
     if (!serverAction) return
     const label = rowActions.find((a) => a.key === key)?.label ?? 'Action'
-    const notRun = `${label}: this action was not run`
     try {
       const result = await serverAction({ listKey, action: 'rowAction', key, id })
       setBulkStatus(
         parseActionResult(result, 'rowAction', label, {
-          fallback: notRun,
+          fallback: `${label}: this action was not run`,
           errorPrefix: `${label}: `,
         }),
       )
     } catch {
-      setBulkStatus(notRun)
-      return
+      setBulkStatus(`${label}: ${OUTCOME_UNKNOWN}`)
+    } finally {
+      router.refresh()
     }
-    router.refresh()
   }
 
   const rowActionsFor = (id: string): SerializedRowAction[] => {
@@ -538,7 +536,7 @@ export function ListViewClient({
   const titleColumn =
     labelColumn && labelColumn !== 'id' && displayColumns.includes(labelColumn)
       ? labelColumn
-      : displayColumns.find((column) => !relationshipRefs[column])
+      : (displayColumns.find((column) => !relationshipRefs[column]) ?? displayColumns[0])
 
   /**
    * Render one body cell. The label column of an avatar-opted-in list
@@ -859,7 +857,7 @@ export function ListViewClient({
                       >
                         {column !== titleColumn ? (
                           renderCell(column, item)
-                        ) : rendersBuiltInCell(columnField(column)) ? (
+                        ) : rendersAnchorFreeCell(columnField(column)) ? (
                           <Link
                             href={itemHref(rowId)}
                             data-slot="row-title-link"
@@ -900,6 +898,11 @@ export function ListViewClient({
                           canBulkDelete
                             ? () => handleRowDelete(rowId, rowName(item, index))
                             : undefined
+                        }
+                        onStillRunning={() =>
+                          setBulkStatus(
+                            `Another action on “${rowName(item, index)}” is still running`,
+                          )
                         }
                         itemName={formatFieldName(listKey).toLowerCase()}
                         className="max-md:-m-1.5 max-md:h-11 max-md:w-11"

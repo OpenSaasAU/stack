@@ -2730,9 +2730,10 @@ export interface RowActionResult {
  *
  * Only `key`, `label`, `icon` and `destructive` cross to the client. `hasAccess`,
  * `isAvailable` and `handler` stay on the server: the client sends `key` and
- * the row id back through the generic server action, which opens a
- * transaction, takes a row lock on the row, re-reads it through the secured
- * context, re-runs both checks and only then runs the handler.
+ * the row id back through the generic server action, which re-checks
+ * `hasAccess`, then opens a transaction, takes a row lock on the row, re-reads
+ * it through the secured context, re-runs `isAvailable` and only then runs the
+ * handler.
  */
 export interface RowAction<TTypeInfo extends TypeInfo = TypeInfo> {
   /**
@@ -2751,7 +2752,8 @@ export interface RowAction<TTypeInfo extends TypeInfo = TypeInfo> {
   destructive?: boolean
   /**
    * Optional visibility gate, resolved once per request against the session.
-   * Returning `false` hides the action on every row. Re-checked on dispatch.
+   * Returning `false` hides the action on every row. Re-checked on dispatch
+   * before the row is read or locked.
    */
   hasAccess?: (args: {
     session: import('../access/types.js').Session | null
@@ -2761,7 +2763,8 @@ export interface RowAction<TTypeInfo extends TypeInfo = TypeInfo> {
   /**
    * Optional per-row gate, evaluated on the server for every row the list view
    * renders and again on dispatch against the re-read row. It must be
-   * synchronous, so a page of rows never fans out into queries. `item` carries
+   * synchronous, so a page of rows never fans out into queries; a throw or a
+   * non-boolean result (a Promise) counts as unavailable. `item` carries
    * the row's own columns, foreign keys and computed fields, with no relations.
    *
    * @example

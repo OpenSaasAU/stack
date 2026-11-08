@@ -342,9 +342,10 @@ Delete asks for confirmation, and shows only where the list's `delete` access is
 not statically `false` and `ui.hideDelete` does not hide it. Per-row update and
 delete access is not computed, so a delete the session may not perform reports
 "not deleted" in the status line with no reason. The row title links to the item
-page. When the title column renders through a `ui.cell` override or a Cell a
-package registered, whose markup may hold its own link, the item link sits
-beside the cell as "Open" rather than wrapping it.
+page. The title column is the label column, else the first non-relationship
+column, else the first column. When it is a relationship, or renders through a
+`ui.cell` override or a Cell a package registered, whose markup may hold its own
+link, the item link sits beside the cell as "Open" rather than wrapping it.
 
 A list declares its own Row actions under `ui.listView.rowActions`. They appear
 between the built-ins, in declaration order:
@@ -387,25 +388,27 @@ const Post = list({
 })
 ```
 
-| Option        | Required | Meaning                                                                                                                                                                                                                                                                                                                                               |
-| ------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `key`         | yes      | Stable id the client sends back to dispatch the action. Unique within the list: `config()` throws on a duplicate, naming the list and the key.                                                                                                                                                                                                        |
-| `label`       | yes      | Menu item text.                                                                                                                                                                                                                                                                                                                                       |
-| `icon`        | no       | One of `archive`, `check`, `copy`, `download`, `eye`, `eye-off`, `flag`, `lock`, `mail`, `refresh`, `send`, `star`, `trash`, `undo`, `unlock`, `upload`.                                                                                                                                                                                              |
-| `destructive` | no       | Styles the item as destructive and confirms before running.                                                                                                                                                                                                                                                                                           |
-| `hasAccess`   | no       | `({ session, context, listKey }) => boolean \| Promise<boolean>`. Resolved once per request; `false`, or a throw, hides the action on every row.                                                                                                                                                                                                      |
-| `isAvailable` | no       | `({ item, session }) => boolean`, **synchronous**, evaluated on the server for each row, so a page of rows never fans out into queries. `item` is the row's own columns, foreign keys and computed fields, read with no includes exactly as dispatch re-reads it. If that read fails, each row offers only the actions that declare no `isAvailable`. |
-| `handler`     | yes      | `({ listKey, id, item, context }) => { message? }`. `id` is the list's own id type. Runs on the server inside a transaction holding a row lock on the target row; do all work through `context.db`.                                                                                                                                                   |
+| Option        | Required | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `key`         | yes      | Stable id the client sends back to dispatch the action. Unique within the list: `config()` throws on a duplicate, naming the list and the key.                                                                                                                                                                                                                                                                                                                             |
+| `label`       | yes      | Menu item text.                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `icon`        | no       | One of `archive`, `check`, `copy`, `download`, `eye`, `eye-off`, `flag`, `lock`, `mail`, `refresh`, `send`, `star`, `trash`, `undo`, `unlock`, `upload`.                                                                                                                                                                                                                                                                                                                   |
+| `destructive` | no       | Styles the item as destructive and confirms before running.                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `hasAccess`   | no       | `({ session, context, listKey }) => boolean \| Promise<boolean>`. Resolved once per request; `false`, or a throw, hides the action on every row.                                                                                                                                                                                                                                                                                                                           |
+| `isAvailable` | no       | `({ item, session }) => boolean`, **synchronous**, evaluated on the server for each row, so a page of rows never fans out into queries. `item` is the row's own columns, foreign keys and computed fields, read with no includes exactly as dispatch re-reads it. If that read fails, each row offers only the actions that declare no `isAvailable`. A result that is not a boolean, a Promise included, is logged and treated as unavailable here and at dispatch alike. |
+| `handler`     | yes      | `({ listKey, id, item, context }) => { message? }`. `id` is the list's own id type. Runs on the server inside a transaction holding a row lock on the target row; do all work through `context.db`.                                                                                                                                                                                                                                                                        |
 
 Only `key`, `label`, `icon` and `destructive` cross to the client, and each row
 receives only the keys available on it. Handlers, `hasAccess` and `isAvailable`
-never leave the server.
+never leave the server. Without a `serverAction` the list view offers no custom
+actions, so it skips the availability read altogether.
 
 Running an action dispatches `{ action: 'rowAction', key, id }` through the
-admin's `serverAction`. The server opens a transaction, takes a row lock on the
-target row (`.forUpdate()`), re-reads the row through the secured context in its
-own statement after the lock, and re-runs `hasAccess` and `isAvailable` against
-that read before the handler runs. A row that is missing, that the session can
+admin's `serverAction`. The server re-runs `hasAccess` before it touches the
+row, so a refused session never takes a lock. It then opens a transaction, takes
+a row lock on the target row (`.forUpdate()`), re-reads the row through the
+secured context in its own statement after the lock, and re-runs `isAvailable`
+against that read before the handler runs. A row that is missing, that the session can
 no longer read, or that is no longer eligible all answer with the same "not run"
 outcome, so a stale page can neither run an action nor learn why it was refused.
 
@@ -417,7 +420,12 @@ handler once, the second answering "not run". Because the lock is held for as
 long as the handler runs, keep slow external calls (an email, a payment API)
 short, or make them after the handler returns. The outcome — the handler's
 `message`, or that the action was not run — appears in the list's status line,
-which survives the refresh that follows.
+which survives the refresh that follows. When the dispatch itself fails (the
+network drops, or a deploy invalidated the server action), the server may still
+have run it, so the status line says the result is unknown and the list
+refreshes. Choosing another action, or confirming a Delete, on a row whose
+action is still running runs nothing and says that another action is still
+running.
 
 The menu is keyboard operable: Enter, Space or ArrowDown on the trigger opens
 it, the arrow keys, Home and End move through it, Escape closes it, and focus

@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as React from 'react'
-import type { OpenSaasConfig, Session } from '@opensaas/stack-core'
+import type { OpenSaasConfig, RowAction, Session } from '@opensaas/stack-core'
 import { relationship, text, virtual } from '@opensaas/stack-core/fields'
 import { createTestDatabase, type TestDatabase } from '@opensaas/stack-core/testing'
 import { ListView } from '../../src/components/ListView.js'
@@ -20,6 +20,7 @@ const isAvailable = vi.fn(
   ({ item }: { item: Record<string, unknown> }) => item.status !== 'published',
 )
 const handler = vi.fn(async () => ({ message: 'Published' }))
+const serverAction = vi.fn(async () => ({}))
 
 const config: OpenSaasConfig = {
   db: { provider: 'postgresql' },
@@ -83,7 +84,7 @@ function findListViewClientProps(tree: React.ReactElement): ListViewClientProps 
 async function render(session: Session | null): Promise<ListViewClientProps> {
   const context = database.context(session)
   return findListViewClientProps(
-    await ListView({ context, config, listKey: 'Post', basePath: '/admin' }),
+    await ListView({ context, config, listKey: 'Post', basePath: '/admin', serverAction }),
   )
 }
 
@@ -149,6 +150,59 @@ describe('ListView Row actions', () => {
       expect(editor.rowActionKeys?.[ids['Live one']]).toEqual(['feature'])
       for (const action of editor.rowActions ?? []) {
         expect(Object.values(action).every((value) => typeof value !== 'function')).toBe(true)
+      }
+    },
+    BOOT,
+  )
+
+  it(
+    'skips the availability read when no serverAction is passed',
+    async () => {
+      const props = findListViewClientProps(
+        await ListView({
+          context: database.context({ userId: 'u1' }),
+          config,
+          listKey: 'Post',
+          basePath: '/admin',
+        }),
+      )
+
+      expect(isAvailable).not.toHaveBeenCalled()
+      expect(props.rowActionKeys).toEqual({})
+    },
+    BOOT,
+  )
+
+  it(
+    'does not offer an action whose isAvailable resolves asynchronously',
+    async () => {
+      const postConfig = config.lists.Post
+      const asyncAction: RowAction = { key: 'notify', label: 'Notify', handler }
+      Object.assign(asyncAction, { isAvailable: async () => false })
+      const asyncConfig: OpenSaasConfig = {
+        ...config,
+        lists: {
+          ...config.lists,
+          Post: { ...postConfig, ui: { listView: { rowActions: [asyncAction] } } },
+        },
+      }
+      const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+      try {
+        const props = findListViewClientProps(
+          await ListView({
+            context: database.context({ userId: 'u1' }),
+            config: asyncConfig,
+            listKey: 'Post',
+            basePath: '/admin',
+            serverAction,
+          }),
+        )
+
+        expect(props.rowActions).toEqual([{ key: 'notify', label: 'Notify' }])
+        expect(props.rowActionKeys).toEqual({})
+        expect(logged).toHaveBeenCalledWith(expect.stringContaining('non-boolean'))
+      } finally {
+        logged.mockRestore()
       }
     },
     BOOT,
@@ -240,6 +294,7 @@ describe('ListView Row actions over computed fields', () => {
         config: commentedConfig,
         listKey: 'Article',
         basePath: '/admin',
+        serverAction,
         columns,
       }),
     )
@@ -288,6 +343,7 @@ describe('ListView Row actions over computed fields', () => {
             config: commentedConfig,
             listKey: 'Flaky',
             basePath: '/admin',
+            serverAction,
             columns: ['title'],
           }),
         )
