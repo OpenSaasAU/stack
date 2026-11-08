@@ -962,16 +962,18 @@ describe('context.serverAction', () => {
         async () => {
           const id = await seedPost('a', 'draft')
           const handler = vi.fn(async () => ({ message: 'ran' }))
+          const thrown = new Error('no role')
           const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
           try {
             expect(
               await contextAt(
                 withRowHasAccess(handler, () => {
-                  throw new Error('no role')
+                  throw thrown
                 }),
               ).serverAction({ listKey: 'Post', action: 'rowAction', key: 'publish', id }),
             ).toEqual({ rowAction: false, error: 'This action was not run' })
             expect(handler).not.toHaveBeenCalled()
+            expect(logged).toHaveBeenCalledWith(expect.stringContaining('hasAccess threw'), thrown)
           } finally {
             logged.mockRestore()
           }
