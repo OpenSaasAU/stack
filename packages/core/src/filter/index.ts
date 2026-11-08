@@ -13,5 +13,7 @@ export type {
   FilterCondition,
   FilterSpec,
   FilterValueSource,
+  FilterValueFormat,
+  FilterValuePattern,
   FilterFieldSuggestion,
 } from './types.js'

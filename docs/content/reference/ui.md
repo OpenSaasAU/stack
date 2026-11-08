@@ -447,8 +447,68 @@ the list cannot honour — an unknown field or an unsupported operator — degra
 to free text rather than erroring.
 
 Each field type declares which operators it accepts. Text fields accept `eq`
-only, and lower it to `contains`. Numbers, decimals, big integers and timestamps
-accept `eq`, `gt`, `gte`, `lt` and `lte`.
+only, and lower it to `contains`. Numbers, decimals, big integers, timestamps
+and calendar days accept `eq`, `gt`, `gte`, `lt` and `lte`. A timestamp takes
+anything JavaScript's `Date` parses; a calendar day takes a `YYYY-MM-DD` date, and
+one the month does not have, such as `2026-02-31`, degrades to free text.
+
+#### The Filter builder bar
+
+The Filter builder is one bar at the top of the list. Focusing it lists every
+filterable field. Typing suggests fields whose names match, values a field
+enumerates in config (`draft` offers "Status is Draft"), plain phrases such as
+`views > 5000`, `status is draft` or `status draft`, and always a free-text
+search for exactly what was typed. Suggestions come from each field's Filter
+spec and the config only, never from the list's data.
+
+Choosing a field goes straight to its values with the field's default
+condition. When the field has more than one condition, a condition row above
+the values switches it by click or by Tab, and typing `>`, `>=`, `<` or `<=`
+at the start of a value sets the comparison. A value that does not fit the
+field (`abc` for a whole number) is explained under the suggestions instead of
+being applied. "Search all text" reads what was typed in the URL grammar, so a
+quoted `"Ada Lovelace"` stays one phrase.
+
+Each committed Filter token becomes a chip, and the list updates at once: the
+builder navigates with `router.push` inside a transition, so the current rows
+stay on screen with a progress indicator and Back steps through each change.
+There is no Apply button, and text still being typed never navigates. Clicking
+any part of a chip edits it in place, its × removes it, and **Clear** removes
+every chip. A second `is` filter on a field replaces the first, and typing two
+at once (`status:draft status:published`) keeps the last; a hand-written pair in
+the URL stays as written and matches nothing. Pasting a query in the URL grammar
+turns it into chips, and a filtered URL reproduces the same chips. A token whose
+value the field does not take (`views:abc`) shows as a "Text contains" chip,
+because the engine searches it as free text, and is written back exactly as it
+was read.
+
+| Key             | Does                                                         |
+| --------------- | ------------------------------------------------------------ |
+| `/`             | Focuses the bar from anywhere on the page                    |
+| ↑ ↓             | Moves through the suggestions                                |
+| Enter           | Takes the active suggestion, or edits the selected chip      |
+| Tab / Shift+Tab | Switches the condition while a field is staged               |
+| Backspace, ← →  | Selects a chip from an empty bar; Backspace again removes it |
+| Esc             | Cancels the filter being built and closes the suggestions    |
+
+The bar is a labelled combobox. DOM focus stays on its input and
+`aria-activedescendant` names the active suggestion; the number of suggestions
+and the list's result count are announced through live regions.
+
+`FilterBuilder` is exported from `@opensaas/stack-ui` and
+`@opensaas/stack-ui/standalone`. It takes `suggestions` (from core's
+`collectFilterSuggestions`), `defaultValue` (the current `?search=`) and an
+optional `onApply(query)`, called inside a transition on every commit; without
+it the builder navigates to `?search=` on the current path itself. Optional
+`label`, `placeholder` and `resultCount` name the combobox, prompt the empty
+bar and announce the row count. Its slots are `filter-builder` (root),
+`filter-builder-bar`, `filter-builder-chip` (with `data-armed` and
+`data-editing`), `filter-builder-chip-field`, `filter-builder-chip-condition`,
+`filter-builder-chip-value`, `filter-builder-chip-remove`,
+`filter-builder-draft`, `filter-builder-input`, `filter-builder-clear`,
+`filter-builder-progress`, `filter-builder-menu`,
+`filter-builder-menu-conditions`, `filter-builder-menu-condition`,
+`filter-builder-option` (with `data-active`) and `filter-builder-hint`.
 
 #### What filtering costs
 
@@ -463,7 +523,7 @@ Three consequences of lowering these filters onto the secured read's closed
   three count expressions map onto a relation quantifier: `orders:0` becomes
   `none`, and `orders:>0` and `orders:>=1` both become `some`. Anything else —
   `orders:3`, `orders:>=2`, `orders:<5` — has no quantifier to lower to, so it
-  falls through to the free-text pass.
+  falls through to the free-text pass. The builder offers exactly those three.
 - **Sorting by a to-many count is gone.** `orderBy` takes this list's own scalar
   columns; a relationship is refused. Order by a stored counter column if you
   need that ordering.

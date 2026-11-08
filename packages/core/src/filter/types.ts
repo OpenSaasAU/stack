@@ -73,6 +73,24 @@ export type FilterValueSource =
   | { kind: 'enum'; options: Array<{ value: string; label: string }> }
   | { kind: 'relationship'; listKey: string; many: boolean }
 
+/** One regular expression a typed filter value must match, and how to explain it. */
+export interface FilterValuePattern {
+  /** A regular expression source the trimmed value must match. */
+  pattern: string
+  /** What the field takes, read after the field's name: `takes a whole number`. */
+  description: string
+}
+
+/**
+ * The shape a typed value must take for a field's Filter spec to map it,
+ * stated as serialisable data so the Filter builder can explain a value that
+ * does not fit before it is applied, instead of letting it become free text.
+ */
+export interface FilterValueFormat extends FilterValuePattern {
+  /** A different shape for particular operators, replacing `pattern` for them. */
+  operators?: Partial<Record<FilterOperator, FilterValuePattern>>
+}
+
 /**
  * A field's self-declared filtering capability. Returned by the optional
  * `getFilterSpec` field-builder method.
@@ -95,6 +113,11 @@ export interface FilterSpec {
   /** Serializable suggestion metadata for the client. */
   suggestions: {
     valueSource: FilterValueSource
+    /**
+     * The shape a typed value must take. The Filter builder explains a value
+     * that does not match rather than applying it. Omit it when any text maps.
+     */
+    valueFormat?: FilterValueFormat
   }
 }
 
@@ -112,4 +135,6 @@ export interface FilterFieldSuggestion {
   freeText: boolean
   /** How the suggestion dropdown may offer values for this field. */
   valueSource: FilterValueSource
+  /** The shape a typed value must take, when the field states one. */
+  valueFormat?: FilterValueFormat
 }

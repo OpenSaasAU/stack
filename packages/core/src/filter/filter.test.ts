@@ -8,7 +8,7 @@ import {
   collectFilterSuggestions,
   type FilterAccessArgs,
 } from './collect.js'
-import type { FilterSpec, FilterToken } from './types.js'
+import type { FilterOperator, FilterSpec, FilterToken } from './types.js'
 import { list } from '../config/index.js'
 import {
   text,
@@ -18,6 +18,8 @@ import {
   checkbox,
   timestamp,
   relationship,
+  decimal,
+  calendarDay,
 } from '../fields/index.js'
 import type { OpenSaasConfig } from '../config/types.js'
 import type { AccessContext } from '../access/types.js'
@@ -842,10 +844,12 @@ describe('to-many relationship Filter spec (presence — issue #732, ADR-0055)',
   it('shrinks a count comparison to presence, and degrades the rest', () => {
     const config = countConfig()
     const spec = config.lists.User.fields.posts.getFilterSpec!('posts', 'User', config)!
-    expect(spec.operators).toEqual(['eq', 'gt', 'gte', 'lt', 'lte'])
+    expect(spec.operators).toEqual(['eq', 'gt', 'gte'])
     expect(spec.toCondition('eq', '0')).toEqual({ posts: { none: {} } })
     expect(spec.toCondition('gt', '0')).toEqual({ posts: { some: {} } })
     expect(spec.toCondition('gte', '1')).toEqual({ posts: { some: {} } })
+    expect(spec.toCondition('gte', '0')).toBeNull()
+    expect(spec.toCondition('lt', '0')).toBeNull()
     // Prisma 8 cannot compare a relation count in a `where`, so a bookmarked
     // `posts:>5` stops filtering rather than erroring — it degrades to free
     // text under ADR-0017's own degradation rule.
@@ -859,6 +863,9 @@ describe('to-many relationship Filter spec (presence — issue #732, ADR-0055)',
     const config = countConfig()
     expect(
       await buildListFilterWhere('posts:>0', config.lists.User, 'User', config, noAccessArgs),
+    ).toEqual({ posts: { some: {} } })
+    expect(
+      await buildListFilterWhere('posts:>=1', config.lists.User, 'User', config, noAccessArgs),
     ).toEqual({ posts: { some: {} } })
     expect(
       await buildListFilterWhere('posts:>5', config.lists.User, 'User', config, noAccessArgs),
@@ -903,5 +910,124 @@ describe('collectFilterSuggestions', () => {
       noAccessArgs,
     )
     expect(suggestions.map((s) => s.field)).toEqual(['name'])
+  })
+
+  const POSTS_CONFIG: OpenSaasConfig = {
+    db: { provider: 'postgresql' },
+    lists: {
+      User: list({
+        access: READABLE,
+        fields: { posts: relationship({ ref: 'Post.author', many: true }) },
+      }),
+      Post: list({ access: READABLE, fields: { author: relationship({ ref: 'User.posts' }) } }),
+    },
+  }
+
+  it.each([
+    ['integer', integer(), ['12', '-3', ' 7 '], ['1.5', 'ten', '1e3', '']],
+    ['bigInt', bigInt(), ['9007199254740993', '-1'], ['1e3', '1.0']],
+    ['decimal', decimal(), ['1.25', '-4', '0'], ['1,000', 'abc', '1.', '.5']],
+    [
+      'calendarDay',
+      calendarDay(),
+      ['2026-01-31', '2024-02-29'],
+      ['31/01/2026', '2026-1-31', '2026-13-01', '2026-13-45', '2026-00-10', '2026-01-32'],
+    ],
+  ])(
+    'states a %s value format that agrees with what the spec maps',
+    async (_type, field, fits, misfits) => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'postgresql' },
+        lists: { Thing: list({ access: READABLE, fields: { value: field } }) },
+      }
+      const [suggestion] = await collectFilterSuggestions(
+        config.lists.Thing,
+        'Thing',
+        config,
+        noAccessArgs,
+      )
+      const spec = field.getFilterSpec?.('value', 'Thing', config)
+      expect(spec?.suggestions.valueFormat).toEqual(suggestion.valueFormat)
+      const pattern = new RegExp(suggestion.valueFormat?.pattern ?? '(?!)')
+      for (const operator of spec?.operators ?? []) {
+        for (const value of fits) {
+          expect(pattern.test(value.trim()), value).toBe(true)
+          expect(spec?.toCondition(operator, value), value).not.toBeNull()
+        }
+        for (const value of misfits) {
+          expect(pattern.test(value.trim()), value).toBe(false)
+          expect(spec?.toCondition(operator, value), value).toBeNull()
+        }
+      }
+    },
+  )
+
+  it('leaves a calendar day the month lacks to the engine, which refuses it', () => {
+    const field = calendarDay()
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql' },
+      lists: { Thing: list({ access: READABLE, fields: { value: field } }) },
+    }
+    const spec = field.getFilterSpec?.('value', 'Thing', config)
+    const pattern = new RegExp(spec?.suggestions.valueFormat?.pattern ?? '(?!)')
+    for (const day of ['2026-02-31', '2025-02-29', '2026-04-31']) {
+      expect(pattern.test(day), day).toBe(true)
+      expect(spec?.toCondition('eq', day), day).toBeNull()
+    }
+  })
+
+  it('states no timestamp value format, and maps anything Date parses', async () => {
+    const field = timestamp()
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql' },
+      lists: { Thing: list({ access: READABLE, fields: { value: field } }) },
+    }
+    const [suggestion] = await collectFilterSuggestions(
+      config.lists.Thing,
+      'Thing',
+      config,
+      noAccessArgs,
+    )
+    expect(suggestion.valueFormat).toBeUndefined()
+    const spec = field.getFilterSpec?.('value', 'Thing', config)
+    expect(spec?.toCondition('eq', 'Jan 31 2026')).toEqual({
+      value: { equals: new Date('Jan 31 2026') },
+    })
+    expect(spec?.toCondition('gt', '2026-01-31T10:00:00+10:00')).toEqual({
+      value: { gt: new Date('2026-01-31T00:00:00.000Z') },
+    })
+    expect(spec?.toCondition('eq', '2026-13-45')).toBeNull()
+  })
+
+  it('states a to-many value format that admits only the presence counts the spec maps', async () => {
+    const suggestions = await collectFilterSuggestions(
+      POSTS_CONFIG.lists.User,
+      'User',
+      POSTS_CONFIG,
+      noAccessArgs,
+    )
+    const suggestion = suggestions.find((entry) => entry.field === 'posts')
+    const spec = POSTS_CONFIG.lists.User.fields.posts.getFilterSpec?.('posts', 'User', POSTS_CONFIG)
+    expect(suggestion?.operators).toEqual(['eq', 'gt', 'gte'])
+    const table: Array<[FilterOperator, string[], string[]]> = [
+      ['eq', ['0', ' 0 '], ['1', '5', '-1', '00', 'none', '']],
+      ['gt', ['0'], ['1', '5', '-1', '00']],
+      ['gte', ['1', ' 1 '], ['0', '2', '5', '01']],
+    ]
+    expect(table.map(([operator]) => operator)).toEqual(spec?.operators)
+    for (const [operator, fits, misfits] of table) {
+      const format = suggestion?.valueFormat
+      const pattern = new RegExp(
+        format?.operators?.[operator]?.pattern ?? format?.pattern ?? '(?!)',
+      )
+      for (const value of fits) {
+        expect(pattern.test(value.trim()), `${operator} ${value}`).toBe(true)
+        expect(spec?.toCondition(operator, value), `${operator} ${value}`).not.toBeNull()
+      }
+      for (const value of misfits) {
+        expect(pattern.test(value.trim()), `${operator} ${value}`).toBe(false)
+        expect(spec?.toCondition(operator, value), `${operator} ${value}`).toBeNull()
+      }
+    }
   })
 })

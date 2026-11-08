@@ -528,14 +528,14 @@ describe('a control tied to its label', () => {
       </>,
     )
 
-    const [searchBox, filterBox] = screen.getAllByRole('textbox', { name: 'Search' })
+    const searchBox = screen.getByRole('textbox', { name: 'Search' })
     screen.getByRole('button', { name: 'Clear search' }).focus()
     await user.keyboard('{Enter}')
     expect(searchBox).toHaveFocus()
 
-    screen.getByRole('button', { name: 'Clear filter text' }).focus()
+    screen.getByRole('button', { name: 'Remove Text contains world' }).focus()
     await user.keyboard('{Enter}')
-    expect(filterBox).toHaveFocus()
+    expect(screen.getByRole('combobox', { name: 'Filter' })).toHaveFocus()
   })
 
   it.each([

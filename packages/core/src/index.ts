@@ -396,6 +396,8 @@ export type {
   FilterCondition,
   FilterSpec,
   FilterValueSource,
+  FilterValueFormat,
+  FilterValuePattern,
   FilterFieldSuggestion,
   FilterAccessArgs,
 } from './filter/index.js'
