@@ -70,6 +70,23 @@ const cellComponentRegistry: Record<string, CellComponent> = {
 }
 
 /**
+ * The admin UI's own Cells that render no anchor of their own, so a row title
+ * may wrap them in a link. {@link registerCellComponent} never adds to it.
+ */
+export const anchorFreeCellComponents: ReadonlySet<CellComponent> = Object.freeze(
+  new Set<CellComponent>([
+    TextCell,
+    IntegerCell,
+    CheckboxCell,
+    SelectCell,
+    TimestampCell,
+    CalendarDayCell,
+    PasswordCell,
+    JsonCell,
+  ]),
+)
+
+/**
  * Register a default Cell component for a field type. A third-party field
  * package calls this to make its values render correctly in tables, exactly as
  * it calls `registerFieldComponent` for its form component.

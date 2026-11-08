@@ -73,7 +73,7 @@ test.describe('tiptap-demo custom field registration', () => {
     await expect(page.locator(`text=${unique}`)).toBeVisible({ timeout: 5000 })
 
     const articleRow = page.locator('tr', { has: page.locator(`text=${unique}`) })
-    await articleRow.getByRole('link', { name: 'Edit' }).click()
+    await articleRow.locator('[data-slot="row-title-link"]').click()
     await page.waitForLoadState('networkidle')
 
     const editorsOnEditPage = page.locator('.tiptap.ProseMirror')
