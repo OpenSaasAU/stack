@@ -175,10 +175,6 @@ export {
 } from './lib/useRowSelection.js'
 export type { RowSelection } from './lib/useRowSelection.js'
 
-// Filter builder state helpers (UI state <-> `?search=` query round-trip)
-export { queryToState, stateToQuery } from './lib/filterBuilderState.js'
-export type { FilterRow, FilterBuilderState } from './lib/filterBuilderState.js'
-
 // Theme utilities
 export { compileTheme, presetThemes } from './lib/theme.js'
 

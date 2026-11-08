@@ -1,13 +1,14 @@
 import { describe, it, expect } from 'vitest'
 import { parseFilterQuery } from './parse.js'
 import { buildFilterWhere } from './map.js'
+import { serializeFilterQuery } from './serialize.js'
 import {
   buildListFilterWhere,
   collectFilterSpecs,
   collectFilterSuggestions,
   type FilterAccessArgs,
 } from './collect.js'
-import type { FilterSpec } from './types.js'
+import type { FilterSpec, FilterToken } from './types.js'
 import { list } from '../config/index.js'
 import {
   text,
@@ -33,89 +34,161 @@ const noAccessArgs: FilterAccessArgs = {
 const READABLE = { operation: { query: () => true } }
 
 // ─────────────────────────────────────────────────────────────
-// parseFilterQuery — the pure query-string → tokens boundary (ADR-0017)
+// parseFilterQuery — the pure query-string → structured query boundary
 // ─────────────────────────────────────────────────────────────
+
+const tok = (
+  field: string | null,
+  value: string,
+  partial: Partial<FilterToken> = {},
+): FilterToken => ({
+  kind: 'token',
+  field,
+  operator: 'eq',
+  negated: false,
+  values: [value],
+  quoted: false,
+  ...partial,
+})
 
 describe('parseFilterQuery', () => {
   it('parses a bare word as a free-text token (field: null)', () => {
-    expect(parseFilterQuery('beta')).toEqual([
-      { field: null, operator: 'eq', value: 'beta', raw: 'beta' },
-    ])
+    expect(parseFilterQuery('beta')).toEqual({ terms: [tok(null, 'beta')] })
   })
 
   it('parses a field:value token with the default eq operator', () => {
-    expect(parseFilterQuery('role:Editor')).toEqual([
-      { field: 'role', operator: 'eq', value: 'Editor', raw: 'role:Editor' },
-    ])
+    expect(parseFilterQuery('role:Editor')).toEqual({ terms: [tok('role', 'Editor')] })
   })
 
   it('parses comparison operators on a field token', () => {
-    expect(parseFilterQuery('orders:>5')).toEqual([
-      { field: 'orders', operator: 'gt', value: '5', raw: 'orders:>5' },
-    ])
-    expect(parseFilterQuery('orders:>=5')[0].operator).toBe('gte')
-    expect(parseFilterQuery('orders:<5')[0].operator).toBe('lt')
-    expect(parseFilterQuery('orders:<=5')[0].operator).toBe('lte')
+    expect(parseFilterQuery('orders:>5')).toEqual({
+      terms: [tok('orders', '5', { operator: 'gt' })],
+    })
+    expect(parseFilterQuery('orders:>=5').terms[0].operator).toBe('gte')
+    expect(parseFilterQuery('orders:<5').terms[0].operator).toBe('lt')
+    expect(parseFilterQuery('orders:<=5').terms[0].operator).toBe('lte')
   })
 
   it('keeps spaces inside a quoted value', () => {
-    expect(parseFilterQuery('name:"Ada Lovelace"')).toEqual([
-      { field: 'name', operator: 'eq', value: 'Ada Lovelace', raw: 'name:"Ada Lovelace"' },
-    ])
+    expect(parseFilterQuery('name:"Ada Lovelace"')).toEqual({
+      terms: [tok('name', 'Ada Lovelace', { quoted: true })],
+    })
   })
 
   it('parses a bare quoted phrase as a single free-text token', () => {
-    expect(parseFilterQuery('"multi word"')).toEqual([
-      { field: null, operator: 'eq', value: 'multi word', raw: '"multi word"' },
-    ])
+    expect(parseFilterQuery('"multi word"')).toEqual({
+      terms: [tok(null, 'multi word', { quoted: true })],
+    })
   })
 
   it('parses implicit-AND: multiple whitespace-separated tokens', () => {
-    const tokens = parseFilterQuery('role:Editor status:Active orders:>5 name:"Ada Lovelace" beta')
-    expect(tokens.map((t) => ({ field: t.field, operator: t.operator, value: t.value }))).toEqual([
-      { field: 'role', operator: 'eq', value: 'Editor' },
-      { field: 'status', operator: 'eq', value: 'Active' },
-      { field: 'orders', operator: 'gt', value: '5' },
-      { field: 'name', operator: 'eq', value: 'Ada Lovelace' },
-      { field: null, operator: 'eq', value: 'beta' },
+    const { terms } = parseFilterQuery(
+      'role:Editor status:Active orders:>5 name:"Ada Lovelace" beta',
+    )
+    expect(terms.map((t) => ({ field: t.field, operator: t.operator, values: t.values }))).toEqual([
+      { field: 'role', operator: 'eq', values: ['Editor'] },
+      { field: 'status', operator: 'eq', values: ['Active'] },
+      { field: 'orders', operator: 'gt', values: ['5'] },
+      { field: 'name', operator: 'eq', values: ['Ada Lovelace'] },
+      { field: null, operator: 'eq', values: ['beta'] },
     ])
   })
 
   it('collapses surrounding / repeated whitespace', () => {
-    expect(parseFilterQuery('   a    b  ').map((t) => t.value)).toEqual(['a', 'b'])
+    expect(parseFilterQuery('   a    b  ').terms.map((t) => t.values)).toEqual([['a'], ['b']])
   })
 
-  it('returns no tokens for an empty query', () => {
-    expect(parseFilterQuery('')).toEqual([])
-    expect(parseFilterQuery('   ')).toEqual([])
+  it('returns no terms for an empty query', () => {
+    expect(parseFilterQuery('')).toEqual({ terms: [] })
+    expect(parseFilterQuery('   ')).toEqual({ terms: [] })
   })
 
   it('never throws on odd input — a leading comparison on a bare word stays free text', () => {
-    expect(parseFilterQuery('>5')).toEqual([
-      { field: null, operator: 'eq', value: '>5', raw: '>5' },
-    ])
+    expect(parseFilterQuery('>5')).toEqual({ terms: [tok(null, '>5')] })
   })
 
   it('treats a URL scheme (`http://…`) as whole free text, not a field prefix', () => {
-    // `http:` must NOT be parsed as a `field:` prefix — the `//` after the
-    // colon marks a URL scheme, so the entire URL stays a free-text token.
     expect(() => parseFilterQuery('http://x')).not.toThrow()
-    expect(parseFilterQuery('http://x')).toEqual([
-      { field: null, operator: 'eq', value: 'http://x', raw: 'http://x' },
+    expect(parseFilterQuery('http://x')).toEqual({ terms: [tok(null, 'http://x')] })
+    expect(parseFilterQuery('https://example.com/path?q=1')).toEqual({
+      terms: [tok(null, 'https://example.com/path?q=1')],
+    })
+  })
+
+  it('reads a leading `-` as part of the word, never as negation', () => {
+    expect(parseFilterQuery('-status:draft -beta --x - beta')).toEqual({
+      terms: [
+        tok(null, '-status:draft'),
+        tok(null, '-beta'),
+        tok(null, '--x'),
+        tok(null, '-'),
+        tok(null, 'beta'),
+      ],
+    })
+  })
+
+  it('reads a comma as part of the value, never as a separator', () => {
+    expect(parseFilterQuery('status:draft,review , role:, a,"b c"')).toEqual({
+      terms: [
+        tok('status', 'draft,review'),
+        tok(null, ','),
+        tok('role', ','),
+        tok(null, 'a,"b'),
+        tok(null, 'c"'),
+      ],
+    })
+    expect(parseFilterQuery('status:"a,b"')).toEqual({
+      terms: [tok('status', 'a,b', { quoted: true })],
+    })
+  })
+
+  it('splits tokens on every whitespace character', () => {
+    expect(parseFilterQuery('a\u00a0b\fc\vd\u2028e').terms.map((t) => t.values)).toEqual([
+      ['a'],
+      ['b'],
+      ['c'],
+      ['d'],
+      ['e'],
     ])
-    expect(parseFilterQuery('https://example.com/path?q=1')).toEqual([
-      {
-        field: null,
-        operator: 'eq',
-        value: 'https://example.com/path?q=1',
-        raw: 'https://example.com/path?q=1',
-      },
-    ])
+  })
+
+  it('keeps a quoted `"status:draft"` a free-text word, never a field token', () => {
+    expect(parseFilterQuery('"status:draft"')).toEqual({
+      terms: [tok(null, 'status:draft', { quoted: true })],
+    })
+  })
+
+  it('reads `\\"` as a literal quote and `\\\\` as a backslash inside quotes', () => {
+    expect(parseFilterQuery('name:"Ada \\"the Countess\\""')).toEqual({
+      terms: [tok('name', 'Ada "the Countess"', { quoted: true })],
+    })
+    expect(parseFilterQuery('"ends in \\\\"')).toEqual({
+      terms: [tok(null, 'ends in \\', { quoted: true })],
+    })
+  })
+
+  it('keeps any other backslash inside quotes as itself', () => {
+    expect(parseFilterQuery('"C:\\Users me"')).toEqual({
+      terms: [tok(null, 'C:\\Users me', { quoted: true })],
+    })
+  })
+
+  it('reads an unterminated quote to the end of the query', () => {
+    expect(parseFilterQuery('"open ended')).toEqual({
+      terms: [tok(null, 'open ended', { quoted: true })],
+    })
+  })
+
+  it('gives every token exactly one value and no negation', () => {
+    for (const term of parseFilterQuery('-status:draft status:a,b -"x" ,, -').terms) {
+      expect(term.negated).toBe(false)
+      expect(term.values).toHaveLength(1)
+    }
   })
 })
 
 // ─────────────────────────────────────────────────────────────
-// buildFilterWhere — tokens + specs → Prisma where (the mapping seam)
+// buildFilterWhere — query + specs → Where (the mapping seam)
 // ─────────────────────────────────────────────────────────────
 
 // Small hand-rolled specs so the mapping is tested independently of the field
@@ -161,7 +234,7 @@ describe('buildFilterWhere', () => {
   )
 
   it('returns undefined when nothing filters', () => {
-    expect(buildFilterWhere([], specs)).toBeUndefined()
+    expect(buildFilterWhere({ terms: [] }, specs)).toBeUndefined()
   })
 
   it('maps a single field token to its condition (no AND wrapper)', () => {
@@ -275,6 +348,88 @@ describe('buildFilterWhere', () => {
       name: { contains: 'https://example.com' },
     })
   })
+
+  it('searches a quoted `"status:active"` as free text, never as the status field', () => {
+    expect(buildFilterWhere(parseFilterQuery('"status:active"'), specs)).toEqual({
+      name: { contains: 'status:active' },
+    })
+  })
+
+  it('hands a field the unescaped value of a quoted token', () => {
+    expect(buildFilterWhere(parseFilterQuery('name:"say \\"hi\\""'), specs)).toEqual({
+      name: { contains: 'say "hi"' },
+    })
+  })
+
+  it('searches a leading `-` word exactly as written', () => {
+    expect(buildFilterWhere(parseFilterQuery('-status:active'), specs)).toEqual({
+      name: { contains: '-status:active' },
+    })
+  })
+
+  it('searches a structured negated token as its serialised URL reads back, never dropped or negated', () => {
+    expect(
+      buildFilterWhere({ terms: [tok('status', 'active', { negated: true })] }, specs),
+    ).toEqual({ name: { contains: '-status:active' } })
+  })
+
+  it('maps a structured multi-value token as its serialised URL reads back, never dropped', () => {
+    expect(
+      buildFilterWhere({ terms: [tok('name', '', { values: ['Ada', 'Grace'] })] }, specs),
+    ).toEqual({ name: { contains: 'Ada,Grace' } })
+    expect(buildFilterWhere({ terms: [tok(null, '', { values: ['', ''] })] }, specs)).toEqual({
+      name: { contains: ',' },
+    })
+  })
+
+  it.each<[string, FilterToken, unknown]>([
+    [
+      'a negated value with a space',
+      tok(null, 'a b', { negated: true }),
+      { AND: [{ name: { contains: '-"a' } }, { name: { contains: 'b"' } }] },
+    ],
+    [
+      'a multi-value token whose first value has a space',
+      tok('name', '', { values: ['a b', 'c'] }),
+      { AND: [{ name: { contains: 'a b' } }, { name: { contains: ',c' } }] },
+    ],
+    ['a negated field token', tok('status', 'active', { negated: true }), undefined],
+    ['a negated quoted word', tok(null, 'x', { negated: true, quoted: true }), undefined],
+    [
+      'a multi-value status token',
+      tok('status', '', { values: ['active', 'inactive'] }),
+      undefined,
+    ],
+    ['a multi-value token with an empty part', tok('orders', '', { values: ['5', ''] }), undefined],
+    [
+      'a negated multi-value token',
+      tok(null, '', { negated: true, values: ['-x', 'y z'] }),
+      undefined,
+    ],
+  ])('searches %s exactly as its serialised URL reads back', (_case, token, expected) => {
+    const structured = { terms: [token] }
+    const reparsed = parseFilterQuery(serializeFilterQuery(structured))
+    const where = buildFilterWhere(structured, specs)
+    expect(where).toEqual(buildFilterWhere(reparsed, specs))
+    expect(where).not.toBeUndefined()
+    if (expected !== undefined) expect(where).toEqual(expected)
+  })
+
+  it('searches a comma-only query as the literal comma (#1356)', () => {
+    expect(buildFilterWhere(parseFilterQuery(','), specs)).toEqual({ name: { contains: ',' } })
+    expect(buildFilterWhere(parseFilterQuery('role:,'), specs)).toEqual({
+      name: { contains: ',' },
+    })
+  })
+
+  it('maps a comma list as the single value it was written as', () => {
+    expect(buildFilterWhere(parseFilterQuery('name:Ada,Grace'), specs)).toEqual({
+      name: { contains: 'Ada,Grace' },
+    })
+    expect(buildFilterWhere(parseFilterQuery('beta,gamma'), specs)).toEqual({
+      name: { contains: 'beta,gamma' },
+    })
+  })
 })
 
 // ─────────────────────────────────────────────────────────────
@@ -330,6 +485,28 @@ describe('buildFilterWhere — empty-value tokens (#1509)', () => {
       suggestions: { valueSource: { kind: 'none' } },
     }
     expect(buildFilterWhere(parseFilterQuery('""'), { name: containsEverything })).toBeUndefined()
+  })
+
+  it('treats a structured token with no values as inert, never as an empty free-text word', () => {
+    const containsEverything: FilterSpec = {
+      operators: ['eq'],
+      freeText: true,
+      toCondition: (_op, value) => ({ name: { contains: value } }),
+      suggestions: { valueSource: { kind: 'none' } },
+    }
+    expect(
+      buildFilterWhere({ terms: [tok(null, '', { values: [] })] }, { name: containsEverything }),
+    ).toBeUndefined()
+    expect(buildFilterWhere({ terms: [tok('status', '', { values: [] })] }, specs)).toBeUndefined()
+    expect(buildFilterWhere({ terms: [tok(null, '', { values: [] })] }, {})).toBeUndefined()
+    expect(
+      buildFilterWhere({ terms: [tok(null, '', { negated: true, values: [] })] }, specs),
+    ).toBeUndefined()
+  })
+
+  it('treats a structured negated empty token as inert, exactly as the non-negated one', () => {
+    const negatedEmpty = tok('status', '', { negated: true })
+    expect(buildFilterWhere({ terms: [negatedEmpty] }, specs)).toBeUndefined()
   })
 
   it('leaves a non-empty token on the same field completely unaffected (#1356/#1504 unchanged)', () => {
