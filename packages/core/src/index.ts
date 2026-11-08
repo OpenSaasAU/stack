@@ -381,7 +381,10 @@ export type { RelationshipOption, RelationshipOptionsArgs } from './query/relati
 export {
   parseFilterQuery,
   serializeFilterQuery,
+  FILTER_OPERATOR_PREFIXES,
+  FILTER_COMPARISON_PREFIXES,
   buildFilterWhere,
+  filterTokenFreeTextWord,
   isEmptyFilterToken,
   isFieldConditionToken,
   collectFilterSpecs,
@@ -390,11 +393,15 @@ export {
 } from './filter/index.js'
 export type {
   FilterOperator,
+  FilterTokenOperator,
   FilterToken,
+  FilterValue,
+  FilterFieldCapabilities,
   FilterTerm,
   FilterQuery,
   FilterCondition,
   FilterSpec,
+  FilterNegation,
   FilterValueSource,
   FilterValueFormat,
   FilterValuePattern,

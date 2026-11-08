@@ -165,6 +165,47 @@ test.describe('Filter builder input UI', () => {
     await expect(titleCell(page, 'Also Me').first()).toBeVisible()
   })
 
+  test('"is not" and "is any of" narrow the table and write their grammar', async ({ page }) => {
+    await createPost(page, { title: 'Not Draft', slug: slug('not-draft'), status: 'draft' })
+    await createPost(page, {
+      title: 'Not Published',
+      slug: slug('not-published'),
+      status: 'published',
+    })
+
+    await page.goto('/admin/post')
+    await page.waitForLoadState('networkidle')
+
+    await filterBar(page).fill('status')
+    await page.keyboard.press('Enter')
+    await page.getByRole('button', { name: 'is not', exact: true }).click()
+    await page.getByRole('option', { name: 'Published', exact: true }).click()
+
+    await page.waitForURL(/search=-status(%3A|:)published/, { timeout: 10000 })
+    await page.waitForLoadState('networkidle')
+    await expect(page.getByRole('group', { name: 'Status is not Published' })).toBeVisible()
+    await expect(titleCell(page, 'Not Draft').first()).toBeVisible()
+    await expect(titleCell(page, 'Not Published')).toHaveCount(0)
+
+    await page.getByRole('button', { name: 'Clear', exact: true }).click()
+    await page.waitForURL((url) => !url.searchParams.has('search'), { timeout: 10000 })
+
+    await filterBar(page).fill('status')
+    await page.keyboard.press('Enter')
+    await page.getByRole('button', { name: 'is any of', exact: true }).click()
+    await page.getByRole('option', { name: 'Draft', exact: true }).click()
+    await page.waitForURL(/search=status(%3A|:)draft(&|$)/, { timeout: 10000 })
+    await page.getByRole('option', { name: 'Published', exact: true }).click()
+    await page.waitForURL(/search=status(%3A|:)draft(%2C|,)published/, { timeout: 10000 })
+    await page.waitForLoadState('networkidle')
+
+    await expect(
+      page.getByRole('group', { name: 'Status is any of Draft, Published' }),
+    ).toBeVisible()
+    await expect(titleCell(page, 'Not Draft').first()).toBeVisible()
+    await expect(titleCell(page, 'Not Published').first()).toBeVisible()
+  })
+
   test('/ focuses the bar, and Backspace selects then removes the last chip', async ({ page }) => {
     await page.goto('/admin/post?search=status:draft')
     await page.waitForLoadState('networkidle')
