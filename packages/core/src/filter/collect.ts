@@ -106,10 +106,14 @@ export async function collectFilterSuggestions(
   args: FilterAccessArgs,
 ): Promise<FilterFieldSuggestion[]> {
   const specs = await collectFilterSpecs(listConfig, listKey, config, args)
-  return Object.entries(specs).map(([field, spec]) => ({
-    field,
-    operators: spec.operators,
-    freeText: spec.freeText ?? false,
-    valueSource: spec.suggestions.valueSource,
-  }))
+  return Object.entries(specs).map(([field, spec]) => {
+    const suggestion: FilterFieldSuggestion = {
+      field,
+      operators: spec.operators,
+      freeText: spec.freeText ?? false,
+      valueSource: spec.suggestions.valueSource,
+    }
+    if (spec.suggestions.valueFormat) suggestion.valueFormat = spec.suggestions.valueFormat
+    return suggestion
+  })
 }

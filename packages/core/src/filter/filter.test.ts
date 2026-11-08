@@ -18,6 +18,8 @@ import {
   checkbox,
   timestamp,
   relationship,
+  decimal,
+  calendarDay,
 } from '../fields/index.js'
 import type { OpenSaasConfig } from '../config/types.js'
 import type { AccessContext } from '../access/types.js'
@@ -904,4 +906,38 @@ describe('collectFilterSuggestions', () => {
     )
     expect(suggestions.map((s) => s.field)).toEqual(['name'])
   })
+
+  it.each([
+    ['integer', integer(), ['12', '-3'], ['1.5', 'ten']],
+    ['bigInt', bigInt(), ['9007199254740993'], ['1e3']],
+    ['decimal', decimal(), ['1.25', '-4'], ['1,000', 'abc']],
+    ['calendarDay', calendarDay(), ['2026-01-31'], ['31/01/2026', '2026-1-31']],
+    ['timestamp', timestamp(), ['2026-01-31', '2026-01-31T10:00:00Z'], ['yesterday']],
+  ])(
+    'states a %s value format that agrees with what the spec maps',
+    async (_type, field, fits, misfits) => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'postgresql' },
+        lists: { Thing: list({ access: READABLE, fields: { value: field } }) },
+      }
+      const [suggestion] = await collectFilterSuggestions(
+        config.lists.Thing,
+        'Thing',
+        config,
+        noAccessArgs,
+      )
+      const spec = field.getFilterSpec?.('value', 'Thing', config)
+      const format = suggestion.valueFormat
+      expect(format).toBeDefined()
+      const pattern = new RegExp(format?.pattern ?? '')
+      for (const value of fits) {
+        expect(pattern.test(value)).toBe(true)
+        expect(spec?.toCondition('eq', value)).not.toBeNull()
+      }
+      for (const value of misfits) {
+        expect(pattern.test(value)).toBe(false)
+        expect(spec?.toCondition('eq', value)).toBeNull()
+      }
+    },
+  )
 })

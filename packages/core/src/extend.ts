@@ -102,4 +102,5 @@ export type {
   FilterOperator,
   FilterCondition,
   FilterValueSource,
+  FilterValueFormat,
 } from './filter/index.js'

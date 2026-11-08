@@ -2195,6 +2195,8 @@ The opt-in that makes a field reachable by `nearest()`: it describes the field's
 
 Optional and additive: the field's filtering capability for the admin UI's filter builder. A field that omits it is simply not filterable and is never suggested — `password`, `json` and `virtual` all omit it. The returned `toCondition` mapper must stay pure; its output is ANDed with the access filter.
 
+`suggestions.valueSource` says what the Filter builder may offer as values: `none`, an `enum` of config options, or a `relationship` label search. The optional `suggestions.valueFormat` states the shape a typed value must take, as a regular expression source and a description read after the field's name (`{ pattern: '^-?\\d+$', description: 'takes a whole number' }`), so the builder explains a value that does not fit rather than applying it. Keep the pattern in step with what `toCondition` accepts; the built-in integer, decimal, big integer, timestamp, calendar day and to-many relationship fields all declare one.
+
 ---
 
 ## Creating Custom Field Types

@@ -24,7 +24,7 @@ import type {
 } from '../config/types.js'
 import { hashPassword, isHashedPassword, HashedPassword } from '../utils/password.js'
 import { getLabelFieldName } from '../config/label.js'
-import type { FilterOperator, FilterSpec } from '../filter/types.js'
+import type { FilterOperator, FilterSpec, FilterValueFormat } from '../filter/types.js'
 
 function quoteStringLiteral(value: string): string {
   const escaped = value
@@ -39,6 +39,18 @@ function quoteStringLiteral(value: string): string {
 
 /** Operators shared by numeric/date fields' `getFilterSpec`. */
 const COMPARISON_OPERATORS: FilterOperator[] = ['eq', 'gt', 'gte', 'lt', 'lte']
+
+const WHOLE_NUMBER: FilterValueFormat = { pattern: '^-?\\d+$', description: 'takes a whole number' }
+
+const DATE_VALUE: FilterValueFormat = {
+  pattern: '^\\d{4}-\\d{2}-\\d{2}$',
+  description: 'takes a date, like 2026-01-31',
+}
+
+const TIMESTAMP_VALUE: FilterValueFormat = {
+  pattern: '^\\d{4}-\\d{2}-\\d{2}(?:[T ]\\S+)?$',
+  description: 'takes a date, like 2026-01-31',
+}
 
 function prismaComparisonKey(operator: FilterOperator): string {
   return operator === 'eq' ? 'equals' : operator
@@ -401,7 +413,7 @@ export function integer<
         if (!/^-?\d+$/.test(trimmed)) return null
         return { [fieldName]: { [prismaComparisonKey(operator)]: Number(trimmed) } }
       },
-      suggestions: { valueSource: { kind: 'none' } },
+      suggestions: { valueSource: { kind: 'none' }, valueFormat: WHOLE_NUMBER },
     }),
   }
 }
@@ -552,7 +564,10 @@ export function decimal<
         if (!/^-?\d+(\.\d+)?$/.test(trimmed)) return null
         return { [fieldName]: { [prismaComparisonKey(operator)]: trimmed } }
       },
-      suggestions: { valueSource: { kind: 'none' } },
+      suggestions: {
+        valueSource: { kind: 'none' },
+        valueFormat: { pattern: '^-?\\d+(?:\\.\\d+)?$', description: 'takes a number' },
+      },
     }),
   }
 }
@@ -663,7 +678,7 @@ export function bigInt<
         if (!/^-?\d+$/.test(trimmed)) return null
         return { [fieldName]: { [prismaComparisonKey(operator)]: BigInt(trimmed) } }
       },
-      suggestions: { valueSource: { kind: 'none' } },
+      suggestions: { valueSource: { kind: 'none' }, valueFormat: WHOLE_NUMBER },
     }),
   }
 }
@@ -763,7 +778,7 @@ export function timestamp<
         if (Number.isNaN(date.getTime())) return null
         return { [fieldName]: { [prismaComparisonKey(operator)]: date } }
       },
-      suggestions: { valueSource: { kind: 'none' } },
+      suggestions: { valueSource: { kind: 'none' }, valueFormat: TIMESTAMP_VALUE },
     }),
   }
 }
@@ -893,7 +908,7 @@ export function calendarDay<
         if (Number.isNaN(new Date(`${trimmed}T00:00:00.000Z`).getTime())) return null
         return { [fieldName]: { [prismaComparisonKey(operator)]: trimmed } }
       },
-      suggestions: { valueSource: { kind: 'none' } },
+      suggestions: { valueSource: { kind: 'none' }, valueFormat: DATE_VALUE },
     }),
   }
 }
@@ -1480,7 +1495,7 @@ export function relationship<
           if (operator === 'gte' && count === 1) return { [_fieldName]: { some: {} } }
           return null
         },
-        suggestions: { valueSource: { kind: 'none' } },
+        suggestions: { valueSource: { kind: 'none' }, valueFormat: WHOLE_NUMBER },
       }
     }
 

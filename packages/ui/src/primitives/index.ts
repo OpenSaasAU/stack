@@ -42,7 +42,7 @@ export {
   SelectScrollDownButton,
 } from './select.js'
 export { Checkbox } from './checkbox.js'
-export { Popover, PopoverTrigger, PopoverContent } from './popover.js'
+export { Popover, PopoverTrigger, PopoverAnchor, PopoverContent } from './popover.js'
 export {
   DropdownMenu,
   DropdownMenuTrigger,

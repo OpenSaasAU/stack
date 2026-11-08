@@ -271,6 +271,7 @@ export function ListViewClient({
   bulkActions = [],
 }: ListViewClientProps) {
   const router = useRouter()
+  const [isFiltering, startFiltering] = React.useTransition()
   const sortBy = initialSort?.field ?? null
   const sortOrder = initialSort?.direction ?? 'asc'
   const density = React.useSyncExternalStore(subscribeDensity, readStoredDensity, readServerDensity)
@@ -346,7 +347,7 @@ export function ListViewClient({
   }
 
   const applyQuery = (query: string) => {
-    router.push(buildUrl({ search: query, page: 1 }))
+    startFiltering(() => router.push(buildUrl({ search: query, page: 1 })))
   }
 
   const buildPaginationUrl = (newPage: number) => buildUrl({ page: newPage })
@@ -489,13 +490,12 @@ export function ListViewClient({
 
   return (
     <div className="space-y-4">
-      {/* Keyed on the active query so it remounts (and re-reads the URL) whenever
-          the applied filter changes (issue #731). */}
       <FilterBuilder
-        key={initialSearch ?? ''}
         suggestions={filterSuggestions}
         defaultValue={initialSearch ?? ''}
         onApply={applyQuery}
+        label={`Filter ${formatFieldName(listKey).toLowerCase()}`}
+        resultCount={total}
       />
 
       <div data-slot="list-view-toolbar" className="flex flex-wrap items-center justify-end gap-2">
@@ -635,7 +635,8 @@ export function ListViewClient({
       <div
         data-slot="list-view-table"
         data-density={density}
-        className="rounded-lg border max-md:border-0 max-md:*:overflow-visible"
+        aria-busy={isFiltering || undefined}
+        className="rounded-lg border transition-opacity aria-busy:opacity-60 max-md:border-0 max-md:*:overflow-visible"
       >
         <Table className="max-md:block">
           <TableHeader className={selectionEnabled ? 'max-md:block' : 'max-md:hidden'}>
