@@ -556,6 +556,14 @@ export function chipsOf(
   return chips
 }
 
+export function withoutChip(
+  tokens: readonly FilterToken[],
+  chip: { start: number; count: number } | null | undefined,
+): FilterToken[] {
+  if (!chip) return [...tokens]
+  return tokens.filter((_, index) => index < chip.start || index >= chip.start + chip.count)
+}
+
 export function chipEditText(
   chip: FilterChip,
   token: FilterToken,

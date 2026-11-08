@@ -22,8 +22,9 @@ import {
   type BulkAction,
   type RowAction,
   engineContextOf,
-  buildListFilterWhere,
-  collectFilterSuggestions,
+  buildFilterWhere,
+  collectFilterSpecs,
+  filterSuggestionsOf,
   filterValueRecordId,
   getItemLabel,
   getLabelFieldName,
@@ -32,12 +33,20 @@ import {
   isRelationshipLabelReadable,
   isToManyRelationshipField,
   OpenSaasConfig,
-  parseFilterQuery,
   parseListId,
 } from '@opensaas/stack-core'
-import type { FilterFieldSuggestion, SecuredQuery } from '@opensaas/stack-core'
-import type { CountFilterLink } from './ListViewClient.js'
-import type { ResolvedFilterRecord } from '../lib/filterBuilderOptions.js'
+import type { FilterSpec, FilterToken, SecuredQuery } from '@opensaas/stack-core'
+import type { CountFilterLink, FilterRemoval } from './ListViewClient.js'
+import {
+  chipsOf,
+  filterQuery,
+  hydrateTokens,
+  isFieldCondition,
+  withoutChip,
+  type FilterFields,
+  type RecordOf,
+  type ResolvedFilterRecord,
+} from '../lib/filterBuilderOptions.js'
 import {
   filterByHasAccess,
   isRowActionAvailable,
@@ -145,20 +154,16 @@ function relatedListKeyOf(field: unknown): string | undefined {
 }
 
 async function resolveRecordLabels(
-  search: string | undefined,
-  suggestions: FilterFieldSuggestion[],
+  tokens: readonly FilterToken[],
+  fields: FilterFields,
   listConfig: OpenSaasConfig['lists'][string],
   config: OpenSaasConfig,
   context: AccessContext,
 ): Promise<Record<string, ResolvedFilterRecord[]>> {
-  if (!search || !search.trim()) return {}
-  const lookupFields = new Set(
-    suggestions.filter((suggestion) => suggestion.matchesById).map(({ field }) => field),
-  )
   const idsByField = new Map<string, Set<string>>()
-  for (const token of parseFilterQuery(search).terms) {
+  for (const token of tokens) {
     const field = token.field
-    if (field === null || token.operator !== 'eq' || !lookupFields.has(field)) continue
+    if (field === null || token.operator !== 'eq' || !fields.get(field)?.matchesById) continue
     for (const value of token.values) {
       const id = filterValueRecordId(value)
       if (id !== null) idsByField.set(field, (idsByField.get(field) ?? new Set()).add(id))
@@ -202,6 +207,56 @@ async function resolveRecordLabels(
     }),
   )
   return Object.fromEntries(entries.filter(([, records]) => records.length > 0))
+}
+
+const FILTER_REMOVAL_TERMS = 5
+
+function filteredFields(tokens: readonly FilterToken[], fields: FilterFields): string[] {
+  return [
+    ...new Set(
+      tokens
+        .filter((token) => isFieldCondition(token, fields))
+        .flatMap((token) => (token.field === null ? [] : [token.field])),
+    ),
+  ]
+}
+
+async function resolveFilterRemoval(
+  tokens: FilterToken[],
+  fields: FilterFields,
+  specs: Record<string, FilterSpec>,
+  recordOf: RecordOf,
+  list: SecuredQuery,
+  listKey: string,
+): Promise<FilterRemoval | null> {
+  const terms = chipsOf(tokens, fields, recordOf).slice(0, FILTER_REMOVAL_TERMS)
+  if (terms.length === 0) return null
+  try {
+    const removals = await Promise.all(
+      terms.map(async (chip) => {
+        const rest = withoutChip(tokens, chip)
+        const where = buildFilterWhere({ terms: rest }, specs)
+        const scoped = where ? list.where(where) : list
+        const { rows } = await scoped.aggregate((aggregate) => ({ rows: aggregate.count() }))
+        return { sentence: chip.description.sentence, rest, rows }
+      }),
+    )
+    const best = removals.reduce<(typeof removals)[number] | null>(
+      (current, removal) => (removal.rows > (current?.rows ?? 0) ? removal : current),
+      null,
+    )
+    if (!best) return null
+    return {
+      search: filterQuery(tokens),
+      query: filterQuery(best.rest),
+      sentence: best.sentence,
+      rows: best.rows,
+    }
+  } catch (error) {
+    unstable_rethrow(error)
+    console.error(`Filter removal counts for ${listKey} could not be read:`, error)
+    return null
+  }
 }
 
 async function isCountLinkable(
@@ -347,17 +402,7 @@ export async function ListView({
     availableColumns.includes(name),
   )
   const defaultColumns = columns ?? computeDefaultColumns(displayFields)
-  const resolvedColumns = chosenColumns.length > 0 ? chosenColumns : defaultColumns
-  const displayedColumns = new Set(resolvedColumns)
-  // Naming a relation in the read suppresses the engine's declared-dependency
-  // widening for it (`resolveIncludes`), and a reduced relation is masked to
-  // `[]` for the rules and computed fields that read it — so a to-many is
-  // counted only where a column displays that count.
-  const countedRelations = new Set(
-    Object.entries(listConfig.fields)
-      .filter(([name, field]) => isToManyRelationshipField(field) && displayedColumns.has(name))
-      .map(([name]) => name),
-  )
+  const baseColumns = chosenColumns.length > 0 ? chosenColumns : defaultColumns
 
   const pageSize = Math.min(
     Math.max(1, Math.floor(requestedPageSize) || DEFAULT_PAGE_SIZE),
@@ -367,6 +412,29 @@ export async function ListView({
   const activePreset = await presetViews.active
   const activeSearch = activePreset ? activePreset.search : search
   const sortCandidates = [sort, activePreset?.sort, initialSort]
+
+  const filterSpecs = await collectFilterSpecs(listConfig, listKey, config, {
+    session: context.session,
+    context,
+  })
+  const filterSuggestions = filterSuggestionsOf(filterSpecs)
+  const filterFields: FilterFields = new Map(
+    filterSuggestions.map((suggestion) => [suggestion.field, suggestion]),
+  )
+  const searchTokens = activeSearch ? hydrateTokens(activeSearch) : []
+  const autoColumns = filteredFields(searchTokens, filterFields).filter(
+    (name) => Object.hasOwn(displayFields, name) && !baseColumns.includes(name),
+  )
+  const displayedColumns = new Set([...baseColumns, ...autoColumns])
+  // Naming a relation in the read suppresses the engine's declared-dependency
+  // widening for it (`resolveIncludes`), and a reduced relation is masked to
+  // `[]` for the rules and computed fields that read it — so a to-many is
+  // counted only where a column displays that count.
+  const countedRelations = new Set(
+    Object.entries(listConfig.fields)
+      .filter(([name, field]) => isToManyRelationshipField(field) && displayedColumns.has(name))
+      .map(([name]) => name),
+  )
 
   const currentPage = Number.isSafeInteger(page) && page >= 1 ? page : 1
   const skip = (currentPage - 1) * pageSize
@@ -399,12 +467,7 @@ export async function ListView({
     // secured `context.db` below, which ANDs it with the access filter, so the
     // filter can only ever narrow (never widen) what this session may see.
     const parsedWhere =
-      activeSearch && activeSearch.trim()
-        ? await buildListFilterWhere(activeSearch, listConfig, listKey, config, {
-            session: context.session,
-            context,
-          })
-        : undefined
+      searchTokens.length > 0 ? buildFilterWhere({ terms: searchTokens }, filterSpecs) : undefined
 
     // A to-one relationship fetches the related row (for its Item label); a
     // to-many displayed as a count reduces to the count of the related rows
@@ -496,22 +559,24 @@ export async function ListView({
     itemsWithResolvedLabels.map((item) => applyClientValueTransforms(listConfig.fields, item)),
   )
 
-  // Collect each filterable field's serializable Filter spec metadata (fields,
-  // operators, enumerated values / relationship label search) to drive the
-  // Filter builder's pickers. It mirrors the same specs the server-side
-  // `buildListFilterWhere` above uses, so the builder can only produce queries
-  // the engine understands.
-  const filterSuggestions = await collectFilterSuggestions(listConfig, listKey, config, {
-    session: context.session,
-    context,
-  })
   const recordLabels = await resolveRecordLabels(
-    activeSearch,
-    filterSuggestions,
+    searchTokens,
+    filterFields,
     listConfig,
     config,
     context,
   )
+  const filterRemoval =
+    total === 0 && searchTokens.length > 0 && filterSuggestions.length > 0
+      ? await resolveFilterRemoval(
+          searchTokens,
+          filterFields,
+          filterSpecs,
+          (field, id) => recordLabels[field]?.find((record) => record.id === id),
+          context.db[key],
+          listKey,
+        )
+      : null
 
   // When the list opts into avatars (issue #735), the label column renders with
   // an initials bubble ahead of the emphasized Item label. The label column is
@@ -582,7 +647,7 @@ export async function ListView({
         )}
         fields={serializeFieldConfigs(displayFields)}
         relationshipRefs={relationshipRefs}
-        columns={resolvedColumns}
+        columns={baseColumns}
         availableColumns={urlControls ? availableColumns : undefined}
         pageSizeControl={urlControls}
         defaultColumns={defaultColumns}
@@ -609,6 +674,8 @@ export async function ListView({
         bulkActions={bulkActions}
         rowActions={visibleRowActions.map(serializeRowAction)}
         rowActionKeys={rowActionKeys}
+        autoColumns={autoColumns}
+        filterRemoval={filterRemoval}
       />
     </div>
   )

@@ -111,7 +111,15 @@ export async function collectFilterSuggestions(
   config: OpenSaasConfig,
   args: FilterAccessArgs,
 ): Promise<FilterFieldSuggestion[]> {
-  const specs = await collectFilterSpecs(listConfig, listKey, config, args)
+  return filterSuggestionsOf(await collectFilterSpecs(listConfig, listKey, config, args))
+}
+
+/**
+ * The client-serializable suggestion metadata for Filter specs already
+ * collected with {@link collectFilterSpecs}, so a caller that also builds a
+ * `where` from those specs asks each field's `read` rule once.
+ */
+export function filterSuggestionsOf(specs: Record<string, FilterSpec>): FilterFieldSuggestion[] {
   return Object.entries(specs).map(([field, spec]) => {
     const suggestion: FilterFieldSuggestion = {
       field,
