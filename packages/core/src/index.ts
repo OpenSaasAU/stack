@@ -398,6 +398,7 @@ export {
   collectFilterSpecs,
   buildListFilterWhere,
   collectFilterSuggestions,
+  filterSuggestionsOf,
   isFieldFilterableById,
 } from './filter/index.js'
 export type {

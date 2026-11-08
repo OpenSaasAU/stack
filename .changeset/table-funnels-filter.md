@@ -9,7 +9,7 @@ Filter from the table: header and value funnels, auto-shown filtered columns, an
 - A field the query filters on is shown as a column for that render even when `?columns=` hides it. It is never written to `?columns=`.
 - When a query returns no rows, the list view counts the first five terms, each with one secured `context.db` count, and offers the removal that returns the most rows: "Remove “Status is Draft” to see 12 rows". **Clear filters** (previously **Clear search**) is always offered.
 
-`FilterBuilder` takes a `ref` exposing `startFilter(field)`:
+`FilterBuilder` takes a `ref` exposing `startFilter(field)`, `currentQuery()`, `addTokens(tokens)` and `applyQuery(query)`. The table's funnels and the removal button go through it, so a chip committed while its navigation is still pending is kept:
 
 ```tsx
 import { FilterBuilder, type FilterBuilderHandle } from '@opensaas/stack-ui/standalone'
@@ -20,4 +20,4 @@ const builder = React.useRef<FilterBuilderHandle>(null)
 <button onClick={() => builder.current?.startFilter('status')}>Filter by status</button>
 ```
 
-`ListViewClient` gains the `autoColumns` and `filterRemoval` props. New slots: `list-view-header-filter`, `list-view-value-filter`, `list-view-value-filter-button` and `list-view-empty-remove`.
+`ListViewClient` gains the `autoColumns` and `filterRemoval` props. `autoColumns` are shown after `columns` and never become the row's title column. New slots: `list-view-header-filter`, `list-view-value-filter`, `list-view-value-filter-button` and `list-view-empty-remove`.

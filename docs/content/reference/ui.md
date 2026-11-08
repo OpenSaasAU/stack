@@ -297,8 +297,8 @@ set never appears in the URL.
 A field the applied query filters on is shown even when the chosen or default
 columns hide it, so you can see why each row matched. The server adds it to
 the visible set for that render only: it is appended after the other columns,
-the Columns menu shows it ticked and locked, and it is never written to
-`?columns=`. Free text adds no column. `ListViewClient` takes these as
+never becomes the row's title column, the Columns menu shows it ticked and
+locked, and it is never written to `?columns=`. Free text adds no column. `ListViewClient` takes these as
 `autoColumns`.
 
 `ListViewClient` takes the resolved set as `columns`, every pickable column as
@@ -654,8 +654,10 @@ may query that list and filter that side by id.
   field the way the builder does. On an open Preset view it expands the preset
   to `?search=` first, so the rows on screen are only narrowed. The funnel is a
   wrapper the list view puts around the rendered Cell: the Cell registry and
-  custom Cells are unchanged, and the label column gets none. Both funnels
-  appear only on fields in this session's Filter specs.
+  custom Cells are unchanged, and the label column gets none, nor does a value
+  the query already filters its field to. Both funnels appear only on fields
+  in this session's Filter specs, and both build on the Filter builder's
+  current query, so a chip whose navigation has not landed yet is kept.
 - **The zero-results empty state.** When the query returns no rows, the list
   view counts, for each of the first five terms, how many rows the query
   returns with that term removed, and offers the one that returns the most:
@@ -665,10 +667,12 @@ may query that list and filter that side by id.
   one secured `context.db` count with the access filter ANDed, run in parallel
   and only when the total is zero, so it reveals nothing the session could not
   already list. `ListViewClient` takes the result as `filterRemoval`
-  (`{ start, count, rows }`: the removed tokens and the rows left).
+  (`{ search, query, sentence, rows }`: the query it was counted against, the
+  query without the term, the term's chip text and the rows left).
 
 `FilterBuilder` takes a `ref` whose `FilterBuilderHandle` has
-`startFilter(field)`, which is what the header funnel calls. The funnels'
+`startFilter(field)` (the header funnel), `addTokens(tokens)` (the value
+funnel), `currentQuery()` and `applyQuery(query)` (the removal). The funnels'
 slots are `list-view-header-filter`, `list-view-value-filter` and
 `list-view-value-filter-button`; the empty state's removal is
 `list-view-empty-remove`.

@@ -129,7 +129,31 @@ describe('value funnels', () => {
     expect(lastSearch()).toBe('first status:published author:#u1')
 
     await user.click(screen.getByRole('button', { name: 'Filter to Status is Draft' }))
-    expect(lastSearch()).toBe('first status:draft')
+    expect(lastSearch()).toBe('first author:#u1 status:draft')
+  })
+
+  it('keeps a chip the builder committed before its navigation landed', async () => {
+    const user = userEvent.setup()
+    render(<ListViewClient {...props} />)
+
+    await user.click(screen.getByRole('button', { name: 'Filter by Status' }))
+    await user.click(
+      within(screen.getByRole('listbox', { name: 'Status values' })).getByRole('option', {
+        name: 'Published',
+      }),
+    )
+    expect(lastSearch()).toBe('status:published')
+
+    await user.click(screen.getByRole('button', { name: 'Filter to Author is Ada Lovelace' }))
+    expect(lastSearch()).toBe('status:published author:#u1')
+  })
+
+  it('offers none where the query already filters the field to that value', () => {
+    render(<ListViewClient {...props} search="status:draft" />)
+    expect(screen.queryByRole('button', { name: 'Filter to Status is Draft' })).toBeNull()
+    expect(
+      screen.getByRole('button', { name: 'Filter to Status is In review' }),
+    ).toBeInTheDocument()
   })
 
   it('expands an open preset rather than losing its rows', async () => {
@@ -184,6 +208,31 @@ describe('auto-shown columns', () => {
     )
   })
 
+  it('never makes the filtered column the row title', () => {
+    render(
+      <ListViewClient
+        {...props}
+        columns={['author']}
+        autoColumns={['status']}
+        columnsChosen
+        search="status:draft"
+      />,
+    )
+
+    const rows = screen.getAllByRole('row').slice(1)
+    expect(rows).toHaveLength(2)
+    for (const row of rows) {
+      const cells = within(row).getAllByRole('cell')
+      const status = cells.find((cell) => cell.getAttribute('data-label') === 'Status')
+      const author = cells.find((cell) => cell.getAttribute('data-label') === 'Author')
+      expect(status?.querySelector('[data-slot="row-title-link"]')).toBeNull()
+      expect(author?.querySelector('[data-slot="row-title-link"]')).not.toBeNull()
+    }
+    expect(
+      screen.getByRole('button', { name: 'Filter to Status is In review' }),
+    ).toBeInTheDocument()
+  })
+
   it('shows the filtered column ticked and locked in the picker', async () => {
     const user = userEvent.setup()
     render(
@@ -219,7 +268,17 @@ describe('the zero-results empty state', () => {
 
   it('names the term to remove, with its chip text and the rows it returns', async () => {
     const user = userEvent.setup()
-    render(<ListViewClient {...empty} filterRemoval={{ start: 2, count: 1, rows: 12 }} />)
+    render(
+      <ListViewClient
+        {...empty}
+        filterRemoval={{
+          search: 'first status:draft author:#u1',
+          query: 'first status:draft',
+          sentence: 'Author is Ada Lovelace',
+          rows: 12,
+        }}
+      />,
+    )
 
     await user.click(
       screen.getByRole('button', { name: 'Remove “Author is Ada Lovelace” to see 12 rows' }),
@@ -228,8 +287,47 @@ describe('the zero-results empty state', () => {
     expect(screen.getByRole('button', { name: 'Clear filters' })).toBeInTheDocument()
   })
 
+  it('never discards a chip the builder committed since the page rendered', async () => {
+    const user = userEvent.setup()
+    render(
+      <ListViewClient
+        {...empty}
+        filterRemoval={{
+          search: 'first status:draft author:#u1',
+          query: 'first status:draft',
+          sentence: 'Author is Ada Lovelace',
+          rows: 12,
+        }}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Filter by Status' }))
+    await user.click(
+      within(screen.getByRole('listbox', { name: 'Status values' })).getByRole('option', {
+        name: 'Published',
+      }),
+    )
+    expect(lastSearch()).toBe('first author:#u1 status:published')
+    mockPush.mockClear()
+
+    await user.click(
+      screen.getByRole('button', { name: 'Remove “Author is Ada Lovelace” to see 12 rows' }),
+    )
+    expect(mockPush).not.toHaveBeenCalled()
+  })
+
   it('says one row in the singular', () => {
-    render(<ListViewClient {...empty} filterRemoval={{ start: 1, count: 1, rows: 1 }} />)
+    render(
+      <ListViewClient
+        {...empty}
+        filterRemoval={{
+          search: 'first status:draft author:#u1',
+          query: 'first author:#u1',
+          sentence: 'Status is Draft',
+          rows: 1,
+        }}
+      />,
+    )
     expect(
       screen.getByRole('button', { name: 'Remove “Status is Draft” to see 1 row' }),
     ).toBeInTheDocument()
@@ -244,8 +342,13 @@ describe('the zero-results empty state', () => {
     expect(mockPush).toHaveBeenLastCalledWith('/admin/post?page=1')
   })
 
-  it('ignores a removal that names no term of the query on screen', () => {
-    render(<ListViewClient {...empty} filterRemoval={{ start: 7, count: 1, rows: 3 }} />)
+  it('ignores a removal counted against another query', () => {
+    render(
+      <ListViewClient
+        {...empty}
+        filterRemoval={{ search: 'status:draft', query: '', sentence: 'Status is Draft', rows: 3 }}
+      />,
+    )
     expect(screen.queryByRole('button', { name: /^Remove “/ })).toBeNull()
   })
 })

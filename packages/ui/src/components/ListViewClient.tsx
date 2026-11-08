@@ -50,7 +50,6 @@ import { DEFAULT_PAGE_SIZE } from '../lib/pageSize.js'
 import { CARD_CELL, CARD_PINNED_CELL, CARD_ROW, CARD_TITLE_CELL } from '../lib/tableClasses.js'
 import type { ServerActionInput } from '../server/types.js'
 import {
-  chipsOf,
   describeToken,
   fieldToken,
   filterQuery,
@@ -58,7 +57,6 @@ import {
   isRecordLookupField,
   placeTokens,
   type FilterFields,
-  type RecordOf,
   type ResolvedFilterRecord,
 } from '../lib/filterBuilderOptions.js'
 import {
@@ -76,12 +74,16 @@ export interface CountFilterLink {
 
 /**
  * The filter term whose removal returns the most rows when the applied query
- * returns none: the `count` tokens from `start` of the parsed query, and how
- * many rows the query without them returns for this session.
+ * returns none, resolved on the server for this session.
  */
 export interface FilterRemoval {
-  start: number
-  count: number
+  /** The applied query the removal was counted against. */
+  search: string
+  /** The query without the term. */
+  query: string
+  /** The term's chip text, e.g. `Status is Draft`. */
+  sentence: string
+  /** How many rows `query` returns for this session. */
   rows: number
 }
 
@@ -344,7 +346,8 @@ export interface ListViewClientProps {
   rowActionKeys?: Record<string, string[]>
   /**
    * The columns shown only because the applied query filters on them,
-   * resolved on the server. They are never written to `?columns=`.
+   * resolved on the server and shown after `columns`. They are never written
+   * to `?columns=` and never become the row's title column.
    */
   autoColumns?: string[]
   /**
@@ -396,8 +399,7 @@ export function ListViewClient({
     () => new Map(filterSuggestions.map((suggestion) => [suggestion.field, suggestion])),
     [filterSuggestions],
   )
-  const recordOf: RecordOf = (field, id) =>
-    recordLabels?.[field]?.find((record) => record.id === id)
+  const appliedTokens = React.useMemo(() => hydrateTokens(initialSearch ?? ''), [initialSearch])
   const [isFiltering, startFiltering] = React.useTransition()
   const sortBy = initialSort?.field ?? null
   const sortOrder = initialSort?.direction ?? 'asc'
@@ -437,9 +439,13 @@ export function ListViewClient({
     selection.togglePage(pageIds)
   }
 
-  const displayColumns =
+  const baseColumns =
     columns || Object.keys(fieldTypes).filter((key) => isDefaultColumnField(fields?.[key]))
-  const chosenColumns = displayColumns.filter((column) => !autoColumns.includes(column))
+  const chosenColumns = baseColumns.filter((column) => !autoColumns.includes(column))
+  const displayColumns = [
+    ...baseColumns,
+    ...autoColumns.filter((column) => !baseColumns.includes(column)),
+  ]
   const totalPages = Math.ceil(total / pageSize)
   const hasNextPage = page < totalPages
   const hasPrevPage = page > 1
@@ -487,25 +493,17 @@ export function ListViewClient({
     startFiltering(() => router.push(editUrl({ search: query, page: 1 })))
   }
 
-  const appliedTokens = () => hydrateTokens(initialSearch ?? '')
+  const appliedQuery = filterQuery(appliedTokens)
 
-  const addFilterToken = (token: FilterToken) =>
-    applyQuery(filterQuery(placeTokens(appliedTokens(), [token], null, filterFields, true)))
+  const isAppliedFilter = (token: FilterToken) =>
+    filterQuery(placeTokens(appliedTokens, [token], null, filterFields, true)) === appliedQuery
 
-  const removal = (() => {
-    if (!filterRemoval || !initialSearch) return null
-    const tokens = appliedTokens()
-    const chip = chipsOf(tokens, filterFields, recordOf).find(
-      ({ start, count }) => start === filterRemoval.start && count === filterRemoval.count,
-    )
-    if (!chip) return null
-    const rest = tokens.filter((_, i) => i < chip.start || i >= chip.start + chip.count)
-    return {
-      sentence: chip.description.sentence,
-      rows: filterRemoval.rows,
-      query: filterQuery(rest),
-    }
-  })()
+  const removal = filterRemoval && filterRemoval.search === appliedQuery ? filterRemoval : null
+
+  const applyRemoval = (chosen: FilterRemoval) => {
+    const builder = filterBuilder.current
+    if (builder && builder.currentQuery() === chosen.search) builder.applyQuery(chosen.query)
+  }
 
   const buildPaginationUrl = (newPage: number) => buildUrl({ page: newPage })
 
@@ -674,9 +672,9 @@ export function ListViewClient({
   }
 
   const titleColumn =
-    labelColumn && labelColumn !== 'id' && displayColumns.includes(labelColumn)
+    labelColumn && labelColumn !== 'id' && chosenColumns.includes(labelColumn)
       ? labelColumn
-      : (displayColumns.find((column) => !relationshipRefs[column]) ?? displayColumns[0])
+      : (chosenColumns.find((column) => !relationshipRefs[column]) ?? chosenColumns[0])
 
   /**
    * Render one body cell. The label column of an avatar-opted-in list
@@ -718,7 +716,7 @@ export function ListViewClient({
       column === titleColumn
         ? null
         : valueFilterToken(filterFields.get(column), column, item[column])
-    if (!funnel) return cell
+    if (!funnel || isAppliedFilter(funnel.token)) return cell
     const sentence = describeToken(funnel.token, filterFields, (_, recordId) =>
       funnel.label === null ? undefined : { id: recordId, label: funnel.label },
     ).sentence
@@ -733,7 +731,7 @@ export function ListViewClient({
           data-slot="list-view-value-filter-button"
           aria-label={`Filter to ${sentence}`}
           title={`Filter to ${sentence}`}
-          onClick={() => addFilterToken(funnel.token)}
+          onClick={() => filterBuilder.current?.addTokens([funnel.token])}
           className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover/value:opacity-100 max-md:opacity-100"
         >
           <Funnel className="h-3.5 w-3.5" aria-hidden="true" />
@@ -940,6 +938,17 @@ export function ListViewClient({
                 const field = columnField(column)
                 const numeric = isCountAlignedColumn(field)
                 const sortable = sortableFields[column] === true
+                const filter = headerFilter(column)
+                const sortButton = (
+                  <TableSortButton
+                    numeric={numeric}
+                    direction={sortBy === column ? sortOrder : undefined}
+                    onClick={() => handleSort(column)}
+                    className={cn(compact && 'min-h-9')}
+                  >
+                    {formatFieldName(column)}
+                  </TableSortButton>
+                )
                 return (
                   <TableHead
                     key={column}
@@ -952,18 +961,13 @@ export function ListViewClient({
                         : undefined
                     }
                   >
-                    {sortable ? (
+                    {sortable && filter ? (
                       <div className="flex items-center pr-2">
-                        <TableSortButton
-                          numeric={numeric}
-                          direction={sortBy === column ? sortOrder : undefined}
-                          onClick={() => handleSort(column)}
-                          className={cn(compact && 'min-h-9')}
-                        >
-                          {formatFieldName(column)}
-                        </TableSortButton>
-                        {headerFilter(column)}
+                        {sortButton}
+                        {filter}
                       </div>
+                    ) : sortable ? (
+                      sortButton
                     ) : (
                       <div
                         className={cn(
@@ -972,7 +976,7 @@ export function ListViewClient({
                         )}
                       >
                         <span>{formatFieldName(column)}</span>
-                        {headerFilter(column)}
+                        {filter}
                       </div>
                     )}
                   </TableHead>
@@ -1007,7 +1011,7 @@ export function ListViewClient({
                             <Button
                               size="sm"
                               data-slot="list-view-empty-remove"
-                              onClick={() => applyQuery(removal.query)}
+                              onClick={() => applyRemoval(removal)}
                             >
                               {`Remove “${removal.sentence}” to see ${removal.rows} ${removal.rows === 1 ? 'row' : 'rows'}`}
                             </Button>

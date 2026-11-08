@@ -111,9 +111,19 @@ describe('a filtered field’s column', () => {
         visibleColumns: ['title'],
         search: 'status:draft views:>15 hello',
       })
-      expect(props.columns).toEqual(['title', 'status', 'views'])
+      expect(props.columns).toEqual(['title'])
       expect(props.autoColumns).toEqual(['status', 'views'])
       expect(props.columnsChosen).toBe(true)
+    },
+    BOOT,
+  )
+
+  it(
+    'is passed apart from the chosen columns, so it never becomes the title column',
+    async () => {
+      const props = await render(editor, { visibleColumns: ['author'], search: 'status:draft' })
+      expect(props.columns).toEqual(['author'])
+      expect(props.autoColumns).toEqual(['status'])
     },
     BOOT,
   )
@@ -138,7 +148,12 @@ describe('the zero-results removal', () => {
     async () => {
       const props = await render(editor, { search: 'status:draft views:>100' })
       expect(props.total).toBe(0)
-      expect(props.filterRemoval).toEqual({ start: 1, count: 1, rows: 3 })
+      expect(props.filterRemoval).toEqual({
+        search: 'status:draft views:>100',
+        query: 'status:draft',
+        sentence: 'Views greater than 100',
+        rows: 3,
+      })
     },
     BOOT,
   )
@@ -148,7 +163,12 @@ describe('the zero-results removal', () => {
     async () => {
       const props = await render(null, { search: 'status:draft views:>100' })
       expect(props.total).toBe(0)
-      expect(props.filterRemoval).toEqual({ start: 0, count: 1, rows: 2 })
+      expect(props.filterRemoval).toEqual({
+        search: 'status:draft views:>100',
+        query: 'views:>100',
+        sentence: 'Status is Draft',
+        rows: 2,
+      })
     },
     BOOT,
   )
@@ -158,7 +178,12 @@ describe('the zero-results removal', () => {
     async () => {
       const props = await render(editor, { search: 'views:>=15 views:<=25 status:published' })
       expect(props.total).toBe(0)
-      expect(props.filterRemoval).toEqual({ start: 0, count: 2, rows: 2 })
+      expect(props.filterRemoval).toEqual({
+        search: 'views:>=15 views:<=25 status:published',
+        query: 'status:published',
+        sentence: 'Views between 15 and 25',
+        rows: 2,
+      })
     },
     BOOT,
   )
@@ -185,7 +210,12 @@ describe('the zero-results removal', () => {
       const within = await render(editor, {
         search: 'status:draft views:<100 title:draft draft title:zzz',
       })
-      expect(within.filterRemoval).toEqual({ start: 4, count: 1, rows: 3 })
+      expect(within.filterRemoval).toEqual({
+        search: 'status:draft views:<100 title:draft draft title:zzz',
+        query: 'status:draft views:<100 title:draft draft',
+        sentence: 'Title contains zzz',
+        rows: 3,
+      })
     },
     BOOT,
   )

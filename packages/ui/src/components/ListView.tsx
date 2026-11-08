@@ -23,9 +23,8 @@ import {
   type RowAction,
   engineContextOf,
   buildFilterWhere,
-  buildListFilterWhere,
   collectFilterSpecs,
-  collectFilterSuggestions,
+  filterSuggestionsOf,
   filterValueRecordId,
   getItemLabel,
   getLabelFieldName,
@@ -34,15 +33,18 @@ import {
   isRelationshipLabelReadable,
   isToManyRelationshipField,
   OpenSaasConfig,
-  parseFilterQuery,
   parseListId,
 } from '@opensaas/stack-core'
-import type { FilterFieldSuggestion, SecuredQuery } from '@opensaas/stack-core'
+import type { FilterSpec, FilterToken, SecuredQuery } from '@opensaas/stack-core'
 import type { CountFilterLink, FilterRemoval } from './ListViewClient.js'
 import {
   chipsOf,
+  filterQuery,
   hydrateTokens,
   isFieldCondition,
+  withoutChip,
+  type FilterFields,
+  type RecordOf,
   type ResolvedFilterRecord,
 } from '../lib/filterBuilderOptions.js'
 import {
@@ -152,20 +154,16 @@ function relatedListKeyOf(field: unknown): string | undefined {
 }
 
 async function resolveRecordLabels(
-  search: string | undefined,
-  suggestions: FilterFieldSuggestion[],
+  tokens: readonly FilterToken[],
+  fields: FilterFields,
   listConfig: OpenSaasConfig['lists'][string],
   config: OpenSaasConfig,
   context: AccessContext,
 ): Promise<Record<string, ResolvedFilterRecord[]>> {
-  if (!search || !search.trim()) return {}
-  const lookupFields = new Set(
-    suggestions.filter((suggestion) => suggestion.matchesById).map(({ field }) => field),
-  )
   const idsByField = new Map<string, Set<string>>()
-  for (const token of parseFilterQuery(search).terms) {
+  for (const token of tokens) {
     const field = token.field
-    if (field === null || token.operator !== 'eq' || !lookupFields.has(field)) continue
+    if (field === null || token.operator !== 'eq' || !fields.get(field)?.matchesById) continue
     for (const value of token.values) {
       const id = filterValueRecordId(value)
       if (id !== null) idsByField.set(field, (idsByField.get(field) ?? new Set()).add(id))
@@ -213,15 +211,10 @@ async function resolveRecordLabels(
 
 const FILTER_REMOVAL_TERMS = 5
 
-function filteredFields(
-  search: string | undefined,
-  suggestions: FilterFieldSuggestion[],
-): string[] {
-  if (!search || !search.trim()) return []
-  const fields = new Map(suggestions.map((suggestion) => [suggestion.field, suggestion]))
+function filteredFields(tokens: readonly FilterToken[], fields: FilterFields): string[] {
   return [
     ...new Set(
-      hydrateTokens(search)
+      tokens
         .filter((token) => isFieldCondition(token, fields))
         .flatMap((token) => (token.field === null ? [] : [token.field])),
     ),
@@ -229,36 +222,36 @@ function filteredFields(
 }
 
 async function resolveFilterRemoval(
-  search: string,
-  suggestions: FilterFieldSuggestion[],
-  listConfig: OpenSaasConfig['lists'][string],
+  tokens: FilterToken[],
+  fields: FilterFields,
+  specs: Record<string, FilterSpec>,
+  recordOf: RecordOf,
+  list: SecuredQuery,
   listKey: string,
-  config: OpenSaasConfig,
-  context: AccessContext,
 ): Promise<FilterRemoval | null> {
-  const tokens = hydrateTokens(search)
-  const fields = new Map(suggestions.map((suggestion) => [suggestion.field, suggestion]))
-  const terms = chipsOf(tokens, fields).slice(0, FILTER_REMOVAL_TERMS)
+  const terms = chipsOf(tokens, fields, recordOf).slice(0, FILTER_REMOVAL_TERMS)
   if (terms.length === 0) return null
   try {
-    const specs = await collectFilterSpecs(listConfig, listKey, config, {
-      session: context.session,
-      context,
-    })
-    const list: SecuredQuery = context.db[listKey]
     const removals = await Promise.all(
-      terms.map(async ({ start, count }): Promise<FilterRemoval> => {
-        const rest = tokens.filter((_, index) => index < start || index >= start + count)
+      terms.map(async (chip) => {
+        const rest = withoutChip(tokens, chip)
         const where = buildFilterWhere({ terms: rest }, specs)
         const scoped = where ? list.where(where) : list
         const { rows } = await scoped.aggregate((aggregate) => ({ rows: aggregate.count() }))
-        return { start, count, rows }
+        return { sentence: chip.description.sentence, rest, rows }
       }),
     )
-    return removals.reduce<FilterRemoval | null>(
-      (best, removal) => (removal.rows > (best?.rows ?? 0) ? removal : best),
+    const best = removals.reduce<(typeof removals)[number] | null>(
+      (current, removal) => (removal.rows > (current?.rows ?? 0) ? removal : current),
       null,
     )
+    if (!best) return null
+    return {
+      search: filterQuery(tokens),
+      query: filterQuery(best.rest),
+      sentence: best.sentence,
+      rows: best.rows,
+    }
   } catch (error) {
     unstable_rethrow(error)
     console.error(`Filter removal counts for ${listKey} could not be read:`, error)
@@ -420,15 +413,19 @@ export async function ListView({
   const activeSearch = activePreset ? activePreset.search : search
   const sortCandidates = [sort, activePreset?.sort, initialSort]
 
-  const filterSuggestions = await collectFilterSuggestions(listConfig, listKey, config, {
+  const filterSpecs = await collectFilterSpecs(listConfig, listKey, config, {
     session: context.session,
     context,
   })
-  const autoColumns = filteredFields(activeSearch, filterSuggestions).filter(
+  const filterSuggestions = filterSuggestionsOf(filterSpecs)
+  const filterFields: FilterFields = new Map(
+    filterSuggestions.map((suggestion) => [suggestion.field, suggestion]),
+  )
+  const searchTokens = activeSearch ? hydrateTokens(activeSearch) : []
+  const autoColumns = filteredFields(searchTokens, filterFields).filter(
     (name) => Object.hasOwn(displayFields, name) && !baseColumns.includes(name),
   )
-  const resolvedColumns = [...baseColumns, ...autoColumns]
-  const displayedColumns = new Set(resolvedColumns)
+  const displayedColumns = new Set([...baseColumns, ...autoColumns])
   // Naming a relation in the read suppresses the engine's declared-dependency
   // widening for it (`resolveIncludes`), and a reduced relation is masked to
   // `[]` for the rules and computed fields that read it — so a to-many is
@@ -470,12 +467,7 @@ export async function ListView({
     // secured `context.db` below, which ANDs it with the access filter, so the
     // filter can only ever narrow (never widen) what this session may see.
     const parsedWhere =
-      activeSearch && activeSearch.trim()
-        ? await buildListFilterWhere(activeSearch, listConfig, listKey, config, {
-            session: context.session,
-            context,
-          })
-        : undefined
+      searchTokens.length > 0 ? buildFilterWhere({ terms: searchTokens }, filterSpecs) : undefined
 
     // A to-one relationship fetches the related row (for its Item label); a
     // to-many displayed as a count reduces to the count of the related rows
@@ -567,12 +559,24 @@ export async function ListView({
     itemsWithResolvedLabels.map((item) => applyClientValueTransforms(listConfig.fields, item)),
   )
 
-  const [recordLabels, filterRemoval] = await Promise.all([
-    resolveRecordLabels(activeSearch, filterSuggestions, listConfig, config, context),
-    total === 0 && activeSearch && activeSearch.trim()
-      ? resolveFilterRemoval(activeSearch, filterSuggestions, listConfig, listKey, config, context)
-      : null,
-  ])
+  const recordLabels = await resolveRecordLabels(
+    searchTokens,
+    filterFields,
+    listConfig,
+    config,
+    context,
+  )
+  const filterRemoval =
+    total === 0 && searchTokens.length > 0 && filterSuggestions.length > 0
+      ? await resolveFilterRemoval(
+          searchTokens,
+          filterFields,
+          filterSpecs,
+          (field, id) => recordLabels[field]?.find((record) => record.id === id),
+          context.db[key],
+          listKey,
+        )
+      : null
 
   // When the list opts into avatars (issue #735), the label column renders with
   // an initials bubble ahead of the emphasized Item label. The label column is
@@ -643,7 +647,7 @@ export async function ListView({
         )}
         fields={serializeFieldConfigs(displayFields)}
         relationshipRefs={relationshipRefs}
-        columns={resolvedColumns}
+        columns={baseColumns}
         availableColumns={urlControls ? availableColumns : undefined}
         pageSizeControl={urlControls}
         defaultColumns={defaultColumns}

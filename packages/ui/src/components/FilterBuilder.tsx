@@ -23,6 +23,7 @@ import {
   placeTokens,
   rootOptions,
   splitComparison,
+  withoutChip,
   type FilterBuilderCondition,
   type FilterDraft,
   type FilterOption,
@@ -73,6 +74,15 @@ export interface FilterBuilderHandle {
    * condition or value. Does nothing for a field absent from `suggestions`.
    */
   startFilter: (field: string) => void
+  /** The query the builder holds now, including a change whose navigation has not landed. */
+  currentQuery: () => string
+  /**
+   * Add `tokens` to the builder's current query, replacing an earlier choice
+   * on the same field, and apply the result.
+   */
+  addTokens: (tokens: FilterToken[]) => void
+  /** Replace the builder's query with `query` and apply it. */
+  applyQuery: (query: string) => void
 }
 
 export interface FilterBuilderProps {
@@ -317,22 +327,40 @@ export function FilterBuilder({
     focusInput()
   }
 
-  React.useImperativeHandle(ref, () => ({
-    startFilter: (field: string) => {
-      if (!fields.has(field)) return
-      setEditing(null)
-      stageField(field)
-    },
-  }))
+  const latest = React.useRef({ tokens, fields, apply, stageField })
+  React.useEffect(() => {
+    latest.current = { tokens, fields, apply, stageField }
+  })
 
-  const withoutChip = (chip: { start: number; count: number } | undefined) =>
-    chip ? tokens.filter((_, i) => i < chip.start || i >= chip.start + chip.count) : tokens
+  React.useImperativeHandle(
+    ref,
+    () => ({
+      startFilter: (field: string) => {
+        if (!latest.current.fields.has(field)) return
+        setEditing(null)
+        latest.current.stageField(field)
+      },
+      currentQuery: () => filterQuery(latest.current.tokens),
+      addTokens: (added: FilterToken[]) => {
+        const current = latest.current
+        setEditing(null)
+        setArmed(null)
+        current.apply(placeTokens(current.tokens, added, null, current.fields, true))
+      },
+      applyQuery: (query: string) => {
+        setEditing(null)
+        setArmed(null)
+        latest.current.apply(hydrateTokens(query))
+      },
+    }),
+    [],
+  )
 
   const toggle = (chosen: FilterToken[]) => {
     const next =
       chosen.length > 0
         ? placeTokens(tokens, chosen, editingChip ?? null, fields, true)
-        : withoutChip(editingChip)
+        : withoutChip(tokens, editingChip)
     apply(next)
     const at = chosen.length > 0 ? next.indexOf(chosen[0]) : -1
     const chip = chipsOf(next, fields, recordOf).findIndex(({ start }) => start === at)
@@ -381,7 +409,7 @@ export function FilterBuilder({
   const removeChip = (index: number) => {
     const chip = chips[index]
     if (!chip) return
-    apply(withoutChip(chip))
+    apply(withoutChip(tokens, chip))
     reset()
     focusInput()
   }
