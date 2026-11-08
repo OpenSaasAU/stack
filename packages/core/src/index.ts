@@ -49,6 +49,7 @@ export type {
   RowActionIcon,
   RowActionId,
   RowActionResult,
+  PresetView,
 } from './config/index.js'
 
 // Access control — the types a consumer writes against
@@ -381,6 +382,7 @@ export type { RelationshipOption, RelationshipOptionsArgs } from './query/relati
 export {
   parseFilterQuery,
   serializeFilterQuery,
+  quoteFilterValue,
   FILTER_OPERATOR_PREFIXES,
   FILTER_COMPARISON_PREFIXES,
   buildFilterWhere,

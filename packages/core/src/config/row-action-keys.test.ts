@@ -27,6 +27,12 @@ describe('Row action key uniqueness', () => {
     expect(() => withRowActions(['archive', 'publish'])).not.toThrow()
   })
 
+  it('refuses an empty key, naming the list', () => {
+    expect(() => withRowActions(['archive', ''])).toThrow(
+      /List "Post" declares a Row action with an empty key in ui.listView.rowActions/,
+    )
+  })
+
   it('refuses a duplicate key on a list a plugin adds', async () => {
     const plugin: Plugin = {
       name: 'archiver',

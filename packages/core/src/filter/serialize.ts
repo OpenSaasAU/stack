@@ -40,6 +40,23 @@ function quote(value: string): string {
   return `"${escaped}"`
 }
 
+/**
+ * Quote `text` as a single filter value, so a query built from data — a
+ * session's name, a record's title — reads back as exactly that value and
+ * never as extra tokens. `parseFilterQuery(field + ':' + quoteFilterValue(text))`
+ * is one `eq` token on `field` whose only value is `text`, whatever `text`
+ * holds: quotes, backslashes, whitespace, commas, a leading `-`, `!` or an
+ * operator prefix.
+ *
+ * @example
+ * ```typescript
+ * search: ({ session }) => `status:draft author:${quoteFilterValue(String(session?.name ?? ''))}`
+ * ```
+ */
+export function quoteFilterValue(text: string): string {
+  return quote(text)
+}
+
 function serializeValues(token: FilterToken): string {
   const values: FilterValue[] =
     token.values.length > 0 ? token.values : [{ text: '', quoted: false }]
