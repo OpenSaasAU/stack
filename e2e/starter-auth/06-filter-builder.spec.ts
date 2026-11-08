@@ -182,4 +182,28 @@ test.describe('Filter builder input UI', () => {
     await page.waitForURL((url) => !url.searchParams.has('search'), { timeout: 10000 })
     await expect(page.getByRole('group', { name: 'Status is Draft' })).toHaveCount(0)
   })
+
+  test('a between phrase writes one range token, and a pasted >= <= pair reads as one chip', async ({
+    page,
+  }) => {
+    await createPost(page, { title: 'Ranged Post', slug: slug('ranged'), status: 'draft' })
+
+    await page.goto('/admin/post')
+    await page.waitForLoadState('networkidle')
+    await filterBar(page).fill('view count between 0 and 5')
+    await page.keyboard.press('Enter')
+
+    await page.waitForURL((url) => url.searchParams.get('search') === 'viewCount:0..5', {
+      timeout: 10000,
+    })
+    await page.waitForLoadState('networkidle')
+    await expect(page.getByRole('group', { name: 'View Count between 0 and 5' })).toBeVisible()
+    await expect(titleCell(page, 'Ranged Post').first()).toBeVisible()
+
+    await page.goto('/admin/post?search=viewCount:>=1%20viewCount:<=5')
+    await page.waitForLoadState('networkidle')
+    await expect(page.getByRole('group', { name: 'View Count between 1 and 5' })).toBeVisible()
+    await expect(titleCell(page, 'Ranged Post')).toHaveCount(0)
+    expect(new URL(page.url()).searchParams.get('search')).toBe('viewCount:>=1 viewCount:<=5')
+  })
 })

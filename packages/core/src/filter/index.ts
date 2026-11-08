@@ -2,11 +2,19 @@
 
 export { parseFilterQuery } from './parse.js'
 export { serializeFilterQuery } from './serialize.js'
-export { buildFilterWhere, isEmptyFilterToken, isFieldConditionToken } from './map.js'
+export {
+  buildFilterWhere,
+  isEmptyFilterToken,
+  isFieldConditionToken,
+  supportsFilterRange,
+  filterTokenOperators,
+} from './map.js'
 export { collectFilterSpecs, buildListFilterWhere, collectFilterSuggestions } from './collect.js'
 export type { FilterAccessArgs } from './collect.js'
 export type {
   FilterOperator,
+  FilterTokenOperator,
+  FilterDatePicker,
   FilterToken,
   FilterTerm,
   FilterQuery,

@@ -384,12 +384,16 @@ export {
   buildFilterWhere,
   isEmptyFilterToken,
   isFieldConditionToken,
+  supportsFilterRange,
+  filterTokenOperators,
   collectFilterSpecs,
   buildListFilterWhere,
   collectFilterSuggestions,
 } from './filter/index.js'
 export type {
   FilterOperator,
+  FilterTokenOperator,
+  FilterDatePicker,
   FilterToken,
   FilterTerm,
   FilterQuery,

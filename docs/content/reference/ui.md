@@ -452,6 +452,14 @@ and calendar days accept `eq`, `gt`, `gte`, `lt` and `lte`. A timestamp takes
 anything JavaScript's `Date` parses; a calendar day takes a `YYYY-MM-DD` date, and
 one the month does not have, such as `2026-02-31`, degrades to free text.
 
+`field:a..b` is an inclusive range in one token: `views:1000..5000` is
+`views:>=1000 views:<=5000`. It splits at the first `..`, and any field that
+accepts both `gte` and `lte` takes one, because the engine lowers each bound
+through that field's own `gte` and `lte` conditions. A range with a bound the
+field does not take (`views:ten..20`) degrades to free text as `ten..20`, like
+any other unmappable token, and a quoted `"1..2"` is always a literal value.
+The two-token form stays valid and is never rewritten.
+
 #### The Filter builder bar
 
 The Filter builder is one bar at the top of the list. Focusing it lists every
@@ -468,6 +476,28 @@ at the start of a value sets the comparison. A value that does not fit the
 field (`abc` for a whole number) is explained under the suggestions instead of
 being applied. "Search all text" reads what was typed in the URL grammar, so a
 quoted `"Ada Lovelace"` stays one phrase.
+
+A field that takes ranges also offers **between**. Its value is typed as
+`1000-5000`, `1000 to 5000` or `1000..5000` (the dash that leaves two values
+the field takes is the separator, so `-10--5` and `2026-01-01-2026-01-31`
+read as expected), and the plain phrase `views between 1000 and 5000` works
+too. A range is always written to the URL as one `a..b` token. Pasted `>=` and
+`<=` tokens on one field, side by side, read back as one "between" chip, while
+the URL keeps the two tokens exactly as written; editing that chip writes it
+back as one range.
+
+Timestamp and calendar day fields add date inputs and presets: Today, Last 7
+days, Last 30 days, This month, Last month and This year. A preset writes the
+absolute dates it covers on the day it is picked, and the chip shows them, so a
+bookmarked preset filter keeps its dates and reads as stale; there is no
+relative-date grammar. A calendar day is written as plain `YYYY-MM-DD` dates. A
+timestamp is written as full ISO instants in the browser's own offset, from the
+first millisecond of the first day to the last millisecond of the last, so the
+whole end day is included and results follow the admin's time zone:
+`publishedAt:2026-11-02T00:00:00.000+11:00..2026-11-08T23:59:59.999+11:00`. A
+plain date typed against a timestamp is read the same way: "is 2026-11-03"
+covers that local day, "at most" runs to its end and "at least" from its start.
+A chip shows such an instant as its date, and any other instant as written.
 
 Each committed Filter token becomes a chip, and the list updates at once: the
 builder navigates with `router.push` inside a transition, so the current rows
@@ -508,7 +538,8 @@ bar and announce the row count. Its slots are `filter-builder` (root),
 `filter-builder-draft`, `filter-builder-input`, `filter-builder-clear`,
 `filter-builder-progress`, `filter-builder-menu`,
 `filter-builder-menu-conditions`, `filter-builder-menu-condition`,
-`filter-builder-option` (with `data-active`) and `filter-builder-hint`.
+`filter-builder-dates`, `filter-builder-option` (with `data-active`) and
+`filter-builder-hint`.
 
 #### What filtering costs
 

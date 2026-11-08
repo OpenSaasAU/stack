@@ -6,6 +6,7 @@ import type {
   FilterQuery,
   FilterSpec,
   FilterToken,
+  FilterTokenOperator,
 } from './types.js'
 
 /**
@@ -31,17 +32,47 @@ export function isEmptyFilterToken(token: FilterToken): boolean {
 }
 
 /**
+ * Whether a field whose Filter spec declares `operators` takes an inclusive
+ * `range` token: it compares both ways, with `gte` and `lte`.
+ */
+export function supportsFilterRange(operators: readonly FilterOperator[]): boolean {
+  return operators.includes('gte') && operators.includes('lte')
+}
+
+/**
+ * The token operators a field whose Filter spec declares `operators` accepts:
+ * its own, and `range` when it {@link supportsFilterRange}.
+ */
+export function filterTokenOperators(operators: readonly FilterOperator[]): FilterTokenOperator[] {
+  return supportsFilterRange(operators) ? [...operators, 'range'] : [...operators]
+}
+
+/**
  * Whether a {@link FilterToken} is a field condition the engine maps through
  * its field's Filter spec: not empty, not negated, and naming a field whose
- * operators, as `operatorsFor` reports them, include the token's own. Any other
- * token is searched as free text.
+ * operators, as `operatorsFor` reports them, include the token's own. A `range`
+ * token also needs exactly two non-empty bounds. Any other token is searched as
+ * free text.
  */
 export function isFieldConditionToken(
   token: FilterToken,
   operatorsFor: (field: string) => readonly FilterOperator[] | undefined,
 ): token is FilterToken & { field: string } {
   if (token.field === null || token.negated || isEmptyFilterToken(token)) return false
-  return operatorsFor(token.field)?.includes(token.operator) ?? false
+  const operators = operatorsFor(token.field)
+  if (operators === undefined) return false
+  if (token.operator !== 'range') return operators.includes(token.operator)
+  return (
+    supportsFilterRange(operators) &&
+    token.values.length === 2 &&
+    token.values.every((value) => value !== '')
+  )
+}
+
+function rangeCondition(spec: FilterSpec, [low, high]: string[]): FilterCondition | null {
+  const lower = spec.toCondition('gte', low)
+  const upper = lower === null ? null : spec.toCondition('lte', high)
+  return lower === null || upper === null ? null : { AND: [lower, upper] }
 }
 
 /**
@@ -56,7 +87,10 @@ export function isFieldConditionToken(
  * `parseFilterQuery(serializeFilterQuery({ terms: [token] }))` reads back, so it
  * filters the same rows as its own URL; it is never dropped or negated. A token
  * degrades to free text (never an error) when its field is unknown, has no
- * spec, uses an unsupported operator, or maps to `null`. Bare words (and
+ * spec, uses an unsupported operator, or maps to `null`. A `range` token
+ * (`field:a..b`) lowers to the field's own `gte` and `lte` conditions on its two
+ * bounds, ANDed, so any field comparing both ways takes one; when either bound
+ * maps to `null` the whole `a..b` degrades to free text. Bare words (and
  * degraded tokens) are OR-matched across every free-text field, and each such
  * word is ANDed with the rest — so `beta gamma` requires both. A word that
  * reaches this stage but cannot be matched against any free-text field —
@@ -97,13 +131,17 @@ export function buildFilterWhere(
     // to a token that DOES carry a value the system cannot compile.
     if (isEmptyFilterToken(token)) continue
 
-    const [value] = token.values
+    const value = token.operator === 'range' ? token.values.join('..') : token.values[0]
     if (!isFieldConditionToken(token, (field) => specFor(field)?.operators)) {
       freeTextWords.push(value)
       continue
     }
 
-    const condition = specs[token.field].toCondition(token.operator, value)
+    const spec = specs[token.field]
+    const condition =
+      token.operator === 'range'
+        ? rangeCondition(spec, token.values)
+        : spec.toCondition(token.operator, value)
     if (condition === null) {
       freeTextWords.push(value)
       continue

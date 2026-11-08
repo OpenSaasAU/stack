@@ -795,7 +795,7 @@ export function timestamp<
         if (Number.isNaN(date.getTime())) return null
         return { [fieldName]: { [prismaComparisonKey(operator)]: date } }
       },
-      suggestions: { valueSource: { kind: 'none' } },
+      suggestions: { valueSource: { kind: 'none' }, datePicker: 'instant' },
     }),
   }
 }
@@ -924,7 +924,7 @@ export function calendarDay<
         if (!DATE_VALUE_MATCH.test(trimmed) || !isCalendarDate(trimmed)) return null
         return { [fieldName]: { [prismaComparisonKey(operator)]: trimmed } }
       },
-      suggestions: { valueSource: { kind: 'none' }, valueFormat: DATE_VALUE },
+      suggestions: { valueSource: { kind: 'none' }, valueFormat: DATE_VALUE, datePicker: 'day' },
     }),
   }
 }

@@ -14,6 +14,15 @@ import type { Where } from '../secured/vocabulary.js'
 export type FilterOperator = 'eq' | 'gt' | 'gte' | 'lt' | 'lte'
 
 /**
+ * The operator a {@link FilterToken} carries: one of a field's own
+ * {@link FilterOperator}s, or `range` for ADR-0083's inclusive `field:a..b`.
+ * A field never declares `range`: it supports it when its operators include
+ * both `gte` and `lte`, and the engine lowers each bound through the field's
+ * own `toCondition`.
+ */
+export type FilterTokenOperator = FilterOperator | 'range'
+
+/**
  * One Filter token: a field, an operator and its values.
  *
  * A bare free-text word has `field: null`. `quoted` records that the value was
@@ -25,8 +34,11 @@ export interface FilterToken {
   kind: 'token'
   /** Field key the token targets, or `null` for a bare free-text word. */
   field: string | null
-  /** The operator: `eq` for a plain `field:value`, comparisons for prefixed values. */
-  operator: FilterOperator
+  /**
+   * The operator: `eq` for a plain `field:value`, comparisons for prefixed
+   * values, and `range` for `field:a..b`, whose `values` are its two bounds.
+   */
+  operator: FilterTokenOperator
   /** Whether the token is negated (`-field:value`). */
   negated: boolean
   /** The unquoted, unescaped values, in the order written. */
@@ -118,8 +130,18 @@ export interface FilterSpec {
      * that does not match rather than applying it. Omit it when any text maps.
      */
     valueFormat?: FilterValueFormat
+    /**
+     * Whether the Filter builder offers date inputs and presets for this
+     * field, and what they write: `day` writes plain `YYYY-MM-DD` dates, and
+     * `instant` writes ISO instants carrying the browser's offset, with a
+     * day's end inclusive.
+     */
+    datePicker?: FilterDatePicker
   }
 }
+
+/** What a field's date inputs and presets write: plain dates, or instants. */
+export type FilterDatePicker = 'day' | 'instant'
 
 /**
  * Collected, client-serializable suggestion metadata for one filterable field.
@@ -137,4 +159,6 @@ export interface FilterFieldSuggestion {
   valueSource: FilterValueSource
   /** The shape a typed value must take, when the field states one. */
   valueFormat?: FilterValueFormat
+  /** What the field's date inputs and presets write, when it offers them. */
+  datePicker?: FilterDatePicker
 }

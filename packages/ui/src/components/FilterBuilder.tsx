@@ -7,10 +7,12 @@ import type { FilterFieldSuggestion, FilterToken } from '@opensaas/stack-core'
 import { Popover, PopoverAnchor, PopoverContent } from '../primitives/popover.js'
 import { cn } from '../lib/utils.js'
 import {
+  chipEditText,
+  chipsOf,
   conditionLabel,
-  describeToken,
+  conditionsOf,
   draftOptions,
-  editableText,
+  draftTokens,
   fieldLabel,
   filterQuery,
   hydrateTokens,
@@ -48,6 +50,8 @@ export interface FilterBuilderClassNames {
   option?: string
   /** The in-place explanation of a value that does not fit (`data-slot="filter-builder-hint"`). */
   hint?: string
+  /** The date inputs offered for a date field (`data-slot="filter-builder-dates"`). */
+  dates?: string
 }
 
 export interface FilterBuilderProps {
@@ -129,6 +133,7 @@ export function FilterBuilder({
   const [armed, setArmed] = React.useState<number | null>(null)
   const [open, setOpen] = React.useState(false)
   const [activeIndex, setActiveIndex] = React.useState(0)
+  const [dates, setDates] = React.useState({ from: '', to: '' })
 
   if (defaultValue !== seenValue) {
     setSeenValue(defaultValue)
@@ -147,14 +152,16 @@ export function FilterBuilder({
   const listId = `${baseId}-list`
   const optionId = (index: number) => `${baseId}-option-${index}`
 
-  const editingToken = editing === null ? undefined : tokens[editing]
+  const chips = React.useMemo(() => chipsOf(tokens, fields), [tokens, fields])
+  const editingChip = editing === null ? undefined : chips[editing]
+  const editingToken = editingChip ? tokens[editingChip.start] : undefined
   const { options, hint } = React.useMemo(
     () => (draft ? draftOptions(draft, text, fields, editingToken) : rootOptions(text, fields)),
     [draft, text, fields, editingToken],
   )
   const active = options.length === 0 ? -1 : Math.min(activeIndex, options.length - 1)
   const draftField = draft ? fields.get(draft.field) : undefined
-  const conditions = draftField?.operators ?? []
+  const conditions = draftField ? conditionsOf(draftField) : []
 
   React.useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -192,6 +199,7 @@ export function FilterBuilder({
     setEditing(null)
     setArmed(null)
     setActiveIndex(0)
+    setDates({ from: '', to: '' })
   }
 
   const apply = (next: FilterToken[]) => {
@@ -204,7 +212,7 @@ export function FilterBuilder({
   }
 
   const commit = (added: FilterToken[], replace = true) => {
-    apply(placeTokens(tokens, added, editing, fields, replace))
+    apply(placeTokens(tokens, added, editingChip ?? null, fields, replace))
     reset()
     setOpen(false)
     focusInput()
@@ -215,6 +223,7 @@ export function FilterBuilder({
     if (!suggestion) return
     setDraft({ field, operator: suggestion.operators[0] ?? 'eq' })
     setText('')
+    setDates({ from: '', to: '' })
     setArmed(null)
     setActiveIndex(0)
     setOpen(true)
@@ -227,27 +236,34 @@ export function FilterBuilder({
   }
 
   const editChip = (index: number) => {
-    const token = tokens[index]
-    if (!token) return
+    const chip = chips[index]
+    const token = chip ? tokens[chip.start] : undefined
+    if (!chip || !token) return
     setArmed(null)
     setEditing(index)
     setActiveIndex(0)
     setOpen(true)
-    const suggestion = token.field === null ? undefined : fields.get(token.field)
-    if (suggestion && isFieldCondition(token, fields)) {
-      setDraft({ field: suggestion.field, operator: token.operator })
-      setText(suggestion.valueSource.kind === 'enum' ? '' : token.values[0])
-    } else {
-      setDraft(null)
-      setText(editableText(token))
-    }
+    setDates({ from: '', to: '' })
+    const edit = chipEditText(chip, token, fields)
+    setDraft(edit.draft)
+    setText(edit.text)
     focusInput()
   }
 
   const removeChip = (index: number) => {
-    apply(tokens.filter((_, i) => i !== index))
+    const chip = chips[index]
+    if (!chip) return
+    apply(tokens.filter((_, i) => i < chip.start || i >= chip.start + chip.count))
     reset()
     focusInput()
+  }
+
+  const applyDates = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!draft || !draftField) return
+    const typed = draft.operator === 'range' ? `${dates.from}..${dates.to}` : dates.from
+    const check = draftTokens(draftField, draft.operator, typed)
+    if (check.ok) commit(check.tokens)
   }
 
   const clearAll = () => {
@@ -317,9 +333,9 @@ export function FilterBuilder({
         } else if (armed !== null) {
           event.preventDefault()
           removeChip(armed)
-        } else if (tokens.length > 0) {
+        } else if (chips.length > 0) {
           event.preventDefault()
-          setArmed(tokens.length - 1)
+          setArmed(chips.length - 1)
           setOpen(false)
         }
         break
@@ -330,15 +346,15 @@ export function FilterBuilder({
         }
         break
       case 'ArrowLeft':
-        if (!empty || draft || tokens.length === 0) break
+        if (!empty || draft || chips.length === 0) break
         event.preventDefault()
         setOpen(false)
-        setArmed(armed === null ? tokens.length - 1 : Math.max(0, armed - 1))
+        setArmed(armed === null ? chips.length - 1 : Math.max(0, armed - 1))
         break
       case 'ArrowRight':
         if (!empty || armed === null) break
         event.preventDefault()
-        setArmed(armed + 1 >= tokens.length ? null : armed + 1)
+        setArmed(armed + 1 >= chips.length ? null : armed + 1)
         break
     }
   }
@@ -373,8 +389,7 @@ export function FilterBuilder({
     commit(pasted, false)
   }
 
-  const describedTokens = tokens.map((token) => describeToken(token, fields))
-  const armedSentence = armed === null ? null : describedTokens[armed]?.sentence
+  const armedSentence = armed === null ? null : chips[armed]?.description.sentence
   const resultMessage =
     resultCount === undefined ? '' : `${resultCount} ${resultCount === 1 ? 'result' : 'results'}`
   const chipPart =
@@ -408,8 +423,7 @@ export function FilterBuilder({
             )}
           >
             <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-            {tokens.map((token, index) => {
-              const description = describedTokens[index]
+            {chips.map(({ description }, index) => {
               return (
                 <span
                   key={`${index}-${description.sentence}`}
@@ -562,6 +576,48 @@ export function FilterBuilder({
             classNames?.menu,
           )}
         >
+          {draft && draftField?.datePicker && (
+            <form
+              aria-label={`${fieldLabel(draft.field)} dates`}
+              data-slot="filter-builder-dates"
+              onSubmit={applyDates}
+              className={cn(
+                'flex flex-wrap items-end gap-2 border-b border-border p-2 text-xs',
+                classNames?.dates,
+              )}
+            >
+              <label className="flex flex-col gap-1">
+                <span className="text-muted-foreground">
+                  {draft.operator === 'range' ? 'From' : 'Date'}
+                </span>
+                <input
+                  type="date"
+                  required
+                  value={dates.from}
+                  onChange={(event) => setDates({ ...dates, from: event.target.value })}
+                  className="h-8 rounded-md border border-input bg-background px-2"
+                />
+              </label>
+              {draft.operator === 'range' && (
+                <label className="flex flex-col gap-1">
+                  <span className="text-muted-foreground">To</span>
+                  <input
+                    type="date"
+                    required
+                    value={dates.to}
+                    onChange={(event) => setDates({ ...dates, to: event.target.value })}
+                    className="h-8 rounded-md border border-input bg-background px-2"
+                  />
+                </label>
+              )}
+              <button
+                type="submit"
+                className="h-8 rounded-md border border-border px-3 hover:bg-accent hover:text-accent-foreground"
+              >
+                Apply dates
+              </button>
+            </form>
+          )}
           {draft && draftField && conditions.length > 1 && (
             <div
               role="group"

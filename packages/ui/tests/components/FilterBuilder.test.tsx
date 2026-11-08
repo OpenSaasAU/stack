@@ -1,8 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { FilterFieldSuggestion } from '@opensaas/stack-core'
 import { FilterBuilder } from '../../src/components/FilterBuilder.js'
+import { localInstant } from '../../src/lib/filterBuilderOptions.js'
 
 const push = vi.fn()
 vi.mock('next/navigation.js', () => ({
@@ -593,6 +594,243 @@ describe('FilterBuilder', () => {
       render(<FilterBuilder suggestions={suggestions} defaultValue="hello" />)
       await user.click(screen.getByRole('button', { name: 'Remove Text contains hello' }))
       expect(push).toHaveBeenCalledWith('/admin/post')
+    })
+  })
+
+  describe('ranges', () => {
+    it('offers between on a field that compares both ways, and none on one that does not', async () => {
+      const { user, bar } = setup()
+      await user.type(bar, 'views{Enter}')
+      const conditions = screen.getByRole('group', { name: 'Views condition' })
+      expect(within(conditions).getByRole('button', { name: 'between' })).toBeInTheDocument()
+
+      await user.keyboard('{Escape}')
+      await user.type(bar, 'status{Enter}')
+      expect(screen.queryByRole('button', { name: 'between' })).not.toBeInTheDocument()
+    })
+
+    it('writes a typed between value as one a..b token and one chip', async () => {
+      const { user, bar, onApply } = setup()
+      await user.type(bar, 'views{Enter}')
+      await user.click(screen.getByRole('button', { name: 'between' }))
+      await user.type(bar, '1000-5000{Enter}')
+      expect(onApply).toHaveBeenCalledWith('views:1000..5000')
+      expect(chipNames()).toEqual(['Views between 1000 and 5000'])
+    })
+
+    it.each([
+      ['-10--5', 'views:-10..-5'],
+      ['10 to 20', 'views:10..20'],
+      ['10..20', 'views:10..20'],
+    ])('reads the between value %j', async (typed, query) => {
+      const { user, bar, onApply } = setup()
+      await user.type(bar, 'views{Enter}')
+      await user.click(screen.getByRole('button', { name: 'between' }))
+      await user.type(bar, `${typed}{Enter}`)
+      expect(onApply).toHaveBeenCalledWith(query)
+    })
+
+    it('explains a between value that does not fit', async () => {
+      const { user, bar, onApply } = setup()
+      await user.type(bar, 'views{Enter}')
+      await user.click(screen.getByRole('button', { name: 'between' }))
+      await user.type(bar, '10-lots')
+      expect(screen.getByText('Views takes a whole number.')).toBeInTheDocument()
+      expect(onApply).not.toHaveBeenCalled()
+    })
+
+    it('reads the plain phrase “views between 5 and 9” as a range', async () => {
+      const { user, bar, onApply } = setup()
+      await user.type(bar, 'views between 5 and 9{Enter}')
+      expect(onApply).toHaveBeenCalledWith('views:5..9')
+    })
+
+    it('hydrates a range as one chip and an invalid one as text', () => {
+      setup({ defaultValue: 'views:10..20 views:ten..20' })
+      expect(chipNames()).toEqual(['Views between 10 and 20', 'Text contains views:ten..20'])
+    })
+
+    it('reads pasted >= and <= tokens on one field as one chip, and writes them back as pasted', async () => {
+      const { user, bar, onApply } = setup()
+      await user.click(bar)
+      await user.paste('views:>=10 views:<=20')
+      expect(chipNames()).toEqual(['Views between 10 and 20'])
+      expect(onApply).toHaveBeenCalledWith('views:>=10 views:<=20')
+    })
+
+    it('removes a paired range chip whole, leaving the rest as written', async () => {
+      const { user, onApply } = setup({ defaultValue: 'beta views:<=20 views:>=10 status:draft' })
+      expect(chipNames()).toEqual([
+        'Text contains beta',
+        'Views between 10 and 20',
+        'Status is Draft',
+      ])
+      await user.click(screen.getByRole('button', { name: 'Remove Views between 10 and 20' }))
+      expect(onApply).toHaveBeenCalledWith('beta status:draft')
+    })
+
+    it('edits a paired range chip in place as one range', async () => {
+      const { user, bar, onApply } = setup({ defaultValue: 'views:>=10 views:<=20 beta' })
+      await user.click(
+        screen.getByRole('button', { name: 'Change value of Views between 10 and 20' }),
+      )
+      expect(bar).toHaveValue('10..20')
+      await user.clear(bar)
+      await user.type(bar, '10..30{Enter}')
+      expect(onApply).toHaveBeenCalledWith('views:10..30 beta')
+    })
+
+    it('arms and removes a paired range chip from the keyboard', async () => {
+      const { user, bar, onApply } = setup({ defaultValue: 'views:>=10 views:<=20' })
+      await user.click(bar)
+      await user.keyboard('{Backspace}')
+      expect(screen.getByText(/Views between 10 and 20 selected/)).toBeInTheDocument()
+      await user.keyboard('{Backspace}')
+      expect(onApply).toHaveBeenCalledWith('')
+    })
+  })
+
+  describe('dates', () => {
+    const dateSuggestions: FilterFieldSuggestion[] = [
+      {
+        field: 'due',
+        operators: ['eq', 'gt', 'gte', 'lt', 'lte'],
+        freeText: false,
+        valueSource: { kind: 'none' },
+        valueFormat: {
+          pattern: '^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])$',
+          description: 'takes a date, like 2026-01-31',
+        },
+        datePicker: 'day',
+      },
+      {
+        field: 'publishedAt',
+        operators: ['eq', 'gt', 'gte', 'lt', 'lte'],
+        freeText: false,
+        valueSource: { kind: 'none' },
+        datePicker: 'instant',
+      },
+    ]
+    const startOf = (year: number, month: number, day: number) =>
+      localInstant(new Date(year, month - 1, day))
+    const endOf = (year: number, month: number, day: number) =>
+      localInstant(new Date(year, month - 1, day, 23, 59, 59, 999))
+
+    function setupDates(defaultValue = '') {
+      const onApply = vi.fn<(query: string) => void>()
+      const user = userEvent.setup()
+      render(
+        <FilterBuilder
+          suggestions={dateSuggestions}
+          onApply={onApply}
+          defaultValue={defaultValue}
+        />,
+      )
+      return { onApply, user, bar: screen.getByRole('combobox', { name: 'Filter' }) }
+    }
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date'] })
+      vi.setSystemTime(new Date(2026, 10, 8, 15, 30))
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('offers presets that write absolute calendar days, shown on the chip', async () => {
+      const { user, bar, onApply } = setupDates()
+      await user.type(bar, 'due{Enter}')
+      expect(optionNames()).toEqual([
+        'Today (2026-11-08 – 2026-11-08)',
+        'Last 7 days (2026-11-02 – 2026-11-08)',
+        'Last 30 days (2026-10-10 – 2026-11-08)',
+        'This month (2026-11-01 – 2026-11-30)',
+        'Last month (2026-10-01 – 2026-10-31)',
+        'This year (2026-01-01 – 2026-12-31)',
+      ])
+      await user.click(screen.getByRole('option', { name: /^Last 7 days/ }))
+      expect(onApply).toHaveBeenCalledWith('due:2026-11-02..2026-11-08')
+      expect(chipNames()).toEqual(['Due between 2026-11-02 and 2026-11-08'])
+    })
+
+    it('narrows presets by what is typed', async () => {
+      const { user, bar } = setupDates()
+      await user.type(bar, 'due{Enter}last')
+      expect(optionNames()).toEqual([
+        'Last 7 days (2026-11-02 – 2026-11-08)',
+        'Last 30 days (2026-10-10 – 2026-11-08)',
+        'Last month (2026-10-01 – 2026-10-31)',
+        'Search all text for “last”',
+      ])
+    })
+
+    it('writes a timestamp preset as instants in the browser’s offset, end of day inclusive', async () => {
+      const { user, bar, onApply } = setupDates()
+      await user.type(bar, 'published{Enter}')
+      await user.click(screen.getByRole('option', { name: /^Last 7 days/ }))
+      const query = `publishedAt:${startOf(2026, 11, 2)}..${endOf(2026, 11, 8)}`
+      expect(onApply).toHaveBeenCalledWith(query)
+      expect(chipNames()).toEqual(['Published At between 2026-11-02 and 2026-11-08'])
+    })
+
+    it('writes a typed plain day on a timestamp as that whole local day', async () => {
+      const { user, bar, onApply } = setupDates()
+      await user.type(bar, 'published{Enter}2026-11-03{Enter}')
+      expect(onApply).toHaveBeenCalledWith(
+        `publishedAt:${startOf(2026, 11, 3)}..${endOf(2026, 11, 3)}`,
+      )
+    })
+
+    it('writes the end of a day for at most on a timestamp, and shows the day', async () => {
+      const { user, bar, onApply } = setupDates()
+      await user.type(bar, 'published{Enter}<=2026-11-03{Enter}')
+      expect(onApply).toHaveBeenCalledWith(`publishedAt:<=${endOf(2026, 11, 3)}`)
+      expect(chipNames()).toEqual(['Published At at most 2026-11-03'])
+    })
+
+    it('keeps a typed timestamp a calendar day field would refuse, as typed', async () => {
+      const { user, bar, onApply } = setupDates()
+      await user.type(bar, 'published{Enter}>2026-11-03T10:00:00Z{Enter}')
+      expect(onApply).toHaveBeenCalledWith('publishedAt:>2026-11-03T10:00:00Z')
+    })
+
+    it('reads a typed day range on a calendar day split at the one dash that leaves two dates', async () => {
+      const { user, bar, onApply } = setupDates()
+      await user.type(bar, 'due{Enter}')
+      await user.click(screen.getByRole('button', { name: 'between' }))
+      await user.type(bar, '2026-01-01-2026-01-31{Enter}')
+      expect(onApply).toHaveBeenCalledWith('due:2026-01-01..2026-01-31')
+    })
+
+    it('applies a range from the date inputs', async () => {
+      const { user, bar, onApply } = setupDates()
+      await user.type(bar, 'published{Enter}')
+      await user.click(screen.getByRole('button', { name: 'between' }))
+      await user.type(screen.getByLabelText('From'), '2026-01-01')
+      await user.type(screen.getByLabelText('To'), '2026-01-31')
+      await user.click(screen.getByRole('button', { name: 'Apply dates' }))
+      expect(onApply).toHaveBeenCalledWith(
+        `publishedAt:${startOf(2026, 1, 1)}..${endOf(2026, 1, 31)}`,
+      )
+    })
+
+    it('edits a timestamp range chip as the days it shows', async () => {
+      const query = `publishedAt:${startOf(2026, 11, 2)}..${endOf(2026, 11, 8)}`
+      const { user, bar } = setupDates(query)
+      await user.click(
+        screen.getByRole('button', {
+          name: 'Change value of Published At between 2026-11-02 and 2026-11-08',
+        }),
+      )
+      expect(bar).toHaveValue('2026-11-02..2026-11-08')
+    })
+
+    it('shows an instant that is not a day boundary as written', () => {
+      setupDates('publishedAt:2026-11-02T10:00:00Z..2026-11-03T10:00:00Z')
+      expect(chipNames()).toEqual([
+        'Published At between 2026-11-02T10:00:00Z and 2026-11-03T10:00:00Z',
+      ])
     })
   })
 })

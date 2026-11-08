@@ -160,6 +160,8 @@ describe('parse/serialize round-trip on written queries', () => {
     'http://x',
     'status:"a,b" "a,b" "-status:draft" "-beta" - "--x"',
     '"C:\\Users me"',
+    'views:5..10',
+    'at:2026-11-01T00:00:00.000+11:00..2026-11-01T23:59:59.999+11:00 title:"1..2"',
   ]
 
   it.each(queries)('serialize(parse(%s)) reproduces the query', (written) => {
@@ -238,10 +240,15 @@ const TRICKY_PREFIXES = [
   ',',
   '-status:',
   'a,',
+  '..',
+  'a..',
+  'status:1..',
 ]
 const OPERATORS: FilterOperator[] = ['eq', 'gt', 'gte', 'lt', 'lte']
 const FIELDS = ['status', 'a', '_b1', 'http', 'OR']
 const RUNS = 2000
+const LOW_BOUND = ['a', 'Z', '1', '_', '-', ':', '+', 'T', '=', '#', '!', 'é']
+const HIGH_BOUND = [...LOW_BOUND, '.', '"', '>', '<', '/']
 
 function arbitrary(random: () => number) {
   const pick = <T>(items: readonly T[]): T => items[Math.floor(random() * items.length)]
@@ -257,10 +264,15 @@ function arbitrary(random: () => number) {
       quoted: random() < 0.3,
     })
   }
+  const bound = (alphabet: readonly string[]) =>
+    Array.from({ length: 1 + Math.floor(random() * 6) }, () => pick(alphabet)).join('')
+  const rangeToken = (): FilterToken =>
+    token({ field: pick(FIELDS), operator: 'range', values: [bound(LOW_BOUND), bound(HIGH_BOUND)] })
+  const anyToken = () => (random() < 0.2 ? rangeToken() : parserShapedToken())
   return {
     string: () => text(24),
     token: parserShapedToken,
-    query: () => query(...Array.from({ length: Math.floor(random() * 5) }, parserShapedToken)),
+    query: () => query(...Array.from({ length: Math.floor(random() * 5) }, anyToken)),
   }
 }
 
@@ -299,6 +311,23 @@ describe('parse/serialize is an inverse on what the parser produces (property)',
         const source = original.terms[index]
         expect(term, label).toEqual({ ...source, quoted: source.quoted || term.quoted })
       })
+    }
+  })
+})
+
+describe('a range reads back as one range token (property)', () => {
+  const generate = arbitrary(seededRandom(2252))
+
+  it('every parsed field value holding `..` between two bounds is a range, and writes back bare', () => {
+    for (let run = 0; run < RUNS; run++) {
+      const written = generate.string()
+      for (const term of parseFilterQuery(written).terms) {
+        if (term.operator !== 'range') continue
+        expect(term.values, JSON.stringify(written)).toHaveLength(2)
+        expect(serializeFilterQuery(query(term)), JSON.stringify(written)).toBe(
+          `${term.field}:${term.values.join('..')}`,
+        )
+      }
     }
   })
 })
