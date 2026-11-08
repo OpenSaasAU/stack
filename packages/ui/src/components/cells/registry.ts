@@ -34,6 +34,11 @@ export type CellComponentProps = {
   fieldName: string
   /** Admin base path, used by relationship Cells to build links. */
   basePath?: string
+  /**
+   * Where the value links, when the list view resolves a link for it: a to-many
+   * count's matching rows on the other list.
+   */
+  href?: string
 }
 
 /**

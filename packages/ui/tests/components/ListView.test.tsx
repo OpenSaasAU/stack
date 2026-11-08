@@ -13,6 +13,7 @@ import {
   virtual,
 } from '@opensaas/stack-core/fields'
 import { createTestDatabase, type TestDatabase } from '@opensaas/stack-core/testing'
+import { RELATIONSHIP_OPTIONS_MAX_TAKE } from '@opensaas/stack-core/internal'
 import { notFound, redirect } from 'next/navigation.js'
 import { ListView } from '../../src/components/ListView.js'
 import { ListViewClient, type ListViewClientProps } from '../../src/components/ListViewClient.js'
@@ -22,6 +23,11 @@ vi.mock('next/navigation.js', async (importOriginal) => ({
   useRouter: () => ({ push: vi.fn() }),
   usePathname: () => '/admin/fragile',
   useSearchParams: () => new URLSearchParams(),
+}))
+
+vi.mock('@opensaas/stack-core/internal', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@opensaas/stack-core/internal')>()),
+  RELATIONSHIP_OPTIONS_MAX_TAKE: 2,
 }))
 
 vi.mock('next/link.js', () => ({
@@ -112,6 +118,43 @@ const config: OpenSaasConfig = {
         posts: relationship({ ref: 'Post.vault', many: true }),
       },
     },
+    Shelf: {
+      fields: {
+        name: text(),
+        crates: relationship({ ref: 'Crate.shelf', many: true }),
+      },
+      access: { operation: { query: () => true } },
+    },
+    Crate: {
+      fields: { name: text(), shelf: relationship({ ref: 'Shelf.crates' }) },
+    },
+    Bin: {
+      fields: {
+        name: text(),
+        boxes: relationship({ ref: 'Box.bin', many: true }),
+        notices: relationship({ ref: 'Notice.bin', many: true }),
+      },
+      access: { operation: { query: () => true } },
+    },
+    Box: {
+      fields: {
+        name: text(),
+        bin: relationship({
+          ref: 'Bin.boxes',
+          access: {
+            read: () => {
+              throw new Error('box rule failed')
+            },
+          },
+        }),
+      },
+      access: { operation: { query: () => true } },
+    },
+    Notice: {
+      fields: { body: text(), bin: relationship({ ref: 'Bin.notices' }) },
+      access: { operation: { query: () => true } },
+      isSingleton: true,
+    },
     Gadget: {
       fields: {
         name: text({ validation: { isRequired: true } }),
@@ -164,6 +207,7 @@ const config: OpenSaasConfig = {
 
 let database: TestDatabase
 let ada: Session = {}
+let vaultId = ''
 
 /**
  * ListView returns `<div className="p-8">{header}<ListViewClient ... /></div>`.
@@ -218,6 +262,7 @@ beforeEach(async () => {
   await create('User', { name: 'Grace' })
   const editor = await create('Editor', { name: 'Editor', email: 'editor@example.com' })
   const vault = await create('Vault', { note: 'sealed' })
+  vaultId = String(vault.id)
   await create('Post', {
     title: 'On Engines',
     published: true,
@@ -369,6 +414,135 @@ describe('ListView server-side filtering (filter engine over the secured surface
       const props = await render(ada, { listKey: 'Post', search: 'vault:sealed' })
       expect(props.items).toEqual([])
       expect(props.total).toBe(0)
+    },
+    BOOT,
+  )
+})
+
+describe('ListView relationship lookup by id', () => {
+  it(
+    'filters to exactly the record a `field:#id` token names and resolves its label',
+    async () => {
+      await create('User', { name: 'Ada Reed' })
+      const props = await render(ada, { listKey: 'Post', search: `author:#${ada.userId}` })
+      expect(props.items.map((item) => item.title).sort()).toEqual(['On Engines', 'On Looms'])
+      expect(props.recordLabels).toEqual({ author: [{ id: String(ada.userId), label: 'Ada' }] })
+    },
+    BOOT,
+  )
+
+  it(
+    'excludes the record a negated `-field:#id` names and resolves its label',
+    async () => {
+      const props = await render(ada, { listKey: 'Post', search: `-author:#${ada.userId}` })
+      const titles = props.items.map((item) => item.title)
+      expect(titles).not.toContain('On Engines')
+      expect(titles).not.toContain('On Looms')
+      expect(props.recordLabels).toEqual({ author: [{ id: String(ada.userId), label: 'Ada' }] })
+    },
+    BOOT,
+  )
+
+  it(
+    'resolves each label of a `field:#a,#b` token',
+    async () => {
+      const props = await render(ada, {
+        listKey: 'Post',
+        search: `author:#${ada.userId},#0190a3c2-7b1e-7000-8000-000000000001`,
+      })
+      expect(props.items.map((item) => item.title).sort()).toEqual(['On Engines', 'On Looms'])
+      expect(props.recordLabels).toEqual({
+        author: [
+          { id: String(ada.userId), label: 'Ada' },
+          { id: '0190a3c2-7b1e-7000-8000-000000000001', label: null },
+        ],
+      })
+    },
+    BOOT,
+  )
+
+  it(
+    'matches nothing and resolves no label for a record the session cannot read',
+    async () => {
+      const props = await render(ada, { listKey: 'Post', search: `vault:#${vaultId}` })
+      expect(props.items).toEqual([])
+      expect(props.recordLabels).toEqual({})
+    },
+    BOOT,
+  )
+
+  it(
+    'resolves no label for an id the related list cannot hold, which searches as text',
+    async () => {
+      const props = await render(ada, { listKey: 'Post', search: 'author:#nope' })
+      expect(props.items).toEqual([])
+      expect(props.recordLabels).toEqual({})
+    },
+    BOOT,
+  )
+
+  it(
+    'reads labels for at most RELATIONSHIP_OPTIONS_MAX_TAKE ids, and past that shows the raw id',
+    async () => {
+      expect(RELATIONSHIP_OPTIONS_MAX_TAKE).toBe(2)
+      const unknownIds = [
+        '0190a3c2-7b1e-7000-8000-000000000001',
+        '0190a3c2-7b1e-7000-8000-000000000002',
+      ]
+      const adaId = String(ada.userId)
+      const search = [...unknownIds, adaId].map((id) => `author:#${id}`).join(' ')
+      const props = await render(ada, { listKey: 'Post', search })
+      const records = props.recordLabels?.author ?? []
+      expect(records).toHaveLength(RELATIONSHIP_OPTIONS_MAX_TAKE + 1)
+      expect(records.every((record) => record.label === null)).toBe(true)
+      expect(records.at(-1)).toEqual({ id: adaId, label: null })
+
+      const within = await render(ada, { listKey: 'Post', search: `author:#${adaId}` })
+      expect(within.recordLabels).toEqual({ author: [{ id: adaId, label: 'Ada' }] })
+    },
+    BOOT,
+  )
+
+  it(
+    'links a to-many count to the other list filtered by the row id',
+    async () => {
+      const props = await render(ada, { listKey: 'User' })
+      expect(props.countLinks).toEqual({ posts: { urlKey: 'post', field: 'author' } })
+      const markup = renderToStaticMarkup(<ListViewClient {...props} />)
+      expect(markup).toContain(
+        `href="/admin/post?search=${encodeURIComponent(`author:#${ada.userId}`)}"`,
+      )
+    },
+    BOOT,
+  )
+
+  it(
+    'links no count whose other list the session cannot filter',
+    async () => {
+      await create('Shelf', { name: 'Top' })
+      const props = await render(ada, { listKey: 'Shelf' })
+      expect(props.items.map((item) => item.crates)).toEqual([0])
+      expect(props.countLinks).toEqual({})
+    },
+    BOOT,
+  )
+
+  it(
+    'renders without a link when the other list’s field rule throws, and links no singleton',
+    async () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+      try {
+        await create('Bin', { name: 'Blue' })
+        const props = await render(ada, { listKey: 'Bin', columns: ['name', 'boxes', 'notices'] })
+        expect(props.items.map((item) => item.name)).toEqual(['Blue'])
+        expect(props.countLinks).toEqual({})
+        expect(consoleError).toHaveBeenCalledWith(
+          'Count link to "Box.bin" could not be resolved:',
+          expect.any(Error),
+        )
+      } finally {
+        consoleError.mockRestore()
+      }
     },
     BOOT,
   )

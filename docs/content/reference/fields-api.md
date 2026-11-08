@@ -2212,6 +2212,8 @@ getFilterSpec: (fieldName) => ({
 
 The built-in fields set `empty` where their column can hold no value: a nullable column is `{ equals: null }`; an optional text field is also empty when it holds `''`; a to-one relationship is empty when it has no related record the session can see (`{ none: {} }`), unless it owns a foreign key declared `db: { isNullable: false }`. A required field, a checkbox that is not nullable, a timestamp defaulting to now, a select with a default, and a to-many relationship (whose `field:0` already means none) set none.
 
+The optional `toIdCondition(id)` matches a related record by its id, written `field:#id`. Return a condition that lowers through the relation, never the foreign key column (`{ author: { some: { id: { equals: id } } } }`), so the related list's `query` access applies inside the predicate and a record the session cannot read matches nothing. Parse the id with `parseListId(config, relatedListKey, id)` and return `null` when it fails, so an id the related list cannot hold degrades to free text. The engine composes it per value like `toCondition`, so `-field:#id` excludes that record and `field:#a,#b` matches either. A field without it reads `#id` as an ordinary `eq` value. The built-in to-one relationship declares it, which is what makes the Filter builder offer record lookup and a to-many count on the other list link to it.
+
 ---
 
 ## Creating Custom Field Types

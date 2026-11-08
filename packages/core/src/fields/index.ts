@@ -24,6 +24,7 @@ import type {
 } from '../config/types.js'
 import { hashPassword, isHashedPassword, HashedPassword } from '../utils/password.js'
 import { getLabelFieldName } from '../config/label.js'
+import { parseListId } from '../contract/id-boundary.js'
 import type {
   FilterCondition,
   FilterOperator,
@@ -1518,7 +1519,8 @@ export function relationship<
   //  • to-one filters by the related Item's label — `author:"Ada Lovelace"`
   //    becomes a `some` over the target list's Label field. Prisma 8 has no
   //    to-one predicate form: every relation predicate is an EXISTS, and its
-  //    accessor is the same for both cardinalities.
+  //    accessor is the same for both cardinalities. `author:#id` matches the
+  //    related record by its id, through the same relation predicate.
   //  • to-many filters by PRESENCE. Prisma 8 cannot compare a relation count
   //    in a `where`, so `orders:0` is `none`, `orders:>0`/`orders:>=1` are
   //    `some`, and any other comparison degrades to free text.
@@ -1565,6 +1567,10 @@ export function relationship<
       toCondition: (operator, value) => {
         if (operator !== 'eq') return null
         return { [_fieldName]: { some: { [labelField]: { contains: value } } } }
+      },
+      toIdCondition: (id) => {
+        const parsed = parseListId(config, targetList, id)
+        return parsed.ok ? { [_fieldName]: { some: { id: { equals: parsed.value } } } } : null
       },
       empty: canBeEmpty ? { [_fieldName]: { none: {} } } : undefined,
       negation: 'includesEmpty',

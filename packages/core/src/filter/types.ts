@@ -130,6 +130,17 @@ export interface FilterSpec {
    */
   toCondition: (operator: FilterOperator, value: string) => FilterCondition | null
   /**
+   * Map a related record's id, written `field:#id`, to a condition matching
+   * exactly that record, or `null` when the id is not one the related list can
+   * hold, in which case the token degrades to free text. Lower it through the
+   * relation, never the foreign key column, so the related list's `query`
+   * access applies inside the predicate and a record the session cannot read
+   * matches nothing. The engine composes it like `toCondition`, per value:
+   * `field:#a,#b` matches either record and `-field:#id` excludes it. Without
+   * it, `#id` is an ordinary `eq` value.
+   */
+  toIdCondition?: (id: string) => FilterCondition | null
+  /**
    * What "no value" means for this field: a condition matching exactly the
    * rows where it has none. Set it only on a field that can be empty. It is
    * what offers `field:!` (is empty) and `-field:!` (is not empty), and the
@@ -178,6 +189,8 @@ export interface FilterFieldSuggestion {
   valueSource: FilterValueSource
   /** The shape a typed value must take, when the field states one. */
   valueFormat?: FilterValueFormat
+  /** Set when the field matches a related record by id (`field:#id`). */
+  matchesById?: boolean
   /** Whether the field can be empty, and so takes `field:!` and `-field:!`. */
   canBeEmpty?: boolean
   /** How the field's negated condition behaves, when its spec states it. */

@@ -48,7 +48,18 @@ import {
 import { DEFAULT_PAGE_SIZE } from '../lib/pageSize.js'
 import { CARD_CELL, CARD_PINNED_CELL, CARD_ROW, CARD_TITLE_CELL } from '../lib/tableClasses.js'
 import type { ServerActionInput } from '../server/types.js'
-import type { FilterFieldSuggestion } from '@opensaas/stack-core'
+import type { ResolvedFilterRecord } from '../lib/filterBuilderOptions.js'
+import {
+  recordIdFilterToken,
+  serializeFilterQuery,
+  type FilterFieldSuggestion,
+} from '@opensaas/stack-core'
+
+/** Where a to-many count links: the other list's URL key and its field naming this list. */
+export interface CountFilterLink {
+  urlKey: string
+  field: string
+}
 
 /**
  * Read the `{ deleted, total }` count a bulk-delete server action returns. The
@@ -217,6 +228,17 @@ export interface ListViewClientProps {
    */
   filterSuggestions?: FilterFieldSuggestion[]
   /**
+   * The records the `field:#id` tokens in `search` name, keyed by field: each
+   * id the related list accepts, with the Item label resolved server-side
+   * through the secured context, or `null` when the session cannot read it.
+   */
+  recordLabels?: Record<string, ResolvedFilterRecord[]>
+  /**
+   * The to-many columns whose count links to the matching rows on the other
+   * list, filtered by `field:#id`, keyed by column.
+   */
+  countLinks?: Record<string, CountFilterLink>
+  /**
    * The generic server action (rebuilds the session context server-side). Used
    * by the built-in Bulk action Delete to remove each selected row through the
    * secured context. When omitted, no bulk delete is offered.
@@ -282,6 +304,8 @@ export function ListViewClient({
   total,
   search: initialSearch,
   filterSuggestions = [],
+  recordLabels,
+  countLinks = {},
   serverAction,
   canDelete = false,
   canCreate = true,
@@ -554,11 +578,20 @@ export function ListViewClient({
    */
   const renderCell = (column: string, item: Record<string, unknown>) => {
     const field = columnField(column)
+    const countLink = Object.hasOwn(countLinks, column) ? countLinks[column] : undefined
+    const id = typeof item.id === 'string' || typeof item.id === 'number' ? String(item.id) : null
+    const href =
+      countLink && id !== null
+        ? `${basePath}/${countLink.urlKey}?search=${encodeURIComponent(
+            serializeFilterQuery({ terms: [recordIdFilterToken(countLink.field, id)] }),
+          )}`
+        : undefined
     const cellProps = {
       value: item[column] as CellValue,
       field,
       fieldName: column,
       basePath,
+      ...(href ? { href } : {}),
     }
     if (column === avatarColumn && !field.ui?.cell) {
       return <AvatarLabelCell {...cellProps} />
@@ -572,6 +605,9 @@ export function ListViewClient({
         suggestions={filterSuggestions}
         defaultValue={initialSearch ?? ''}
         onApply={applyQuery}
+        listKey={listKey}
+        serverAction={serverAction}
+        recordLabels={recordLabels}
         label={`Filter ${formatFieldName(listKey).toLowerCase()}`}
         resultCount={total}
       />

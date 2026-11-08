@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { FilterFieldSuggestion } from '@opensaas/stack-core'
 import { FilterBuilder } from '../../src/components/FilterBuilder.js'
+import type { ServerActionInput } from '../../src/server/types.js'
 
 const push = vi.fn()
 vi.mock('next/navigation.js', () => ({
@@ -595,6 +596,233 @@ describe('FilterBuilder', () => {
       render(<FilterBuilder suggestions={suggestions} defaultValue="hello" />)
       await user.click(screen.getByRole('button', { name: 'Remove Text contains hello' }))
       expect(push).toHaveBeenCalledWith('/admin/post')
+    })
+  })
+
+  describe('relationship lookup', () => {
+    const people = [
+      { id: 'u1', label: 'Priya Nair' },
+      { id: 'u2', label: 'Priya Nair-Reed' },
+      { id: 'u3', label: 'Sam Okafor' },
+    ]
+    const lookupSuggestions: FilterFieldSuggestion[] = [
+      ...suggestions.filter((suggestion) => suggestion.field !== 'author'),
+      {
+        field: 'author',
+        operators: ['eq'],
+        freeText: false,
+        valueSource: { kind: 'relationship', listKey: 'User', many: false },
+        matchesById: true,
+      },
+    ]
+
+    function setupLookup(
+      props: {
+        defaultValue?: string
+        recordLabels?: Record<string, Array<{ id: string; label: string | null }>>
+        withServerAction?: boolean
+        searchable?: boolean
+      } = {},
+    ) {
+      const { withServerAction = true, searchable = true, ...rest } = props
+      const onApply = vi.fn<(query: string) => void>()
+      const serverAction = vi.fn(async (input: ServerActionInput) => {
+        const search = 'search' in input && input.search ? input.search.toLowerCase() : ''
+        const searched = searchable && search !== ''
+        return {
+          options: people.filter(
+            (person) => !searched || person.label.toLowerCase().includes(search),
+          ),
+          searched,
+        }
+      })
+      const user = userEvent.setup()
+      render(
+        <FilterBuilder
+          suggestions={lookupSuggestions}
+          onApply={onApply}
+          listKey="Post"
+          serverAction={withServerAction ? serverAction : undefined}
+          {...rest}
+        />,
+      )
+      const bar = screen.getByRole('combobox', { name: 'Filter' })
+      return { onApply, serverAction, user, bar }
+    }
+
+    it('shows the first page of records once the field is named, and no sooner', async () => {
+      const { user, bar, serverAction } = setupLookup()
+      await user.type(bar, 'pri')
+      expect(serverAction).not.toHaveBeenCalled()
+
+      await user.clear(bar)
+      await user.type(bar, 'auth{Enter}')
+      expect(await screen.findByRole('option', { name: 'Sam Okafor' })).toBeInTheDocument()
+      expect(serverAction).toHaveBeenCalledWith({
+        listKey: 'Post',
+        action: 'relationshipOptions',
+        field: 'author',
+        selectedIds: [],
+        take: 10,
+      })
+      expect(optionNames()).toEqual(['Priya Nair', 'Priya Nair-Reed', 'Sam Okafor'])
+    })
+
+    it('searches as the admin types', async () => {
+      const { user, bar, serverAction } = setupLookup()
+      await user.type(bar, 'auth{Enter}')
+      await screen.findByRole('option', { name: 'Sam Okafor' })
+      await user.type(bar, 'sam')
+      await waitFor(() =>
+        expect(optionNames()).toEqual([
+          'Sam Okafor',
+          'Author contains sam',
+          'Search all text for “sam”',
+        ]),
+      )
+      expect(serverAction).toHaveBeenLastCalledWith({
+        listKey: 'Post',
+        action: 'relationshipOptions',
+        field: 'author',
+        search: 'sam',
+        selectedIds: [],
+        take: 10,
+      })
+    })
+
+    it('writes field:#id for a picked record and shows its label on the chip', async () => {
+      const { user, bar, onApply } = setupLookup()
+      await user.type(bar, 'auth{Enter}')
+      await user.click(await screen.findByRole('option', { name: 'Priya Nair' }))
+      expect(onApply).toHaveBeenCalledWith('author:#u1')
+      expect(chipNames()).toEqual(['Author is Priya Nair'])
+    })
+
+    it('replaces the picked record with a second pick', async () => {
+      const { user, bar, onApply } = setupLookup({ defaultValue: 'author:#u1' })
+      await user.type(bar, 'auth{Enter}')
+      await user.click(await screen.findByRole('option', { name: 'Sam Okafor' }))
+      expect(onApply).toHaveBeenLastCalledWith('author:#u3')
+    })
+
+    it('writes typed text that was not picked as label text, shown as contains', async () => {
+      const { user, bar, onApply } = setupLookup()
+      await user.type(bar, 'auth{Enter}')
+      await screen.findByRole('option', { name: 'Sam Okafor' })
+      await user.type(bar, 'pri')
+      await user.click(await screen.findByRole('option', { name: 'Author contains pri' }))
+      expect(onApply).toHaveBeenCalledWith('author:pri')
+      expect(chipNames()).toEqual(['Author contains pri'])
+    })
+
+    it('quotes typed text starting with #, so it stays label text', async () => {
+      const { user, bar, onApply } = setupLookup()
+      await user.type(bar, 'auth{Enter}')
+      await screen.findByRole('option', { name: 'Sam Okafor' })
+      await user.type(bar, '#u1')
+      await user.click(await screen.findByRole('option', { name: 'Author contains #u1' }))
+      expect(onApply).toHaveBeenCalledWith('author:"#u1"')
+    })
+
+    it('shows the resolved label of a record in the URL, and the raw id of one it could not read', () => {
+      setupLookup({
+        defaultValue: 'author:#u1 author:#u9',
+        recordLabels: {
+          author: [
+            { id: 'u1', label: 'Priya Nair' },
+            { id: 'u9', label: null },
+          ],
+        },
+      })
+      expect(chipNames()).toEqual(['Author is Priya Nair', 'Author is u9'])
+    })
+
+    it('shows an id the server did not accept as the free text it searches for', () => {
+      setupLookup({
+        defaultValue: 'author:#u1 author:#notanid',
+        recordLabels: { author: [{ id: 'u1', label: 'Priya Nair' }] },
+      })
+      expect(chipNames()).toEqual(['Author is Priya Nair', 'Text contains #notanid'])
+    })
+
+    it('hides the records while typing when the server did not apply the search', async () => {
+      const { user, bar, onApply, serverAction } = setupLookup({ searchable: false })
+      await user.type(bar, 'auth{Enter}')
+      await screen.findByRole('option', { name: 'Sam Okafor' })
+      await user.type(bar, 'pri')
+      await waitFor(() =>
+        expect(serverAction).toHaveBeenCalledWith(expect.objectContaining({ search: 'pri' })),
+      )
+      await waitFor(() => expect(screen.queryByText(/Searching/)).not.toBeInTheDocument())
+      expect(optionNames()).toEqual(['Author contains pri', 'Search all text for “pri”'])
+      expect(screen.queryByText(/No author matches/)).not.toBeInTheDocument()
+      await user.click(screen.getByRole('option', { name: 'Author contains pri' }))
+      expect(onApply).toHaveBeenCalledWith('author:pri')
+    })
+
+    it('reopens a record chip on the record list', async () => {
+      const { user } = setupLookup({
+        defaultValue: 'author:#u1',
+        recordLabels: { author: [{ id: 'u1', label: 'Priya Nair' }] },
+      })
+      await user.click(screen.getByRole('button', { name: 'Edit Author is Priya Nair' }))
+      expect(await screen.findByRole('option', { name: 'Priya Nair' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      )
+    })
+
+    it('shows negated and several ids by their labels', () => {
+      setupLookup({
+        defaultValue: '-author:#u1 author:#u1,#u3 -author:#u1,#u3',
+        recordLabels: {
+          author: [
+            { id: 'u1', label: 'Priya Nair' },
+            { id: 'u3', label: 'Sam Okafor' },
+          ],
+        },
+      })
+      expect(chipNames()).toEqual([
+        'Author is not Priya Nair',
+        'Author is any of Priya Nair, Sam Okafor',
+        'Author is none of Priya Nair, Sam Okafor',
+      ])
+    })
+
+    it('shows a negated or listed id the server did not accept as the free text it searches for', () => {
+      setupLookup({
+        defaultValue: '-author:#notanid author:#u1,#notanid',
+        recordLabels: { author: [{ id: 'u1', label: 'Priya Nair' }] },
+      })
+      expect(chipNames()).toEqual(['Text contains -author:#notanid', 'Text contains #u1,#notanid'])
+    })
+
+    it('writes -field:#id for a record picked under "does not contain"', async () => {
+      const { user, bar, onApply } = setupLookup()
+      await user.type(bar, 'auth{Enter}')
+      await user.click(screen.getByRole('button', { name: 'does not contain' }))
+      await user.click(await screen.findByRole('option', { name: 'Priya Nair' }))
+      expect(onApply).toHaveBeenCalledWith('-author:#u1')
+      expect(chipNames()).toEqual(['Author is not Priya Nair'])
+    })
+
+    it('reopens a negated record chip on the record list', async () => {
+      const { user } = setupLookup({
+        defaultValue: '-author:#u1',
+        recordLabels: { author: [{ id: 'u1', label: 'Priya Nair' }] },
+      })
+      await user.click(screen.getByRole('button', { name: 'Edit Author is not Priya Nair' }))
+      expect(await screen.findByRole('option', { name: 'Priya Nair' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      )
+    })
+
+    it('falls back to typed label text without a server action', async () => {
+      const { user, bar, onApply } = setupLookup({ withServerAction: false })
+      await user.type(bar, 'author{Enter}pri{Enter}')
+      expect(onApply).toHaveBeenCalledWith('author:pri')
+      expect(chipNames()).toEqual(['Author contains pri'])
     })
   })
 
