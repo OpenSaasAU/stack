@@ -107,7 +107,7 @@ describe('ListViewClient', () => {
 
       expect(screen.getByText('No matches found')).toBeInTheDocument()
       // Offers a way back out of the fruitless search.
-      expect(screen.getByRole('button', { name: /clear search/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Clear filters' })).toBeInTheDocument()
     })
 
     it('should right-align numeric column cells and headers', () => {

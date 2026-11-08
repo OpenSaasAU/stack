@@ -22,6 +22,7 @@ import {
   normaliseGroups,
   placeChoice,
   placeEntries,
+  removableTerms,
   rootOptions,
   singleTokenOptions,
   splitChips,
@@ -636,6 +637,20 @@ describe('OR groups', () => {
         ),
       ).toBe('(status:draft OR beta) gamma (title:x OR title:y)')
     })
+  })
+
+  it('removes an OR group as one term, and a between chip as one', () => {
+    const entries = hydrateEntries('views:>=1 views:<=5 (status:draft OR title:x) beta')
+    expect(
+      removableTerms(entries, chipsOf(entries, grouped)).map(({ sentence, rest }) => [
+        sentence,
+        entriesQuery(rest),
+      ]),
+    ).toEqual([
+      ['Views between 1 and 5', '(status:draft OR title:x) beta'],
+      ['Status is Draft or Title contains x', 'views:>=1 views:<=5 beta'],
+      ['Text contains beta', 'views:>=1 views:<=5 (status:draft OR title:x)'],
+    ])
   })
 
   it('keeps only single-token choices for an alternative, and says why', () => {

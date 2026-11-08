@@ -250,6 +250,10 @@ export function hydrateEntries(query: string): FilterEntry[] {
 }
 
 export function entriesQuery(entries: readonly FilterEntry[]): string {
+  return serializeFilterQuery({ terms: entriesTerms(entries) })
+}
+
+export function entriesTerms(entries: readonly FilterEntry[]): FilterTerm[] {
   const terms: FilterTerm[] = []
   let open: FilterToken[] | null = null
   normaliseGroups(entries.filter((entry) => !isEmptyFilterToken(entry.token))).forEach(
@@ -267,7 +271,7 @@ export function entriesQuery(entries: readonly FilterEntry[]): string {
       open.push(entry.token)
     },
   )
-  return serializeFilterQuery({ terms })
+  return terms
 }
 
 export function freeTextTokens(text: string): FilterToken[] {
@@ -821,6 +825,32 @@ export function singleTokenOptions({ options, hint }: FilterOptions): FilterOpti
     options: single,
     hint: single.length < options.length ? (hint ?? ALTERNATIVE_HINT) : hint,
   }
+}
+
+export function withoutChip(
+  entries: readonly FilterEntry[],
+  chip: { start: number; count: number } | null | undefined,
+): FilterEntry[] {
+  if (!chip) return [...entries]
+  return normaliseGroups(
+    entries.filter((_, index) => index < chip.start || index >= chip.start + chip.count),
+  )
+}
+
+export function removableTerms(
+  entries: readonly FilterEntry[],
+  chips: readonly FilterChip[],
+): Array<{ sentence: string; rest: FilterEntry[] }> {
+  return unitsOf(chips).map((unit) => {
+    const members = chips.slice(unit.first, unit.last + 1)
+    const first = members[0]?.start ?? 0
+    const last = members.at(-1)
+    const count = last === undefined ? 0 : last.start + last.count - first
+    return {
+      sentence: members.map((chip) => chip.description.sentence).join(' or '),
+      rest: withoutChip(entries, { start: first, count }),
+    }
+  })
 }
 
 export function chipEditText(

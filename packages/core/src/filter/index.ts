@@ -24,6 +24,7 @@ export {
   collectFilterSpecs,
   buildListFilterWhere,
   collectFilterSuggestions,
+  filterSuggestionsOf,
   isFieldFilterableById,
 } from './collect.js'
 export type { FilterAccessArgs } from './collect.js'
