@@ -46,6 +46,7 @@ import { isRelationshipField } from '../fields/index.js'
 import { parseListId, type ListIdValue } from '../contract/id-boundary.js'
 import { reportAfterTransactionFailures } from './transaction-boundary.js'
 import { isRowActionAvailable } from '../config/row-action-availability.js'
+import { checkHasAccess } from '../config/has-access-gate.js'
 import {
   TransactionRegistry,
   TransactionRolledBackError,
@@ -920,17 +921,10 @@ export function getContext<TConfig extends OpenSaasConfig>(
           error: `Bulk action "${props.key}" not found on list "${props.listKey}"`,
         }
       }
+      if (!(await checkHasAccess(action, context, props.listKey, 'Bulk action'))) {
+        return { bulkAction: false, error: 'Access denied' }
+      }
       try {
-        if (action.hasAccess) {
-          const allowed = await action.hasAccess({
-            session: context.session,
-            context,
-            listKey: props.listKey,
-          })
-          if (!allowed) {
-            return { bulkAction: false, error: 'Access denied' }
-          }
-        }
         const result = await action.handler({
           listKey: props.listKey,
           ids: props.ids,
@@ -960,16 +954,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
       }
       const id = parseId(props.listKey, props.id)
       if (id === null) return notRun
-      const { hasAccess } = action
-      if (hasAccess) {
-        let allowed = false
-        try {
-          allowed = await hasAccess({ session: context.session, context, listKey: props.listKey })
-        } catch (error) {
-          console.error(`Row action "${props.key}" on "${props.listKey}" hasAccess threw:`, error)
-        }
-        if (!allowed) return notRun
-      }
+      if (!(await checkHasAccess(action, context, props.listKey, 'Row action'))) return notRun
       try {
         return await transaction(async (tx) => {
           const list = tx.db[props.listKey]

@@ -288,7 +288,7 @@ describe('context.serverAction', () => {
             key: 'publish',
             ids: [],
           })
-          expect(result).toEqual({ bulkAction: false, error: 'Action failed' })
+          expect(result).toEqual({ bulkAction: false, error: 'Access denied' })
         } finally {
           logged.mockRestore()
         }
@@ -591,6 +591,78 @@ describe('context.serverAction', () => {
       BOOT,
     )
 
+    describe('dispatch takes the same strict hasAccess gate as the menu', () => {
+      function withBulkHasAccess(hasAccess: () => unknown): OpenSaasConfig {
+        const config = withBulkAction()
+        const declared = config.lists.Post.ui?.listView?.bulkActions?.[0]
+        if (!declared) throw new Error('bulk action missing')
+        Object.assign(declared, { hasAccess })
+        return config
+      }
+
+      test(
+        'a truthy hasAccess other than true is refused',
+        async () => {
+          const ids = await seedPosts()
+
+          expect(
+            await contextAt(withBulkHasAccess(() => 'yes')).serverAction({
+              listKey: 'Post',
+              action: 'bulkAction',
+              key: 'publish',
+              ids,
+            }),
+          ).toEqual({ bulkAction: false, error: 'Access denied' })
+          expect((await harness.context.db.Post.all()).every((row) => row.status === null)).toBe(
+            true,
+          )
+        },
+        BOOT,
+      )
+
+      test(
+        'a throwing hasAccess is refused and logged',
+        async () => {
+          const ids = await seedPosts()
+          const thrown = new Error('no role')
+          const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+          try {
+            expect(
+              await contextAt(
+                withBulkHasAccess(() => {
+                  throw thrown
+                }),
+              ).serverAction({ listKey: 'Post', action: 'bulkAction', key: 'publish', ids }),
+            ).toEqual({ bulkAction: false, error: 'Access denied' })
+            expect(logged).toHaveBeenCalledWith(expect.stringContaining('hasAccess threw'), thrown)
+            expect((await harness.context.db.Post.all()).every((row) => row.status === null)).toBe(
+              true,
+            )
+          } finally {
+            logged.mockRestore()
+          }
+        },
+        BOOT,
+      )
+
+      test(
+        'a hasAccess returning true runs the handler',
+        async () => {
+          const ids = await seedPosts()
+
+          expect(
+            await contextAt(withBulkHasAccess(() => true)).serverAction({
+              listKey: 'Post',
+              action: 'bulkAction',
+              key: 'publish',
+              ids,
+            }),
+          ).toEqual({ bulkAction: true, message: 'Published 2 of 2' })
+        },
+        BOOT,
+      )
+    })
+
     /** #761: an unexpected bug inside a handler must not travel to the client. */
     test(
       'a handler that throws a plain Error yields a generic message, and logs the real one',
@@ -853,6 +925,79 @@ describe('context.serverAction', () => {
       },
       BOOT,
     )
+
+    describe('dispatch takes the same strict hasAccess gate as the menu', () => {
+      function withRowHasAccess(
+        handler: RowAction['handler'],
+        hasAccess: () => unknown,
+      ): OpenSaasConfig {
+        const config = withRowAction({ handler })
+        const declared = config.lists.Post.ui?.listView?.rowActions?.[0]
+        if (!declared) throw new Error('row action missing')
+        Object.assign(declared, { hasAccess })
+        return config
+      }
+
+      test(
+        'a truthy hasAccess other than true is refused as Silent failure',
+        async () => {
+          const id = await seedPost('a', 'draft')
+          const handler = vi.fn(async () => ({ message: 'ran' }))
+
+          expect(
+            await contextAt(withRowHasAccess(handler, () => 'yes')).serverAction({
+              listKey: 'Post',
+              action: 'rowAction',
+              key: 'publish',
+              id,
+            }),
+          ).toEqual({ rowAction: false, error: 'This action was not run' })
+          expect(handler).not.toHaveBeenCalled()
+        },
+        BOOT,
+      )
+
+      test(
+        'a throwing hasAccess is refused as Silent failure',
+        async () => {
+          const id = await seedPost('a', 'draft')
+          const handler = vi.fn(async () => ({ message: 'ran' }))
+          const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+          try {
+            expect(
+              await contextAt(
+                withRowHasAccess(handler, () => {
+                  throw new Error('no role')
+                }),
+              ).serverAction({ listKey: 'Post', action: 'rowAction', key: 'publish', id }),
+            ).toEqual({ rowAction: false, error: 'This action was not run' })
+            expect(handler).not.toHaveBeenCalled()
+          } finally {
+            logged.mockRestore()
+          }
+        },
+        BOOT,
+      )
+
+      test(
+        'a hasAccess returning true runs the handler',
+        async () => {
+          const id = await seedPost('a', 'draft')
+          const handler = vi.fn(async () => ({ message: 'ran' }))
+
+          expect(
+            await contextAt(withRowHasAccess(handler, () => true)).serverAction({
+              listKey: 'Post',
+              action: 'rowAction',
+              key: 'publish',
+              id,
+            }),
+          ).toEqual({ rowAction: true, message: 'ran' })
+          expect(handler).toHaveBeenCalledTimes(1)
+        },
+        BOOT,
+      )
+    })
 
     test(
       'an isAvailable that throws answers as Silent failure and is logged',
