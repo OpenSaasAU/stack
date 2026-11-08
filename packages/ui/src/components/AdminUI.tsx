@@ -156,6 +156,7 @@ export async function AdminUI({
     )
   } else {
     const search = typeof searchParams.search === 'string' ? searchParams.search : undefined
+    const preset = typeof searchParams.preset === 'string' ? searchParams.preset : undefined
     const page =
       typeof searchParams.page === 'string' && /^\d+$/.test(searchParams.page)
         ? Number(searchParams.page)
@@ -215,6 +216,7 @@ export async function AdminUI({
         urlControls
         initialSort={listView?.initialSort}
         sort={urlSort}
+        preset={preset}
         serverAction={serverAction}
       />
     )
