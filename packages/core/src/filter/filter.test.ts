@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { parseFilterQuery } from './parse.js'
-import { buildFilterWhere } from './map.js'
+import { buildFilterWhere, effectiveFilterToken, isFieldConditionToken } from './map.js'
 import { serializeFilterQuery } from './serialize.js'
 import {
   buildListFilterWhere,
@@ -1127,6 +1127,32 @@ describe('ranges (`field:a..b`)', () => {
     expect(buildFilterWhere(parseFilterQuery(written), specs)).toEqual({
       name: { contains: word },
     })
+  })
+
+  it.each(['name:wait...what', 'name:v1..v2', 'name:a..b@x'])(
+    'keeps %s on a field with no range as that field’s eq on the literal value',
+    (written) => {
+      const literal = written.slice('name:'.length)
+      expect(buildFilterWhere(parseFilterQuery(written), specs)).toEqual({
+        name: { contains: literal },
+      })
+      expect(buildFilterWhere(parseFilterQuery(written), specs)).toEqual(
+        buildFilterWhere(parseFilterQuery(`name:"${literal}"`), specs),
+      )
+      expect(serializeFilterQuery(parseFilterQuery(written))).toBe(written)
+    },
+  )
+
+  it('reads a range token on a field with no range as a field condition, on its literal', () => {
+    const lookup: Record<string, FilterSpec> = specs
+    const operatorsFor = (field: string) => lookup[field]?.operators
+    const [token] = parseFilterQuery('name:v1..v2').terms
+    expect(isFieldConditionToken(token, operatorsFor)).toBe(true)
+    expect(effectiveFilterToken(token, specs.name.operators)).toEqual(
+      tok('name', 'v1..v2', { operator: 'eq' }),
+    )
+    const [ranged] = parseFilterQuery('orders:1..2').terms
+    expect(effectiveFilterToken(ranged, specs.orders.operators)).toBe(ranged)
   })
 
   it('degrades a structured range with an empty bound as its serialised URL reads back', () => {

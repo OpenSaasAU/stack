@@ -24,6 +24,7 @@ const config: OpenSaasConfig = {
     Post: {
       fields: {
         title: text({ validation: { isRequired: true } }),
+        slug: text(),
         author: relationship({ ref: 'User.posts' }),
         ledger: relationship({ ref: 'Ledger.posts' }),
       },
@@ -214,6 +215,24 @@ describe('the filter engine over the secured surface', () => {
       expect(await priorities('due:2026-11-01..2026-11-01')).toEqual([1])
       await expect(filtered('Setting', 'priority:one..2')).resolves.toEqual([])
       await expect(filtered('Setting', 'due:2026-02-31..2026-03-01')).resolves.toEqual([])
+    },
+    BOOT,
+  )
+
+  test(
+    '`field:a..b` on a field with no range keeps its field scope, as that field’s eq on `a..b`',
+    async () => {
+      await seed('Post', { title: 'wait...what', slug: 'post-a' })
+      await seed('Post', { title: 'post-b', slug: 'wait...what' })
+      await seed('Post', { title: 'v1..v2 notes', slug: 'post-c' })
+      await seed('Post', { title: 'post-d', slug: 'v1..v2' })
+      const titles = async (query: string) =>
+        (await filtered('Post', query)).map((row) => row.title).sort()
+      expect(await titles('title:wait...what')).toEqual(['wait...what'])
+      expect(await titles('title:wait...what')).toEqual(await titles('title:"wait...what"'))
+      expect(await titles('slug:v1..v2')).toEqual(['post-d'])
+      expect(await titles('slug:v1..v2')).toEqual(await titles('slug:"v1..v2"'))
+      expect(await titles('v1..v2')).toEqual(['post-d', 'v1..v2 notes'])
     },
     BOOT,
   )

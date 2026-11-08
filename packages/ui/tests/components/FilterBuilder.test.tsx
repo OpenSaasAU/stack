@@ -645,6 +645,11 @@ describe('FilterBuilder', () => {
       expect(onApply).toHaveBeenCalledWith('views:5..9')
     })
 
+    it('keeps `field:a..b` on a field with no range as that field’s condition on the literal', () => {
+      setup({ defaultValue: 'title:wait...what' })
+      expect(chipNames()).toEqual(['Title contains wait...what'])
+    })
+
     it('hydrates a range as one chip and an invalid one as text', () => {
       setup({ defaultValue: 'views:10..20 views:ten..20' })
       expect(chipNames()).toEqual(['Views between 10 and 20', 'Text contains views:ten..20'])
@@ -824,6 +829,93 @@ describe('FilterBuilder', () => {
         }),
       )
       expect(bar).toHaveValue('2026-11-02..2026-11-08')
+    })
+
+    it('reaches From, To and Apply dates from the keyboard, and applies the range', async () => {
+      const { user, bar, onApply } = setupDates()
+      await user.type(bar, 'published{Enter}')
+      await user.keyboard('{Alt>}{ArrowLeft}{/Alt}')
+      expect(screen.getByRole('button', { name: 'between' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      )
+      expect(screen.getByText('Alt+←→ change condition')).toBeInTheDocument()
+      await user.keyboard('{Tab}')
+      expect(screen.getByLabelText('From')).toHaveFocus()
+      await user.keyboard('2026-01-01{Tab}')
+      expect(screen.getByLabelText('To')).toHaveFocus()
+      await user.keyboard('2026-01-31{Tab}')
+      expect(screen.getByRole('button', { name: 'Apply dates' })).toHaveFocus()
+      await user.keyboard('{Enter}')
+      expect(onApply).toHaveBeenCalledWith(
+        `publishedAt:${startOf(2026, 1, 1)}..${endOf(2026, 1, 31)}`,
+      )
+    })
+
+    it('returns from the first date input to the bar with Shift+Tab', async () => {
+      const { user, bar } = setupDates()
+      await user.type(bar, 'published{Enter}{Tab}')
+      expect(screen.getByLabelText('Date')).toHaveFocus()
+      await user.keyboard('{Shift>}{Tab}{/Shift}')
+      expect(bar).toHaveFocus()
+    })
+
+    it('keeps the date form’s submit inside the builder', async () => {
+      const onSubmit = vi.fn()
+      const onApply = vi.fn<(query: string) => void>()
+      const user = userEvent.setup()
+      render(
+        <form
+          onSubmit={(event) => {
+            event.preventDefault()
+            onSubmit()
+          }}
+        >
+          <FilterBuilder suggestions={dateSuggestions} onApply={onApply} />
+        </form>,
+      )
+      await user.type(screen.getByRole('combobox', { name: 'Filter' }), 'due{Enter}')
+      await user.type(screen.getByLabelText('Date'), '2026-01-01')
+      await user.click(screen.getByRole('button', { name: 'Apply dates' }))
+      expect(onApply).toHaveBeenCalledWith('due:2026-01-01')
+      expect(onSubmit).not.toHaveBeenCalled()
+    })
+
+    it('reads a typed range of days on a timestamp as that local range', async () => {
+      const { user, bar, onApply } = setupDates()
+      await user.type(bar, 'published at 2026-01-01 to 2026-01-31{Enter}')
+      expect(onApply).toHaveBeenCalledWith(
+        `publishedAt:${startOf(2026, 1, 1)}..${endOf(2026, 1, 31)}`,
+      )
+    })
+
+    it('converts the plain days of a pasted timestamp range to local instants', async () => {
+      const { user, bar, onApply } = setupDates()
+      await user.click(bar)
+      await user.paste('publishedAt:2026-01-01..2026-01-31')
+      expect(onApply).toHaveBeenCalledWith(
+        `publishedAt:${startOf(2026, 1, 1)}..${endOf(2026, 1, 31)}`,
+      )
+    })
+
+    it('shows a plain day already in the URL as written, and leaves the URL alone', () => {
+      const { onApply } = setupDates('publishedAt:2026-01-01..2026-01-31')
+      expect(chipNames()).toEqual(['Published At between 2026-01-01 and 2026-01-31'])
+      expect(onApply).not.toHaveBeenCalled()
+    })
+
+    it('leaves an unchanged is chip on a local midnight as it was when edited and applied', async () => {
+      const query = `publishedAt:${startOf(2026, 11, 3)}`
+      const { user, bar, onApply } = setupDates(query)
+      expect(chipNames()).toEqual([`Published At is ${startOf(2026, 11, 3)}`])
+      await user.click(
+        screen.getByRole('button', {
+          name: `Change value of Published At is ${startOf(2026, 11, 3)}`,
+        }),
+      )
+      expect(bar).toHaveValue(startOf(2026, 11, 3))
+      await user.keyboard('{Enter}')
+      expect(onApply).toHaveBeenCalledWith(query)
     })
 
     it('shows an instant that is not a day boundary as written', () => {

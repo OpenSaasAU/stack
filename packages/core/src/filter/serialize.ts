@@ -20,7 +20,7 @@ function mustQuoteBareText(token: FilterToken, text: string): boolean {
     if (token.negated) return text === ''
     return text === '' || (text.startsWith('-') && text !== '-')
   }
-  if (token.operator === 'eq' || token.operator === 'range') {
+  if (token.operator === 'eq') {
     return /^(?:[<>]|\/\/)/.test(text) || splitRangeValue(text) !== null
   }
   if (token.operator === 'gt' || token.operator === 'lt') return text.startsWith('=')
@@ -54,8 +54,8 @@ function rangeText(token: FilterToken): string | null {
   if (token.field === null || token.values.length !== 2) return null
   const text = token.values.join('..')
   const bounds = splitRangeValue(text)
-  if (!bounds || /\s/.test(text) || /^(?:["<>]|\/\/)/.test(text)) return null
-  return bounds[0] === token.values[0] ? text : null
+  if (!bounds || bounds[0] !== token.values[0] || mustQuoteValue(text)) return null
+  return mustQuoteBareText({ ...token, operator: 'eq' }, bounds[0]) ? null : text
 }
 
 /**
@@ -67,7 +67,9 @@ export function serializeFilterToken(token: FilterToken): string {
   const text =
     range ??
     serializeValues(
-      token.operator === 'range' ? { ...token, values: [token.values.join('..')] } : token,
+      token.operator === 'range'
+        ? { ...token, operator: 'eq', values: [token.values.join('..')] }
+        : token,
     )
   const negation = token.negated ? '-' : ''
   if (token.field === null) return `${negation}${text}`

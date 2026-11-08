@@ -2,12 +2,18 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { FilterFieldSuggestion } from '@opensaas/stack-core'
 import {
   checkRange,
+  chipEditText,
   chipsOf,
   datePresets,
   dayBoundary,
+  describeToken,
+  draftOptions,
+  filterQuery,
   formatOffset,
   hydrateTokens,
   localInstant,
+  rootOptions,
+  type FilterOption,
 } from '../../src/lib/filterBuilderOptions.js'
 
 const views: FilterFieldSuggestion = {
@@ -46,6 +52,26 @@ describe('formatOffset', () => {
     [300, '-05:00'],
   ])('writes a getTimezoneOffset of %i as %s', (minutes, offset) => {
     expect(formatOffset(minutes)).toBe(offset)
+  })
+
+  it('rounds a fractional local-mean-time offset to whole minutes', () => {
+    expect(formatOffset(-353.4666666)).toBe('+05:53')
+    expect(formatOffset(17.5)).toBe('-00:18')
+  })
+})
+
+class LocalMeanTimeDate extends Date {
+  getTimezoneOffset(): number {
+    return -353.4666666
+  }
+}
+
+describe('a fractional offset', () => {
+  it('writes the exact instant rather than an offset no parser takes', () => {
+    const date = new LocalMeanTimeDate(Date.UTC(1890, 0, 1, 18, 6, 32))
+    const written = localInstant(date)
+    expect(written).toBe('1890-01-01T18:06:32.000Z')
+    expect(new Date(written).getTime()).toBe(date.getTime())
   })
 })
 
@@ -152,5 +178,211 @@ describe('chipsOf', () => {
       [3, 1, 'Due at most 2026-01-01'],
       [4, 1, 'Views at most 9'],
     ])
+  })
+})
+
+const score: FilterFieldSuggestion = {
+  field: 'score',
+  operators: ['gte', 'lte'],
+  freeText: false,
+  valueSource: { kind: 'none' },
+}
+const title: FilterFieldSuggestion = {
+  field: 'title',
+  operators: ['eq'],
+  freeText: true,
+  valueSource: { kind: 'none' },
+}
+const everyField = new Map(
+  [views, due, at, score, title].map((suggestion) => [suggestion.field, suggestion]),
+)
+
+const applied = (options: FilterOption[]) =>
+  options.flatMap((option) => (option.kind === 'apply' ? [option.tokens] : []))
+
+describe('a typed range on a timestamp', () => {
+  it.each([
+    'at 2026-01-01 to 2026-01-31',
+    'at 2026-01-01..2026-01-31',
+    'at 2026-01-01-2026-01-31',
+    'at 2026-01-01 – 2026-01-31',
+  ])('reads %j as that local range, not an is', (typed) => {
+    const [first] = applied(rootOptions(typed, everyField).options)
+    expect(first).toEqual([
+      {
+        kind: 'token',
+        field: 'at',
+        operator: 'range',
+        negated: false,
+        values: [dayBoundary('2026-01-01', false), dayBoundary('2026-01-31', true)],
+        quoted: false,
+      },
+    ])
+  })
+
+  it('reads an is draft that splits into two days as a range too', () => {
+    const { options } = draftOptions(
+      { field: 'at', operator: 'eq' },
+      '2026-01-01 to 2026-01-31',
+      everyField,
+      undefined,
+    )
+    expect(applied(options)[0]?.[0].operator).toBe('range')
+  })
+
+  it('keeps a single day an is on that whole local day', () => {
+    const [first] = applied(rootOptions('at 2026-01-01', everyField).options)
+    expect(first?.[0].values).toEqual([
+      dayBoundary('2026-01-01', false),
+      dayBoundary('2026-01-01', true),
+    ])
+  })
+})
+
+describe('a typed or pasted timestamp token', () => {
+  it('offers plain-day bounds through the local-day conversion', () => {
+    const [first] = applied(rootOptions('at:2026-01-01..2026-01-31', everyField).options)
+    expect(filterQuery(first ?? [])).toBe(
+      `at:${dayBoundary('2026-01-01', false)}..${dayBoundary('2026-01-31', true)}`,
+    )
+  })
+
+  it('offers plain-day comparisons through the same conversion', () => {
+    const [first] = applied(rootOptions('at:>=2026-01-01 at:<=2026-01-31', everyField).options)
+    expect(filterQuery(first ?? [])).toBe(
+      `at:>=${dayBoundary('2026-01-01', false)} at:<=${dayBoundary('2026-01-31', true)}`,
+    )
+  })
+
+  it('leaves an instant that already carries its offset as written', () => {
+    const typed = 'at:2026-01-01T10:00:00Z..2026-01-02T10:00:00+05:30'
+    const [first] = applied(rootOptions(typed, everyField).options)
+    expect(filterQuery(first ?? [])).toBe(typed)
+  })
+
+  it('shows a plain date already in a URL as written', () => {
+    const [chip] = chipsOf(hydrateTokens('at:2026-01-01..2026-01-31'), everyField)
+    expect(chip.description.sentence).toBe('At between 2026-01-01 and 2026-01-31')
+  })
+})
+
+describe('instant bounds', () => {
+  it('writes a bound with a time as an ISO instant in the local offset', () => {
+    const [first] = applied(
+      rootOptions('at 2026-01-01 10:00 to 2026-01-02 12:30', everyField).options,
+    )
+    expect(first?.[0].values).toEqual([
+      localInstant(new Date(2026, 0, 1, 10, 0)),
+      localInstant(new Date(2026, 0, 2, 12, 30)),
+    ])
+  })
+
+  it('refuses a bound that is not a time, with a hint, rather than offering it', () => {
+    const { options, hint } = rootOptions('at someday to never', everyField)
+    expect(
+      applied(options)
+        .flat()
+        .every((token) => token.field === null),
+    ).toBe(true)
+    expect(hint).toBe('At takes a date or a time, like 2026-01-31.')
+  })
+
+  it('refuses a range whose bounds would not read back as the same range', () => {
+    const { options, hint } = draftOptions(
+      { field: 'score', operator: 'range' },
+      'a b..c',
+      everyField,
+      undefined,
+    )
+    expect(
+      applied(options)
+        .flat()
+        .every((token) => token.field === null),
+    ).toBe(true)
+    expect(hint).toBe('Score cannot take that range. Write each end without spaces or commas.')
+  })
+
+  it('reads back every range the builder offers as the same range', () => {
+    const typings = [
+      '1000-5000',
+      '-10--5',
+      '5 to 9',
+      '5..9',
+      '2026-01-01-2026-01-31',
+      '2026-01-01 to 2026-01-31',
+      '2026-01-01 10:00 to 2026-01-02 12:00',
+      'Jan 1 2026 to Feb 1 2026',
+      '2026-01-01T00:00:00Z..2026-02-01T00:00:00+11:00',
+      'a..b',
+      'a b..c',
+      'x"y..z',
+      '<a..b',
+      '//a..b',
+      'a,b..c',
+    ]
+    let ranges = 0
+    for (const suggestion of everyField.values()) {
+      for (const typed of typings) {
+        const offered = [
+          ...applied(rootOptions(`${suggestion.field} ${typed}`, everyField).options),
+          ...applied(rootOptions(`${suggestion.field} between ${typed}`, everyField).options),
+          ...applied(rootOptions(`${suggestion.field}:${typed}`, everyField).options),
+          ...applied(
+            draftOptions(
+              { field: suggestion.field, operator: 'range' },
+              typed,
+              everyField,
+              undefined,
+            ).options,
+          ),
+        ]
+        for (const tokens of offered) {
+          if (!tokens.some((token) => token.operator === 'range')) continue
+          ranges++
+          expect(hydrateTokens(filterQuery(tokens)), `${suggestion.field} ${typed}`).toEqual(tokens)
+        }
+      }
+    }
+    expect(ranges).toBeGreaterThan(20)
+  })
+})
+
+describe('editing a chip', () => {
+  it('edits an is instant on a local midnight as its raw instant, never as a whole day', () => {
+    const instant = dayBoundary('2026-11-03', false) ?? ''
+    const tokens = hydrateTokens(`at:${instant}`)
+    const [chip] = chipsOf(tokens, everyField)
+    expect(chip.description.sentence).toBe(`At is ${instant}`)
+    expect(chipEditText(chip, tokens[0], everyField)).toEqual({
+      draft: { field: 'at', operator: 'eq' },
+      text: instant,
+    })
+  })
+
+  it('edits an at least instant on a local midnight as its day', () => {
+    const tokens = hydrateTokens(`at:>=${dayBoundary('2026-11-03', false)}`)
+    const [chip] = chipsOf(tokens, everyField)
+    expect(chipEditText(chip, tokens[0], everyField).text).toBe('2026-11-03')
+  })
+})
+
+describe('`field:a..b` on a field with no range', () => {
+  it.each([
+    ['title:wait...what', 'Title contains wait...what'],
+    ['title:v1..v2', 'Title contains v1..v2'],
+  ])('shows %s as the field’s own condition on the literal', (query, sentence) => {
+    const tokens = hydrateTokens(query)
+    expect(describeToken(tokens[0], everyField).sentence).toBe(sentence)
+    expect(chipsOf(tokens, everyField)[0].range).toBeNull()
+    expect(filterQuery(tokens)).toBe(query)
+  })
+
+  it('edits it as that condition on the literal', () => {
+    const tokens = hydrateTokens('title:wait...what')
+    const [chip] = chipsOf(tokens, everyField)
+    expect(chipEditText(chip, tokens[0], everyField)).toEqual({
+      draft: { field: 'title', operator: 'eq' },
+      text: 'wait...what',
+    })
   })
 })

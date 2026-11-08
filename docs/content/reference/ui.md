@@ -458,7 +458,10 @@ accepts both `gte` and `lte` takes one, because the engine lowers each bound
 through that field's own `gte` and `lte` conditions. A range with a bound the
 field does not take (`views:ten..20`) degrades to free text as `ten..20`, like
 any other unmappable token, and a quoted `"1..2"` is always a literal value.
-The two-token form stays valid and is never rewritten.
+On a field that takes no range, `field:a..b` keeps the meaning it always had:
+that field's own `is`/`contains` on the literal `a..b`, so `title:wait...what`
+is still "Title contains wait...what". The two-token form stays valid and is
+never rewritten.
 
 #### The Filter builder bar
 
@@ -471,7 +474,7 @@ spec and the config only, never from the list's data.
 
 Choosing a field goes straight to its values with the field's default
 condition. When the field has more than one condition, a condition row above
-the values switches it by click or by Tab, and typing `>`, `>=`, `<` or `<=`
+the values switches it by click, by Tab or by Alt+← →, and typing `>`, `>=`, `<` or `<=`
 at the start of a value sets the comparison. A value that does not fit the
 field (`abc` for a whole number) is explained under the suggestions instead of
 being applied. "Search all text" reads what was typed in the URL grammar, so a
@@ -495,9 +498,18 @@ timestamp is written as full ISO instants in the browser's own offset, from the
 first millisecond of the first day to the last millisecond of the last, so the
 whole end day is included and results follow the admin's time zone:
 `publishedAt:2026-11-02T00:00:00.000+11:00..2026-11-08T23:59:59.999+11:00`. A
-plain date typed against a timestamp is read the same way: "is 2026-11-03"
-covers that local day, "at most" runs to its end and "at least" from its start.
-A chip shows such an instant as its date, and any other instant as written.
+plain date typed or pasted against a timestamp is read the same way: "is
+2026-11-03" covers that local day, "at most" runs to its end and "at least"
+from its start, and `created at 2026-01-01 to 2026-01-31` is a range. Any other
+time typed against a timestamp is written as an ISO instant in the browser's
+offset, and text that is not a time is explained rather than applied. A
+comparison or range chip shows an instant on a day boundary as its date, an
+"is" chip shows its instant as written, and a plain date already in a URL is
+shown as written until the chip is edited and applied again.
+
+On a field with date inputs, Tab moves from the bar into them and on to
+**Apply dates**, and Shift+Tab from the first date input returns to the bar.
+There, Alt+← → switches the condition instead of Tab.
 
 Each committed Filter token becomes a chip, and the list updates at once: the
 builder navigates with `router.push` inside a transition, so the current rows
@@ -518,6 +530,8 @@ was read.
 | ↑ ↓             | Moves through the suggestions                                |
 | Enter           | Takes the active suggestion, or edits the selected chip      |
 | Tab / Shift+Tab | Switches the condition while a field is staged               |
+| Tab (dates)     | Moves into the date inputs of a field with dates             |
+| Alt+← →         | Switches the condition while a field is staged               |
 | Backspace, ← →  | Selects a chip from an empty bar; Backspace again removes it |
 | Esc             | Cancels the filter being built and closes the suggestions    |
 

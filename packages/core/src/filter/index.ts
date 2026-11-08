@@ -8,6 +8,7 @@ export {
   isFieldConditionToken,
   supportsFilterRange,
   filterTokenOperators,
+  effectiveFilterToken,
 } from './map.js'
 export { collectFilterSpecs, buildListFilterWhere, collectFilterSuggestions } from './collect.js'
 export type { FilterAccessArgs } from './collect.js'

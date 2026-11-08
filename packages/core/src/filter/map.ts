@@ -48,11 +48,26 @@ export function filterTokenOperators(operators: readonly FilterOperator[]): Filt
 }
 
 /**
+ * The token a field whose Filter spec declares `operators` actually maps: a
+ * `range` token (`field:a..b`) on a field that does not
+ * {@link supportsFilterRange} keeps the meaning it had before ranges existed,
+ * `eq` on its literal `a..b`. Any other token is returned as it is.
+ */
+export function effectiveFilterToken(
+  token: FilterToken,
+  operators: readonly FilterOperator[],
+): FilterToken {
+  if (token.operator !== 'range' || supportsFilterRange(operators)) return token
+  return { ...token, operator: 'eq', values: [token.values.join('..')] }
+}
+
+/**
  * Whether a {@link FilterToken} is a field condition the engine maps through
  * its field's Filter spec: not empty, not negated, and naming a field whose
  * operators, as `operatorsFor` reports them, include the token's own. A `range`
- * token also needs exactly two non-empty bounds. Any other token is searched as
- * free text.
+ * token needs exactly two non-empty bounds, and on a field that takes no range
+ * it is that field's `eq` on the literal `a..b` (see
+ * {@link effectiveFilterToken}). Any other token is searched as free text.
  */
 export function isFieldConditionToken(
   token: FilterToken,
@@ -62,11 +77,8 @@ export function isFieldConditionToken(
   const operators = operatorsFor(token.field)
   if (operators === undefined) return false
   if (token.operator !== 'range') return operators.includes(token.operator)
-  return (
-    supportsFilterRange(operators) &&
-    token.values.length === 2 &&
-    token.values.every((value) => value !== '')
-  )
+  if (token.values.length !== 2 || token.values.some((value) => value === '')) return false
+  return supportsFilterRange(operators) || operators.includes('eq')
 }
 
 function rangeCondition(spec: FilterSpec, [low, high]: string[]): FilterCondition | null {
@@ -90,7 +102,9 @@ function rangeCondition(spec: FilterSpec, [low, high]: string[]): FilterConditio
  * spec, uses an unsupported operator, or maps to `null`. A `range` token
  * (`field:a..b`) lowers to the field's own `gte` and `lte` conditions on its two
  * bounds, ANDed, so any field comparing both ways takes one; when either bound
- * maps to `null` the whole `a..b` degrades to free text. Bare words (and
+ * maps to `null` the whole `a..b` degrades to free text. On a field that takes
+ * no range, `field:a..b` is that field's `eq` on the literal `a..b`, as it was
+ * before ranges existed. Bare words (and
  * degraded tokens) are OR-matched across every free-text field, and each such
  * word is ANDed with the rest — so `beta gamma` requires both. A word that
  * reaches this stage but cannot be matched against any free-text field —
@@ -138,10 +152,11 @@ export function buildFilterWhere(
     }
 
     const spec = specs[token.field]
+    const mapped = effectiveFilterToken(token, spec.operators)
     const condition =
-      token.operator === 'range'
-        ? rangeCondition(spec, token.values)
-        : spec.toCondition(token.operator, value)
+      mapped.operator === 'range'
+        ? rangeCondition(spec, mapped.values)
+        : spec.toCondition(mapped.operator, mapped.values[0])
     if (condition === null) {
       freeTextWords.push(value)
       continue

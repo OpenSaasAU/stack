@@ -386,6 +386,7 @@ export {
   isFieldConditionToken,
   supportsFilterRange,
   filterTokenOperators,
+  effectiveFilterToken,
   collectFilterSpecs,
   buildListFilterWhere,
   collectFilterSuggestions,

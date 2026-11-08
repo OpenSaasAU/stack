@@ -1,4 +1,5 @@
 import {
+  effectiveFilterToken,
   filterTokenOperators,
   isEmptyFilterToken,
   isFieldConditionToken,
@@ -85,6 +86,7 @@ const BETWEEN_PHRASE = /^(.+?)\s+between\s+(.+)$/i
 const RANGE_WORDS = /\s+(?:to|and)\s+/i
 const RANGE_DASHES = /[-\u2013]/g
 const PLAIN_DATE = /^(\d{4})-(\d{2})-(\d{2})$/
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/
 const FIELD_TOKEN_SHAPE = /[A-Za-z_][A-Za-z0-9_]*:\S/
 const VALUE_FIRST_MIN_LENGTH = 2
 
@@ -143,7 +145,7 @@ export function conditionsOf(suggestion: FilterFieldSuggestion): FilterTokenOper
 const pad = (value: number, width = 2) => String(Math.abs(value)).padStart(width, '0')
 
 export function formatOffset(minutesBehindUtc: number): string {
-  const ahead = -minutesBehindUtc
+  const ahead = -Math.round(minutesBehindUtc)
   const sign = ahead < 0 ? '-' : '+'
   return `${sign}${pad(Math.trunc(Math.abs(ahead) / 60))}:${pad(Math.abs(ahead) % 60)}`
 }
@@ -153,9 +155,11 @@ export function localDay(date: Date): string {
 }
 
 export function localInstant(date: Date): string {
+  const offset = date.getTimezoneOffset()
+  if (!Number.isInteger(offset)) return date.toISOString()
   const time = `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
   const millis = pad(date.getMilliseconds(), 3)
-  return `${localDay(date)}T${time}.${millis}${formatOffset(date.getTimezoneOffset())}`
+  return `${localDay(date)}T${time}.${millis}${formatOffset(offset)}`
 }
 
 function plainDate(value: string): Date | null {
@@ -172,9 +176,18 @@ export function dayBoundary(day: string, end: boolean): string | null {
   return localInstant(date)
 }
 
+export function normaliseInstant(value: string, end: boolean): string | null {
+  const typed = value.trim()
+  const day = dayBoundary(typed, end)
+  if (day !== null) return day
+  const date = new Date(typed)
+  if (Number.isNaN(date.getTime())) return null
+  return ISO_INSTANT.test(typed) ? typed : localInstant(date)
+}
+
 function boundOf(suggestion: FilterFieldSuggestion, value: string, end: boolean): string {
   if (suggestion.datePicker !== 'instant') return value
-  return dayBoundary(value, end) ?? value
+  return normaliseInstant(value, end) ?? value
 }
 
 function displayBound(suggestion: FilterFieldSuggestion, value: string, end: boolean): string {
@@ -265,6 +278,11 @@ function optionLabel(suggestion: FilterFieldSuggestion, value: string): string {
   )
 }
 
+function effectiveToken(token: FilterToken, fields: FilterFields): FilterToken {
+  const suggestion = token.field === null ? undefined : fields.get(token.field)
+  return suggestion ? effectiveFilterToken(token, suggestion.operators) : token
+}
+
 export function isFieldCondition(
   token: FilterToken,
   fields: FilterFields,
@@ -272,11 +290,12 @@ export function isFieldCondition(
   if (!isFieldConditionToken(token, operatorsOf(fields))) return false
   const suggestion = fields.get(token.field)
   if (suggestion === undefined) return false
-  if (token.operator === 'range') {
-    const [low, high] = token.values
+  const mapped = effectiveFilterToken(token, suggestion.operators)
+  if (mapped.operator === 'range') {
+    const [low, high] = mapped.values
     return checkValue(suggestion, 'gte', low).ok && checkValue(suggestion, 'lte', high).ok
   }
-  return token.values.length === 1 && checkValue(suggestion, token.operator, token.values[0]).ok
+  return mapped.values.length === 1 && checkValue(suggestion, mapped.operator, mapped.values[0]).ok
 }
 
 function describeRange(suggestion: FilterFieldSuggestion, range: FilterRange): TokenDescription {
@@ -291,18 +310,25 @@ function describeRange(suggestion: FilterFieldSuggestion, range: FilterRange): T
   }
 }
 
+function displayValue(suggestion: FilterFieldSuggestion, token: FilterToken): string {
+  const value = token.values[0]
+  if (token.operator === 'eq' || token.operator === 'range') return value
+  return displayBound(suggestion, value, endsTheDay(token.operator))
+}
+
 export function describeToken(token: FilterToken, fields: FilterFields): TokenDescription {
   const suggestion = token.field === null ? undefined : fields.get(token.field)
   if (suggestion && isFieldCondition(token, fields)) {
-    if (token.operator === 'range') {
-      return describeRange(suggestion, { low: token.values[0], high: token.values[1] })
+    const mapped = effectiveToken(token, fields)
+    if (mapped.operator === 'range') {
+      return describeRange(suggestion, { low: mapped.values[0], high: mapped.values[1] })
     }
     const field = fieldLabel(suggestion.field)
-    const condition = conditionLabel(suggestion, token.operator)
+    const condition = conditionLabel(suggestion, mapped.operator)
     const value =
       suggestion.valueSource.kind === 'enum'
-        ? optionLabel(suggestion, token.values[0])
-        : displayBound(suggestion, token.values[0], endsTheDay(token.operator))
+        ? optionLabel(suggestion, mapped.values[0])
+        : displayValue(suggestion, mapped)
     return { field, condition, value, sentence: `${field} ${condition} ${value}` }
   }
   const value =
@@ -339,9 +365,10 @@ export function chipsOf(tokens: readonly FilterToken[], fields: FilterFields): F
       start++
       continue
     }
+    const mapped = effectiveToken(token, fields)
     const range =
-      token.operator === 'range' && isFieldCondition(token, fields)
-        ? { low: token.values[0], high: token.values[1] }
+      mapped.operator === 'range' && isFieldCondition(token, fields)
+        ? { low: mapped.values[0], high: mapped.values[1] }
         : null
     chips.push({ start, count: 1, description: describeToken(token, fields), range })
   }
@@ -362,13 +389,15 @@ export function chipEditText(
     const high = displayBound(suggestion, chip.range.high, true)
     return { draft: { field: suggestion.field, operator: 'range' }, text: `${low}..${high}` }
   }
-  const draft = { field: suggestion.field, operator: token.operator }
+  const mapped = effectiveToken(token, fields)
+  const draft = { field: suggestion.field, operator: mapped.operator }
   if (suggestion.valueSource.kind === 'enum') return { draft, text: '' }
-  return { draft, text: chip.description.value }
+  return { draft, text: displayValue(suggestion, mapped) }
 }
 
 function isSingleChoice(token: FilterToken, fields: FilterFields): boolean {
-  if (token.field === null || token.operator !== 'eq' || !isFieldCondition(token, fields)) {
+  if (token.field === null || !isFieldCondition(token, fields)) return false
+  if (effectiveToken(token, fields).operator !== 'eq') {
     return false
   }
   const suggestion = fields.get(token.field)
@@ -443,27 +472,44 @@ export function checkValue(
   if (format && !matchesFormat(format.pattern, value)) {
     return { ok: false, message: `${label} ${format.description}.` }
   }
+  if (suggestion.datePicker === 'instant' && normaliseInstant(value, false) === null) {
+    return { ok: false, message: `${label} takes a date or a time, like 2026-01-31.` }
+  }
   return { ok: true, value }
 }
 
 type RangeCheck = { ok: true; low: string; high: string } | { ok: false; message: string }
 
-function rangeSplits(text: string): Array<[string, string]> {
+interface RangeSplit {
+  bounds: [string, string]
+  dashed: boolean
+}
+
+function rangeSplits(text: string): RangeSplit[] {
   const dots = text.indexOf('..')
-  if (dots >= 0) return [[text.slice(0, dots), text.slice(dots + 2)]]
+  if (dots >= 0) return [{ bounds: [text.slice(0, dots), text.slice(dots + 2)], dashed: false }]
   const words = RANGE_WORDS.exec(text)
-  if (words) return [[text.slice(0, words.index), text.slice(words.index + words[0].length)]]
+  if (words) {
+    const bounds: [string, string] = [
+      text.slice(0, words.index),
+      text.slice(words.index + words[0].length),
+    ]
+    return [{ bounds, dashed: false }]
+  }
   return [...text.matchAll(RANGE_DASHES)]
     .map((match) => match.index)
     .filter((at) => at > 0 && at < text.length - 1)
-    .map((at) => [text.slice(0, at), text.slice(at + 1)])
+    .map((at) => ({ bounds: [text.slice(0, at), text.slice(at + 1)], dashed: true }))
 }
 
 const bothDates = ([low, high]: [string, string]) =>
-  plainDate(low) !== null && plainDate(high) !== null
+  plainDate(low.trim()) !== null && plainDate(high.trim()) !== null
 
-const bothParse = ([low, high]: [string, string]) =>
-  !Number.isNaN(new Date(low).getTime()) && !Number.isNaN(new Date(high).getTime())
+function splitsAsRange(suggestion: FilterFieldSuggestion, text: string): boolean {
+  return rangeSplits(text.trim()).some(
+    ({ bounds, dashed }) => !dashed || !suggestion.datePicker || bothDates(bounds),
+  )
+}
 
 export function checkRange(suggestion: FilterFieldSuggestion, raw: string): RangeCheck {
   const label = fieldLabel(suggestion.field)
@@ -471,19 +517,53 @@ export function checkRange(suggestion: FilterFieldSuggestion, raw: string): Rang
   const shape = `Type a range for ${label}, as from..to.`
   if (typed === '') return { ok: false, message: shape }
   let firstMiss: string | null = null
-  let fits: Array<[string, string]> = []
-  for (const [rawLow, rawHigh] of rangeSplits(typed)) {
-    const low = checkValue(suggestion, 'gte', rawLow)
-    const high = checkValue(suggestion, 'lte', rawHigh)
+  const fits: Array<[string, string]> = []
+  for (const { bounds, dashed } of rangeSplits(typed)) {
+    if (dashed && suggestion.datePicker && !bothDates(bounds)) continue
+    const low = checkValue(suggestion, 'gte', bounds[0])
+    const high = checkValue(suggestion, 'lte', bounds[1])
     if (low.ok && high.ok) fits.push([low.value, high.value])
     else firstMiss ??= !low.ok ? low.message : !high.ok ? high.message : null
   }
-  if (fits.length > 1 && suggestion.datePicker) {
-    const dated = fits.filter(bothDates)
-    fits = dated.length > 0 ? dated : fits.filter(bothParse)
-  }
   if (fits.length === 1) return { ok: true, low: fits[0][0], high: fits[0][1] }
   return { ok: false, message: fits.length > 1 ? shape : (firstMiss ?? shape) }
+}
+
+export function checkedRangeTokens(
+  suggestion: FilterFieldSuggestion,
+  low: string,
+  high: string,
+): TokensCheck {
+  const tokens = rangeTokens(suggestion, low, high)
+  const [written] = hydrateTokens(filterQuery(tokens))
+  const faithful =
+    written !== undefined &&
+    written.operator === 'range' &&
+    written.values[0] === tokens[0].values[0] &&
+    written.values[1] === tokens[0].values[1]
+  if (faithful) return { ok: true, tokens }
+  return {
+    ok: false,
+    message: `${fieldLabel(suggestion.field)} cannot take that range. Write each end without spaces or commas.`,
+  }
+}
+
+export function normaliseTokens(
+  tokens: readonly FilterToken[],
+  fields: FilterFields,
+): FilterToken[] {
+  return tokens.flatMap((token) => {
+    const suggestion = token.field === null ? undefined : fields.get(token.field)
+    if (!suggestion || suggestion.datePicker !== 'instant' || !isFieldCondition(token, fields)) {
+      return [token]
+    }
+    const mapped = effectiveFilterToken(token, suggestion.operators)
+    if (mapped.operator !== 'range') {
+      return conditionTokens(suggestion, mapped.operator, mapped.values[0])
+    }
+    const range = checkedRangeTokens(suggestion, mapped.values[0], mapped.values[1])
+    return range.ok ? range.tokens : [token]
+  })
 }
 
 export function splitComparison(
@@ -523,7 +603,9 @@ function parseBetween(text: string, fields: FilterFields): PhraseResult | null {
   }
   const check = checkRange(suggestion, match[2])
   if (!check.ok) return { kind: 'invalid', message: check.message }
-  return { kind: 'token', tokens: rangeTokens(suggestion, check.low, check.high) }
+  const range = checkedRangeTokens(suggestion, check.low, check.high)
+  if (!range.ok) return { kind: 'invalid', message: range.message }
+  return { kind: 'token', tokens: range.tokens }
 }
 
 export function parsePhrase(text: string, fields: FilterFields): PhraseResult | null {
@@ -613,7 +695,7 @@ export function rootOptions(text: string, fields: FilterFields): FilterOptions {
   if (FIELD_TOKEN_SHAPE.test(typed)) {
     const terms = hydrateTokens(typed)
     if (terms.some((token) => isFieldCondition(token, fields))) {
-      offer(lastChoicePerField(terms, fields), 'Suggestions')
+      offer(lastChoicePerField(normaliseTokens(terms, fields), fields), 'Suggestions')
     }
   }
 
@@ -632,15 +714,19 @@ export function rootOptions(text: string, fields: FilterFields): FilterOptions {
       const comparison = splitComparison(suggestion, rest)
       const operator = comparison?.operator ?? 'eq'
       const check = checkValue(suggestion, operator, comparison?.rest ?? rest)
-      const range =
-        !check.ok && !comparison && conditionsOf(suggestion).includes('range')
-          ? checkRange(suggestion, rest)
-          : null
-      if (check.ok) {
+      const tryRange =
+        !comparison &&
+        conditionsOf(suggestion).includes('range') &&
+        (splitsAsRange(suggestion, rest) || suggestion.datePicker !== undefined)
+      const range = tryRange ? checkRange(suggestion, rest) : null
+      const ranged = range?.ok ? checkedRangeTokens(suggestion, range.low, range.high) : null
+      if (ranged?.ok) {
+        offer(ranged.tokens, 'Suggestions')
+      } else if (check.ok && ranged === null) {
         offer(conditionTokens(suggestion, operator, check.value), 'Suggestions')
-      } else if (range?.ok) {
-        offer(rangeTokens(suggestion, range.low, range.high), 'Suggestions')
-      } else {
+      } else if (ranged?.ok === false) {
+        hint = ranged.message
+      } else if (!check.ok) {
         hint = check.message
       }
     }
@@ -675,7 +761,16 @@ export function draftTokens(
   if (operator === 'range') {
     const range = checkRange(suggestion, typed)
     if (!range.ok) return range
-    return { ok: true, tokens: rangeTokens(suggestion, range.low, range.high) }
+    return checkedRangeTokens(suggestion, range.low, range.high)
+  }
+  if (
+    operator === 'eq' &&
+    suggestion.datePicker !== undefined &&
+    conditionsOf(suggestion).includes('range') &&
+    splitsAsRange(suggestion, typed)
+  ) {
+    const range = checkRange(suggestion, typed)
+    if (range.ok) return checkedRangeTokens(suggestion, range.low, range.high)
   }
   const single = checkValue(suggestion, operator, typed)
   if (!single.ok) return single

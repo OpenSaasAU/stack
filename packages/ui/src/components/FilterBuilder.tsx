@@ -17,6 +17,7 @@ import {
   filterQuery,
   hydrateTokens,
   isFieldCondition,
+  normaliseTokens,
   placeTokens,
   rootOptions,
   splitComparison,
@@ -147,6 +148,7 @@ export function FilterBuilder({
 
   const inputRef = React.useRef<HTMLInputElement>(null)
   const barRef = React.useRef<HTMLDivElement>(null)
+  const dateFromRef = React.useRef<HTMLInputElement>(null)
   const quietFocus = React.useRef(false)
   const baseId = React.useId()
   const listId = `${baseId}-list`
@@ -162,6 +164,7 @@ export function FilterBuilder({
   const active = options.length === 0 ? -1 : Math.min(activeIndex, options.length - 1)
   const draftField = draft ? fields.get(draft.field) : undefined
   const conditions = draftField ? conditionsOf(draftField) : []
+  const hasDateForm = draft !== null && draftField?.datePicker !== undefined
 
   React.useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -260,6 +263,7 @@ export function FilterBuilder({
 
   const applyDates = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    event.stopPropagation()
     if (!draft || !draftField) return
     const typed = draft.operator === 'range' ? `${dates.from}..${dates.to}` : dates.from
     const check = draftTokens(draftField, draft.operator, typed)
@@ -283,6 +287,12 @@ export function FilterBuilder({
     setDraft({ ...draft, operator })
     setActiveIndex(0)
     focusInput()
+  }
+
+  const stepCondition = (step: number) => {
+    if (!draft) return
+    const at = conditions.indexOf(draft.operator)
+    setCondition(conditions[(at + step + conditions.length) % conditions.length])
   }
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -310,11 +320,12 @@ export function FilterBuilder({
         else setOpen(true)
         break
       case 'Tab':
-        if (draft && conditions.length > 1) {
+        if (hasDateForm && open && !event.shiftKey) {
           event.preventDefault()
-          const at = conditions.indexOf(draft.operator)
-          const step = event.shiftKey ? -1 : 1
-          setCondition(conditions[(at + step + conditions.length) % conditions.length])
+          dateFromRef.current?.focus()
+        } else if (!hasDateForm && draft && conditions.length > 1) {
+          event.preventDefault()
+          stepCondition(event.shiftKey ? -1 : 1)
         } else {
           setOpen(false)
         }
@@ -346,12 +357,22 @@ export function FilterBuilder({
         }
         break
       case 'ArrowLeft':
+        if (event.altKey && draft && conditions.length > 1) {
+          event.preventDefault()
+          stepCondition(-1)
+          break
+        }
         if (!empty || draft || chips.length === 0) break
         event.preventDefault()
         setOpen(false)
         setArmed(armed === null ? chips.length - 1 : Math.max(0, armed - 1))
         break
       case 'ArrowRight':
+        if (event.altKey && draft && conditions.length > 1) {
+          event.preventDefault()
+          stepCondition(1)
+          break
+        }
         if (!empty || armed === null) break
         event.preventDefault()
         setArmed(armed + 1 >= chips.length ? null : armed + 1)
@@ -386,7 +407,7 @@ export function FilterBuilder({
     const pasted = hydrateTokens(event.clipboardData.getData('text'))
     if (!pasted.some((token) => isFieldCondition(token, fields))) return
     event.preventDefault()
-    commit(pasted, false)
+    commit(normaliseTokens(pasted, fields), false)
   }
 
   const armedSentence = armed === null ? null : chips[armed]?.description.sentence
@@ -576,7 +597,7 @@ export function FilterBuilder({
             classNames?.menu,
           )}
         >
-          {draft && draftField?.datePicker && (
+          {draft && hasDateForm && (
             <form
               aria-label={`${fieldLabel(draft.field)} dates`}
               data-slot="filter-builder-dates"
@@ -591,9 +612,15 @@ export function FilterBuilder({
                   {draft.operator === 'range' ? 'From' : 'Date'}
                 </span>
                 <input
+                  ref={dateFromRef}
                   type="date"
                   required
                   value={dates.from}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Tab' || !event.shiftKey) return
+                    event.preventDefault()
+                    inputRef.current?.focus()
+                  }}
                   onChange={(event) => setDates({ ...dates, from: event.target.value })}
                   className="h-8 rounded-md border border-input bg-background px-2"
                 />
@@ -707,7 +734,10 @@ export function FilterBuilder({
           >
             <span>↑↓ move</span>
             <span>Enter select</span>
-            {conditions.length > 1 && <span>Tab change condition</span>}
+            {hasDateForm && <span>Tab dates</span>}
+            {conditions.length > 1 && (
+              <span>{hasDateForm ? 'Alt+←→ change condition' : 'Tab change condition'}</span>
+            )}
             <span>Esc {draft || editing !== null ? 'cancel' : 'close'}</span>
           </p>
         </PopoverContent>
