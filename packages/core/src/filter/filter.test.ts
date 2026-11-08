@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { parseFilterQuery } from './parse.js'
 import { buildFilterWhere } from './map.js'
+import { serializeFilterQuery } from './serialize.js'
 import {
   buildListFilterWhere,
   collectFilterSpecs,
@@ -366,19 +367,52 @@ describe('buildFilterWhere', () => {
     })
   })
 
-  it('searches a structured negated token as the literal word it serialises to, never dropped or negated', () => {
+  it('searches a structured negated token as its serialised URL reads back, never dropped or negated', () => {
     expect(
       buildFilterWhere({ terms: [tok('status', 'active', { negated: true })] }, specs),
     ).toEqual({ name: { contains: '-status:active' } })
   })
 
-  it('maps a structured multi-value token as its comma-joined text, never dropped', () => {
+  it('maps a structured multi-value token as its serialised URL reads back, never dropped', () => {
     expect(
       buildFilterWhere({ terms: [tok('name', '', { values: ['Ada', 'Grace'] })] }, specs),
     ).toEqual({ name: { contains: 'Ada,Grace' } })
     expect(buildFilterWhere({ terms: [tok(null, '', { values: ['', ''] })] }, specs)).toEqual({
       name: { contains: ',' },
     })
+  })
+
+  it.each<[string, FilterToken, unknown]>([
+    [
+      'a negated value with a space',
+      tok(null, 'a b', { negated: true }),
+      { AND: [{ name: { contains: '-"a' } }, { name: { contains: 'b"' } }] },
+    ],
+    [
+      'a multi-value token whose first value has a space',
+      tok('name', '', { values: ['a b', 'c'] }),
+      { AND: [{ name: { contains: 'a b' } }, { name: { contains: ',c' } }] },
+    ],
+    ['a negated field token', tok('status', 'active', { negated: true }), undefined],
+    ['a negated quoted word', tok(null, 'x', { negated: true, quoted: true }), undefined],
+    [
+      'a multi-value status token',
+      tok('status', '', { values: ['active', 'inactive'] }),
+      undefined,
+    ],
+    ['a multi-value token with an empty part', tok('orders', '', { values: ['5', ''] }), undefined],
+    [
+      'a negated multi-value token',
+      tok(null, '', { negated: true, values: ['-x', 'y z'] }),
+      undefined,
+    ],
+  ])('searches %s exactly as its serialised URL reads back', (_case, token, expected) => {
+    const structured = { terms: [token] }
+    const reparsed = parseFilterQuery(serializeFilterQuery(structured))
+    const where = buildFilterWhere(structured, specs)
+    expect(where).toEqual(buildFilterWhere(reparsed, specs))
+    expect(where).not.toBeUndefined()
+    if (expected !== undefined) expect(where).toEqual(expected)
   })
 
   it('searches a comma-only query as the literal comma (#1356)', () => {
@@ -451,6 +485,23 @@ describe('buildFilterWhere — empty-value tokens (#1509)', () => {
       suggestions: { valueSource: { kind: 'none' } },
     }
     expect(buildFilterWhere(parseFilterQuery('""'), { name: containsEverything })).toBeUndefined()
+  })
+
+  it('treats a structured token with no values as inert, never as an empty free-text word', () => {
+    const containsEverything: FilterSpec = {
+      operators: ['eq'],
+      freeText: true,
+      toCondition: (_op, value) => ({ name: { contains: value } }),
+      suggestions: { valueSource: { kind: 'none' } },
+    }
+    expect(
+      buildFilterWhere({ terms: [tok(null, '', { values: [] })] }, { name: containsEverything }),
+    ).toBeUndefined()
+    expect(buildFilterWhere({ terms: [tok('status', '', { values: [] })] }, specs)).toBeUndefined()
+    expect(buildFilterWhere({ terms: [tok(null, '', { values: [] })] }, {})).toBeUndefined()
+    expect(
+      buildFilterWhere({ terms: [tok(null, '', { negated: true, values: [] })] }, specs),
+    ).toBeUndefined()
   })
 
   it('treats a structured negated empty token as inert, exactly as the non-negated one', () => {

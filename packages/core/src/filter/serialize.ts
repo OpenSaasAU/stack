@@ -1,4 +1,4 @@
-import { fieldPrefixLength, isFilterWhitespace } from './parse.js'
+import { fieldPrefixLength } from './parse.js'
 import type { FilterOperator, FilterQuery, FilterToken } from './types.js'
 
 const OPERATOR_PREFIX: Record<FilterOperator, string> = {
@@ -10,7 +10,7 @@ const OPERATOR_PREFIX: Record<FilterOperator, string> = {
 }
 
 function mustQuoteValue(value: string): boolean {
-  return value.startsWith('"') || value.includes(',') || [...value].some(isFilterWhitespace)
+  return /^"|[\s,]/.test(value)
 }
 
 function mustQuoteBareText(token: FilterToken, text: string): boolean {
@@ -37,10 +37,11 @@ function quote(value: string): string {
 }
 
 function serializeValues(token: FilterToken): string {
-  const written = token.values.map((value) => (mustQuoteValue(value) ? quote(value) : value))
-  if (written.length > 0 && !written[0].startsWith('"')) {
+  const values = token.values.length > 0 ? token.values : ['']
+  const written = values.map((value) => (mustQuoteValue(value) ? quote(value) : value))
+  if (!written[0].startsWith('"')) {
     if (token.quoted || mustQuoteBareText(token, written.join(','))) {
-      written[0] = quote(token.values[0])
+      written[0] = quote(values[0])
     }
   }
   return written.join(',')
@@ -63,7 +64,7 @@ export function serializeFilterToken(token: FilterToken): string {
  * {@link parseFilterQuery}: for every query `parseFilterQuery` returns,
  * `parseFilterQuery(serializeFilterQuery(query))` is that query again, with
  * `quoted` set on a value this function had to quote. Every term is written,
- * including one whose values are empty (`field:` or `""`).
+ * including one whose values are empty or absent (`field:` or `""`).
  *
  * A value is quoted when its token says so or when it would otherwise read back
  * as different syntax: whitespace, a comma, a leading quote, a free-text word

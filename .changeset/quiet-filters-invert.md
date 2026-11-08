@@ -7,6 +7,23 @@ Core owns one structured filter query, with a parser and serialiser that are tru
 
 Breaking: `FilterToken` drops `value` and `raw` for `kind`, `negated`, `values` and `quoted`, and `parseFilterQuery`, `serializeFilterQuery` and `buildFilterWhere` now take or return a `FilterQuery`. `@opensaas/stack-ui` removes `queryToState`, `stateToQuery`, `FilterRow` and `FilterBuilderState`.
 
+Migrating from the removed UI helpers and the old token shape:
+
+```ts
+// Before
+import { queryToState, stateToQuery } from '@opensaas/stack-ui'
+const state = queryToState(search)
+const next = stateToQuery(state)
+token.value
+
+// After
+import { isFieldConditionToken, parseFilterQuery, serializeFilterQuery } from '@opensaas/stack-core'
+const query = parseFilterQuery(search)
+const rows = query.terms.filter((token) => isFieldConditionToken(token, operatorsFor))
+const next = serializeFilterQuery(query)
+token.values[0]
+```
+
 `parseFilterQuery` returns a `FilterQuery`, an AND of terms, and `serializeFilterQuery` and `buildFilterWhere` take one. The grammar is today's: a parsed token is never negated and carries exactly one value, and a leading `-` or a `,` is part of the value. The parser never throws, and for every query it returns, `parseFilterQuery(serializeFilterQuery(query))` gives that query back, with `quoted` set where the serialiser had to quote. `isEmptyFilterToken` and `isFieldConditionToken` are exported so callers share the engine's rules for which tokens filter nothing and which map through a field.
 
 ```ts

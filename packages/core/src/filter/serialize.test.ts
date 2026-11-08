@@ -127,6 +127,22 @@ describe('serializeFilterQuery', () => {
   })
 })
 
+describe('serializing a token with no values', () => {
+  it('writes it as an empty token, never as an empty term', () => {
+    expect(serializeFilterQuery(query(token({ values: [] }), token({ values: ['x'] })))).toBe(
+      '"" x',
+    )
+    expect(serializeFilterQuery(query(token({ field: 'role', values: [] })))).toBe('role:')
+  })
+
+  it('reads back as the same number of terms, the first one empty', () => {
+    const readBack = parseFilterQuery(
+      serializeFilterQuery(query(token({ values: [] }), token({ values: ['x'] }))),
+    )
+    expect(readBack.terms.map((term) => term.values)).toEqual([[''], ['x']])
+  })
+})
+
 describe('parse/serialize round-trip on written queries', () => {
   const queries = [
     'beta',

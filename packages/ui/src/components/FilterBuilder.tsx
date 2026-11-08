@@ -48,7 +48,7 @@ function hydrate(
   const order: QuerySlot[] = []
   for (const token of parseFilterQuery(query).terms) {
     if (isEmptyFilterToken(token)) continue
-    if (isFieldConditionToken(token, operatorsFor)) {
+    if (token.values.length === 1 && isFieldConditionToken(token, operatorsFor)) {
       const id = `row-${rows.length}`
       rows.push({ id, token })
       order.push({ kind: 'row', id })

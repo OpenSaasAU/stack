@@ -1,8 +1,25 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { FilterFieldSuggestion } from '@opensaas/stack-core'
+import type { FilterFieldSuggestion, FilterQuery } from '@opensaas/stack-core'
 import { FilterBuilder } from '../../src/components/FilterBuilder.js'
+
+const nextParse = vi.hoisted(() => {
+  const state: { query: FilterQuery | null } = { query: null }
+  return state
+})
+
+vi.mock('@opensaas/stack-core', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@opensaas/stack-core')>()
+  return {
+    ...actual,
+    parseFilterQuery: (query: string): FilterQuery => {
+      const structured = nextParse.query
+      nextParse.query = null
+      return structured ?? actual.parseFilterQuery(query)
+    },
+  }
+})
 
 // FilterBuilder calls useRouter()/usePathname() at render even when `onApply`
 // is supplied (the standalone navigation fallback path).
@@ -125,9 +142,8 @@ describe('FilterBuilder', () => {
         onApply={vi.fn()}
       />,
     )
-    const valueSelect = screen.getByLabelText('Filter value') as HTMLSelectElement
-    expect(valueSelect.value).toBe('published')
-    expect((screen.getByLabelText('Search') as HTMLInputElement).value).toBe('gamma')
+    expect(screen.getByLabelText('Filter value')).toHaveValue('published')
+    expect(screen.getByLabelText('Search')).toHaveValue('gamma')
   })
 
   it.each([
@@ -137,7 +153,7 @@ describe('FilterBuilder', () => {
   ])('keeps %s in the free-text box rather than a row', (_case, query, freeText) => {
     render(<FilterBuilder suggestions={suggestions} defaultValue={query} onApply={vi.fn()} />)
     expect(screen.queryByLabelText('Filter field')).not.toBeInTheDocument()
-    expect((screen.getByLabelText('Search') as HTMLInputElement).value).toBe(freeText)
+    expect(screen.getByLabelText('Search')).toHaveValue(freeText)
   })
 
   it('hydrates a comma value as a structured row with that one value', () => {
@@ -149,8 +165,37 @@ describe('FilterBuilder', () => {
       />,
     )
     expect(screen.getAllByLabelText('Filter field')).toHaveLength(1)
-    expect((screen.getByLabelText('Filter value') as HTMLInputElement).value).toBe('draft,review')
-    expect((screen.getByLabelText('Search') as HTMLInputElement).value).toBe('')
+    expect(screen.getByLabelText('Filter value')).toHaveValue('draft,review')
+    expect(screen.getByLabelText('Search')).toHaveValue('')
+  })
+
+  it('keeps a structured multi-value token in the free-text box, never a row that drops values', async () => {
+    nextParse.query = {
+      terms: [
+        {
+          kind: 'token',
+          field: 'title',
+          operator: 'eq',
+          negated: false,
+          values: ['draft', 'review'],
+          quoted: false,
+        },
+      ],
+    }
+    const onApply = vi.fn()
+    const user = userEvent.setup()
+    render(
+      <FilterBuilder
+        suggestions={suggestions}
+        defaultValue="title:draft,review"
+        onApply={onApply}
+      />,
+    )
+    expect(screen.queryByLabelText('Filter field')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Search')).toHaveValue('title:draft,review')
+
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(onApply).toHaveBeenCalledWith('title:"draft,review"')
   })
 
   it('applies an unchanged hydrated query as it was written', async () => {
@@ -248,7 +293,7 @@ describe('FilterBuilder', () => {
   it('depends only on serializable suggestion data (no functions crossing the boundary)', async () => {
     // Round-tripping the props through JSON strips any accidental function; if
     // the component needed one it would break. Proves the server/client seam.
-    const serializable = JSON.parse(JSON.stringify(suggestions)) as FilterFieldSuggestion[]
+    const serializable: FilterFieldSuggestion[] = JSON.parse(JSON.stringify(suggestions))
     const onApply = vi.fn()
     const user = userEvent.setup()
     render(<FilterBuilder suggestions={serializable} onApply={onApply} />)

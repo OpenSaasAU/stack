@@ -1,3 +1,4 @@
+import { parseFilterQuery } from './parse.js'
 import { serializeFilterToken } from './serialize.js'
 import type {
   FilterCondition,
@@ -22,10 +23,11 @@ const NEVER_MATCHES: FilterCondition = { NOT: {} }
 
 /**
  * Whether a {@link FilterToken} was written with no characters at all (`role:`,
- * `""`). Such a token is incomplete input and filters nothing (#1509).
+ * `""`, or no values). Such a token is incomplete input and filters nothing
+ * (#1509).
  */
 export function isEmptyFilterToken(token: FilterToken): boolean {
-  return token.values.length === 1 && token.values[0] === ''
+  return token.values.length === 0 || (token.values.length === 1 && token.values[0] === '')
 }
 
 /**
@@ -49,9 +51,10 @@ export function isFieldConditionToken(
  * Pure — no DB/Prisma imports. This is the unit-tested half of the filter seam.
  * Terms combine with implicit AND. An empty token is a deliberate no-op —
  * incomplete input expresses no constraint, so it contributes nothing and is
- * never handed to a free-text field (#1509). A negated token is searched as
- * the literal word it serialises to, and a token with several values as their
- * comma-joined text; neither is dropped or negated. A token
+ * never handed to a free-text field (#1509). A negated token or a token with
+ * several values is searched exactly as the terms
+ * `parseFilterQuery(serializeFilterQuery({ terms: [token] }))` reads back, so it
+ * filters the same rows as its own URL; it is never dropped or negated. A token
  * degrades to free text (never an error) when its field is unknown, has no
  * spec, uses an unsupported operator, or maps to `null`. Bare words (and
  * degraded tokens) are OR-matched across every free-text field, and each such
@@ -77,7 +80,13 @@ export function buildFilterWhere(
   const specFor = (field: string): FilterSpec | undefined =>
     Object.hasOwn(specs, field) ? specs[field] : undefined
 
-  for (const token of query.terms) {
+  const terms = query.terms.flatMap((token) =>
+    !isEmptyFilterToken(token) && (token.negated || token.values.length !== 1)
+      ? parseFilterQuery(serializeFilterToken(token)).terms
+      : [token],
+  )
+
+  for (const token of terms) {
     // An empty value is incomplete input, not a constraint the engine failed
     // to honour: `role:` (or a bare `""`) says nothing to filter on, so it is
     // inert by design rather than narrowed away (#1509). This must be checked
@@ -88,19 +97,13 @@ export function buildFilterWhere(
     // to a token that DOES carry a value the system cannot compile.
     if (isEmptyFilterToken(token)) continue
 
-    if (token.negated) {
-      freeTextWords.push(serializeFilterToken(token))
-      continue
-    }
-
-    const value = token.values.join(',')
-    const spec = token.field === null ? undefined : specFor(token.field)
-    if (!spec || !isFieldConditionToken(token, () => spec.operators)) {
+    const [value] = token.values
+    if (!isFieldConditionToken(token, (field) => specFor(field)?.operators)) {
       freeTextWords.push(value)
       continue
     }
 
-    const condition = spec.toCondition(token.operator, value)
+    const condition = specs[token.field].toCondition(token.operator, value)
     if (condition === null) {
       freeTextWords.push(value)
       continue
