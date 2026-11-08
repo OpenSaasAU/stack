@@ -1,5 +1,6 @@
 import {
   FILTER_COMPARISON_PREFIXES,
+  filterTokenFreeTextWord,
   isEmptyFilterToken,
   isFieldConditionToken,
   parseFilterQuery,
@@ -226,10 +227,7 @@ export function describeToken(token: FilterToken, fields: FilterFields): TokenDe
     const sentence = value ? `${field} ${condition} ${value}` : `${field} ${condition}`
     return { field, condition, value, sentence }
   }
-  const value =
-    token.field === null && !token.negated && token.values.length === 1
-      ? token.values[0].text
-      : serializeFilterQuery({ terms: [token] })
+  const value = filterTokenFreeTextWord(token)
   return { field: 'Text', condition: 'contains', value, sentence: `Text contains ${value}` }
 }
 

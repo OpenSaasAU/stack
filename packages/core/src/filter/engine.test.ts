@@ -262,22 +262,31 @@ describe('is not, any of and is empty over the secured surface (ADR-0083)', () =
   )
 
   test(
-    'a list with a value its field rejects is searched whole, never as the values that map',
+    'a list with a value its field rejects is searched as one word, never as the values that map',
     async () => {
-      await seed('Post', { title: 'About category:product,bogus' })
+      await seed('Post', { title: 'About product,bogus' })
       expect(titles(await filtered('Post', 'category:product,bogus'))).toEqual([
-        'About category:product,bogus',
+        'About product,bogus',
       ])
     },
     BOOT,
   )
 
   test(
-    'a list on a field the session cannot read is searched as its literal word',
+    'a positive token on an unknown field searches its value',
     async () => {
-      await seed('Post', { title: 'Reading secret:a,b', secret: 'a' })
+      await seed('Post', { title: 'Findable Title' })
+      expect(titles(await filtered('Post', 'nosuchfield:Findable'))).toEqual(['Findable Title'])
+    },
+    BOOT,
+  )
+
+  test(
+    'a list on a field the session cannot read is searched as one word, its values',
+    async () => {
+      await seed('Post', { title: 'Reading a,b', secret: 'a' })
       await seed('Post', { title: 'Reading a', secret: 'b' })
-      expect(titles(await filtered('Post', 'secret:a,b'))).toEqual(['Reading secret:a,b'])
+      expect(titles(await filtered('Post', 'secret:a,b'))).toEqual(['Reading a,b'])
     },
     BOOT,
   )

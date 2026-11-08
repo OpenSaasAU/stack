@@ -457,12 +457,14 @@ to free text rather than erroring.
 "Is not" keeps the rows with no value: `-category:product` returns uncategorised
 rows too, which SQL's `NOT` alone would drop. `field:!` is understood only on a
 field whose Filter spec says what empty means; on any other field it degrades to
-free text. A token that cannot map in any part is searched whole, as the one
-word it is written as and its chip shows: `-secret:x`, on a field the session
-cannot read or the list does not have, searches for `-secret:x`, so negation
-never turns an unreadable field into a filter, and `status:draft,bogus` searches
-for `status:draft,bogus` rather than for drafts. A comma in a free-text word is
-part of the word.
+free text. A token that cannot map in any part is searched as one free-text
+word, and its chip shows exactly that word. A positive token searches its
+values with the field name dropped: `nosuchfield:Findable` searches `Findable`,
+and `status:draft,bogus` searches `draft,bogus` rather than for drafts. A
+negated token searches its whole literal and is never negated: `-secret:x`, on
+a field the session cannot read or the list does not have, searches for
+`-secret:x`, so negation never turns an unreadable field into a filter. A comma
+in a free-text word is part of the word.
 
 Each field type declares which operators it accepts. Text fields accept `eq`
 only, and lower it to `contains`. Numbers, decimals, big integers, timestamps

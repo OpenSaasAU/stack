@@ -384,6 +384,7 @@ export {
   FILTER_OPERATOR_PREFIXES,
   FILTER_COMPARISON_PREFIXES,
   buildFilterWhere,
+  filterTokenFreeTextWord,
   isEmptyFilterToken,
   isFieldConditionToken,
   collectFilterSpecs,

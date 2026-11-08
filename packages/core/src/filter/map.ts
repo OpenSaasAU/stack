@@ -52,6 +52,25 @@ export function isFieldConditionToken(
     : capabilities.operators.includes(token.operator)
 }
 
+/**
+ * The one free-text word a {@link FilterToken} is searched as when it cannot
+ * map to a field condition, and the text the Filter builder's chip shows for it.
+ *
+ * - A positive field token searches its values, written as one comma list
+ *   with the field name dropped: `nosuchfield:Findable` is `Findable`, and
+ *   `status:draft,bogus` is `draft,bogus`.
+ * - A negated token, or a `field:!`, searches its whole serialised literal
+ *   (`-secret:x`), so a token that cannot map is never negated.
+ * - A bare word searches its own text.
+ */
+export function filterTokenFreeTextWord(token: FilterToken): string {
+  if (token.negated || token.operator === 'empty') return serializeFilterToken(token)
+  return token.values
+    .map((value) => value.text)
+    .filter((text) => text !== '')
+    .join(',')
+}
+
 function anyOf(conditions: FilterCondition[]): FilterCondition {
   return conditions.length === 1 ? conditions[0] : { OR: conditions }
 }
@@ -97,14 +116,16 @@ function fieldCondition(token: FilterToken, spec: FilterSpec): FilterCondition |
  *   A spec stating a `negation` says `NOT` alone already does, and gets no `OR`.
  * - `field:!` is the field's `empty` condition and `-field:!` its `NOT`.
  *
- * A field token that cannot map in any part degrades whole to one free-text
- * word, written exactly as {@link serializeFilterToken} writes it and as the
- * Filter builder's chip shows it (`status:draft,bogus`, `-secret:"Ada"`): its
- * field is unknown, has no spec, does not support the operator, cannot be
- * empty for `field:!`, or maps any one of the values to `null`. Degrading the
- * whole token keeps `NOT` of free text from turning a field the session cannot
- * read into a filter. A free-text token is read as its serialised form reads
- * back, so a structured one with several values is the words its URL holds.
+ * A token that cannot map in any part (an unknown or unreadable field, an
+ * unsupported operator, a value the field rejects, any one value of a list, or
+ * `field:!` on a field that cannot be empty) is searched as one free-text word,
+ * {@link filterTokenFreeTextWord}, which is also what the Filter builder's chip
+ * shows. A positive token searches its values with the field name dropped
+ * (`status:draft,bogus` searches `draft,bogus`); a negated one searches its
+ * whole literal (`-secret:x`) and is never negated, because `NOT` of free text
+ * would turn a field the session cannot read into a filter. A free-text token
+ * is read as its serialised form reads back, so a structured one with several
+ * values is the words its URL holds.
  *
  * Bare words (and degraded tokens) are OR-matched across every free-text
  * field, and each such word is ANDed with the rest — so `beta gamma` requires
@@ -156,12 +177,7 @@ export function buildFilterWhere(
       fieldConditions.push(condition)
       continue
     }
-    const [value] = token.values
-    const word =
-      token.field === null && !token.negated && token.values.length === 1 && value !== undefined
-        ? value.text
-        : serializeFilterToken(token)
-    textConditions.push(freeText(word))
+    textConditions.push(freeText(filterTokenFreeTextWord(token)))
   }
 
   const andConditions = [...fieldConditions, ...textConditions]

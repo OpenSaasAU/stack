@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { parseFilterQuery } from './parse.js'
-import { buildFilterWhere } from './map.js'
+import { buildFilterWhere, filterTokenFreeTextWord } from './map.js'
 import { serializeFilterQuery } from './serialize.js'
 import {
   buildListFilterWhere,
@@ -302,25 +302,25 @@ describe('buildFilterWhere', () => {
   // ─── Graceful degradation (ADR-0017): unknown syntax → free text, never error
   it('degrades an unknown field to free text', () => {
     expect(buildFilterWhere(parseFilterQuery('role:Editor'), specs)).toEqual({
-      name: { contains: 'role:Editor' },
+      name: { contains: 'Editor' },
     })
   })
 
   it('degrades an unsupported operator to free text', () => {
     expect(buildFilterWhere(parseFilterQuery('status:>x'), specs)).toEqual({
-      name: { contains: 'status:>x' },
+      name: { contains: 'x' },
     })
   })
 
   it('degrades an unmappable value (non-numeric on a numeric field) to free text', () => {
     expect(buildFilterWhere(parseFilterQuery('orders:abc'), specs)).toEqual({
-      name: { contains: 'orders:abc' },
+      name: { contains: 'abc' },
     })
   })
 
   it('degrades an unknown enum value to free text', () => {
     expect(buildFilterWhere(parseFilterQuery('status:pending'), specs)).toEqual({
-      name: { contains: 'status:pending' },
+      name: { contains: 'pending' },
     })
   })
 
@@ -404,22 +404,34 @@ describe('buildFilterWhere', () => {
     expect(buildFilterWhere(parseFilterQuery('role:,'), specs)).toBeUndefined()
   })
 
-  it('degrades the whole token when one of its values cannot map', () => {
+  it('searches a positive token that cannot map as one word, its values', () => {
     expect(buildFilterWhere(parseFilterQuery('status:active,pending'), specs)).toEqual({
-      name: { contains: 'status:active,pending' },
+      name: { contains: 'active,pending' },
     })
     expect(buildFilterWhere(parseFilterQuery('secret:a,b'), specs)).toEqual({
-      name: { contains: 'secret:a,b' },
+      name: { contains: 'a,b' },
+    })
+    expect(buildFilterWhere(parseFilterQuery('secret:"Ada Lovelace"'), specs)).toEqual({
+      name: { contains: 'Ada Lovelace' },
+    })
+    expect(buildFilterWhere(parseFilterQuery('status:"!"'), specs)).toEqual({
+      name: { contains: '!' },
     })
   })
 
-  it('searches a degraded token exactly as it serialises, quotes included', () => {
+  it('searches a negated token that cannot map as its whole literal, quotes included', () => {
     expect(buildFilterWhere(parseFilterQuery('-secret:"Ada Lovelace"'), specs)).toEqual({
       name: { contains: '-secret:"Ada Lovelace"' },
     })
-    expect(buildFilterWhere(parseFilterQuery('status:"!"'), specs)).toEqual({
-      name: { contains: 'status:"!"' },
-    })
+  })
+
+  it('searches the word its chip shows', () => {
+    for (const written of ['status:active,pending', '-secret:x', 'role:"a b"', 'views:!']) {
+      const [token] = parseFilterQuery(written).terms
+      expect(buildFilterWhere({ terms: [token] }, specs), written).toEqual({
+        name: { contains: filterTokenFreeTextWord(token) },
+      })
+    }
   })
 
   it('never negates a token that cannot map: it is searched as the literal word', () => {
@@ -1021,7 +1033,7 @@ describe('buildListFilterWhere (end-to-end over a real list config)', () => {
       gatedConfig,
       noAccessArgs,
     )
-    expect(where).toEqual({ name: { contains: 'billingAddress:12' } })
+    expect(where).toEqual({ name: { contains: '12' } })
   })
 })
 
@@ -1074,7 +1086,7 @@ describe('to-many relationship Filter spec (presence — issue #732, ADR-0055)',
     ).toEqual({ posts: { some: {} } })
     expect(
       await buildListFilterWhere('posts:>5', config.lists.User, 'User', config, noAccessArgs),
-    ).toEqual({ name: { contains: 'posts:>5' } })
+    ).toEqual({ name: { contains: '5' } })
   })
 })
 

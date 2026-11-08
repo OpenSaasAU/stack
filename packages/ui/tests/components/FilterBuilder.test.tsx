@@ -279,7 +279,7 @@ describe('FilterBuilder', () => {
       setup({ defaultValue: 'status:published nosuch:value "status:draft" views:>2 beta' })
       expect(chipNames()).toEqual([
         'Status is Published',
-        'Text contains nosuch:value',
+        'Text contains value',
         'Text contains status:draft',
         'Views greater than 2',
         'Text contains beta',
@@ -366,7 +366,7 @@ describe('FilterBuilder', () => {
     it('shows a hydrated value the field does not take as text, and writes it back as read', async () => {
       const { user, onApply } = setup({ defaultValue: 'views:abc views:>2 beta' })
       expect(chipNames()).toEqual([
-        'Text contains views:abc',
+        'Text contains abc',
         'Views greater than 2',
         'Text contains beta',
       ])
@@ -379,7 +379,7 @@ describe('FilterBuilder', () => {
       await user.click(bar)
       await user.paste('status:draft views:abc')
       expect(onApply).toHaveBeenCalledWith('status:draft views:abc')
-      expect(chipNames()).toEqual(['Status is Draft', 'Text contains views:abc'])
+      expect(chipNames()).toEqual(['Status is Draft', 'Text contains abc'])
     })
 
     it('pastes only values the fields do not take as typed text', async () => {
@@ -420,11 +420,7 @@ describe('FilterBuilder', () => {
           defaultValue="orders:>=1 orders:>0 orders:>5"
         />,
       )
-      expect(chipNames()).toEqual([
-        'Orders at least 1',
-        'Orders greater than 0',
-        'Text contains orders:>5',
-      ])
+      expect(chipNames()).toEqual(['Orders at least 1', 'Orders greater than 0', 'Text contains 5'])
       await user.type(screen.getByRole('combobox', { name: 'Filter' }), 'orders >= 5')
       expect(screen.getByText('Orders takes 1 with “at least”.')).toBeInTheDocument()
       expect(onApply).not.toHaveBeenCalled()
@@ -802,6 +798,14 @@ describe('FilterBuilder', () => {
         'Author is not empty',
         'Text contains views:!',
         'Text contains -secret:x',
+      ])
+    })
+
+    it('shows a list with a value the field does not take as the one word it searches', () => {
+      setup({ defaultValue: 'status:draft,bogus -status:draft,bogus' })
+      expect(chipNames()).toEqual([
+        'Text contains draft,bogus',
+        'Text contains -status:draft,bogus',
       ])
     })
 
