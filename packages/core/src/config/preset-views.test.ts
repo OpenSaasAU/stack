@@ -33,6 +33,12 @@ describe('Preset view key uniqueness', () => {
     expect(() => withPresets(['mine', 'drafts'])).not.toThrow()
   })
 
+  it('refuses an empty key, which the All tab already stands for', () => {
+    expect(() => withPresets(['mine', ''])).toThrow(
+      /List "Post" declares a Preset view with an empty key in ui.listView.presets/,
+    )
+  })
+
   it('refuses a duplicate key on a list a plugin adds', async () => {
     const plugin: Plugin = {
       name: 'tickets',
@@ -117,9 +123,10 @@ afterAll(async () => {
   await database?.close()
 })
 
-function resolve(session: Session | null, requested: string | undefined) {
+async function resolve(session: Session | null, requested: string | undefined) {
   const context = engineContextOf(database.context(session))
-  return resolvePresetViews(presetConfig.lists.Post, 'Post', context, requested)
+  const resolved = resolvePresetViews(presetConfig.lists.Post, 'Post', context, requested)
+  return { tabs: await resolved.tabs, active: await resolved.active }
 }
 
 describe('resolvePresetViews', () => {
@@ -160,6 +167,30 @@ describe('resolvePresetViews', () => {
     expect((await resolve({ name: 'Ada' }, 'editors')).active).toBeNull()
     expect((await resolve({ name: 'Ada' }, 'broken')).active).toBeNull()
     expect((await resolve({ name: 'Ada', boom: true }, 'mine')).active).toBeNull()
+  })
+
+  it('runs each hasAccess once, and opens the active preset before the tabs settle', async () => {
+    const gate = vi.fn(() => true)
+    let releaseTabs = () => {}
+    const slow = new Promise<boolean>((resolve) => {
+      releaseTabs = () => resolve(true)
+    })
+    const listConfig: Pick<OpenSaasConfig['lists'][string], 'ui'> = {
+      ui: {
+        listView: {
+          presets: [
+            { key: 'open', label: 'Open', search: 'status:draft', hasAccess: gate },
+            { key: 'slow', label: 'Slow', search: 'status:draft', hasAccess: () => slow },
+          ],
+        },
+      },
+    }
+    const context = engineContextOf(database.context({ name: 'Ada' }))
+    const resolved = resolvePresetViews(listConfig, 'Post', context, 'open')
+    expect(await resolved.active).toEqual({ key: 'open', search: 'status:draft' })
+    releaseTabs()
+    expect((await resolved.tabs).map((tab) => tab.key)).toEqual(['open', 'slow'])
+    expect(gate).toHaveBeenCalledTimes(1)
   })
 
   it('never resolves a hidden preset’s search', async () => {

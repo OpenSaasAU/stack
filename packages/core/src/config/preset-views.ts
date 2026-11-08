@@ -1,22 +1,8 @@
 import type { AccessContext } from '../access/types.js'
 import { parseFilterQuery } from '../filter/parse.js'
 import { serializeFilterQuery } from '../filter/serialize.js'
+import { checkHasAccess } from './has-access-gate.js'
 import type { OpenSaasConfig, PresetView } from './types.js'
-
-export function assertUniquePresetKeys(config: OpenSaasConfig): OpenSaasConfig {
-  for (const [listKey, listConfig] of Object.entries(config.lists)) {
-    const seen = new Set<string>()
-    for (const preset of listConfig.ui?.listView?.presets ?? []) {
-      if (seen.has(preset.key)) {
-        throw new Error(
-          `List "${listKey}" declares the Preset view key "${preset.key}" more than once in ui.listView.presets. Give each Preset view its own key.`,
-        )
-      }
-      seen.add(preset.key)
-    }
-  }
-  return config
-}
 
 export interface PresetViewTab {
   key: string
@@ -30,18 +16,8 @@ export interface ResolvedPresetView {
 }
 
 export interface ResolvedPresetViews {
-  tabs: PresetViewTab[]
-  active: ResolvedPresetView | null
-}
-
-async function mayOpen(preset: PresetView, context: AccessContext, listKey: string) {
-  if (!preset.hasAccess) return true
-  try {
-    return (await preset.hasAccess({ session: context.session, context, listKey })) === true
-  } catch (error) {
-    console.error(`Preset view "${preset.key}" on "${listKey}" hasAccess threw:`, error)
-    return false
-  }
+  tabs: Promise<PresetViewTab[]>
+  active: Promise<ResolvedPresetView | null>
 }
 
 async function resolveSearch(
@@ -65,24 +41,40 @@ async function resolveSearch(
   return serializeFilterQuery(parseFilterQuery(search))
 }
 
-export async function resolvePresetViews(
+async function resolveActive(
+  preset: PresetView,
+  gate: Promise<boolean>,
+  context: AccessContext,
+  listKey: string,
+): Promise<ResolvedPresetView | null> {
+  if (!(await gate)) return null
+  const search = await resolveSearch(preset, context, listKey)
+  if (search === null) return null
+  return { key: preset.key, search, ...(preset.sort ? { sort: preset.sort } : {}) }
+}
+
+/**
+ * Start resolving a list's Preset views for this session. Every `hasAccess`
+ * gate starts at once and runs once: `active` waits only on the requested
+ * preset's gate and `search`, so the list read need not wait for the tabs.
+ */
+export function resolvePresetViews(
   listConfig: Pick<OpenSaasConfig['lists'][string], 'ui'>,
   listKey: string,
   context: AccessContext,
   requested: string | undefined,
-): Promise<ResolvedPresetViews> {
+): ResolvedPresetViews {
   const presets = listConfig.ui?.listView?.presets ?? []
-  if (presets.length === 0) return { tabs: [], active: null }
-  const allowed = await Promise.all(presets.map((preset) => mayOpen(preset, context, listKey)))
-  const visible = presets.filter((_, index) => allowed[index])
-  const tabs = visible.map((preset) => ({ key: preset.key, label: preset.label }))
-  const chosen =
-    requested === undefined ? undefined : visible.find((preset) => preset.key === requested)
-  if (!chosen) return { tabs, active: null }
-  const search = await resolveSearch(chosen, context, listKey)
-  if (search === null) return { tabs, active: null }
-  return {
-    tabs,
-    active: { key: chosen.key, search, ...(chosen.sort ? { sort: chosen.sort } : {}) },
-  }
+  const gates = presets.map((preset) => checkHasAccess(preset, context, listKey, 'Preset view'))
+  const tabs = Promise.all(gates).then((allowed) =>
+    presets
+      .filter((_, index) => allowed[index])
+      .map((preset) => ({ key: preset.key, label: preset.label })),
+  )
+  const index = requested === undefined ? -1 : presets.findIndex(({ key }) => key === requested)
+  const active =
+    index === -1
+      ? Promise.resolve(null)
+      : resolveActive(presets[index], gates[index], context, listKey)
+  return { tabs, active }
 }

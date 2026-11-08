@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { parseFilterQuery } from './parse.js'
-import { serializeFilterQuery } from './serialize.js'
+import { quoteFilterValue, serializeFilterQuery } from './serialize.js'
 import { buildFilterWhere } from './map.js'
 import type {
   FilterOperator,
@@ -365,6 +365,45 @@ describe('parse/serialize is an inverse on what the parser produces (property)',
           })),
         })
       })
+    }
+  })
+})
+
+describe('quoteFilterValue reads back as exactly one value (property)', () => {
+  const generate = arbitrary(seededRandom(2256))
+  const fixed = [
+    '',
+    '"',
+    'a" status:published',
+    '\\',
+    'a\\',
+    'a\\"',
+    '\\\\"b',
+    'Ada\nLovelace',
+    '\t\r\n',
+    'a,b',
+    ',',
+    '-',
+    '-Ada',
+    '!',
+    '-!',
+    '..',
+    '1..5',
+    '>5',
+    '>=',
+    '//x',
+    'status:draft',
+    '#abc',
+  ]
+
+  it('parses field:quoteFilterValue(text) as one eq token whose value is text', () => {
+    const texts = [...fixed, ...Array.from({ length: RUNS }, () => generate.string())]
+    for (const text of texts) {
+      for (const field of FIELDS) {
+        expect(parseFilterQuery(`${field}:${quoteFilterValue(text)}`), JSON.stringify(text)).toEqual(
+          query(token({ field, values: [v(text, true)] })),
+        )
+      }
     }
   })
 })

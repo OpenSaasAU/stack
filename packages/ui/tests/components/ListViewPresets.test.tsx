@@ -69,6 +69,16 @@ describe('Preset view tabs', () => {
     expect(screen.getByRole('link', { name: 'All' })).toHaveAttribute('href', '/admin/post?page=1')
   })
 
+  it('marks no tab current while a typed or expanded search filters the list', () => {
+    render(<ListViewClient {...props} search="status:draft" />)
+    for (const tab of tabs()) expect(tab).not.toHaveAttribute('aria-current')
+  })
+
+  it('keeps All current for a whitespace-only search', () => {
+    render(<ListViewClient {...props} search="  " />)
+    expect(screen.getByRole('link', { name: 'All' })).toHaveAttribute('aria-current', 'page')
+  })
+
   it('renders no tabs for a list without presets', () => {
     render(<ListViewClient {...props} presets={[]} />)
     expect(screen.queryByRole('navigation', { name: 'Post views' })).toBeNull()
@@ -124,5 +134,22 @@ describe('the first edit on a preset', () => {
     render(<ListViewClient {...onPreset} />)
     await user.click(screen.getByRole('button', { name: /next/i }))
     expect(mockPush).toHaveBeenCalledWith('/admin/post?preset=mine&sort=title%3Adesc&page=2')
+  })
+})
+
+describe('the empty state on a preset', () => {
+  it('names the preset instead of echoing its query', () => {
+    render(<ListViewClient {...onPreset} items={[]} total={0} />)
+    const empty = screen.getByText('No rows in “My drafts”.')
+    expect(empty).toBeVisible()
+    expect(screen.queryByText(/Nothing matched/)).toBeNull()
+    expect(screen.queryByText(/status:draft”/)).toBeNull()
+  })
+
+  it('shows the search message once the preset has expanded to ?search=', () => {
+    render(<ListViewClient {...props} search="status:draft" items={[]} total={0} />)
+    expect(
+      screen.getByText('Nothing matched “status:draft”. Try a different search term.'),
+    ).toBeVisible()
   })
 })

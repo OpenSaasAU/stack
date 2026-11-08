@@ -20,7 +20,7 @@ test.describe('Preset views', () => {
   const rowTitles = (page: Page) => page.locator('[data-slot="row-title-link"]')
   const titled = (...titles: string[]) => titles.map((title) => new RegExp(`${title}$`))
 
-  test('open My drafts, refine it, and share its link with another author', async ({
+  test('open My drafts, refine it, and share its link with an author whose name contains the first', async ({
     page,
     browser,
   }) => {
@@ -50,22 +50,23 @@ test.describe('Preset views', () => {
     expect(expanded.searchParams.get('search')).toBe(`status:draft author:"${ada}"`)
     expect(expanded.searchParams.get('sort')).toBe('title:desc')
     await expect(rowTitles(page)).toHaveText(titled(`Ada beta ${stamp}`, `Ada alpha ${stamp}`))
-    await expect(views.getByRole('link', { name: 'All' })).toHaveAttribute('aria-current', 'page')
+    for (const tab of await views.getByRole('link').all()) {
+      await expect(tab).not.toHaveAttribute('aria-current')
+    }
 
     const other = await browser.newContext()
-    const grace = await other.newPage()
+    const junior = await other.newPage()
     try {
-      const graceName = `Preset Grace ${stamp}`
-      await signUp(grace, generateTestUser(graceName))
-      await createPost(grace, `Grace draft ${stamp}`, `grace-draft-${stamp}`)
+      await signUp(junior, generateTestUser(`${ada} Junior`))
+      await createPost(junior, `Junior draft ${stamp}`, `junior-draft-${stamp}`)
 
-      await grace.goto(presetUrl)
+      await junior.goto(presetUrl)
       await expect(
-        grace
+        junior
           .getByRole('navigation', { name: 'Post views' })
           .getByRole('link', { name: 'My drafts' }),
       ).toHaveAttribute('aria-current', 'page')
-      await expect(rowTitles(grace)).toHaveText(titled(`Grace draft ${stamp}`))
+      await expect(rowTitles(junior)).toHaveText(titled(`Junior draft ${stamp}`))
     } finally {
       await other.close()
     }

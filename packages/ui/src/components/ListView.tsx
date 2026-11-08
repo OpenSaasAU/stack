@@ -31,7 +31,11 @@ import {
   OpenSaasConfig,
 } from '@opensaas/stack-core'
 import type { SecuredQuery } from '@opensaas/stack-core'
-import { isRowActionAvailable, resolvePresetViews } from '@opensaas/stack-core/internal'
+import {
+  filterByHasAccess,
+  isRowActionAvailable,
+  resolvePresetViews,
+} from '@opensaas/stack-core/internal'
 
 /**
  * Whether the list's delete access is NOT statically false (issue #733).
@@ -46,32 +50,6 @@ function canDeleteList(deleteAccess: AccessControl | boolean | undefined): boole
   if (deleteAccess === undefined) return false
   if (typeof deleteAccess === 'boolean') return deleteAccess
   return true
-}
-
-type ActionAccessGate = (args: {
-  session: AccessContext['session']
-  context: AccessContext
-  listKey: string
-}) => boolean | Promise<boolean>
-
-async function resolveVisibleActions<TAction extends { key: string; hasAccess?: ActionAccessGate }>(
-  actions: TAction[] | undefined,
-  context: AccessContext,
-  listKey: string,
-): Promise<TAction[]> {
-  if (!actions || actions.length === 0) return []
-  const allowed = await Promise.all(
-    actions.map(async (action) => {
-      if (!action.hasAccess) return true
-      try {
-        return await action.hasAccess({ session: context.session, context, listKey })
-      } catch (error) {
-        console.error(`Action "${action.key}" hasAccess threw:`, error)
-        return false
-      }
-    }),
-  )
-  return actions.filter((_, index) => allowed[index])
 }
 
 function serializeBulkAction(action: BulkAction): SerializedBulkAction {
@@ -265,8 +243,8 @@ export async function ListView({
     Math.max(1, Math.floor(requestedPageSize) || DEFAULT_PAGE_SIZE),
     MAX_PAGE_SIZE,
   )
-  const presetViews = await resolvePresetViews(listConfig, listKey, context, preset)
-  const activePreset = presetViews.active
+  const presetViews = resolvePresetViews(listConfig, listKey, context, preset)
+  const activePreset = await presetViews.active
   const activeSearch = activePreset ? activePreset.search : search
   const sortCandidates = [sort, activePreset?.sort, initialSort]
 
@@ -419,10 +397,11 @@ export async function ListView({
     rowActionKeys: Record<string, string[]>
   }> => {
     if (!serverAction) return { visibleRowActions: [], rowActionKeys: {} }
-    const visible = await resolveVisibleActions(
+    const visible = await filterByHasAccess(
       listConfig.ui?.listView?.rowActions,
       context,
       listKey,
+      'Row action',
     )
     const keys = await availableRowActionKeys(
       visible,
@@ -433,12 +412,17 @@ export async function ListView({
     )
     return { visibleRowActions: visible, rowActionKeys: keys }
   }
-  const [visibleBulkActions, { visibleRowActions, rowActionKeys }, { hideCreate, hideDelete }] =
-    await Promise.all([
-      resolveVisibleActions(listConfig.ui?.listView?.bulkActions, context, listKey),
-      resolveRowActions(),
-      resolveListUi(listConfig, context),
-    ])
+  const [
+    visibleBulkActions,
+    { visibleRowActions, rowActionKeys },
+    { hideCreate, hideDelete },
+    presetTabs,
+  ] = await Promise.all([
+    filterByHasAccess(listConfig.ui?.listView?.bulkActions, context, listKey, 'Bulk action'),
+    resolveRowActions(),
+    resolveListUi(listConfig, context),
+    presetViews.tabs,
+  ])
   const bulkActions = visibleBulkActions.map(serializeBulkAction)
 
   return (
@@ -482,7 +466,7 @@ export async function ListView({
         pageSize={pageSize}
         total={total || 0}
         search={activeSearch}
-        presets={presetViews.tabs}
+        presets={presetTabs}
         activePreset={activePreset?.key}
         filterSuggestions={filterSuggestions}
         serverAction={serverAction}

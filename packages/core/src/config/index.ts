@@ -8,8 +8,7 @@ import type {
 import { executePlugins, getPluginData } from './plugin-engine.js'
 import { assertUniqueMcpToolNames } from './mcp-tool-names.js'
 import { assertValidHookOnlyFields } from './hook-only-fields.js'
-import { assertUniqueRowActionKeys } from './row-action-keys.js'
-import { assertUniquePresetKeys } from './preset-views.js'
+import { assertUniquePresetKeys, assertUniqueRowActionKeys } from './list-view-keys.js'
 import type { AccessControl } from '../access/types.js'
 
 function normalizeListAccess<T>(

@@ -1,7 +1,7 @@
 // Filter engine (ADR-0017, ADR-0083): query string ⇄ structured query → Where.
 
 export { parseFilterQuery, FILTER_OPERATOR_PREFIXES, FILTER_COMPARISON_PREFIXES } from './parse.js'
-export { serializeFilterQuery } from './serialize.js'
+export { serializeFilterQuery, quoteFilterValue } from './serialize.js'
 export {
   buildFilterWhere,
   filterTokenFreeTextWord,

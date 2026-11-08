@@ -1,4 +1,4 @@
-import { config, list } from '@opensaas/stack-core'
+import { config, list, quoteFilterValue } from '@opensaas/stack-core'
 import { text, relationship, select, timestamp, integer } from '@opensaas/stack-core/fields'
 import { authPlugin } from '@opensaas/stack-auth'
 import type { AccessControl, Session } from '@opensaas/stack-core'
@@ -325,7 +325,8 @@ export default config({
             {
               key: 'my-drafts',
               label: 'My drafts',
-              search: ({ session }) => `status:draft author:${JSON.stringify(session?.name ?? '')}`,
+              // A label match: `author:` finds names containing this one until `author:#id` (#2266) lands.
+              search: ({ session }) => `status:draft author:${quoteFilterValue(session?.name ?? '')}`,
               sort: { field: 'title', direction: 'asc' },
               hasAccess: ({ session }) => session !== null,
             },

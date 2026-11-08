@@ -2803,7 +2803,7 @@ export interface RowAction<TTypeInfo extends TypeInfo = TypeInfo> {
  * filter engine and secured context as a typed `?search=`, so a preset can
  * only narrow what the session may already see.
  */
-export interface PresetView {
+export interface PresetView<TTypeInfo extends TypeInfo = TypeInfo> {
   /**
    * Stable identifier carried in `?preset=<key>`. Must be unique within the
    * list.
@@ -2814,18 +2814,21 @@ export interface PresetView {
   /**
    * The preset's filter query in the `?search=` grammar, or a function of the
    * session returning one. Resolved on the server per request; a throw falls
-   * back to the plain list.
+   * back to the plain list. Quote any value built from data with
+   * `quoteFilterValue`, so it reads back as exactly one value. A relationship
+   * value such as `author:` matches the related record's label as a
+   * case-insensitive substring, not its id.
    *
    * @example
    * ```typescript
-   * search: ({ session }) => `status:draft author:"${session?.name}"`
+   * search: ({ session }) => `status:draft author:${quoteFilterValue(String(session?.name ?? ''))}`
    * ```
    */
   search:
     | string
     | ((args: {
         session: import('../access/types.js').Session | null
-        context: import('../access/types.js').AccessContext
+        context: import('../access/types.js').AccessContext<HookDb<TTypeInfo>>
         listKey: string
       }) => string | Promise<string>)
   /**
@@ -2841,12 +2844,12 @@ export interface PresetView {
   }
   /**
    * Optional visibility gate, resolved per request against the session.
-   * Returning `false` (or throwing) hides the tab, and a `?preset=` link to it
-   * opens the plain list instead.
+   * Only `true` opens the tab; anything else (or a throw) hides it, and a
+   * `?preset=` link to it opens the plain list instead.
    */
   hasAccess?: (args: {
     session: import('../access/types.js').Session | null
-    context: import('../access/types.js').AccessContext
+    context: import('../access/types.js').AccessContext<HookDb<TTypeInfo>>
     listKey: string
   }) => boolean | Promise<boolean>
 }
@@ -2970,7 +2973,8 @@ export type ListViewUIConfig<TTypeInfo extends TypeInfo = TypeInfo> = {
    *       {
    *         key: 'my-drafts',
    *         label: 'My drafts',
-   *         search: ({ session }) => `status:draft author:"${session?.name}"`,
+   *         search: ({ session }) =>
+   *           `status:draft author:${quoteFilterValue(String(session?.name ?? ''))}`,
    *         sort: { field: 'title', direction: 'asc' },
    *         hasAccess: ({ session }) => session !== null,
    *       },
@@ -2979,7 +2983,7 @@ export type ListViewUIConfig<TTypeInfo extends TypeInfo = TypeInfo> = {
    * }
    * ```
    */
-  presets?: PresetView[]
+  presets?: PresetView<TTypeInfo>[]
 }
 
 /**

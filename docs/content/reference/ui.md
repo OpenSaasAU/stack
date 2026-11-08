@@ -437,10 +437,12 @@ slots, and the row title link carries `row-title-link`.
 
 A list can offer **Preset views**: named starting points shown as tabs above
 the Filter builder, after an implicit **All** tab. Declare them under
-`ui.listView.presets`, each with a key unique within the list (`config()`
-throws on a duplicate):
+`ui.listView.presets`, each with a non-empty key unique within the list
+(`config()` throws otherwise):
 
 ```ts
+import { quoteFilterValue } from '@opensaas/stack-core'
+
 ui: {
   listView: {
     presets: [
@@ -448,7 +450,7 @@ ui: {
         key: 'my-drafts',
         label: 'My drafts',
         // A string, or a function of the session returning one
-        search: ({ session }) => `status:draft author:${JSON.stringify(session?.name ?? '')}`,
+        search: ({ session }) => `status:draft author:${quoteFilterValue(session?.name ?? '')}`,
         sort: { field: 'title', direction: 'asc' }, // optional
         hasAccess: ({ session }) => session !== null, // optional
       },
@@ -461,12 +463,19 @@ ui: {
   or a function of `{ session, context, listKey }` returning one. It is
   resolved on the server for every request, then runs through the same filter
   engine and secured `context.db` as a typed `?search=`, so a preset can only
-  narrow what the session may already see. When building a value from session
-  data, quote it — `JSON.stringify` produces a valid quoted value.
+  narrow what the session may already see. Quote any value built from session
+  data with `quoteFilterValue` from `@opensaas/stack-core`: it always reads back
+  as exactly one value, whatever quotes, backslashes, commas or operators the
+  data holds.
+- **A relationship value matches by label.** `author:"Ada"` matches every post
+  whose author's name contains "Ada", case-insensitively, so the example above
+  also shows drafts by "Ada Lovelace". It is a label match, not an ownership
+  check, until `author:#<id>` (#2266) lands.
 - **`sort`** applies while the preset is open. It goes through the same check as
   `?sort=`, so a field the session cannot order by is ignored. An explicit
   `?sort=` wins over it; without either, `initialSort` applies.
-- **`hasAccess`** hides the tab from a session. A throw counts as denied.
+- **`hasAccess`** hides the tab from a session. Only `true` opens it; any other
+  result, or a throw, counts as denied.
 
 `?preset=<key>` opens a preset. Because the server resolves `search` against
 the session of whoever opens the link, a shared "My drafts" link shows each
@@ -486,7 +495,9 @@ open preset's resolved query and sort, cross to the client; `search` and
 prop, which `AdminUI` reads from `?preset=`, and hands `ListViewClient` the tabs
 as `presets` and the open key as `activePreset`. The tabs are links in a
 `nav` labelled "<List> views", the open one marked `aria-current="page"`, and
-carry the `preset-tabs` and `preset-tab` slots.
+carry the `preset-tabs` and `preset-tab` slots. All is current only on the plain
+list; while a `?search=` filters it, no tab is. An open preset with no rows names
+the preset ("No rows in “My drafts”") rather than its resolved query.
 
 ### Filtering and sorting
 

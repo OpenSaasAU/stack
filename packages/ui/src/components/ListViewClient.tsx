@@ -353,6 +353,11 @@ export function ListViewClient({
   const hasNextPage = page < totalPages
   const hasPrevPage = page > 1
 
+  const activePresetLabel =
+    activePreset === undefined
+      ? undefined
+      : presets.find((preset) => preset.key === activePreset)?.label
+
   const current: ListUrlState = {
     preset: activePreset ?? null,
     search: initialSearch ?? '',
@@ -595,6 +600,7 @@ export function ListViewClient({
         <PresetTabs
           presets={presets}
           activePreset={activePreset}
+          searching={(initialSearch ?? '').trim() !== ''}
           hrefFor={presetHref}
           label={`${formatFieldName(listKey)} views`}
         />
@@ -819,10 +825,14 @@ export function ListViewClient({
                       className="border-0"
                       icon={<SearchX className="h-6 w-6" />}
                       title="No matches found"
-                      description={`Nothing matched “${initialSearch}”. Try a different search term.`}
+                      description={
+                        activePresetLabel === undefined
+                          ? `Nothing matched “${initialSearch}”. Try a different search term.`
+                          : `No rows in “${activePresetLabel}”.`
+                      }
                       actions={
                         <Button variant="outline" size="sm" onClick={() => applyQuery('')}>
-                          Clear search
+                          {activePresetLabel === undefined ? 'Clear search' : 'Show all'}
                         </Button>
                       }
                     />
