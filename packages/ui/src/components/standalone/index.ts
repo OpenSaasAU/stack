@@ -11,7 +11,11 @@ export type { ItemCreateFormProps } from './ItemCreateForm.js'
 export type { ItemEditFormProps } from './ItemEditForm.js'
 export type { ListTableProps, ListTableClassNames } from './ListTable.js'
 export type { SearchBarProps, SearchBarClassNames } from './SearchBar.js'
-export type { FilterBuilderProps, FilterBuilderClassNames } from '../FilterBuilder.js'
+export type {
+  FilterBuilderProps,
+  FilterBuilderClassNames,
+  FilterBuilderHandle,
+} from '../FilterBuilder.js'
 export type { DeleteButtonProps, DeleteButtonClassNames } from './DeleteButton.js'
 
 // Shared per-part classNames slot shape for the create / edit forms

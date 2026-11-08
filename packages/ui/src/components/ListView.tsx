@@ -22,7 +22,9 @@ import {
   type BulkAction,
   type RowAction,
   engineContextOf,
+  buildFilterWhere,
   buildListFilterWhere,
+  collectFilterSpecs,
   collectFilterSuggestions,
   filterValueRecordId,
   getItemLabel,
@@ -36,8 +38,13 @@ import {
   parseListId,
 } from '@opensaas/stack-core'
 import type { FilterFieldSuggestion, SecuredQuery } from '@opensaas/stack-core'
-import type { CountFilterLink } from './ListViewClient.js'
-import type { ResolvedFilterRecord } from '../lib/filterBuilderOptions.js'
+import type { CountFilterLink, FilterRemoval } from './ListViewClient.js'
+import {
+  chipsOf,
+  hydrateTokens,
+  isFieldCondition,
+  type ResolvedFilterRecord,
+} from '../lib/filterBuilderOptions.js'
 import {
   filterByHasAccess,
   isRowActionAvailable,
@@ -204,6 +211,61 @@ async function resolveRecordLabels(
   return Object.fromEntries(entries.filter(([, records]) => records.length > 0))
 }
 
+const FILTER_REMOVAL_TERMS = 5
+
+function filteredFields(
+  search: string | undefined,
+  suggestions: FilterFieldSuggestion[],
+): string[] {
+  if (!search || !search.trim()) return []
+  const fields = new Map(suggestions.map((suggestion) => [suggestion.field, suggestion]))
+  return [
+    ...new Set(
+      hydrateTokens(search)
+        .filter((token) => isFieldCondition(token, fields))
+        .flatMap((token) => (token.field === null ? [] : [token.field])),
+    ),
+  ]
+}
+
+async function resolveFilterRemoval(
+  search: string,
+  suggestions: FilterFieldSuggestion[],
+  listConfig: OpenSaasConfig['lists'][string],
+  listKey: string,
+  config: OpenSaasConfig,
+  context: AccessContext,
+): Promise<FilterRemoval | null> {
+  const tokens = hydrateTokens(search)
+  const fields = new Map(suggestions.map((suggestion) => [suggestion.field, suggestion]))
+  const terms = chipsOf(tokens, fields).slice(0, FILTER_REMOVAL_TERMS)
+  if (terms.length === 0) return null
+  try {
+    const specs = await collectFilterSpecs(listConfig, listKey, config, {
+      session: context.session,
+      context,
+    })
+    const list: SecuredQuery = context.db[listKey]
+    const removals = await Promise.all(
+      terms.map(async ({ start, count }): Promise<FilterRemoval> => {
+        const rest = tokens.filter((_, index) => index < start || index >= start + count)
+        const where = buildFilterWhere({ terms: rest }, specs)
+        const scoped = where ? list.where(where) : list
+        const { rows } = await scoped.aggregate((aggregate) => ({ rows: aggregate.count() }))
+        return { start, count, rows }
+      }),
+    )
+    return removals.reduce<FilterRemoval | null>(
+      (best, removal) => (removal.rows > (best?.rows ?? 0) ? removal : best),
+      null,
+    )
+  } catch (error) {
+    unstable_rethrow(error)
+    console.error(`Filter removal counts for ${listKey} could not be read:`, error)
+    return null
+  }
+}
+
 async function isCountLinkable(
   otherListKey: string,
   otherField: string,
@@ -347,7 +409,25 @@ export async function ListView({
     availableColumns.includes(name),
   )
   const defaultColumns = columns ?? computeDefaultColumns(displayFields)
-  const resolvedColumns = chosenColumns.length > 0 ? chosenColumns : defaultColumns
+  const baseColumns = chosenColumns.length > 0 ? chosenColumns : defaultColumns
+
+  const pageSize = Math.min(
+    Math.max(1, Math.floor(requestedPageSize) || DEFAULT_PAGE_SIZE),
+    MAX_PAGE_SIZE,
+  )
+  const presetViews = resolvePresetViews(listConfig, listKey, context, preset)
+  const activePreset = await presetViews.active
+  const activeSearch = activePreset ? activePreset.search : search
+  const sortCandidates = [sort, activePreset?.sort, initialSort]
+
+  const filterSuggestions = await collectFilterSuggestions(listConfig, listKey, config, {
+    session: context.session,
+    context,
+  })
+  const autoColumns = filteredFields(activeSearch, filterSuggestions).filter(
+    (name) => Object.hasOwn(displayFields, name) && !baseColumns.includes(name),
+  )
+  const resolvedColumns = [...baseColumns, ...autoColumns]
   const displayedColumns = new Set(resolvedColumns)
   // Naming a relation in the read suppresses the engine's declared-dependency
   // widening for it (`resolveIncludes`), and a reduced relation is masked to
@@ -358,15 +438,6 @@ export async function ListView({
       .filter(([name, field]) => isToManyRelationshipField(field) && displayedColumns.has(name))
       .map(([name]) => name),
   )
-
-  const pageSize = Math.min(
-    Math.max(1, Math.floor(requestedPageSize) || DEFAULT_PAGE_SIZE),
-    MAX_PAGE_SIZE,
-  )
-  const presetViews = resolvePresetViews(listConfig, listKey, context, preset)
-  const activePreset = await presetViews.active
-  const activeSearch = activePreset ? activePreset.search : search
-  const sortCandidates = [sort, activePreset?.sort, initialSort]
 
   const currentPage = Number.isSafeInteger(page) && page >= 1 ? page : 1
   const skip = (currentPage - 1) * pageSize
@@ -496,22 +567,12 @@ export async function ListView({
     itemsWithResolvedLabels.map((item) => applyClientValueTransforms(listConfig.fields, item)),
   )
 
-  // Collect each filterable field's serializable Filter spec metadata (fields,
-  // operators, enumerated values / relationship label search) to drive the
-  // Filter builder's pickers. It mirrors the same specs the server-side
-  // `buildListFilterWhere` above uses, so the builder can only produce queries
-  // the engine understands.
-  const filterSuggestions = await collectFilterSuggestions(listConfig, listKey, config, {
-    session: context.session,
-    context,
-  })
-  const recordLabels = await resolveRecordLabels(
-    activeSearch,
-    filterSuggestions,
-    listConfig,
-    config,
-    context,
-  )
+  const [recordLabels, filterRemoval] = await Promise.all([
+    resolveRecordLabels(activeSearch, filterSuggestions, listConfig, config, context),
+    total === 0 && activeSearch && activeSearch.trim()
+      ? resolveFilterRemoval(activeSearch, filterSuggestions, listConfig, listKey, config, context)
+      : null,
+  ])
 
   // When the list opts into avatars (issue #735), the label column renders with
   // an initials bubble ahead of the emphasized Item label. The label column is
@@ -609,6 +670,8 @@ export async function ListView({
         bulkActions={bulkActions}
         rowActions={visibleRowActions.map(serializeRowAction)}
         rowActionKeys={rowActionKeys}
+        autoColumns={autoColumns}
+        filterRemoval={filterRemoval}
       />
     </div>
   )

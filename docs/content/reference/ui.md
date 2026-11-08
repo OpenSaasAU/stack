@@ -294,6 +294,13 @@ resolves it on the server against the list's displayable fields:
 A pick that lands back on the default set drops `?columns=`, so the default
 set never appears in the URL.
 
+A field the applied query filters on is shown even when the chosen or default
+columns hide it, so you can see why each row matched. The server adds it to
+the visible set for that render only: it is appended after the other columns,
+the Columns menu shows it ticked and locked, and it is never written to
+`?columns=`. Free text adds no column. `ListViewClient` takes these as
+`autoColumns`.
+
 `ListViewClient` takes the resolved set as `columns`, every pickable column as
 `availableColumns`, the fallback set as `defaultColumns`, and `columnsChosen`
 to say whether `columns` came from the URL, which is what navigation then
@@ -634,6 +641,37 @@ On a to-many count Cell, the count links to the other list filtered to this row
 (`/admin/post?search=author:%23<id>`), where the relationship names its other
 side, the other list has a list view (it is not a singleton), and the session
 may query that list and filter that side by id.
+
+#### Filtering from the table
+
+- **Header funnels.** A column whose field this session may filter shows a
+  funnel button ("Filter by Status") in its header. It opens the Filter builder
+  with that field staged, so the next step is picking a condition or value.
+- **Value funnels.** A select (or other enumerated) value and a to-one
+  relationship value show a funnel beside the Cell ("Filter to Status is
+  Draft"). It adds `status:draft`, quoted where the grammar needs it, or
+  `author:#<id>` to the current query, replacing an earlier `is` on the same
+  field the way the builder does. On an open Preset view it expands the preset
+  to `?search=` first, so the rows on screen are only narrowed. The funnel is a
+  wrapper the list view puts around the rendered Cell: the Cell registry and
+  custom Cells are unchanged, and the label column gets none. Both funnels
+  appear only on fields in this session's Filter specs.
+- **The zero-results empty state.** When the query returns no rows, the list
+  view counts, for each of the first five terms, how many rows the query
+  returns with that term removed, and offers the one that returns the most:
+  "Remove “Status is Draft” to see 12 rows". A paired `>=`/`<=` range is one
+  term. **Clear filters** (**Show all** on a Preset view) is always offered,
+  and is the only way out when no single removal returns rows. Each count is
+  one secured `context.db` count with the access filter ANDed, run in parallel
+  and only when the total is zero, so it reveals nothing the session could not
+  already list. `ListViewClient` takes the result as `filterRemoval`
+  (`{ start, count, rows }`: the removed tokens and the rows left).
+
+`FilterBuilder` takes a `ref` whose `FilterBuilderHandle` has
+`startFilter(field)`, which is what the header funnel calls. The funnels'
+slots are `list-view-header-filter`, `list-view-value-filter` and
+`list-view-value-filter-button`; the empty state's removal is
+`list-view-empty-remove`.
 
 Each committed Filter token becomes a chip, and the list updates at once: the
 builder navigates with `router.push` inside a transition, so the current rows

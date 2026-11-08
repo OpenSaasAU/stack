@@ -92,8 +92,12 @@ export type { NavigationProps, NavLinkProps } from './components/Navigation.js'
 export type { UserMenuProps } from './components/UserMenu.js'
 export type { ThemeToggleProps } from './components/ThemeToggle.js'
 export type { ListViewProps } from './components/ListView.js'
-export type { ListViewClientProps } from './components/ListViewClient.js'
-export type { FilterBuilderProps, FilterBuilderClassNames } from './components/FilterBuilder.js'
+export type { ListViewClientProps, FilterRemoval } from './components/ListViewClient.js'
+export type {
+  FilterBuilderProps,
+  FilterBuilderClassNames,
+  FilterBuilderHandle,
+} from './components/FilterBuilder.js'
 export type {
   RowSelectionBarProps,
   RowSelectionBarClassNames,

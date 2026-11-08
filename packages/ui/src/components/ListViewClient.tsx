@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import Link from 'next/link.js'
-import { ArrowUpDown, Columns3, Inbox, Plus, SearchX } from 'lucide-react'
+import { ArrowUpDown, Columns3, Funnel, Inbox, Plus, SearchX } from 'lucide-react'
 import { useRouter } from 'next/navigation.js'
 import { cn, formatFieldName, isCountAlignedColumn } from '../lib/utils.js'
 import {
@@ -30,7 +30,7 @@ import {
 import { EmptyState } from './EmptyState.js'
 import { CellRenderer, rendersAnchorFreeCell } from './cells/CellRenderer.js'
 import type { CellValue } from './cells/registry.js'
-import { FilterBuilder } from './FilterBuilder.js'
+import { FilterBuilder, type FilterBuilderHandle } from './FilterBuilder.js'
 import { AvatarLabelCell } from './cells/AvatarLabelCell.js'
 import { RowSelectionBar } from './RowSelectionBar.js'
 import { BulkActions, type SerializedBulkAction } from './BulkActions.js'
@@ -49,17 +49,63 @@ import {
 import { DEFAULT_PAGE_SIZE } from '../lib/pageSize.js'
 import { CARD_CELL, CARD_PINNED_CELL, CARD_ROW, CARD_TITLE_CELL } from '../lib/tableClasses.js'
 import type { ServerActionInput } from '../server/types.js'
-import type { ResolvedFilterRecord } from '../lib/filterBuilderOptions.js'
+import {
+  chipsOf,
+  describeToken,
+  fieldToken,
+  filterQuery,
+  hydrateTokens,
+  isRecordLookupField,
+  placeTokens,
+  type FilterFields,
+  type RecordOf,
+  type ResolvedFilterRecord,
+} from '../lib/filterBuilderOptions.js'
 import {
   recordIdFilterToken,
   serializeFilterQuery,
   type FilterFieldSuggestion,
+  type FilterToken,
 } from '@opensaas/stack-core'
 
 /** Where a to-many count links: the other list's URL key and its field naming this list. */
 export interface CountFilterLink {
   urlKey: string
   field: string
+}
+
+/**
+ * The filter term whose removal returns the most rows when the applied query
+ * returns none: the `count` tokens from `start` of the parsed query, and how
+ * many rows the query without them returns for this session.
+ */
+export interface FilterRemoval {
+  start: number
+  count: number
+  rows: number
+}
+
+function valueFilterToken(
+  suggestion: FilterFieldSuggestion | undefined,
+  column: string,
+  value: unknown,
+): { token: FilterToken; label: string | null } | null {
+  if (!suggestion) return null
+  if (isRecordLookupField(suggestion)) {
+    if (typeof value !== 'object' || value === null || !('id' in value)) return null
+    const id = value.id
+    if (typeof id !== 'string' && typeof id !== 'number') return null
+    const label = 'label' in value && typeof value.label === 'string' ? value.label : null
+    return { token: recordIdFilterToken(column, String(id)), label }
+  }
+  if (suggestion.valueSource.kind !== 'enum') return null
+  if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
+    return null
+  }
+  const option = suggestion.valueSource.options.find(
+    (candidate) => candidate.value === String(value),
+  )
+  return option ? { token: fieldToken(column, 'eq', option.value), label: null } : null
 }
 
 /**
@@ -296,6 +342,17 @@ export interface ListViewClientProps {
    * the built-in actions.
    */
   rowActionKeys?: Record<string, string[]>
+  /**
+   * The columns shown only because the applied query filters on them,
+   * resolved on the server. They are never written to `?columns=`.
+   */
+  autoColumns?: string[]
+  /**
+   * When the applied query returns no rows, the term whose removal returns
+   * the most, counted on the server through the secured context. `null` or
+   * absent when no single removal returns any.
+   */
+  filterRemoval?: FilterRemoval | null
 }
 
 export function ListViewClient({
@@ -330,8 +387,17 @@ export function ListViewClient({
   bulkActions = [],
   rowActions = [],
   rowActionKeys = {},
+  autoColumns = [],
+  filterRemoval,
 }: ListViewClientProps) {
   const router = useRouter()
+  const filterBuilder = React.useRef<FilterBuilderHandle>(null)
+  const filterFields: FilterFields = React.useMemo(
+    () => new Map(filterSuggestions.map((suggestion) => [suggestion.field, suggestion])),
+    [filterSuggestions],
+  )
+  const recordOf: RecordOf = (field, id) =>
+    recordLabels?.[field]?.find((record) => record.id === id)
   const [isFiltering, startFiltering] = React.useTransition()
   const sortBy = initialSort?.field ?? null
   const sortOrder = initialSort?.direction ?? 'asc'
@@ -373,6 +439,7 @@ export function ListViewClient({
 
   const displayColumns =
     columns || Object.keys(fieldTypes).filter((key) => isDefaultColumnField(fields?.[key]))
+  const chosenColumns = displayColumns.filter((column) => !autoColumns.includes(column))
   const totalPages = Math.ceil(total / pageSize)
   const hasNextPage = page < totalPages
   const hasPrevPage = page > 1
@@ -388,7 +455,7 @@ export function ListViewClient({
     sort: sortBy ? { field: sortBy, direction: sortOrder } : null,
     page,
     pageSize,
-    columns: columnsChosen ? displayColumns : null,
+    columns: columnsChosen ? chosenColumns : null,
   }
 
   const buildUrl = (changes: Partial<ListUrlState>) => {
@@ -420,16 +487,36 @@ export function ListViewClient({
     startFiltering(() => router.push(editUrl({ search: query, page: 1 })))
   }
 
+  const appliedTokens = () => hydrateTokens(initialSearch ?? '')
+
+  const addFilterToken = (token: FilterToken) =>
+    applyQuery(filterQuery(placeTokens(appliedTokens(), [token], null, filterFields, true)))
+
+  const removal = (() => {
+    if (!filterRemoval || !initialSearch) return null
+    const tokens = appliedTokens()
+    const chip = chipsOf(tokens, filterFields, recordOf).find(
+      ({ start, count }) => start === filterRemoval.start && count === filterRemoval.count,
+    )
+    if (!chip) return null
+    const rest = tokens.filter((_, i) => i < chip.start || i >= chip.start + chip.count)
+    return {
+      sentence: chip.description.sentence,
+      rows: filterRemoval.rows,
+      query: filterQuery(rest),
+    }
+  })()
+
   const buildPaginationUrl = (newPage: number) => buildUrl({ page: newPage })
 
-  const confirmedColumns = displayColumns.join(',')
+  const confirmedColumns = chosenColumns.join(',')
   const [pendingColumns, setPendingColumns] = React.useState<{
     over: string
     columns: string[]
   } | null>(null)
   if (pendingColumns !== null && pendingColumns.over !== confirmedColumns) setPendingColumns(null)
   const pending = pendingColumns?.over === confirmedColumns ? pendingColumns.columns : null
-  const pickedColumns = pending ?? displayColumns
+  const pickedColumns = pending ?? chosenColumns
 
   const isDefaultSet = (names: string[]) =>
     defaultColumns !== undefined &&
@@ -621,11 +708,53 @@ export function ListViewClient({
       basePath,
       ...(href ? { href } : {}),
     }
-    if (column === avatarColumn && !field.ui?.cell) {
-      return <AvatarLabelCell {...cellProps} />
-    }
-    return <CellRenderer {...cellProps} />
+    const cell =
+      column === avatarColumn && !field.ui?.cell ? (
+        <AvatarLabelCell {...cellProps} />
+      ) : (
+        <CellRenderer {...cellProps} />
+      )
+    const funnel =
+      column === titleColumn
+        ? null
+        : valueFilterToken(filterFields.get(column), column, item[column])
+    if (!funnel) return cell
+    const sentence = describeToken(funnel.token, filterFields, (_, recordId) =>
+      funnel.label === null ? undefined : { id: recordId, label: funnel.label },
+    ).sentence
+    return (
+      <span
+        data-slot="list-view-value-filter"
+        className="group/value inline-flex items-center gap-1"
+      >
+        {cell}
+        <button
+          type="button"
+          data-slot="list-view-value-filter-button"
+          aria-label={`Filter to ${sentence}`}
+          title={`Filter to ${sentence}`}
+          onClick={() => addFilterToken(funnel.token)}
+          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover/value:opacity-100 max-md:opacity-100"
+        >
+          <Funnel className="h-3.5 w-3.5" aria-hidden="true" />
+        </button>
+      </span>
+    )
   }
+
+  const headerFilter = (column: string) =>
+    filterFields.has(column) ? (
+      <button
+        type="button"
+        data-slot="list-view-header-filter"
+        aria-label={`Filter by ${formatFieldName(column)}`}
+        title={`Filter by ${formatFieldName(column)}`}
+        onClick={() => filterBuilder.current?.startFilter(column)}
+        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <Funnel className="h-3.5 w-3.5" aria-hidden="true" />
+      </button>
+    ) : null
 
   return (
     <div className="space-y-4">
@@ -639,6 +768,7 @@ export function ListViewClient({
         />
       )}
       <FilterBuilder
+        ref={filterBuilder}
         suggestions={filterSuggestions}
         defaultValue={initialSearch ?? ''}
         onApply={applyQuery}
@@ -720,12 +850,13 @@ export function ListViewClient({
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuLabel>Show columns</DropdownMenuLabel>
               {availableColumns.map((column) => {
-                const shown = pickedColumns.includes(column)
+                const filtered = autoColumns.includes(column)
+                const shown = filtered || pickedColumns.includes(column)
                 return (
                   <DropdownMenuCheckboxItem
                     key={column}
                     checked={shown}
-                    disabled={shown && pickedColumns.length === 1}
+                    disabled={filtered || (shown && pickedColumns.length === 1)}
                     onSelect={(event) => event.preventDefault()}
                     onCheckedChange={(checked) => toggleColumn(column, checked === true)}
                   >
@@ -822,14 +953,17 @@ export function ListViewClient({
                     }
                   >
                     {sortable ? (
-                      <TableSortButton
-                        numeric={numeric}
-                        direction={sortBy === column ? sortOrder : undefined}
-                        onClick={() => handleSort(column)}
-                        className={cn(compact && 'min-h-9')}
-                      >
-                        {formatFieldName(column)}
-                      </TableSortButton>
+                      <div className="flex items-center pr-2">
+                        <TableSortButton
+                          numeric={numeric}
+                          direction={sortBy === column ? sortOrder : undefined}
+                          onClick={() => handleSort(column)}
+                          className={cn(compact && 'min-h-9')}
+                        >
+                          {formatFieldName(column)}
+                        </TableSortButton>
+                        {headerFilter(column)}
+                      </div>
                     ) : (
                       <div
                         className={cn(
@@ -838,6 +972,7 @@ export function ListViewClient({
                         )}
                       >
                         <span>{formatFieldName(column)}</span>
+                        {headerFilter(column)}
                       </div>
                     )}
                   </TableHead>
@@ -867,9 +1002,20 @@ export function ListViewClient({
                           : `No rows in “${activePresetLabel}”.`
                       }
                       actions={
-                        <Button variant="outline" size="sm" onClick={() => applyQuery('')}>
-                          {activePresetLabel === undefined ? 'Clear search' : 'Show all'}
-                        </Button>
+                        <>
+                          {removal && (
+                            <Button
+                              size="sm"
+                              data-slot="list-view-empty-remove"
+                              onClick={() => applyQuery(removal.query)}
+                            >
+                              {`Remove “${removal.sentence}” to see ${removal.rows} ${removal.rows === 1 ? 'row' : 'rows'}`}
+                            </Button>
+                          )}
+                          <Button variant="outline" size="sm" onClick={() => applyQuery('')}>
+                            {activePresetLabel === undefined ? 'Clear filters' : 'Show all'}
+                          </Button>
+                        </>
                       }
                     />
                   ) : (

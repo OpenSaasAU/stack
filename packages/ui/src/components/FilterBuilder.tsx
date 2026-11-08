@@ -66,7 +66,18 @@ export interface FilterBuilderClassNames {
   dates?: string
 }
 
+/** Imperative entry points a page holding a {@link FilterBuilder} `ref` may call. */
+export interface FilterBuilderHandle {
+  /**
+   * Open the builder with `field` staged, so the next step is choosing its
+   * condition or value. Does nothing for a field absent from `suggestions`.
+   */
+  startFilter: (field: string) => void
+}
+
 export interface FilterBuilderProps {
+  /** Receives the {@link FilterBuilderHandle}. */
+  ref?: React.Ref<FilterBuilderHandle>
   /**
    * Serializable per-field filter metadata (field name, supported operators,
    * free-text flag, value source, value format). Produced server-side by the
@@ -139,6 +150,7 @@ function groupsOf(options: FilterOption[]): Array<{ group: string; entries: numb
  * names the active suggestion. `/` focuses it from anywhere on the page.
  */
 export function FilterBuilder({
+  ref,
   suggestions,
   defaultValue = '',
   onApply,
@@ -304,6 +316,14 @@ export function FilterBuilder({
     setOpen(true)
     focusInput()
   }
+
+  React.useImperativeHandle(ref, () => ({
+    startFilter: (field: string) => {
+      if (!fields.has(field)) return
+      setEditing(null)
+      stageField(field)
+    },
+  }))
 
   const withoutChip = (chip: { start: number; count: number } | undefined) =>
     chip ? tokens.filter((_, i) => i < chip.start || i >= chip.start + chip.count) : tokens
