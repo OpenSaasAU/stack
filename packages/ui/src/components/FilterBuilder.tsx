@@ -3,18 +3,14 @@
 import * as React from 'react'
 import { usePathname, useRouter } from 'next/navigation.js'
 import { Search, X } from 'lucide-react'
-import {
-  parseFilterQuery,
-  isEmptyFilterToken,
-  type FilterFieldSuggestion,
-  type FilterToken,
-} from '@opensaas/stack-core'
+import type { FilterFieldSuggestion, FilterToken } from '@opensaas/stack-core'
 import { Popover, PopoverAnchor, PopoverContent } from '../primitives/popover.js'
 import { cn } from '../lib/utils.js'
 import {
   conditionLabel,
   describeToken,
   draftOptions,
+  editableText,
   fieldLabel,
   filterQuery,
   hydrateTokens,
@@ -152,9 +148,10 @@ export function FilterBuilder({
   const optionId = (index: number) => `${baseId}-option-${index}`
 
   const editingToken = editing === null ? undefined : tokens[editing]
-  const { options, hint } = draft
-    ? draftOptions(draft, text, fields, editingToken)
-    : rootOptions(text, fields)
+  const { options, hint } = React.useMemo(
+    () => (draft ? draftOptions(draft, text, fields, editingToken) : rootOptions(text, fields)),
+    [draft, text, fields, editingToken],
+  )
   const active = options.length === 0 ? -1 : Math.min(activeIndex, options.length - 1)
   const draftField = draft ? fields.get(draft.field) : undefined
   const conditions = draftField?.operators ?? []
@@ -179,9 +176,9 @@ export function FilterBuilder({
 
   React.useEffect(() => {
     if (open && active >= 0) {
-      document.getElementById(optionId(active))?.scrollIntoView?.({ block: 'nearest' })
+      document.getElementById(`${baseId}-option-${active}`)?.scrollIntoView?.({ block: 'nearest' })
     }
-  })
+  }, [open, active, baseId])
 
   const focusInput = () => {
     if (document.activeElement !== inputRef.current) quietFocus.current = true
@@ -242,7 +239,7 @@ export function FilterBuilder({
       setText(suggestion.valueSource.kind === 'enum' ? '' : token.values[0])
     } else {
       setDraft(null)
-      setText(describeToken(token, fields).value)
+      setText(editableText(token))
     }
     focusInput()
   }
@@ -370,9 +367,7 @@ export function FilterBuilder({
 
   const handlePaste = (event: React.ClipboardEvent<HTMLInputElement>) => {
     if (draft) return
-    const pasted = parseFilterQuery(event.clipboardData.getData('text')).terms.filter(
-      (token) => !isEmptyFilterToken(token),
-    )
+    const pasted = hydrateTokens(event.clipboardData.getData('text'))
     if (!pasted.some((token) => isFieldCondition(token, fields))) return
     event.preventDefault()
     commit(pasted, false)
@@ -634,7 +629,7 @@ export function FilterBuilder({
               </div>
             ))}
           </div>
-          <div role="status">
+          <div aria-live="polite">
             {hint && (
               <p
                 data-slot="filter-builder-hint"

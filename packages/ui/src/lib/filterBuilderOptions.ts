@@ -86,6 +86,16 @@ export function hydrateTokens(query: string): FilterToken[] {
   return parseFilterQuery(query).terms.filter((token) => !isEmptyFilterToken(token))
 }
 
+export function freeTextTokens(text: string): FilterToken[] {
+  return hydrateTokens(text).map((token) =>
+    token.field === null ? token : textToken(serializeFilterQuery({ terms: [token] })),
+  )
+}
+
+export function editableText(token: FilterToken): string {
+  return serializeFilterQuery({ terms: [token] })
+}
+
 export function operatorsOf(fields: FilterFields) {
   return (field: string) => fields.get(field)?.operators
 }
@@ -119,7 +129,9 @@ export function isFieldCondition(
   token: FilterToken,
   fields: FilterFields,
 ): token is FilterToken & { field: string } {
-  return token.values.length === 1 && isFieldConditionToken(token, operatorsOf(fields))
+  if (token.values.length !== 1 || !isFieldConditionToken(token, operatorsOf(fields))) return false
+  const suggestion = fields.get(token.field)
+  return suggestion !== undefined && checkValue(suggestion, token.values[0]).ok
 }
 
 export function describeToken(token: FilterToken, fields: FilterFields): TokenDescription {
@@ -145,6 +157,19 @@ function isSingleChoice(token: FilterToken, fields: FilterFields): boolean {
   return suggestion !== undefined && !eqMatchesPart(suggestion)
 }
 
+export function lastChoicePerField(
+  tokens: readonly FilterToken[],
+  fields: FilterFields,
+): FilterToken[] {
+  return tokens.filter(
+    (token, index) =>
+      !isSingleChoice(token, fields) ||
+      !tokens
+        .slice(index + 1)
+        .some((later) => later.field === token.field && isSingleChoice(later, fields)),
+  )
+}
+
 export function placeTokens(
   tokens: readonly FilterToken[],
   added: readonly FilterToken[],
@@ -152,17 +177,21 @@ export function placeTokens(
   fields: FilterFields,
   replace: boolean,
 ): FilterToken[] {
-  let next = [...tokens]
-  if (at !== null && at < next.length) next.splice(at, 1, ...added)
-  else next.push(...added)
+  const placed = replace ? lastChoicePerField(added, fields) : [...added]
+  const next = [...tokens]
+  if (at !== null && at < next.length) next.splice(at, 1, ...placed)
+  else next.push(...placed)
   if (!replace) return next
-  for (const token of added) {
-    if (!isSingleChoice(token, fields)) continue
-    next = next.filter(
-      (other) => other === token || other.field !== token.field || !isSingleChoice(other, fields),
-    )
-  }
-  return next
+  const chosen = new Set(
+    placed.filter((token) => isSingleChoice(token, fields)).map((token) => token.field),
+  )
+  return next.filter(
+    (other) =>
+      placed.includes(other) ||
+      other.field === null ||
+      !chosen.has(other.field) ||
+      !isSingleChoice(other, fields),
+  )
 }
 
 type ValueCheck = { ok: true; value: string } | { ok: false; message: string }
@@ -223,10 +252,18 @@ export function findField(fields: FilterFields, name: string): FilterFieldSugges
 type PhraseResult = { kind: 'token'; token: FilterToken } | { kind: 'invalid'; message: string }
 
 export function parsePhrase(text: string, fields: FilterFields): PhraseResult | null {
-  const match = SYMBOL_PHRASE.exec(text.trim()) ?? WORD_PHRASE.exec(text.trim())
-  if (!match) return null
-  const suggestion = findField(fields, match[1])
-  if (!suggestion) return null
+  let match: RegExpExecArray | null = null
+  let suggestion: FilterFieldSuggestion | undefined
+  for (const shape of [SYMBOL_PHRASE, WORD_PHRASE]) {
+    const candidate = shape.exec(text.trim())
+    const found = candidate ? findField(fields, candidate[1]) : undefined
+    if (candidate && found) {
+      match = candidate
+      suggestion = found
+      break
+    }
+  }
+  if (!match || !suggestion) return null
   const operator = PHRASE_OPERATORS[match[2].toLowerCase()]
   if (operator === undefined) return null
   const label = fieldLabel(suggestion.field)
@@ -260,10 +297,9 @@ function sentenceOf(tokens: readonly FilterToken[], fields: FilterFields): strin
 }
 
 function searchOption(text: string): FilterOption {
-  const words = text.trim().split(/\s+/)
   return {
     kind: 'apply',
-    tokens: words.map(textToken),
+    tokens: freeTextTokens(text),
     label: `Search all text for “${text.trim()}”`,
     group: 'Search',
   }
@@ -299,7 +335,9 @@ export function rootOptions(text: string, fields: FilterFields): FilterOptions {
 
   if (FIELD_TOKEN_SHAPE.test(typed)) {
     const terms = hydrateTokens(typed)
-    if (terms.some((token) => isFieldCondition(token, fields))) offer(terms, 'Suggestions')
+    if (terms.some((token) => isFieldCondition(token, fields))) {
+      offer(lastChoicePerField(terms, fields), 'Suggestions')
+    }
   }
 
   const phrase = parsePhrase(typed, fields)

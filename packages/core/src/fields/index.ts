@@ -41,16 +41,33 @@ function quoteStringLiteral(value: string): string {
 const COMPARISON_OPERATORS: FilterOperator[] = ['eq', 'gt', 'gte', 'lt', 'lte']
 
 const WHOLE_NUMBER: FilterValueFormat = { pattern: '^-?\\d+$', description: 'takes a whole number' }
+const WHOLE_NUMBER_MATCH = new RegExp(WHOLE_NUMBER.pattern)
+
+const DECIMAL_VALUE: FilterValueFormat = {
+  pattern: '^-?\\d+(?:\\.\\d+)?$',
+  description: 'takes a number',
+}
+const DECIMAL_VALUE_MATCH = new RegExp(DECIMAL_VALUE.pattern)
+
+const DATE_PATTERN = '\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])'
 
 const DATE_VALUE: FilterValueFormat = {
-  pattern: '^\\d{4}-\\d{2}-\\d{2}$',
+  pattern: `^${DATE_PATTERN}$`,
   description: 'takes a date, like 2026-01-31',
 }
+const DATE_VALUE_MATCH = new RegExp(DATE_VALUE.pattern)
 
 const TIMESTAMP_VALUE: FilterValueFormat = {
-  pattern: '^\\d{4}-\\d{2}-\\d{2}(?:[T ]\\S+)?$',
-  description: 'takes a date, like 2026-01-31',
+  pattern: `^${DATE_PATTERN}(?:[T ](?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d{1,9})?)?(?:Z|[+-](?:[01]\\d|2[0-3]):?[0-5]\\d)?)?$`,
+  description: 'takes a date, like 2026-01-31, or a date and time, like 2026-01-31T09:30',
 }
+const TIMESTAMP_VALUE_MATCH = new RegExp(TIMESTAMP_VALUE.pattern)
+
+const PRESENCE_COUNT: FilterValueFormat = {
+  pattern: '^0$',
+  description: 'takes 0: “is 0” finds none, “greater than 0” finds any',
+}
+const PRESENCE_COUNT_MATCH = new RegExp(PRESENCE_COUNT.pattern)
 
 function prismaComparisonKey(operator: FilterOperator): string {
   return operator === 'eq' ? 'equals' : operator
@@ -410,7 +427,7 @@ export function integer<
       operators: COMPARISON_OPERATORS,
       toCondition: (operator, value) => {
         const trimmed = value.trim()
-        if (!/^-?\d+$/.test(trimmed)) return null
+        if (!WHOLE_NUMBER_MATCH.test(trimmed)) return null
         return { [fieldName]: { [prismaComparisonKey(operator)]: Number(trimmed) } }
       },
       suggestions: { valueSource: { kind: 'none' }, valueFormat: WHOLE_NUMBER },
@@ -561,13 +578,10 @@ export function decimal<
       operators: COMPARISON_OPERATORS,
       toCondition: (operator, value) => {
         const trimmed = value.trim()
-        if (!/^-?\d+(\.\d+)?$/.test(trimmed)) return null
+        if (!DECIMAL_VALUE_MATCH.test(trimmed)) return null
         return { [fieldName]: { [prismaComparisonKey(operator)]: trimmed } }
       },
-      suggestions: {
-        valueSource: { kind: 'none' },
-        valueFormat: { pattern: '^-?\\d+(?:\\.\\d+)?$', description: 'takes a number' },
-      },
+      suggestions: { valueSource: { kind: 'none' }, valueFormat: DECIMAL_VALUE },
     }),
   }
 }
@@ -675,7 +689,7 @@ export function bigInt<
       operators: COMPARISON_OPERATORS,
       toCondition: (operator, value) => {
         const trimmed = value.trim()
-        if (!/^-?\d+$/.test(trimmed)) return null
+        if (!WHOLE_NUMBER_MATCH.test(trimmed)) return null
         return { [fieldName]: { [prismaComparisonKey(operator)]: BigInt(trimmed) } }
       },
       suggestions: { valueSource: { kind: 'none' }, valueFormat: WHOLE_NUMBER },
@@ -774,7 +788,11 @@ export function timestamp<
     getFilterSpec: (fieldName: string): FilterSpec => ({
       operators: COMPARISON_OPERATORS,
       toCondition: (operator, value) => {
-        const date = new Date(value.trim())
+        const trimmed = value.trim()
+        if (!TIMESTAMP_VALUE_MATCH.test(trimmed) || !isCalendarDate(trimmed.slice(0, 10))) {
+          return null
+        }
+        const date = new Date(trimmed)
         if (Number.isNaN(date.getTime())) return null
         return { [fieldName]: { [prismaComparisonKey(operator)]: date } }
       },
@@ -897,15 +915,14 @@ export function calendarDay<
     // Calendar days compare on the `YYYY-MM-DD` value itself — the column's
     // string codec passes it straight to the driver, so a Date built here
     // would hit the same local-timezone drift the write path had (#1437). A
-    // malformed value, including an out-of-range month/day the regex alone
-    // cannot catch (e.g. '2025-13-01'), degrades to free text instead of
+    // malformed value, including a day the month does not have (e.g.
+    // '2025-02-31'), degrades to free text instead of
     // reaching Postgres as an invalid date literal.
     getFilterSpec: (fieldName: string): FilterSpec => ({
       operators: COMPARISON_OPERATORS,
       toCondition: (operator, value) => {
         const trimmed = value.trim()
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return null
-        if (Number.isNaN(new Date(`${trimmed}T00:00:00.000Z`).getTime())) return null
+        if (!DATE_VALUE_MATCH.test(trimmed) || !isCalendarDate(trimmed)) return null
         return { [fieldName]: { [prismaComparisonKey(operator)]: trimmed } }
       },
       suggestions: { valueSource: { kind: 'none' }, valueFormat: DATE_VALUE },
@@ -1470,8 +1487,8 @@ export function relationship<
   //    to-one predicate form: every relation predicate is an EXISTS, and its
   //    accessor is the same for both cardinalities.
   //  • to-many filters by PRESENCE. Prisma 8 cannot compare a relation count
-  //    in a `where`, so `orders:0` is `none`, `orders:>0`/`orders:>=1` are
-  //    `some`, and any other comparison degrades to free text.
+  //    in a `where`, so `orders:0` is `none`, `orders:>0` is `some`, and any
+  //    other comparison degrades to free text.
   // The mapper stays pure in both cases (no DB lookup); the engine ANDs the
   // related list's own `query` access inside the EXISTS when it lowers this.
   field.getFilterSpec = (
@@ -1485,17 +1502,14 @@ export function relationship<
 
     if (field.many === true) {
       return {
-        operators: COMPARISON_OPERATORS,
+        operators: ['eq', 'gt'],
         toCondition: (operator, value) => {
-          const trimmed = value.trim()
-          if (!/^-?\d+$/.test(trimmed)) return null
-          const count = Number(trimmed)
-          if (operator === 'eq' && count === 0) return { [_fieldName]: { none: {} } }
-          if (operator === 'gt' && count === 0) return { [_fieldName]: { some: {} } }
-          if (operator === 'gte' && count === 1) return { [_fieldName]: { some: {} } }
+          if (!PRESENCE_COUNT_MATCH.test(value.trim())) return null
+          if (operator === 'eq') return { [_fieldName]: { none: {} } }
+          if (operator === 'gt') return { [_fieldName]: { some: {} } }
           return null
         },
-        suggestions: { valueSource: { kind: 'none' }, valueFormat: WHOLE_NUMBER },
+        suggestions: { valueSource: { kind: 'none' }, valueFormat: PRESENCE_COUNT },
       }
     }
 

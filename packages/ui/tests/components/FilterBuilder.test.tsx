@@ -124,6 +124,33 @@ describe('FilterBuilder', () => {
       expect(chipNames()).toEqual(['Text contains hello', 'Text contains world'])
     })
 
+    it('keeps a quoted phrase whole when searching all text', async () => {
+      const { user, bar, onApply } = setup()
+      await user.type(bar, '"Ada Lovelace" beta')
+      await user.click(
+        screen.getByRole('option', { name: 'Search all text for “"Ada Lovelace" beta”' }),
+      )
+      expect(onApply).toHaveBeenCalledWith('"Ada Lovelace" beta')
+      expect(chipNames()).toEqual(['Text contains Ada Lovelace', 'Text contains beta'])
+    })
+
+    it('reads a word phrase when the symbol form names no field', async () => {
+      const { user, bar, onApply } = setup()
+      await user.type(bar, 'title is a=b')
+      expect(screen.getByRole('option', { name: 'Title contains a=b' })).toBeInTheDocument()
+      await user.keyboard('{Enter}')
+      expect(onApply).toHaveBeenCalledWith('title:a=b')
+    })
+
+    it('offers no field condition for a typed value the field does not take', async () => {
+      const { user, bar, onApply } = setup()
+      await user.type(bar, 'views:abc')
+      expect(optionNames()).toEqual(['Search all text for “views:abc”'])
+      await user.keyboard('{Enter}')
+      expect(onApply).toHaveBeenCalledWith('"views:abc"')
+      expect(chipNames()).toEqual(['Text contains views:abc'])
+    })
+
     it('keeps field-shaped free text literal', async () => {
       const { user, bar, onApply } = setup()
       await user.type(bar, 'nosuch:thing')
@@ -314,6 +341,58 @@ describe('FilterBuilder', () => {
       expect(onApply).toHaveBeenCalledWith('title:ada title:lovelace')
     })
 
+    it('keeps only the last of two is filters typed together on one field', async () => {
+      const { user, bar, onApply } = setup()
+      await user.type(bar, 'status:draft status:published')
+      await user.click(screen.getByRole('option', { name: 'Status is Published' }))
+      expect(onApply).toHaveBeenCalledWith('status:published')
+      expect(chipNames()).toEqual(['Status is Published'])
+    })
+
+    it('replaces an existing is chip with the last of two typed together', async () => {
+      const { user, bar, onApply } = setup({ defaultValue: 'status:draft beta' })
+      await user.type(bar, 'status:published status:draft')
+      await user.click(screen.getByRole('option', { name: 'Status is Draft' }))
+      expect(onApply).toHaveBeenCalledWith('beta status:draft')
+      expect(chipNames()).toEqual(['Text contains beta', 'Status is Draft'])
+    })
+
+    it('shows a hydrated value the field does not take as text, and writes it back as read', async () => {
+      const { user, onApply } = setup({ defaultValue: 'views:abc views:>2 beta' })
+      expect(chipNames()).toEqual([
+        'Text contains views:abc',
+        'Views greater than 2',
+        'Text contains beta',
+      ])
+      await user.click(screen.getByRole('button', { name: 'Remove Text contains beta' }))
+      expect(onApply).toHaveBeenCalledWith('views:abc views:>2')
+    })
+
+    it('pastes a value the field does not take as a text chip', async () => {
+      const { user, bar, onApply } = setup()
+      await user.click(bar)
+      await user.paste('status:draft views:abc')
+      expect(onApply).toHaveBeenCalledWith('status:draft views:abc')
+      expect(chipNames()).toEqual(['Status is Draft', 'Text contains views:abc'])
+    })
+
+    it('pastes only values the fields do not take as typed text', async () => {
+      const { user, bar, onApply } = setup()
+      await user.click(bar)
+      await user.paste('views:abc')
+      expect(bar).toHaveValue('views:abc')
+      expect(onApply).not.toHaveBeenCalled()
+    })
+
+    it('keeps an edited phrase chip one phrase', async () => {
+      const { user, bar, onApply } = setup({ defaultValue: '"Ada Lovelace" beta' })
+      await user.click(screen.getByRole('button', { name: 'Edit Text contains Ada Lovelace' }))
+      expect(bar).toHaveValue('"Ada Lovelace"')
+      await user.keyboard('{Enter}')
+      expect(onApply).toHaveBeenCalledWith('"Ada Lovelace" beta')
+      expect(chipNames()).toEqual(['Text contains Ada Lovelace', 'Text contains beta'])
+    })
+
     it('keeps a hand-written pair of is filters on one field', () => {
       setup({ defaultValue: 'status:draft status:published' })
       expect(chipNames()).toEqual(['Status is Draft', 'Status is Published'])
@@ -444,6 +523,24 @@ describe('FilterBuilder', () => {
       const { user, bar } = setup()
       await user.type(bar, 'publ')
       expect(screen.getByText('2 suggestions')).toBeInTheDocument()
+    })
+
+    it('leaves the page a single status role while the menu is open', async () => {
+      const onApply = vi.fn<(query: string) => void>()
+      const user = userEvent.setup()
+      render(
+        <>
+          <p role="status">2 rows selected</p>
+          <FilterBuilder suggestions={suggestions} onApply={onApply} resultCount={3} />
+        </>,
+      )
+      await user.type(screen.getByRole('combobox', { name: 'Filter' }), 'views abc')
+      expect(screen.getByText('Views takes a whole number.')).toBeInTheDocument()
+      expect(screen.getAllByRole('status')).toHaveLength(1)
+      expect(screen.getByText('1 suggestion').closest('[aria-live]')).toHaveAttribute(
+        'aria-live',
+        'polite',
+      )
     })
 
     it('announces the result count', () => {

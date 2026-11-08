@@ -447,8 +447,12 @@ the list cannot honour — an unknown field or an unsupported operator — degra
 to free text rather than erroring.
 
 Each field type declares which operators it accepts. Text fields accept `eq`
-only, and lower it to `contains`. Numbers, decimals, big integers and timestamps
-accept `eq`, `gt`, `gte`, `lt` and `lte`.
+only, and lower it to `contains`. Numbers, decimals, big integers, timestamps
+and calendar days accept `eq`, `gt`, `gte`, `lt` and `lte`; a to-many
+relationship accepts `eq` and `gt`, with the value `0`. A timestamp takes an ISO
+date (`2026-01-31`) or date and time (`2026-01-31T09:30`, with optional seconds,
+fraction and `Z` or `±hh:mm` offset), and a calendar day takes an ISO date; a day
+the month does not have, such as `2026-02-31`, degrades to free text.
 
 #### The Filter builder bar
 
@@ -464,17 +468,21 @@ condition. When the field has more than one condition, a condition row above
 the values switches it by click or by Tab, and typing `>`, `>=`, `<` or `<=`
 at the start of a value sets the comparison. A value that does not fit the
 field (`abc` for a whole number) is explained under the suggestions instead of
-being applied.
+being applied. "Search all text" reads what was typed in the URL grammar, so a
+quoted `"Ada Lovelace"` stays one phrase.
 
 Each committed Filter token becomes a chip, and the list updates at once: the
 builder navigates with `router.push` inside a transition, so the current rows
 stay on screen with a progress indicator and Back steps through each change.
 There is no Apply button, and text still being typed never navigates. Clicking
 any part of a chip edits it in place, its × removes it, and **Clear** removes
-every chip. A second `is` filter on a field replaces the first; a hand-written
-`status:draft status:published` stays as written and matches nothing. Pasting
-a query in the URL grammar turns it into chips, and a filtered URL reproduces
-the same chips.
+every chip. A second `is` filter on a field replaces the first, and typing two
+at once (`status:draft status:published`) keeps the last; a hand-written pair in
+the URL stays as written and matches nothing. Pasting a query in the URL grammar
+turns it into chips, and a filtered URL reproduces the same chips. A token whose
+value the field does not take (`views:abc`) shows as a "Text contains" chip,
+because the engine searches it as free text, and is written back exactly as it
+was read.
 
 | Key             | Does                                                         |
 | --------------- | ------------------------------------------------------------ |
@@ -514,10 +522,10 @@ Three consequences of lowering these filters onto the secured read's closed
   `contains` — so `?search=title:Draft` also matches `draft`. There is no `mode`
   option to make either case-sensitive.
 - **A to-many count filter other than presence degrades to free text.** Only
-  three count expressions map onto a relation quantifier: `orders:0` becomes
-  `none`, and `orders:>0` and `orders:>=1` both become `some`. Anything else —
-  `orders:3`, `orders:>=2`, `orders:<5` — has no quantifier to lower to, so it
-  falls through to the free-text pass.
+  two count expressions map onto a relation quantifier: `orders:0` becomes
+  `none`, and `orders:>0` becomes `some`. Anything else — `orders:3`,
+  `orders:>=1`, `orders:<5` — has no quantifier to lower to, so it falls through
+  to the free-text pass.
 - **Sorting by a to-many count is gone.** `orderBy` takes this list's own scalar
   columns; a relationship is refused. Order by a stored counter column if you
   need that ordering.
