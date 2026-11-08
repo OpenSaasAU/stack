@@ -7,7 +7,7 @@ import type { FilterFieldSuggestion, FilterToken } from '@opensaas/stack-core'
 import { Popover, PopoverAnchor, PopoverContent } from '../primitives/popover.js'
 import { cn } from '../lib/utils.js'
 import {
-  addAlternatives,
+  alternativeRefusal,
   chipEditText,
   chipsOf,
   conditionLabel,
@@ -21,11 +21,11 @@ import {
   isFieldCondition,
   isRecordLookupField,
   joinChips,
-  nextGroupId,
   normaliseGroups,
   normaliseTokens,
-  placeEntries,
+  placeChoice,
   rootOptions,
+  singleTokenOptions,
   splitChips,
   splitComparison,
   unitsOf,
@@ -35,6 +35,7 @@ import {
   type FilterEntry,
   type FilterOption,
   type FilterRecord,
+  type GroupEdit,
   type RecordLookup,
   type ResolvedFilterRecord,
 } from '../lib/filterBuilderOptions.js'
@@ -44,6 +45,9 @@ import type { ServerActionInput } from '../server/types.js'
 const NO_RECORDS: FilterRecord[] = []
 const LOOKUP_PAGE_SIZE = 10
 const OR_PREFIX = /^or\s$/i
+
+const loose = (tokens: readonly FilterToken[]): FilterEntry[] =>
+  tokens.map((token) => ({ token, group: null }))
 
 /**
  * Per-part `classNames` slots for {@link FilterBuilder}. Each merges onto its
@@ -180,6 +184,7 @@ export function FilterBuilder({
   const [editing, setEditing] = React.useState<number | null>(null)
   const [armed, setArmed] = React.useState<number | null>(null)
   const [alternativeOf, setAlternativeOf] = React.useState<number | null>(null)
+  const [refusal, setRefusal] = React.useState<string | null>(null)
   const [open, setOpen] = React.useState(false)
   const [activeIndex, setActiveIndex] = React.useState(0)
   const [dates, setDates] = React.useState({ from: '', to: '' })
@@ -243,11 +248,16 @@ export function FilterBuilder({
         : null,
     [serverAction, listKey, lookupField, searchResults, isSearching, searchApplied],
   )
-  const { options, hint } = React.useMemo(
-    () =>
-      draft ? draftOptions(draft, text, fields, editingToken, lookup) : rootOptions(text, fields),
-    [draft, text, fields, editingToken, lookup],
-  )
+  const oneMember =
+    (alternativeOf !== null && editingChip === undefined) ||
+    (editingChip !== undefined && editingChip.group !== null)
+  const { options, hint: optionsHint } = React.useMemo(() => {
+    const offered = draft
+      ? draftOptions(draft, text, fields, editingToken, lookup)
+      : rootOptions(text, fields)
+    return oneMember ? singleTokenOptions(offered) : offered
+  }, [draft, text, fields, editingToken, lookup, oneMember])
+  const hint = refusal ?? optionsHint
   const active = options.length === 0 ? -1 : Math.min(activeIndex, options.length - 1)
   const conditions = React.useMemo(() => (draftField ? conditionsOf(draftField) : []), [draftField])
   const hasDateForm =
@@ -289,12 +299,14 @@ export function FilterBuilder({
     setEditing(null)
     setArmed(null)
     setAlternativeOf(null)
+    setRefusal(null)
     setActiveIndex(0)
     setDates({ from: '', to: '' })
   }
 
   const apply = (next: FilterEntry[]) => {
     setEntries(next)
+    setRefusal(null)
     const query = entriesQuery(next)
     setPendingQueries((pending) => (query === seenValue.trim() ? [] : [...pending, query]))
     startTransition(() => {
@@ -303,22 +315,29 @@ export function FilterBuilder({
     })
   }
 
-  const place = (added: FilterToken[], replace: boolean, together: boolean): FilterEntry[] => {
-    if (alternativeOf !== null && !editingChip) {
-      return addAlternatives(entries, chips, alternativeOf, added)
-    }
-    const group = editingChip?.group ?? (together && added.length > 1 ? nextGroupId(entries) : null)
-    return placeEntries(
+  const place = (added: readonly FilterEntry[], replace: boolean): GroupEdit =>
+    placeChoice(
       entries,
-      added.map((token) => ({ token, group })),
-      editingChip ?? null,
+      chips,
+      added,
+      { alternativeOf, editing: editingChip ?? null },
       fields,
-      replace && group === null,
+      replace,
     )
+
+  const refuse = (message: string) => {
+    setRefusal(message)
+    setOpen(true)
+    focusInput()
   }
 
-  const commit = (added: FilterToken[], replace = true, together = false) => {
-    apply(place(added, replace, together))
+  const commit = (added: readonly FilterEntry[], replace = true) => {
+    const placed = place(added, replace)
+    if (!placed.ok) {
+      refuse(placed.message)
+      return
+    }
+    apply(placed.entries)
     reset()
     setOpen(false)
     focusInput()
@@ -342,7 +361,12 @@ export function FilterBuilder({
       : entries
 
   const toggle = (chosen: FilterToken[]) => {
-    const next = chosen.length > 0 ? place(chosen, true, false) : withoutChip(editingChip)
+    const placed = chosen.length > 0 ? place(loose(chosen), true) : null
+    if (placed !== null && !placed.ok) {
+      refuse(placed.message)
+      return
+    }
+    const next = placed === null ? withoutChip(editingChip) : placed.entries
     apply(next)
     const at = chosen.length > 0 ? next.findIndex((entry) => entry.token === chosen[0]) : -1
     const chip = chipsOf(next, fields, recordOf).findIndex(({ start }) => start === at)
@@ -371,7 +395,7 @@ export function FilterBuilder({
         }),
       )
     }
-    commit(option.tokens, true, option.alternatives === true)
+    commit(option.entries ?? loose(option.tokens))
   }
 
   const editChip = (index: number) => {
@@ -404,12 +428,14 @@ export function FilterBuilder({
     if (!draft || !draftField) return
     const typed = draft.condition === 'range' ? `${dates.from}..${dates.to}` : dates.from
     const check = draftTokens(draftField, draft.condition, typed)
-    if (check.ok) commit(check.tokens)
+    if (check.ok) commit(loose(check.tokens))
   }
 
   const joinAfter = (index: number) => {
-    apply(joinChips(entries, chips, index))
+    const joined = joinChips(entries, chips, index)
     setArmed(null)
+    if (joined.ok) apply(joined.entries)
+    else refuse(joined.message)
   }
 
   const splitAfter = (index: number) => {
@@ -534,10 +560,17 @@ export function FilterBuilder({
     let value = event.target.value
     setOpen(true)
     setActiveIndex(0)
+    setRefusal(null)
     if (!draft && editing === null && alternativeOf === null && OR_PREFIX.test(value)) {
       if (chips.length > 0) {
-        setAlternativeOf(chips.length - 1)
+        const refused = alternativeRefusal(entries, chips, chips.length - 1)
         setArmed(null)
+        if (refused !== null) {
+          setRefusal(refused)
+          setText(value)
+          return
+        }
+        setAlternativeOf(chips.length - 1)
         setText('')
         return
       }
@@ -563,17 +596,16 @@ export function FilterBuilder({
   const handlePaste = (event: React.ClipboardEvent<HTMLInputElement>) => {
     if (draft) return
     const pasted = hydrateEntries(event.clipboardData.getData('text'))
-    if (!pasted.some(({ token }) => isFieldCondition(token, fields))) return
+    const grouped = pasted.some(({ group }) => group !== null)
+    if (!grouped && !pasted.some(({ token }) => isFieldCondition(token, fields))) return
     event.preventDefault()
-    const offset = nextGroupId(entries)
-    const added = pasted.map(({ token, group }) => ({
-      token: normaliseTokens([token], fields)[0] ?? token,
-      group: group === null ? null : group + offset,
-    }))
-    apply(placeEntries(entries, added, editingChip ?? null, fields, false))
-    reset()
-    setOpen(false)
-    focusInput()
+    commit(
+      pasted.map(({ token, group }) => ({
+        token: normaliseTokens([token], fields)[0] ?? token,
+        group,
+      })),
+      false,
+    )
   }
 
   const armedSentence = armed === null ? null : chips[armed]?.description.sentence

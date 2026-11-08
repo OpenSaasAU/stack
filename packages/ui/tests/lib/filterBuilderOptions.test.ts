@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { FilterFieldSuggestion, FilterToken } from '@opensaas/stack-core'
 import {
+  ALTERNATIVE_HINT,
   addAlternatives,
+  alternativeRefusal,
   alternativesOption,
   checkRange,
   chipEditText,
@@ -18,11 +20,14 @@ import {
   joinChips,
   localInstant,
   normaliseGroups,
+  placeChoice,
   placeEntries,
   rootOptions,
+  singleTokenOptions,
   splitChips,
   unitsOf,
   type FilterEntry,
+  type GroupEdit,
   type FilterOption,
 } from '../../src/lib/filterBuilderOptions.js'
 
@@ -488,17 +493,69 @@ describe('OR groups', () => {
     ])
   })
 
+  const written = (edit: GroupEdit) => (edit.ok ? entriesQuery(edit.entries) : edit.message)
+
   it('joins two chips into a group, and a between chip joins as one a..b token', () => {
     const entries = hydrateEntries('views:>=1 views:<=5 title:x')
-    const joined = joinChips(entries, chipsOf(entries, grouped), 0)
-    expect(entriesQuery(joined)).toBe('(views:1..5 OR title:x)')
+    expect(written(joinChips(entries, chipsOf(entries, grouped), 0))).toBe(
+      '(views:1..5 OR title:x)',
+    )
   })
 
   it('joins a chip into the group beside it', () => {
     const entries = hydrateEntries('beta (status:draft OR title:x)')
-    expect(entriesQuery(joinChips(entries, chipsOf(entries, grouped), 0))).toBe(
+    expect(written(joinChips(entries, chipsOf(entries, grouped), 0))).toBe(
       '(beta OR status:draft OR title:x)',
     )
+  })
+
+  it('leaves entries as they are when the two chips already share a group', () => {
+    const entries = hydrateEntries('(status:draft OR title:x OR title:y) beta')
+    const chips = chipsOf(entries, grouped)
+    expect(joinChips(entries, chips, 0)).toEqual({ ok: true, entries })
+    expect(joinChips(entries, chips, 1)).toEqual({ ok: true, entries })
+    expect(written(joinChips(entries, chips, 2))).toBe(
+      '(status:draft OR title:x OR title:y OR beta)',
+    )
+  })
+
+  describe('a between chip whose ends cannot be written as a..b', () => {
+    const named: FilterFieldSuggestion = {
+      field: 'title',
+      operators: ['eq', 'gte', 'lte'],
+      freeText: true,
+      valueSource: { kind: 'none' },
+    }
+    const ranged = new Map([named, status].map((suggestion) => [suggestion.field, suggestion]))
+    const refusal =
+      '“Title between Ada L and Bob” cannot be one alternative of an or group. Write each end of its range without spaces, commas or parentheses.'
+
+    it.each(['title:>="Ada L" title:<=Bob', 'title:>=a..x title:<=c', 'title:>=a(b title:<=c'])(
+      'keeps %s as its >= and <= pair, and refuses to join it',
+      (query) => {
+        const entries = hydrateEntries(query + ' status:draft')
+        const chips = chipsOf(entries, ranged)
+        expect(chips[0].count).toBe(2)
+        const joined = joinChips(entries, chips, 0)
+        expect(joined.ok).toBe(false)
+        expect(entriesQuery(entries)).toBe(`${query} status:draft`)
+        expect(alternativeRefusal(entries, chips, 0)).not.toBeNull()
+        const [published] = hydrateTokens('status:published')
+        expect(addAlternatives(entries, chips, 0, [published], ranged).ok).toBe(false)
+      },
+    )
+
+    it('names the chip and the fix', () => {
+      const entries = hydrateEntries('title:>="Ada L" title:<=Bob status:draft')
+      expect(written(joinChips(entries, chipsOf(entries, ranged), 0))).toBe(refusal)
+    })
+
+    it('joins a between chip whose ends can be written as a..b', () => {
+      const entries = hydrateEntries('title:>=Ada title:<=Bob status:draft')
+      expect(written(joinChips(entries, chipsOf(entries, ranged), 0))).toBe(
+        '(title:Ada..Bob OR status:draft)',
+      )
+    })
   })
 
   it('splits a group between two chips, and a side of one stops being a group', () => {
@@ -508,17 +565,92 @@ describe('OR groups', () => {
     expect(entriesQuery(splitChips(entries, chips, 1))).toBe('(status:draft OR title:x) title:y')
   })
 
-  it('adds alternatives after a group, or makes a lone chip a group', () => {
+  it('adds an alternative after a group, or makes a lone chip a group', () => {
     const lone = hydrateEntries('status:draft beta')
     expect(
-      entriesQuery(addAlternatives(lone, chipsOf(lone, grouped), 0, hydrateTokens('title:x'))),
+      written(addAlternatives(lone, chipsOf(lone, grouped), 0, hydrateTokens('title:x'), grouped)),
     ).toBe('(status:draft OR title:x) beta')
     const group = hydrateEntries('(status:draft OR title:x) beta')
     expect(
-      entriesQuery(
-        addAlternatives(group, chipsOf(group, grouped), 0, hydrateTokens('status:published')),
+      written(
+        addAlternatives(
+          group,
+          chipsOf(group, grouped),
+          0,
+          hydrateTokens('status:published'),
+          grouped,
+        ),
       ),
     ).toBe('(status:draft OR title:x OR status:published) beta')
+  })
+
+  it('refuses an alternative of several tokens, since groups do not nest', () => {
+    const lone = hydrateEntries('status:draft')
+    expect(
+      addAlternatives(lone, chipsOf(lone, grouped), 0, hydrateTokens('foo bar'), grouped),
+    ).toEqual({ ok: false, message: ALTERNATIVE_HINT })
+  })
+
+  describe('placeChoice', () => {
+    const loose = (query: string): FilterEntry[] =>
+      hydrateTokens(query).map((token) => ({ token, group: null }))
+
+    it('adds one choice as an alternative, and refuses an AND of several', () => {
+      const entries = hydrateEntries('status:draft')
+      const chips = chipsOf(entries, grouped)
+      const target = { alternativeOf: 0, editing: null }
+      expect(written(placeChoice(entries, chips, loose('title:x'), target, grouped, true))).toBe(
+        '(status:draft OR title:x)',
+      )
+      expect(placeChoice(entries, chips, loose('foo bar'), target, grouped, true)).toEqual({
+        ok: false,
+        message: ALTERNATIVE_HINT,
+      })
+      expect(
+        placeChoice(entries, chips, hydrateEntries('(a OR b)'), target, grouped, true),
+      ).toEqual({ ok: false, message: ALTERNATIVE_HINT })
+    })
+
+    it('replaces an edited group member with one choice, keeping the group', () => {
+      const entries = hydrateEntries('(status:draft OR beta) gamma')
+      const chips = chipsOf(entries, grouped)
+      const target = { alternativeOf: null, editing: chips[1] }
+      expect(
+        written(placeChoice(entries, chips, loose('status:published'), target, grouped, false)),
+      ).toBe('(status:draft OR status:published) gamma')
+      expect(placeChoice(entries, chips, loose('a:1 b:2'), target, grouped, false).ok).toBe(false)
+    })
+
+    it('places a typed group as a group, after the groups already there', () => {
+      const entries = hydrateEntries('(status:draft OR beta)')
+      expect(
+        written(
+          placeChoice(
+            entries,
+            chipsOf(entries, grouped),
+            hydrateEntries('gamma (title:x OR title:y)'),
+            { alternativeOf: null, editing: null },
+            grouped,
+            true,
+          ),
+        ),
+      ).toBe('(status:draft OR beta) gamma (title:x OR title:y)')
+    })
+  })
+
+  it('keeps only single-token choices for an alternative, and says why', () => {
+    const offered = rootOptions('foo bar', grouped)
+    const single = singleTokenOptions(offered)
+    expect(
+      offered.options.some(
+        (option) => option.kind === 'apply' && option.label === 'Search all text for “foo bar”',
+      ),
+    ).toBe(true)
+    expect(
+      single.options.every((option) => option.kind !== 'apply' || option.tokens.length === 1),
+    ).toBe(true)
+    expect(single.hint).toBe(ALTERNATIVE_HINT)
+    expect(singleTokenOptions(rootOptions('"foo bar"', grouped)).hint).toBeNull()
   })
 
   it('keeps two values on one field in a group, and replaces only outside groups', () => {
@@ -540,20 +672,99 @@ describe('OR groups', () => {
     ).toBe('(status:draft OR title:x OR status:published) status:draft')
   })
 
-  it('offers `a or b` as one group, each side read on its own', () => {
+  const optionQuery = (option: FilterOption | undefined) =>
+    option?.kind === 'apply'
+      ? entriesQuery(option.entries ?? option.tokens.map((token) => ({ token, group: null })))
+      : null
+
+  it('offers `a or b` as one group, each side read on its own, after the literal search', () => {
     const option = alternativesOption('draft or priya', grouped)
     expect(option).toMatchObject({
       kind: 'apply',
-      alternatives: true,
       label: 'Status is Draft or Text contains priya',
     })
-    expect(
-      option?.kind === 'apply'
-        ? entriesQuery(option.tokens.map((token) => ({ token, group: 0 })))
-        : null,
-    ).toBe('(status:draft OR priya)')
-    expect(rootOptions('views > 5 or title contains ada', grouped).options[0]).toMatchObject({
-      label: 'Views greater than 5 or Title contains ada',
+    expect(optionQuery(option ?? undefined)).toBe('(status:draft OR priya)')
+    const { options } = rootOptions('draft or priya', grouped)
+    expect(options.map(optionQuery)).toEqual(['draft or priya', '(status:draft OR priya)'])
+    const phrased = rootOptions('views > 5 or title contains ada', grouped).options
+    expect(phrased.at(-1)).toMatchObject({ label: 'Views greater than 5 or Title contains ada' })
+    expect(optionQuery(phrased[0])).not.toBe(optionQuery(phrased.at(-1)))
+  })
+
+  it('never splits an or inside quotes', () => {
+    expect(alternativesOption('"black or white"', grouped)).toBeNull()
+    expect(alternativesOption('"a or b" or c', grouped)).toMatchObject({
+      label: 'Text contains a or b or Text contains c',
+    })
+    const [first] = rootOptions('"black or white"', grouped).options
+    expect(optionQuery(first)).toBe('"black or white"')
+  })
+
+  describe('an enumerated value whose label holds or', () => {
+    const colour: FilterFieldSuggestion = {
+      field: 'colour',
+      operators: ['eq'],
+      freeText: false,
+      valueSource: {
+        kind: 'enum',
+        options: [
+          { value: 'bw', label: 'Black or White' },
+          { value: 'red', label: 'Red' },
+        ],
+      },
+    }
+    const coloured = new Map(
+      [colour, status, title].map((suggestion) => [suggestion.field, suggestion]),
+    )
+
+    it('is never split, and its exact value comes before any group', () => {
+      expect(alternativesOption('black or white', coloured)).toBeNull()
+      const { options } = rootOptions('black or white', coloured)
+      expect(optionQuery(options[0])).toBe('colour:bw')
+      expect(options.some((option) => option.group === 'Any of')).toBe(false)
+    })
+
+    it('stays one side when or splits around it', () => {
+      expect(
+        optionQuery(alternativesOption('black or white or draft', coloured) ?? undefined),
+      ).toBe('(colour:bw OR status:draft)')
+    })
+  })
+
+  describe('a typed or pasted group', () => {
+    it.each([
+      ['(draft OR mango)', '(draft OR mango)'],
+      ['(status:draft OR status:published)', '(status:draft OR status:published)'],
+      [
+        '(status:draft OR status:published) status:draft status:published',
+        '(status:draft OR status:published) status:published',
+      ],
+    ])('is offered first as exactly what %s means in the URL', (typed, query) => {
+      const { options } = rootOptions(typed, grouped)
+      expect(optionQuery(options[0])).toBe(query)
+    })
+
+    it('never flattens a group into AND, in any option', () => {
+      for (const typed of ['(draft OR mango)', '(status:draft OR status:published) beta']) {
+        for (const option of rootOptions(typed, grouped).options) {
+          if (option.kind !== 'apply') continue
+          expect(
+            option.entries?.some((entry) => entry.group !== null),
+            option.label,
+          ).toBe(true)
+        }
+      }
+    })
+
+    it('searches the group as text, keeping it a group', () => {
+      const { options } = rootOptions('(status:draft OR status:published)', grouped)
+      expect(
+        options.map((option) => (option.kind === 'field' ? option.field : option.label)),
+      ).toEqual([
+        'Status is Draft or Status is Published',
+        'Search all text for “(status:draft OR status:published)”',
+      ])
+      expect(optionQuery(options[1])).toBe('("status:draft" OR "status:published")')
     })
   })
 

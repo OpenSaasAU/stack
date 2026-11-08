@@ -6,7 +6,7 @@ import {
   filterTokenFreeTextWord,
   isFieldConditionToken,
 } from './map.js'
-import { serializeFilterQuery } from './serialize.js'
+import { serializeFilterQuery, serializeFilterToken } from './serialize.js'
 import {
   buildListFilterWhere,
   collectFilterSpecs,
@@ -1532,10 +1532,45 @@ describe('parseFilterQuery reads OR groups', () => {
     })
   })
 
-  it('takes the last `)` of a word as the closer', () => {
-    expect(parseFilterQuery('(a OR b))')).toEqual({
-      terms: [orGroup(tok(null, 'a'), tok(null, 'b)'))],
+  it.each([
+    ['(a OR f(x) y)', ['(a', 'OR', 'f(x)', 'y)']],
+    ['(see OR note(1) later)', ['(see', 'OR', 'note(1)', 'later)']],
+    ['(a OR b))', ['(a', 'OR', 'b))']],
+    ['(a OR status:x(1))', ['(a', 'OR', 'status:x(1))']],
+  ])('keeps %s as the literal words it was before groups existed', (written, words) => {
+    const { terms } = parseFilterQuery(written)
+    expect(terms.every((term) => term.kind === 'token')).toBe(true)
+    expect(filterQueryTokens({ terms }).map(serializeFilterToken)).toEqual(words)
+    expect(serializeFilterQuery(parseFilterQuery(written))).toBe(written)
+  })
+
+  it('reads a member whose parenthesis is quoted', () => {
+    expect(parseFilterQuery('("f(x)" OR name:"a)")')).toEqual({
+      terms: [orGroup(tok(null, 'f(x)', { quoted: true }), tok('name', 'a)', { quoted: true }))],
     })
+  })
+
+  it.each([
+    '(a OR f(x) y)',
+    '(see OR note(1) later)',
+    '(a OR b))',
+    '((a OR b))',
+    '(a) OR (b)',
+    '(a OR (b) OR c)',
+    '(f(x) OR y)',
+    '(a OR b)(c OR d)',
+    '(a OR b)) (c OR d',
+    '(x:(1 OR y:2))',
+    '(-(a OR b))',
+    'f(x) (g OR h(i))',
+    '(status:a,b(c) OR d)',
+    '(a OR "b" c)',
+  ])('reads %s as the same terms as before groups existed', (written) => {
+    const wordByWord = written
+      .split(/\s+/)
+      .filter((word) => word !== '')
+      .flatMap((word) => parseFilterQuery(word).terms)
+    expect(parseFilterQuery(written).terms).toEqual(wordByWord)
   })
 
   it.each([
@@ -1601,7 +1636,7 @@ describe('serializeFilterQuery writes OR groups', () => {
       serializeFilterQuery({
         terms: [orGroup(tok(null, 'a)'), tok(null, '(b'), tok('x', 'c)'))],
       }),
-    ).toBe('("a)" OR "(b" OR x:c))')
+    ).toBe('("a)" OR "(b" OR x:"c)")')
   })
 
   it('quotes a free-text word outside a group that would read back as one', () => {

@@ -240,28 +240,15 @@ export function buildFilterWhere(
     return conditions.length > 0 ? anyOf(conditions) : NEVER_MATCHES
   }
 
-  const asWritten = (token: FilterToken): FilterToken[] =>
-    token.field === null
-      ? filterQueryTokens(parseFilterQuery(serializeFilterToken(token)))
-      : [token]
-
   const tokenCondition = (token: FilterToken): FilterCondition | null => {
     const spec = token.field === null ? undefined : specFor(token.field)
     return spec === undefined ? null : fieldCondition(token, spec)
   }
 
-  const alternative = (member: FilterToken): FilterCondition | null => {
-    const parts = asWritten(member)
-      .filter((token) => !isEmptyFilterToken(token))
-      .map((token) => tokenCondition(token) ?? freeText(filterTokenFreeTextWord(token)))
-    if (parts.length === 0) return null
-    return parts.length === 1 ? parts[0] : { AND: parts }
-  }
-
   const groupCondition = (term: FilterGroup): FilterCondition | null => {
     const alternatives = term.tokens
-      .map(alternative)
-      .filter((condition): condition is FilterCondition => condition !== null)
+      .filter((token) => !isEmptyFilterToken(token))
+      .map((token) => tokenCondition(token) ?? freeText(filterTokenFreeTextWord(token)))
     return alternatives.length === 0 ? null : anyOf(alternatives)
   }
 
@@ -280,22 +267,20 @@ export function buildFilterWhere(
     else textConditions.push(freeText(filterTokenFreeTextWord(token)))
   }
 
-  const addWritten = (terms: readonly FilterTerm[]): void => {
-    for (const term of terms) {
-      if (term.kind === 'token') {
-        addToken(term)
-        continue
-      }
-      const condition = groupCondition(term)
-      if (condition !== null) fieldConditions.push(condition)
+  const addTerm = (term: FilterTerm): void => {
+    if (term.kind === 'token') {
+      addToken(term)
+      return
     }
+    const condition = groupCondition(term)
+    if (condition !== null) fieldConditions.push(condition)
   }
 
   for (const term of query.terms) {
     if (term.kind === 'group') {
-      addWritten(parseFilterQuery(serializeFilterQuery({ terms: [term] })).terms)
+      parseFilterQuery(serializeFilterQuery({ terms: [term] })).terms.forEach(addTerm)
     } else if (term.field === null) {
-      addWritten(parseFilterQuery(serializeFilterToken(term)).terms)
+      filterQueryTokens(parseFilterQuery(serializeFilterToken(term))).forEach(addToken)
     } else {
       addToken(term)
     }

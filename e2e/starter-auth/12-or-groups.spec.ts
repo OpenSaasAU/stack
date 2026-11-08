@@ -61,10 +61,10 @@ test.describe('Filter builder OR groups', () => {
     await expect(titleCell(page, papaya)).toBeVisible()
 
     await filterBar(page).fill('draft or mango')
-    await expect(
-      page.getByRole('option', { name: 'Status is Draft or Text contains mango' }),
-    ).toBeVisible()
-    await page.keyboard.press('Enter')
+    await expect(page.getByRole('option').first()).toHaveText(
+      'Search all text for “draft or mango”',
+    )
+    await page.getByRole('option', { name: 'Status is Draft or Text contains mango' }).click()
 
     await searchIs(page, `${marker()} (status:draft OR mango)`)
     await page.waitForLoadState('networkidle')
@@ -130,5 +130,26 @@ test.describe('Filter builder OR groups', () => {
     ).toBeVisible()
     await expect(titleCell(page, kiwi)).toBeVisible()
     await expect(titleCell(page, papaya)).toBeVisible()
+  })
+
+  test('applies a group typed in the URL grammar as that group', async ({ page }) => {
+    const kiwi = `Kiwi ${marker()}`
+    const mango = `Mango ${marker()}`
+    const papaya = `Papaya ${marker()}`
+    await createPost(page, { title: kiwi, status: 'draft' })
+    await createPost(page, { title: mango, status: 'published' })
+    await createPost(page, { title: papaya, status: 'published' })
+
+    await page.goto(`/admin/post?search=${encodeURIComponent(marker())}`)
+    await page.waitForLoadState('networkidle')
+    await filterBar(page).click()
+    await page.keyboard.type('(kiwi OR mango)')
+    await page.keyboard.press('Enter')
+
+    await searchIs(page, `${marker()} (kiwi OR mango)`)
+    await page.waitForLoadState('networkidle')
+    await expect(titleCell(page, kiwi)).toBeVisible()
+    await expect(titleCell(page, mango)).toBeVisible()
+    await expect(titleCell(page, papaya)).toHaveCount(0)
   })
 })

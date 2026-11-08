@@ -453,16 +453,18 @@ describe('parse/serialize is an inverse on what the parser produces (property)',
     for (let run = 0; run < RUNS; run++) {
       const original = generate.query()
       const readBack = filterQueryTokens(parseFilterQuery(serializeFilterQuery(original)))
-      const sources = filterQueryTokens(original)
+      const sources = original.terms.flatMap((term) =>
+        filterTermTokens(term).map((source) => ({ source, inGroup: term.kind === 'group' })),
+      )
       const label = JSON.stringify(original)
       expect(readBack.length, label).toBe(sources.length)
       readBack.forEach((term, index) => {
-        const source = sources[index]
+        const { source, inGroup } = sources[index]
         const id = filterTokenRecordId(source)
         if (source.values.some((value) => value.quoted)) {
           expect(filterTokenRecordId(term), label).toBeNull()
         }
-        if (id !== null && !/[\s,"]|\)$/.test(id)) {
+        if (id !== null && !/[\s,"]/.test(id) && !(inGroup && /[()]/.test(id))) {
           expect(filterTokenRecordId(term), label).toBe(id)
         }
       })
@@ -489,6 +491,128 @@ describe('a range reads back as one range token (property)', () => {
         )
       }
     }
+  })
+})
+
+const NASTY_BOUND = ['a', '1', 'Z', '(', ')', ',', '.', '..', '"', ' ', '-', ':', '#']
+const PLAIN_MEMBERS: FilterToken[] = [
+  token({ field: 'status', values: [v('a')] }),
+  token({ values: [v('beta')] }),
+  token({ field: 'a', operator: 'gte', values: [v('5')] }),
+]
+
+function rangeIsWritable(low: string, high: string, inGroup: boolean): boolean {
+  const text = `${low}..${high}`
+  if (low === '' || high === '' || /[\s,]/.test(text)) return false
+  if (low.includes('..') || low.endsWith('.') || /^(?:[<>"]|\/\/)/.test(low)) return false
+  return !(inGroup && /[()]/.test(text))
+}
+
+describe('a structured range with awkward bounds round-trips through its URL (property)', () => {
+  const random = seededRandom(2270)
+  const pick = <T>(items: readonly T[]): T => items[Math.floor(random() * items.length)]
+  const bound = () =>
+    Array.from({ length: 1 + Math.floor(random() * 4) }, () => pick(NASTY_BOUND)).join('')
+  const nastyRange = () =>
+    token({
+      field: pick(FIELDS),
+      operator: 'range',
+      negated: random() < 0.3,
+      values: [v(bound()), v(bound())],
+    })
+  const structured = (): { query: FilterQuery; ranges: FilterToken[]; inGroup: boolean } => {
+    const ranges = Array.from({ length: 1 + Math.floor(random() * 2) }, nastyRange)
+    if (random() < 0.25) return { query: query(...ranges), ranges, inGroup: false }
+    const members = [...ranges, ...PLAIN_MEMBERS.slice(0, 1 + Math.floor(random() * 3))]
+    const shuffled = members
+      .map((member) => ({ member, at: random() }))
+      .sort((a, b) => a.at - b.at)
+      .map(({ member }) => member)
+    return { query: query(group(...shuffled)), ranges, inGroup: true }
+  }
+
+  it('reads a writable range back as the same structured query', () => {
+    let writable = 0
+    let inGroup = 0
+    for (let run = 0; run < RUNS * 2; run++) {
+      const generated = structured()
+      const fits = generated.ranges.every((range) =>
+        rangeIsWritable(range.values[0].text, range.values[1].text, generated.inGroup),
+      )
+      if (!fits) continue
+      writable++
+      if (generated.inGroup) inGroup++
+      const written = serializeFilterQuery(generated.query)
+      expect(parseFilterQuery(written), written).toEqual(generated.query)
+    }
+    expect(writable).toBeGreaterThan(50)
+    expect(inGroup).toBeGreaterThan(20)
+  })
+
+  it('writes an unwritable range as its literal `a..b`, and reads that back unchanged', () => {
+    let unwritable = 0
+    let parenInGroup = 0
+    for (let run = 0; run < RUNS * 2; run++) {
+      const generated = structured()
+      const written = serializeFilterQuery(generated.query)
+      const readBack = parseFilterQuery(written)
+      const sources = filterQueryTokens(generated.query)
+      const read = filterQueryTokens(readBack)
+      expect(read.length, written).toBe(sources.length)
+      sources.forEach((source, index) => {
+        if (source.operator !== 'range') return
+        const [low, high] = source.values
+        if (rangeIsWritable(low.text, high.text, generated.inGroup)) return
+        unwritable++
+        if (generated.inGroup && rangeIsWritable(low.text, high.text, false)) parenInGroup++
+        expect(read[index], written).toMatchObject({
+          field: source.field,
+          operator: 'eq',
+          negated: source.negated,
+          values: [{ text: `${low.text}..${high.text}` }],
+        })
+      })
+      expect(parseFilterQuery(serializeFilterQuery(readBack)), written).toEqual(readBack)
+    }
+    expect(unwritable).toBeGreaterThan(50)
+    expect(parenInGroup).toBeGreaterThan(5)
+  })
+
+  it('filters a structured query exactly as its URL does', () => {
+    for (let run = 0; run < RUNS * 2; run++) {
+      const generated = structured()
+      const readBack = parseFilterQuery(serializeFilterQuery(generated.query))
+      expect(
+        buildFilterWhere(generated.query, PROPERTY_SPECS),
+        JSON.stringify(generated.query),
+      ).toEqual(buildFilterWhere(readBack, PROPERTY_SPECS))
+    }
+  })
+
+  it('writes a member range whose bound holds a parenthesis as its quoted literal', () => {
+    const range = token({ field: 'f', operator: 'range', values: [v('1'), v('2)')] })
+    const written = serializeFilterQuery(query(group(range, token({ values: [v('b')] }))))
+    expect(written).toBe('(f:"1..2)" OR b)')
+    expect(parseFilterQuery(written).terms).toEqual([
+      group(token({ field: 'f', values: [v('1..2)', true)] }), token({ values: [v('b')] })),
+    ])
+    expect(serializeFilterQuery(query(range))).toBe('f:1..2)')
+  })
+})
+
+describe('a free-text word outside a group that would open one', () => {
+  it('is quoted as the text it is written as, so a range keeps its `..`', () => {
+    const structured = query(
+      token({ operator: 'range', values: [v('(x'), v('y')] }),
+      token({ values: [v('OR')] }),
+      token({ values: [v('z)')] }),
+    )
+    const written = serializeFilterQuery(structured)
+    expect(written).toBe('"(x..y" OR z)')
+    expect(tokensOf(written)[0].values).toEqual([v('(x..y', true)])
+    expect(buildFilterWhere(structured, PROPERTY_SPECS)).toEqual(
+      buildFilterWhere(parseFilterQuery(written), PROPERTY_SPECS),
+    )
   })
 })
 

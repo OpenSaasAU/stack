@@ -539,10 +539,11 @@ in a free-text word is part of the word.
 An OR group joins two or more tokens: `(status:draft OR author:#42) views:>100`
 is drafts or anything of that author's, with more than 100 views. The keyword
 is uppercase `OR`, the `(` sits directly before the first token and the `)`
-directly after the last, and groups do not nest. Anything else keeps its
-literal meaning: `a OR b` without parentheses, a lowercase `(a or b)`, a quoted
-`"OR"`, an unmatched parenthesis and a nested `((a OR b) OR c)` are all free-text
-words. Each token in a group maps exactly as it would on its own, negation
+directly after the last, no member holds an unquoted parenthesis of its own, and
+groups do not nest. Anything else keeps its literal meaning: `a OR b` without
+parentheses, a lowercase `(a or b)`, a quoted `"OR"`, an unmatched parenthesis,
+a nested `((a OR b) OR c)` and `(see OR note(1) later)` are all free-text
+words. Quote a value to keep a parenthesis in it: `(title:"f(x)" OR beta)`. Each token in a group maps exactly as it would on its own, negation
 included, and a range inside a group is one `a..b` token. A token in a group
 that cannot map stays in place as its free-text alternative and is never
 dropped: `(status:draft OR secret:x)`, on a field the session cannot read,
@@ -669,13 +670,21 @@ Chips are joined by connector buttons. Between two filters the connector reads
 **and**; clicking it joins them into an OR group, and the group is drawn as one
 bordered unit whose members are joined by **or**. Clicking an **or** splits the
 group there. Typing `or` and a space after the last filter starts an
-alternative to it, and Backspace on the empty bar backs out of it. Typing `draft or priya` offers the whole group at once, each
-side read as a filter or as text to search for. A group left with one member
+alternative to it, and Backspace on the empty bar backs out of it. An
+alternative is one filter, since groups do not nest: while one is being typed,
+only suggestions that write a single filter are offered. Typing `draft or priya`
+searches for those words by default, as the URL reads them, and offers the
+whole group as the next suggestion, each side read as a filter or as text to
+search for. An `or` inside quotes, or inside an option's exact label, never
+splits. Typing or pasting a group in the URL grammar, `(draft OR priya)`,
+applies exactly that group. A group left with one member
 stops being a group. The "replace the first `is`" rule above applies outside
 groups only: inside one, `status:draft` and `status:published` are both kept,
 and a filter added outside never removes a group's member. A "between" chip
-joins a group as its one `a..b` token, and `>=` and `<=` tokens are never read
-as one "between" chip across a group's edge.
+joins a group as its one `a..b` token. One whose ends cannot be written that
+way, such as `title:>="Ada L" title:<=Bob`, stays a `>=` and `<=` pair, and the
+builder refuses to put it in a group, with a hint saying why. `>=` and `<=`
+tokens are never read as one "between" chip across a group's edge.
 
 | Key             | Does                                                         |
 | --------------- | ------------------------------------------------------------ |

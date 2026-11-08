@@ -72,7 +72,6 @@ export function splitRangeValue(value: string): [string, string] | null {
   return [value.slice(0, at), value.slice(at + RANGE_SEPARATOR.length)]
 }
 
-/** What a reader produced, and the index just past the text it read. */
 export interface FilterRead<T> {
   value: T
   end: number
@@ -82,19 +81,12 @@ function endsPlainToken(query: string, at: number): boolean {
   return at >= query.length || isFilterWhitespace(query[at])
 }
 
-/**
- * Whether the `)` at `at` closes an OR group: it ends the word it is in. The
- * last `)` of a word is the closer, so `(a OR b))` holds the value `b)`.
- */
-function closesGroup(query: string, at: number): boolean {
-  return query[at] === GROUP_CLOSE && endsPlainToken(query, at + 1)
-}
-
 function readToken(query: string, start: number, inGroup: boolean): FilterRead<FilterToken> {
   const n = query.length
   let i = start
 
-  const endsToken = (at: number) => endsPlainToken(query, at) || (inGroup && closesGroup(query, at))
+  const endsToken = (at: number) =>
+    endsPlainToken(query, at) || (inGroup && query[at] === GROUP_CLOSE)
 
   const readValue = (inList: boolean): FilterValue => {
     if (query[i] !== '"') {
@@ -176,13 +168,10 @@ function skipWhitespace(query: string, at: number): number {
   return i
 }
 
-/**
- * The OR group opening at `start`, or `null` when the text there is not one:
- * `(` directly before its first token, two or more tokens joined by
- * whitespace, an uppercase `OR` and whitespace, and a `)` directly after the
- * last token that ends its word. A token starting `(` (a nested group) or `)`
- * makes it no group.
- */
+function holdsParenthesis(token: FilterToken): boolean {
+  return token.values.some((value) => !value.quoted && /[()]/.test(value.text))
+}
+
 export function readFilterGroup(query: string, start: number): FilterRead<FilterGroup> | null {
   if (query[start] !== GROUP_OPEN) return null
   const tokens: FilterToken[] = []
@@ -192,10 +181,11 @@ export function readFilterGroup(query: string, start: number): FilterRead<Filter
       return null
     }
     const member = readToken(query, i, true)
+    if (holdsParenthesis(member.value)) return null
     tokens.push(member.value)
     i = member.end
     if (query[i] === GROUP_CLOSE) {
-      if (!closesGroup(query, i) || tokens.length < 2) return null
+      if (!endsPlainToken(query, i + 1) || tokens.length < 2) return null
       return { value: { kind: 'group', tokens }, end: i + 1 }
     }
     const keyword = skipWhitespace(query, i)
@@ -221,9 +211,10 @@ export function readFilterGroup(query: string, start: number): FilterRead<Filter
  *   A `-` on its own is a free-text word.
  * - `(a OR b)` is an OR group of the tokens `a` and `b`: `(` directly before
  *   the first token, the uppercase keyword `OR` between tokens, and `)`
- *   directly after the last. Anything else, such as a lowercase `or`, a
- *   nested or unmatched parenthesis, or a group of one token, reads as it
- *   would without the group: literal words.
+ *   directly after the last. No member may hold an unquoted parenthesis of its
+ *   own. Anything else, such as a lowercase `or`, a nested, inner or
+ *   unmatched parenthesis (`(a OR f(x) y)`), or a group of one token, reads as
+ *   it would without the group: literal words.
  * - A value in double quotes keeps its spaces and commas and is literal:
  *   `"status:draft"` and `"OR"` are free-text words and `field:"!"` the text
  *   `!`. Inside quotes, `\"` is a quote and `\\` a backslash; any other

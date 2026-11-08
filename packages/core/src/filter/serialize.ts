@@ -8,7 +8,7 @@ import {
 } from './parse.js'
 import type { FilterQuery, FilterTerm, FilterToken, FilterValue } from './types.js'
 
-type Placement = 'top' | 'member' | 'lastMember'
+type Placement = 'top' | 'member'
 
 function hasWhitespace(text: string): boolean {
   for (const ch of text) if (isFilterWhitespace(ch)) return true
@@ -23,9 +23,8 @@ function mustQuote(
 ): boolean {
   const { text } = value
   if (value.quoted || text.startsWith('"') || hasWhitespace(text)) return true
-  if (placement === 'member' && index === token.values.length - 1 && text.endsWith(')')) return true
+  if (placement === 'member' && /[()]/.test(text)) return true
   if (token.field === null) {
-    if (placement !== 'top' && !token.negated && /^[()]/.test(text)) return true
     if (text === '' || fieldPrefixLength(text) > 0) return true
     return !token.negated && text.startsWith('-') && text !== '-'
   }
@@ -86,7 +85,7 @@ function rangeText(token: FilterToken, placement: Placement): string | null {
   const bounds = splitRangeValue(text)
   if (bounds === null || bounds[0] !== low.text) return null
   if (text.startsWith('"') || hasWhitespace(text) || /^(?:[<>]|\/\/)/.test(text)) return null
-  if (placement === 'member' && text.endsWith(')')) return null
+  if (placement === 'member' && /[()]/.test(text)) return null
   return text
 }
 
@@ -110,14 +109,8 @@ function writeToken(token: FilterToken, placement: Placement): string {
   return `${negation}${token.field}:${FILTER_OPERATOR_PREFIXES[token.operator]}${text}`
 }
 
-function quotedWord(token: FilterToken): string {
-  return quote(token.values.map((value) => value.text).join(','))
-}
-
 function writeGroup(tokens: readonly FilterToken[]): string {
-  const members = tokens.map((token, index) =>
-    writeToken(token, index === tokens.length - 1 ? 'lastMember' : 'member'),
-  )
+  const members = tokens.map((token) => writeToken(token, 'member'))
   return `(${members.join(` ${FILTER_GROUP_KEYWORD} `)})`
 }
 
@@ -150,10 +143,13 @@ export function serializeFilterToken(token: FilterToken): string {
  * range. Inside quotes a quote is written `\"`, and a backslash that precedes
  * a quote or ends the value is written `\\`.
  *
- * An OR group is written `(a OR b)`, quoting a token that would otherwise end
- * the group early or open a nested one; a group of one token is written as
- * that token, and an empty group is not written. A free-text word outside a
- * group that would read back as the start of a group is quoted.
+ * An OR group is written `(a OR b)`, quoting every member value that holds a
+ * parenthesis, since a member word with an unquoted parenthesis is no group.
+ * A `range` member whose bounds hold one cannot be written as a range inside
+ * a group, and is written as its quoted literal `"a..b"`. A group of one
+ * token is written as that token, and an empty group is not written. A
+ * free-text word outside a group that would read back as the start of a
+ * group is written quoted, as the word it is.
  *
  * @example
  * serializeFilterQuery(parseFilterQuery('-name:"Ada \\"the Countess\\"",Grace (status:draft OR "OR")'))
@@ -169,7 +165,7 @@ export function serializeFilterQuery(query: FilterQuery): string {
     if (term.kind === 'group' || term.field !== null || term.negated) continue
     if (!parts[index].startsWith('(')) continue
     const offset = parts.slice(0, index).reduce((length, part) => length + part.length + 1, 0)
-    if (readFilterGroup(parts.join(' '), offset) !== null) parts[index] = quotedWord(term)
+    if (readFilterGroup(parts.join(' '), offset) !== null) parts[index] = quote(parts[index])
   }
   return parts.join(' ')
 }
