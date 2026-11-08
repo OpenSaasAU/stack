@@ -14,25 +14,41 @@ import type { Where } from '../secured/vocabulary.js'
 export type FilterOperator = 'eq' | 'gt' | 'gte' | 'lt' | 'lte'
 
 /**
+ * What a token asks of its field: a {@link FilterOperator} on its values, or
+ * `empty` for `field:!`, which carries no values and matches the rows where
+ * the field has no value.
+ */
+export type FilterTokenOperator = FilterOperator | 'empty'
+
+/** One value of a {@link FilterToken}, as written. */
+export interface FilterValue {
+  /** The unquoted, unescaped text. */
+  text: string
+  /**
+   * Whether the value was written in double quotes, which keeps it literal: a
+   * quoted `"status:draft"` is a free-text word, never a field token, and a
+   * quoted `"!"` is the text `!`, never "is empty".
+   */
+  quoted: boolean
+}
+
+/**
  * One Filter token: a field, an operator and its values.
  *
- * A bare free-text word has `field: null`. `quoted` records that the value was
- * written in double quotes, which keeps it literal: a quoted `"status:draft"`
- * is a free-text word, never a field token. `negated` is ADR-0083's
- * `-field:value`, and a `values` list longer than one its `field:a,b`.
+ * A bare free-text word has `field: null`. `negated` is ADR-0083's
+ * `-field:value`, a `values` list longer than one its `field:a,b`, and the
+ * `empty` operator its `field:!`.
  */
 export interface FilterToken {
   kind: 'token'
   /** Field key the token targets, or `null` for a bare free-text word. */
   field: string | null
-  /** The operator: `eq` for a plain `field:value`, comparisons for prefixed values. */
-  operator: FilterOperator
+  /** `eq` for a plain `field:value`, comparisons for prefixed values, `empty` for `field:!`. */
+  operator: FilterTokenOperator
   /** Whether the token is negated (`-field:value`). */
   negated: boolean
-  /** The unquoted, unescaped values, in the order written. */
-  values: string[]
-  /** Whether the first value is written in double quotes. */
-  quoted: boolean
+  /** The values, in the order written. Empty for the `empty` operator. */
+  values: FilterValue[]
 }
 
 /**
@@ -110,6 +126,15 @@ export interface FilterSpec {
    * degrades to free text. MUST stay free of DB/Prisma imports.
    */
   toCondition: (operator: FilterOperator, value: string) => FilterCondition | null
+  /**
+   * What "no value" means for this field: a condition matching exactly the
+   * rows where it has none. Set it only on a field that can be empty. It is
+   * what offers `field:!` (is empty) and `-field:!` (is not empty), and the
+   * engine ORs it into every negated token on the field, so "is not" keeps the
+   * rows with no value that SQL's `NOT` would drop. Without it, `field:!`
+   * degrades to free text.
+   */
+  empty?: FilterCondition
   /** Serializable suggestion metadata for the client. */
   suggestions: {
     valueSource: FilterValueSource
@@ -137,4 +162,6 @@ export interface FilterFieldSuggestion {
   valueSource: FilterValueSource
   /** The shape a typed value must take, when the field states one. */
   valueFormat?: FilterValueFormat
+  /** Whether the field can be empty, and so takes `field:!` and `-field:!`. */
+  canBeEmpty?: boolean
 }

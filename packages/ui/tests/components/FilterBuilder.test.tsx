@@ -36,6 +36,7 @@ const suggestions: FilterFieldSuggestion[] = [
     operators: ['eq'],
     freeText: false,
     valueSource: { kind: 'relationship', listKey: 'User', many: false },
+    canBeEmpty: true,
   },
 ]
 
@@ -223,10 +224,15 @@ describe('FilterBuilder', () => {
       expect(onApply).toHaveBeenCalledWith('views:>=12')
     })
 
-    it('offers no condition row on a field with one condition', async () => {
+    it('offers "does not contain" beside a field’s own condition', async () => {
       const { user, bar } = setup()
       await user.type(bar, 'title{Enter}')
-      expect(screen.queryByRole('group', { name: 'Title condition' })).not.toBeInTheDocument()
+      const conditions = screen.getByRole('group', { name: 'Title condition' })
+      expect(
+        within(conditions)
+          .getAllByRole('button')
+          .map((b) => b.textContent),
+      ).toEqual(['contains', 'does not contain'])
     })
 
     it('explains a value that does not fit the field in place', async () => {
@@ -593,6 +599,120 @@ describe('FilterBuilder', () => {
       render(<FilterBuilder suggestions={suggestions} defaultValue="hello" />)
       await user.click(screen.getByRole('button', { name: 'Remove Text contains hello' }))
       expect(push).toHaveBeenCalledWith('/admin/post')
+    })
+  })
+
+  describe('is not, any of and is empty', () => {
+    it('builds "does not contain" as a negated token', async () => {
+      const { user, bar, onApply } = setup()
+      await user.type(bar, 'title{Enter}')
+      await user.click(screen.getByRole('button', { name: 'does not contain' }))
+      await user.type(bar, 'Ada{Enter}')
+      expect(onApply).toHaveBeenCalledWith('-title:Ada')
+      expect(chipNames()).toEqual(['Title does not contain Ada'])
+    })
+
+    it('builds "is not" on an enumerated field from its values', async () => {
+      const { user, bar, onApply } = setup()
+      await user.type(bar, 'status{Enter}')
+      await user.click(screen.getByRole('button', { name: 'is not' }))
+      await user.click(screen.getByRole('option', { name: 'Draft' }))
+      expect(onApply).toHaveBeenCalledWith('-status:draft')
+      expect(chipNames()).toEqual(['Status is not Draft'])
+    })
+
+    it('ticks several values into one "is any of" chip, applying each tick at once', async () => {
+      const { user, bar, onApply } = setup()
+      await user.type(bar, 'status{Enter}')
+      await user.click(screen.getByRole('button', { name: 'is any of' }))
+      expect(screen.getByRole('listbox', { name: 'Status values' })).toHaveAttribute(
+        'aria-multiselectable',
+        'true',
+      )
+
+      await user.click(screen.getByRole('option', { name: 'Draft' }))
+      expect(onApply).toHaveBeenLastCalledWith('status:draft')
+      expect(bar).toHaveAttribute('aria-expanded', 'true')
+
+      await user.click(screen.getByRole('option', { name: 'Published' }))
+      expect(onApply).toHaveBeenLastCalledWith('status:draft,published')
+      expect(chipNames()).toEqual(['Status is any of Draft, Published'])
+      expect(screen.getByRole('option', { name: 'Draft' })).toHaveAttribute('aria-selected', 'true')
+      expect(screen.getByRole('option', { name: 'Published' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      )
+
+      await user.click(screen.getByRole('option', { name: 'Draft' }))
+      expect(onApply).toHaveBeenLastCalledWith('status:published')
+      expect(chipNames()).toEqual(['Status is Published'])
+    })
+
+    it('reopens an "is any of" chip with its values ticked', async () => {
+      const { user } = setup({ defaultValue: 'status:draft,published' })
+      expect(chipNames()).toEqual(['Status is any of Draft, Published'])
+      await user.click(
+        screen.getByRole('button', { name: 'Change value of Status is any of Draft, Published' }),
+      )
+      const conditions = screen.getByRole('group', { name: 'Status condition' })
+      expect(within(conditions).getByRole('button', { name: 'is any of' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      )
+      expect(screen.getByRole('option', { name: 'Draft' })).toHaveAttribute('aria-selected', 'true')
+    })
+
+    it('offers "is empty" and "is not empty" only on a field that can be empty', async () => {
+      const { user, bar, onApply } = setup()
+      await user.type(bar, 'views{Enter}')
+      expect(screen.queryByRole('button', { name: 'is empty' })).not.toBeInTheDocument()
+      await user.keyboard('{Escape}')
+
+      await user.type(bar, 'author{Enter}')
+      await user.click(screen.getByRole('button', { name: 'is empty' }))
+      await user.keyboard('{Enter}')
+      expect(onApply).toHaveBeenLastCalledWith('author:!')
+      expect(chipNames()).toEqual(['Author is empty'])
+
+      await user.type(bar, 'author{Enter}')
+      await user.click(screen.getByRole('button', { name: 'is not empty' }))
+      await user.keyboard('{Enter}')
+      expect(onApply).toHaveBeenLastCalledWith('author:! -author:!')
+    })
+
+    it.each([
+      ['status is not draft', '-status:draft'],
+      ['title does not contain Ada', '-title:Ada'],
+      ['views != 3', '-views:3'],
+      ['author is empty', 'author:!'],
+      ['author is not empty', '-author:!'],
+    ])('reads the plain phrase %j as a token', async (phrase, query) => {
+      const { user, bar, onApply } = setup()
+      await user.type(bar, phrase)
+      await user.keyboard('{Enter}')
+      expect(onApply).toHaveBeenCalledWith(query)
+    })
+
+    it('hydrates each new shape as a chip, and a token that cannot map as its literal text', () => {
+      setup({
+        defaultValue: '-status:draft status:draft,published author:! -author:! views:! -secret:x',
+      })
+      expect(chipNames()).toEqual([
+        'Status is not Draft',
+        'Status is any of Draft, Published',
+        'Author is empty',
+        'Author is not empty',
+        'Text contains views:!',
+        'Text contains -secret:x',
+      ])
+    })
+
+    it('keeps a pasted negated or multi-value query exactly as written', async () => {
+      const { user, bar, onApply } = setup()
+      await user.click(bar)
+      await user.paste('-status:draft title:a,"b c"')
+      expect(onApply).toHaveBeenCalledWith('-status:draft title:a,"b c"')
+      expect(chipNames()).toEqual(['Status is not Draft', 'Title contains any of a, b c'])
     })
   })
 })

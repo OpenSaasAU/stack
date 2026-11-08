@@ -1,25 +1,23 @@
-import { fieldPrefixLength } from './parse.js'
-import type { FilterOperator, FilterQuery, FilterToken } from './types.js'
+import { FILTER_OPERATOR_PREFIXES, fieldPrefixLength, isFilterWhitespace } from './parse.js'
+import type { FilterQuery, FilterToken, FilterValue } from './types.js'
 
-const OPERATOR_PREFIX: Record<FilterOperator, string> = {
-  eq: '',
-  gt: '>',
-  gte: '>=',
-  lt: '<',
-  lte: '<=',
+function hasWhitespace(text: string): boolean {
+  for (const ch of text) if (isFilterWhitespace(ch)) return true
+  return false
 }
 
-function mustQuoteValue(value: string): boolean {
-  return /^"|[\s,]/.test(value)
-}
-
-function mustQuoteBareText(token: FilterToken, text: string): boolean {
+function mustQuote(token: FilterToken, value: FilterValue, index: number): boolean {
+  const { text } = value
+  if (value.quoted || text.startsWith('"') || hasWhitespace(text)) return true
   if (token.field === null) {
-    if (fieldPrefixLength(text) > 0) return true
-    if (token.negated) return text === ''
-    return text === '' || (text.startsWith('-') && text !== '-')
+    if (text === '' || fieldPrefixLength(text) > 0) return true
+    return !token.negated && text.startsWith('-') && text !== '-'
   }
-  if (token.operator === 'eq') return /^(?:[<>]|\/\/)/.test(text)
+  if (text.includes(',')) return true
+  if (index > 0) return false
+  if (token.operator === 'eq') {
+    return /^(?:[<>]|\/\/)/.test(text) || (text === '!' && token.values.length === 1)
+  }
   if (token.operator === 'gt' || token.operator === 'lt') return text.startsWith('=')
   return false
 }
@@ -37,14 +35,11 @@ function quote(value: string): string {
 }
 
 function serializeValues(token: FilterToken): string {
-  const values = token.values.length > 0 ? token.values : ['']
-  const written = values.map((value) => (mustQuoteValue(value) ? quote(value) : value))
-  if (!written[0].startsWith('"')) {
-    if (token.quoted || mustQuoteBareText(token, written.join(','))) {
-      written[0] = quote(values[0])
-    }
-  }
-  return written.join(',')
+  const values: FilterValue[] =
+    token.values.length > 0 ? token.values : [{ text: '', quoted: false }]
+  return values
+    .map((value, index) => (mustQuote(token, value, index) ? quote(value.text) : value.text))
+    .join(',')
 }
 
 /**
@@ -52,29 +47,33 @@ function serializeValues(token: FilterToken): string {
  * {@link serializeFilterQuery} writes it.
  */
 export function serializeFilterToken(token: FilterToken): string {
-  const text = serializeValues(token)
   const negation = token.negated ? '-' : ''
+  if (token.operator === 'empty') {
+    return token.field === null ? `${negation}!` : `${negation}${token.field}:!`
+  }
+  const text = serializeValues(token)
   if (token.field === null) return `${negation}${text}`
-  return `${negation}${token.field}:${OPERATOR_PREFIX[token.operator]}${text}`
+  return `${negation}${token.field}:${FILTER_OPERATOR_PREFIXES[token.operator]}${text}`
 }
 
 /**
  * Serialise a {@link FilterQuery} into the `?search=` grammar, joining its
  * terms with the grammar's implicit AND (a space). The inverse of
  * {@link parseFilterQuery}: for every query `parseFilterQuery` returns,
- * `parseFilterQuery(serializeFilterQuery(query))` is that query again, with
- * `quoted` set on a value this function had to quote. Every term is written,
- * including one whose values are empty or absent (`field:` or `""`).
+ * `parseFilterQuery(serializeFilterQuery(query))` is that query again, quoting
+ * included. Every term is written, including one whose values are empty or
+ * absent (`field:` or `""`).
  *
- * A value is quoted when its token says so or when it would otherwise read back
- * as different syntax: whitespace, a comma, a leading quote, a free-text word
- * that looks like `field:value` or starts with `-`, or a value an operator
- * prefix would swallow. Inside quotes a quote is written `\"`, and a backslash
- * that precedes a quote or ends the value is written `\\`.
+ * A value is quoted when it says so or when it would otherwise read back as
+ * different syntax: whitespace, a leading quote, a comma in a field token's
+ * value, a free-text word that looks like `field:value` or starts with `-`, a
+ * lone `!`, or a value an operator prefix would swallow. Inside quotes a quote
+ * is written `\"`, and a backslash that precedes a quote or ends the value is
+ * written `\\`.
  *
  * @example
- * serializeFilterQuery(parseFilterQuery('name:"Ada \\"the Countess\\"" "status:draft"'))
- * // 'name:"Ada \\"the Countess\\"" "status:draft"'
+ * serializeFilterQuery(parseFilterQuery('-name:"Ada \\"the Countess\\"",Grace "status:draft"'))
+ * // '-name:"Ada \\"the Countess\\"",Grace "status:draft"'
  */
 export function serializeFilterQuery(query: FilterQuery): string {
   return query.terms.map(serializeFilterToken).join(' ')

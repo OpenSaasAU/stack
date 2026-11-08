@@ -1,13 +1,16 @@
 // Filter engine (ADR-0017, ADR-0083): query string ⇄ structured query → Where.
 
-export { parseFilterQuery } from './parse.js'
+export { parseFilterQuery, FILTER_OPERATOR_PREFIXES, FILTER_COMPARISON_PREFIXES } from './parse.js'
 export { serializeFilterQuery } from './serialize.js'
 export { buildFilterWhere, isEmptyFilterToken, isFieldConditionToken } from './map.js'
+export type { FilterFieldCapabilities } from './map.js'
 export { collectFilterSpecs, buildListFilterWhere, collectFilterSuggestions } from './collect.js'
 export type { FilterAccessArgs } from './collect.js'
 export type {
   FilterOperator,
+  FilterTokenOperator,
   FilterToken,
+  FilterValue,
   FilterTerm,
   FilterQuery,
   FilterCondition,

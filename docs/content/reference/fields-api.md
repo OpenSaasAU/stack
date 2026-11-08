@@ -2197,6 +2197,19 @@ Optional and additive: the field's filtering capability for the admin UI's filte
 
 `suggestions.valueSource` says what the Filter builder may offer as values: `none`, an `enum` of config options, or a `relationship` label search. The optional `suggestions.valueFormat` states the shape a typed value must take, as a regular expression source and a description read after the field's name (`{ pattern: '^-?\\d+$', description: 'takes a whole number' }`), so the builder explains a value that does not fit rather than applying it, and shows a token whose value does not match as free text. Build the `RegExp` once from the declared `pattern` and test it inside `toCondition`, so the hint and the engine cannot disagree; a check the pattern cannot express, such as a day the month does not have, stays in `toCondition`, and the builder leaves it to the server. Omit `valueFormat` when no pattern can state what `toCondition` accepts. `valueFormat.operators` gives particular operators their own `{ pattern, description }`. The built-in integer, decimal, big integer, calendar day and to-many relationship fields declare one; a timestamp takes anything `Date` parses, so it declares none. A to-many relationship takes `0` with `eq` and `gt`, and `1` with `gte` (`orders:0` is none, `orders:>0` and `orders:>=1` are any).
 
+A field gets negation and "any of" with no code of its own: the engine composes `NOT` and `OR` around `toCondition`, so `-field:value` is `NOT` of the field's condition and `field:a,b` ORs it once per value. The optional `empty` member states what "no value" means for the field, as a condition matching exactly the rows that have none. Set it only on a field that can be empty: it is what makes `field:!` (is empty) and `-field:!` (is not empty) understood and offered, and the engine ORs it into every negated token on the field, so "is not" keeps the rows with no value that SQL's `NOT` would drop. A field without it takes neither, and `field:!` degrades to free text. Suggestions carry it to the client as `canBeEmpty: true`.
+
+```typescript
+getFilterSpec: (fieldName) => ({
+  operators: ['eq'],
+  toCondition: (operator, value) => (operator === 'eq' ? { [fieldName]: { equals: value } } : null),
+  empty: { [fieldName]: { equals: null } },
+  suggestions: { valueSource: { kind: 'none' } },
+})
+```
+
+The built-in fields set `empty` where their column can hold no value: a nullable column is `{ equals: null }`; an optional text field is also empty when it holds `''`; a to-one relationship is empty when it has no related record the session can see (`{ none: {} }`). A required field, a checkbox that is not nullable, a timestamp defaulting to now, a select with a default, and a to-many relationship (whose `field:0` already means none) set none.
+
 ---
 
 ## Creating Custom Field Types
