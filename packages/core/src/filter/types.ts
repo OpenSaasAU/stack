@@ -73,16 +73,22 @@ export type FilterValueSource =
   | { kind: 'enum'; options: Array<{ value: string; label: string }> }
   | { kind: 'relationship'; listKey: string; many: boolean }
 
+/** One regular expression a typed filter value must match, and how to explain it. */
+export interface FilterValuePattern {
+  /** A regular expression source the trimmed value must match. */
+  pattern: string
+  /** What the field takes, read after the field's name: `takes a whole number`. */
+  description: string
+}
+
 /**
  * The shape a typed value must take for a field's Filter spec to map it,
  * stated as serialisable data so the Filter builder can explain a value that
  * does not fit before it is applied, instead of letting it become free text.
  */
-export interface FilterValueFormat {
-  /** A regular expression source the trimmed value must match. */
-  pattern: string
-  /** What the field takes, read after the field's name: `takes a whole number`. */
-  description: string
+export interface FilterValueFormat extends FilterValuePattern {
+  /** A different shape for particular operators, replacing `pattern` for them. */
+  operators?: Partial<Record<FilterOperator, FilterValuePattern>>
 }
 
 /**

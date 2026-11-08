@@ -103,4 +103,5 @@ export type {
   FilterCondition,
   FilterValueSource,
   FilterValueFormat,
+  FilterValuePattern,
 } from './filter/index.js'

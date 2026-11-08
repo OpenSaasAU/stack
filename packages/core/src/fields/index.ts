@@ -49,25 +49,28 @@ const DECIMAL_VALUE: FilterValueFormat = {
 }
 const DECIMAL_VALUE_MATCH = new RegExp(DECIMAL_VALUE.pattern)
 
-const DATE_PATTERN = '\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])'
-
 const DATE_VALUE: FilterValueFormat = {
-  pattern: `^${DATE_PATTERN}$`,
+  pattern: '^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])$',
   description: 'takes a date, like 2026-01-31',
 }
 const DATE_VALUE_MATCH = new RegExp(DATE_VALUE.pattern)
 
-const TIMESTAMP_VALUE: FilterValueFormat = {
-  pattern: `^${DATE_PATTERN}(?:[T ](?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d{1,9})?)?(?:Z|[+-](?:[01]\\d|2[0-3]):?[0-5]\\d)?)?$`,
-  description: 'takes a date, like 2026-01-31, or a date and time, like 2026-01-31T09:30',
-}
-const TIMESTAMP_VALUE_MATCH = new RegExp(TIMESTAMP_VALUE.pattern)
-
 const PRESENCE_COUNT: FilterValueFormat = {
   pattern: '^0$',
   description: 'takes 0: “is 0” finds none, “greater than 0” finds any',
+  operators: { gte: { pattern: '^1$', description: 'takes 1 with “at least”, which finds any' } },
 }
-const PRESENCE_COUNT_MATCH = new RegExp(PRESENCE_COUNT.pattern)
+
+function formatMatcher(format: FilterValueFormat) {
+  const base = new RegExp(format.pattern)
+  const byOperator = new Map<string, RegExp>()
+  for (const [operator, pattern] of Object.entries(format.operators ?? {})) {
+    if (pattern) byOperator.set(operator, new RegExp(pattern.pattern))
+  }
+  return (operator: FilterOperator, value: string) => (byOperator.get(operator) ?? base).test(value)
+}
+
+const PRESENCE_COUNT_MATCH = formatMatcher(PRESENCE_COUNT)
 
 function prismaComparisonKey(operator: FilterOperator): string {
   return operator === 'eq' ? 'equals' : operator
@@ -788,15 +791,11 @@ export function timestamp<
     getFilterSpec: (fieldName: string): FilterSpec => ({
       operators: COMPARISON_OPERATORS,
       toCondition: (operator, value) => {
-        const trimmed = value.trim()
-        if (!TIMESTAMP_VALUE_MATCH.test(trimmed) || !isCalendarDate(trimmed.slice(0, 10))) {
-          return null
-        }
-        const date = new Date(trimmed)
+        const date = new Date(value.trim())
         if (Number.isNaN(date.getTime())) return null
         return { [fieldName]: { [prismaComparisonKey(operator)]: date } }
       },
-      suggestions: { valueSource: { kind: 'none' }, valueFormat: TIMESTAMP_VALUE },
+      suggestions: { valueSource: { kind: 'none' } },
     }),
   }
 }
@@ -1487,8 +1486,8 @@ export function relationship<
   //    to-one predicate form: every relation predicate is an EXISTS, and its
   //    accessor is the same for both cardinalities.
   //  • to-many filters by PRESENCE. Prisma 8 cannot compare a relation count
-  //    in a `where`, so `orders:0` is `none`, `orders:>0` is `some`, and any
-  //    other comparison degrades to free text.
+  //    in a `where`, so `orders:0` is `none`, `orders:>0`/`orders:>=1` are
+  //    `some`, and any other comparison degrades to free text.
   // The mapper stays pure in both cases (no DB lookup); the engine ANDs the
   // related list's own `query` access inside the EXISTS when it lowers this.
   field.getFilterSpec = (
@@ -1502,11 +1501,11 @@ export function relationship<
 
     if (field.many === true) {
       return {
-        operators: ['eq', 'gt'],
+        operators: ['eq', 'gt', 'gte'],
         toCondition: (operator, value) => {
-          if (!PRESENCE_COUNT_MATCH.test(value.trim())) return null
+          if (!PRESENCE_COUNT_MATCH(operator, value.trim())) return null
           if (operator === 'eq') return { [_fieldName]: { none: {} } }
-          if (operator === 'gt') return { [_fieldName]: { some: {} } }
+          if (operator === 'gt' || operator === 'gte') return { [_fieldName]: { some: {} } }
           return null
         },
         suggestions: { valueSource: { kind: 'none' }, valueFormat: PRESENCE_COUNT },

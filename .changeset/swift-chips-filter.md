@@ -63,11 +63,10 @@ getFilterSpec: (fieldName) => ({
 `collectFilterSuggestions` passes it on as `FilterFieldSuggestion.valueFormat`,
 and `FilterValueFormat` is exported from the root and `/extend` entry points.
 
-Each built-in field's `toCondition` now tests the same `RegExp` its `valueFormat`
-declares, so the hint and the engine agree. A timestamp filter takes an ISO date
-or date and time (`2026-01-31`, `2026-01-31T09:30`, optional seconds, fraction
-and `Z` or `±hh:mm` offset), and a timestamp or calendar day naming a month or
-day that does not exist (`2026-13-01`, `2026-02-31`) degrades to free text. A
-to-many relationship now declares only `eq` and `gt` with the value `0`:
-`orders:0` is none and `orders:>0` is any, and `orders:>=1` now degrades to free
-text like any other count.
+Each built-in field's `toCondition` tests the same `RegExp` its `valueFormat`
+declares, so the hint and the engine agree, and `valueFormat.operators` gives an
+operator its own pattern (`FilterValuePattern`, exported beside
+`FilterValueFormat`). A to-many relationship declares `eq` and `gt` with `0` and
+`gte` with `1`. A calendar day naming a month or day that does not exist
+(`2026-13-01`, `2026-02-31`) degrades to free text instead of reaching Postgres.
+A timestamp still takes anything `Date` parses and declares no `valueFormat`.

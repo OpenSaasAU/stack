@@ -448,11 +448,9 @@ to free text rather than erroring.
 
 Each field type declares which operators it accepts. Text fields accept `eq`
 only, and lower it to `contains`. Numbers, decimals, big integers, timestamps
-and calendar days accept `eq`, `gt`, `gte`, `lt` and `lte`; a to-many
-relationship accepts `eq` and `gt`, with the value `0`. A timestamp takes an ISO
-date (`2026-01-31`) or date and time (`2026-01-31T09:30`, with optional seconds,
-fraction and `Z` or `±hh:mm` offset), and a calendar day takes an ISO date; a day
-the month does not have, such as `2026-02-31`, degrades to free text.
+and calendar days accept `eq`, `gt`, `gte`, `lt` and `lte`. A timestamp takes
+anything JavaScript's `Date` parses; a calendar day takes a `YYYY-MM-DD` date, and
+one the month does not have, such as `2026-02-31`, degrades to free text.
 
 #### The Filter builder bar
 
@@ -522,10 +520,10 @@ Three consequences of lowering these filters onto the secured read's closed
   `contains` — so `?search=title:Draft` also matches `draft`. There is no `mode`
   option to make either case-sensitive.
 - **A to-many count filter other than presence degrades to free text.** Only
-  two count expressions map onto a relation quantifier: `orders:0` becomes
-  `none`, and `orders:>0` becomes `some`. Anything else — `orders:3`,
-  `orders:>=1`, `orders:<5` — has no quantifier to lower to, so it falls through
-  to the free-text pass.
+  three count expressions map onto a relation quantifier: `orders:0` becomes
+  `none`, and `orders:>0` and `orders:>=1` both become `some`. Anything else —
+  `orders:3`, `orders:>=2`, `orders:<5` — has no quantifier to lower to, so it
+  falls through to the free-text pass. The builder offers exactly those three.
 - **Sorting by a to-many count is gone.** `orderBy` takes this list's own scalar
   columns; a relationship is refused. Order by a stored counter column if you
   need that ordering.

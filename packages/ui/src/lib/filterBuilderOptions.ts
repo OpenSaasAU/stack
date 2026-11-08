@@ -131,7 +131,7 @@ export function isFieldCondition(
 ): token is FilterToken & { field: string } {
   if (token.values.length !== 1 || !isFieldConditionToken(token, operatorsOf(fields))) return false
   const suggestion = fields.get(token.field)
-  return suggestion !== undefined && checkValue(suggestion, token.values[0]).ok
+  return suggestion !== undefined && checkValue(suggestion, token.operator, token.values[0]).ok
 }
 
 export function describeToken(token: FilterToken, fields: FilterFields): TokenDescription {
@@ -204,7 +204,11 @@ function matchesFormat(pattern: string, value: string): boolean {
   }
 }
 
-export function checkValue(suggestion: FilterFieldSuggestion, raw: string): ValueCheck {
+export function checkValue(
+  suggestion: FilterFieldSuggestion,
+  operator: FilterOperator,
+  raw: string,
+): ValueCheck {
   const value = raw.trim()
   const label = fieldLabel(suggestion.field)
   if (value === '') return { ok: false, message: `Type a value for ${label}.` }
@@ -217,8 +221,9 @@ export function checkValue(suggestion: FilterFieldSuggestion, raw: string): Valu
       ? { ok: true, value: match.value }
       : { ok: false, message: `No ${label.toLowerCase()} matches “${value}”.` }
   }
-  if (suggestion.valueFormat && !matchesFormat(suggestion.valueFormat.pattern, value)) {
-    return { ok: false, message: `${label} ${suggestion.valueFormat.description}.` }
+  const format = suggestion.valueFormat?.operators?.[operator] ?? suggestion.valueFormat
+  if (format && !matchesFormat(format.pattern, value)) {
+    return { ok: false, message: `${label} ${format.description}.` }
   }
   return { ok: true, value }
 }
@@ -270,7 +275,7 @@ export function parsePhrase(text: string, fields: FilterFields): PhraseResult | 
   if (!suggestion.operators.includes(operator)) {
     return { kind: 'invalid', message: `${label} cannot be compared with “${match[2]}”.` }
   }
-  const check = checkValue(suggestion, match[3])
+  const check = checkValue(suggestion, operator, match[3])
   if (!check.ok) return { kind: 'invalid', message: check.message }
   return { kind: 'token', token: fieldToken(suggestion.field, operator, check.value) }
 }
@@ -353,7 +358,7 @@ export function rootOptions(text: string, fields: FilterFields): FilterOptions {
       }
     } else {
       const comparison = splitComparison(suggestion, rest)
-      const check = checkValue(suggestion, comparison?.rest ?? rest)
+      const check = checkValue(suggestion, comparison?.operator ?? 'eq', comparison?.rest ?? rest)
       if (check.ok) {
         offer(
           [fieldToken(suggestion.field, comparison?.operator ?? 'eq', check.value)],
@@ -412,7 +417,7 @@ export function draftOptions(
       hint = `No ${fieldLabel(suggestion.field).toLowerCase()} matches “${typed}”.`
     }
   } else {
-    const check = checkValue(suggestion, typed)
+    const check = checkValue(suggestion, draft.operator, typed)
     if (check.ok) {
       const token = fieldToken(suggestion.field, draft.operator, check.value)
       options.push({

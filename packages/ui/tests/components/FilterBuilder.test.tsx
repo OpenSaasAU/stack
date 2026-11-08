@@ -393,6 +393,37 @@ describe('FilterBuilder', () => {
       expect(chipNames()).toEqual(['Text contains Ada Lovelace', 'Text contains beta'])
     })
 
+    it('checks a to-many count against the format of its own condition', async () => {
+      const orders: FilterFieldSuggestion = {
+        field: 'orders',
+        operators: ['eq', 'gt', 'gte'],
+        freeText: false,
+        valueSource: { kind: 'none' },
+        valueFormat: {
+          pattern: '^0$',
+          description: 'takes 0',
+          operators: { gte: { pattern: '^1$', description: 'takes 1 with “at least”' } },
+        },
+      }
+      const onApply = vi.fn<(query: string) => void>()
+      const user = userEvent.setup()
+      render(
+        <FilterBuilder
+          suggestions={[orders]}
+          onApply={onApply}
+          defaultValue="orders:>=1 orders:>0 orders:>5"
+        />,
+      )
+      expect(chipNames()).toEqual([
+        'Orders at least 1',
+        'Orders greater than 0',
+        'Text contains orders:>5',
+      ])
+      await user.type(screen.getByRole('combobox', { name: 'Filter' }), 'orders >= 5')
+      expect(screen.getByText('Orders takes 1 with “at least”.')).toBeInTheDocument()
+      expect(onApply).not.toHaveBeenCalled()
+    })
+
     it('keeps a hand-written pair of is filters on one field', () => {
       setup({ defaultValue: 'status:draft status:published' })
       expect(chipNames()).toEqual(['Status is Draft', 'Status is Published'])
