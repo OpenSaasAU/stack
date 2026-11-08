@@ -222,6 +222,7 @@ export function FilterBuilder({
       setEditing(null)
       setArmed(null)
       setAlternativeOf(null)
+      setRefusal(null)
       setDraft(null)
     }
   }

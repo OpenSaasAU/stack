@@ -1678,6 +1678,35 @@ describe('FilterBuilder', () => {
       ).toBeInTheDocument()
     })
 
+    it('clears a refusal when navigation brings a different query', async () => {
+      const onApply = vi.fn<(query: string) => void>()
+      const user = userEvent.setup()
+      const named: FilterFieldSuggestion = {
+        field: 'title',
+        operators: ['eq', 'gte', 'lte'],
+        freeText: true,
+        valueSource: { kind: 'none' },
+      }
+      const fields = [named, ...suggestions.filter((suggestion) => suggestion.field !== 'title')]
+      const view = render(
+        <FilterBuilder
+          suggestions={fields}
+          onApply={onApply}
+          defaultValue='title:>="Ada L" title:<=Bob status:draft'
+        />,
+      )
+      await user.click(
+        screen.getByRole('button', {
+          name: 'Change and to or between Title between Ada L and Bob and Status is Draft',
+        }),
+      )
+      expect(screen.getByText(/cannot be one alternative of an or group/)).toBeInTheDocument()
+      view.rerender(
+        <FilterBuilder suggestions={fields} onApply={onApply} defaultValue="status:published" />,
+      )
+      expect(screen.queryByText(/cannot be one alternative of an or group/)).toBeNull()
+    })
+
     it('keeps an unreadable member in its group as text', () => {
       setup({ defaultValue: '(status:draft OR nosuch:value)' })
       expect(groupNames()).toEqual(['Any of: Status is Draft or Text contains value'])

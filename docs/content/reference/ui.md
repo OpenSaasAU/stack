@@ -712,7 +712,9 @@ Chips are joined by connector buttons. Between two filters the connector reads
 **and**; clicking it joins them into an OR group, and the group is drawn as one
 bordered unit whose members are joined by **or**. Clicking an **or** splits the
 group there. Typing `or` and a space after the last filter starts an
-alternative to it, and Backspace on the empty bar backs out of it. An
+alternative to it, and Backspace on the empty bar backs out of it. This
+happens whenever `or ` starts an empty input with chips present, so a search for
+a phrase that starts with "or" is typed quoted: `"or else"`. An
 alternative is one filter, since groups do not nest: while one is being typed,
 only suggestions that write a single filter are offered. Typing `draft or priya`
 searches for those words by default, as the URL reads them, and offers the

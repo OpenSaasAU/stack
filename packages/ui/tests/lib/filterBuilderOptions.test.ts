@@ -706,6 +706,27 @@ describe('OR groups', () => {
     expect(optionQuery(phrased[0])).not.toBe(optionQuery(phrased.at(-1)))
   })
 
+  it.each([
+    'title:a..(b or status:draft',
+    'title:a..b) or status:draft',
+    'title:(a..b or status:draft',
+  ])('offers no group for %s, whose range cannot be one member of a group', (typed) => {
+    const named: FilterFieldSuggestion = {
+      field: 'title',
+      operators: ['eq', 'gte', 'lte'],
+      freeText: true,
+      valueSource: { kind: 'none' },
+    }
+    const ranged = new Map([named, status].map((suggestion) => [suggestion.field, suggestion]))
+    expect(alternativesOption(typed, ranged)).toBeNull()
+    expect(rootOptions(typed, ranged).options.some((option) => option.group === 'Any of')).toBe(
+      false,
+    )
+    expect(optionQuery(alternativesOption('title:a..b or status:draft', ranged) ?? undefined)).toBe(
+      '(title:a..b OR status:draft)',
+    )
+  })
+
   it('never splits an or inside quotes', () => {
     expect(alternativesOption('"black or white"', grouped)).toBeNull()
     expect(alternativesOption('"a or b" or c', grouped)).toMatchObject({

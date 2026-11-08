@@ -1413,9 +1413,9 @@ export function alternativesOption(text: string, fields: FilterFields): FilterOp
   if (sides.length < 2 || sides.some((side) => side.trim() === '')) return null
   const tokens: FilterToken[] = []
   for (const side of sides) {
-    const read = alternativeTokens(side, fields)
-    if (read.length !== 1) return null
-    tokens.push(read[0])
+    const [token, ...more] = alternativeTokens(side, fields)
+    if (token === undefined || more.length > 0 || !readsBackAs(token, true)) return null
+    tokens.push(token)
   }
   return entriesOption(
     tokens.map((token) => ({ token, group: 0 })),
