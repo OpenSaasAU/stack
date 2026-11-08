@@ -20,6 +20,7 @@ import { TimestampField } from '../../src/components/fields/TimestampField.js'
 import { ListTable } from '../../src/components/standalone/ListTable.js'
 import { SearchBar } from '../../src/components/standalone/SearchBar.js'
 import type { SerializableFieldConfig } from '../../src/lib/serializeFieldConfig.js'
+import type { ServerActionInput } from '../../src/server/types.js'
 
 const mockPush = vi.fn()
 vi.mock('next/navigation.js', () => ({
@@ -221,19 +222,29 @@ describe('the relationship picker by keyboard', () => {
 
   describe('over a server search', () => {
     function deferredSearch() {
-      const resolvers: Array<(value: unknown) => void> = []
+      const pending: Array<{ search: string | undefined; resolve: (value: unknown) => void }> = []
       const serverAction = vi.fn(
-        () =>
+        (input: ServerActionInput) =>
           new Promise<unknown>((resolve) => {
-            resolvers.push(resolve)
+            const search = input.action === 'relationshipOptions' ? input.search : undefined
+            pending.push({ search, resolve })
           }),
       )
-      return { serverAction, resolvers }
+      function searchedFor(search: string) {
+        return pending.some((request) => request.search === search)
+      }
+      function answer(search: string, value: unknown) {
+        if (!searchedFor(search)) throw new Error(`no search for "${search}" is waiting`)
+        for (const request of pending.splice(0)) {
+          request.resolve(request.search === search ? value : { options: [] })
+        }
+      }
+      return { serverAction, searchedFor, answer }
     }
 
     it('takes nothing on Enter until the results for this query are in', async () => {
       const user = userEvent.setup()
-      const { serverAction, resolvers } = deferredSearch()
+      const { serverAction, searchedFor, answer } = deferredSearch()
       const onChange = renderPicker({ listKey: 'Post', serverAction, debounceMs: 20 })
       await openPicker(user)
 
@@ -242,11 +253,11 @@ describe('the relationship picker by keyboard', () => {
       await user.keyboard('{Enter}')
       expect(onChange).not.toHaveBeenCalled()
 
-      await waitFor(() => expect(serverAction).toHaveBeenCalled())
+      await waitFor(() => expect(searchedFor('Grace')).toBe(true))
       await user.keyboard('{Enter}')
       expect(onChange).not.toHaveBeenCalled()
 
-      resolvers[0]({ options: [{ id: 'u3', label: 'Grace Hopper' }] })
+      answer('Grace', { options: [{ id: 'u3', label: 'Grace Hopper' }] })
       await waitFor(() => expect(activeOption()).toBe('Grace Hopper'))
       await user.keyboard('{Enter}')
       expect(onChange).toHaveBeenCalledExactlyOnceWith('u3')
@@ -254,13 +265,13 @@ describe('the relationship picker by keyboard', () => {
 
     it('does not offer the previous answer while a longer query waits on its debounce', async () => {
       const user = userEvent.setup()
-      const { serverAction, resolvers } = deferredSearch()
+      const { serverAction, searchedFor, answer } = deferredSearch()
       renderPicker({ listKey: 'Post', serverAction, debounceMs: 20 })
       await openPicker(user)
 
       await user.keyboard('A')
-      await waitFor(() => expect(serverAction).toHaveBeenCalledTimes(1))
-      resolvers[0]({ options: people.slice(0, 2) })
+      await waitFor(() => expect(searchedFor('A')).toBe(true))
+      answer('A', { options: people.slice(0, 2) })
       await waitFor(() => expect(activeOption()).toBe('Ada Lovelace'))
 
       await user.keyboard('l')

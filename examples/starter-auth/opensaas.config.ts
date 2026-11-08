@@ -306,6 +306,21 @@ export default config({
               },
             },
           ],
+          rowActions: [
+            {
+              key: 'publish',
+              label: 'Publish now',
+              icon: 'send',
+              isAvailable: ({ item }) => item.status !== 'published',
+              handler: async ({ id, context }) => {
+                const updated = await context.db.Post.update({
+                  where: { id },
+                  data: { status: 'published' },
+                })
+                return { message: updated ? 'Post published' : 'Post not published' }
+              },
+            },
+          ],
         },
       },
       hooks: {

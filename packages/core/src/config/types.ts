@@ -1,5 +1,6 @@
 import type { AccessControlledDB, AccessControl, FieldAccess } from '../access/types.js'
 import type { GeneratedTables } from '../contract/dependencies.js'
+import type { ListIdValue } from '../contract/id-boundary.js'
 import type { FilterSpec } from '../filter/types.js'
 import type { z } from 'zod'
 import type { PostgresOptionsBase, PostgresOptions } from '@prisma/orm-postgres/runtime'
@@ -2429,7 +2430,7 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
    * Mirrors Keystone's list-level `ui` block. Currently only `listView`
    * defaults (columns + sort) are supported.
    */
-  ui?: ListUIConfig
+  ui?: ListUIConfig<TTypeInfo>
 }
 
 /**
@@ -2441,12 +2442,12 @@ export type ListConfig<TTypeInfo extends TypeInfo> = {
  * deferred as they cover navigation text rather than list-view or
  * row-labelling defaults.
  */
-export type ListUIConfig = {
+export type ListUIConfig<TTypeInfo extends TypeInfo = TypeInfo> = {
   /**
    * Default list-view (table) configuration for this list, mirroring
    * Keystone's `ui.listView`.
    */
-  listView?: ListViewUIConfig
+  listView?: ListViewUIConfig<TTypeInfo>
   /**
    * Item-view (record edit page) configuration for this list — controls the
    * placement/order of the shape-derived Relationship-table sections (issue
@@ -2654,6 +2655,145 @@ export interface BulkAction {
 }
 
 /**
+ * The icons a Row action may name. Serialisable — the name crosses to the
+ * client row menu as a plain string and the admin UI maps it to its own icon.
+ */
+export type RowActionIcon =
+  | 'archive'
+  | 'check'
+  | 'copy'
+  | 'download'
+  | 'eye'
+  | 'eye-off'
+  | 'flag'
+  | 'lock'
+  | 'mail'
+  | 'refresh'
+  | 'send'
+  | 'star'
+  | 'trash'
+  | 'undo'
+  | 'unlock'
+  | 'upload'
+
+/**
+ * A list's primary key at its own type: the generated item's `id` when the
+ * list is typed through its `TypeInfo`, else {@link ListIdValue}.
+ */
+export type RowActionId<TTypeInfo extends TypeInfo = TypeInfo> =
+  IsAny<TTypeInfo['item']> extends true
+    ? ListIdValue
+    : TTypeInfo['item'] extends { id: infer TId }
+      ? TId
+      : ListIdValue
+
+/**
+ * Arguments passed to a Row action's server-side `handler`. The handler runs
+ * entirely on the server and must do its work through the secured `context`.
+ */
+export interface RowActionContext<TTypeInfo extends TypeInfo = TypeInfo> {
+  /** The list the action was invoked on (PascalCase list key). */
+  listKey: string
+  /**
+   * The id of the row the action targets, parsed through the list's id type:
+   * a `number` on an `int autoincrement` list, a `string` on a `uuid7` or
+   * `cuid2` one. Pass it straight to `context.db.<List>.update({ where: { id } })`.
+   */
+  id: RowActionId<TTypeInfo>
+  /**
+   * The row as this session reads it, re-read through the secured context at
+   * dispatch after the row lock is taken: its own columns, foreign keys and
+   * computed fields, with no relations.
+   */
+  item: Record<string, unknown>
+  /**
+   * The access-scoped context, bound to the dispatch's transaction. All
+   * database work MUST go through `context.db` so the list's access control
+   * and hooks are enforced, and so it commits or rolls back with the check.
+   */
+  context: import('../access/types.js').AccessContext
+}
+
+/**
+ * The outcome a Row action `handler` returns. The optional `message` is shown
+ * in the list view's status line; returning nothing yields a generic
+ * completion message.
+ */
+export interface RowActionResult {
+  /** Human-readable outcome shown to the admin (e.g. "Published"). */
+  message?: string
+}
+
+/**
+ * A list-specific Row action declared in `ui.listView.rowActions`, offered in
+ * each row's menu after the built-in Edit and Copy link, and before Delete.
+ *
+ * Only `key`, `label`, `icon` and `destructive` cross to the client. `hasAccess`,
+ * `isAvailable` and `handler` stay on the server: the client sends `key` and
+ * the row id back through the generic server action, which re-checks
+ * `hasAccess`, then opens a transaction, takes a row lock on the row, re-reads
+ * it through the secured context, re-runs `isAvailable` and only then runs the
+ * handler.
+ */
+export interface RowAction<TTypeInfo extends TypeInfo = TypeInfo> {
+  /**
+   * Stable identifier the client echoes back to dispatch this action. Must be
+   * unique within the list.
+   */
+  key: string
+  /** Menu item label. */
+  label: string
+  /** Optional icon shown beside the label. */
+  icon?: RowActionIcon
+  /**
+   * When true, the menu item is styled as destructive and the admin is asked
+   * to confirm before the action runs.
+   */
+  destructive?: boolean
+  /**
+   * Optional visibility gate, resolved once per request against the session.
+   * Returning `false` hides the action on every row. Re-checked on dispatch
+   * before the row is read or locked.
+   */
+  hasAccess?: (args: {
+    session: import('../access/types.js').Session | null
+    context: import('../access/types.js').AccessContext
+    listKey: string
+  }) => boolean | Promise<boolean>
+  /**
+   * Optional per-row gate, evaluated on the server for every row the list view
+   * renders and again on dispatch against the re-read row. It must be
+   * synchronous, so a page of rows never fans out into queries; a throw or a
+   * non-boolean result (a Promise) counts as unavailable. `item` carries
+   * the row's own columns, foreign keys and computed fields, with no relations.
+   *
+   * @example
+   * ```typescript
+   * isAvailable: ({ item }) => item.status !== 'published'
+   * ```
+   */
+  isAvailable?: (args: {
+    item: Record<string, unknown>
+    session: import('../access/types.js').Session | null
+  }) => boolean
+  /**
+   * The server-side handler. Receives the row and the secured `context`; do all
+   * work through `context.db`. Returns an optional `{ message }` shown in the
+   * list view's status line.
+   *
+   * It runs inside a transaction that holds a row lock on the target row, so
+   * its `context.db` writes commit atomically with the `hasAccess` and
+   * `isAvailable` checks, a throw rolls them back, and a concurrent dispatch on
+   * the same row waits and then re-checks against what this one committed.
+   * The lock is held for as long as the handler runs: keep slow external
+   * calls short, or make them after the handler returns.
+   */
+  handler: (
+    args: RowActionContext<TTypeInfo>,
+  ) => RowActionResult | void | Promise<RowActionResult | void>
+}
+
+/**
  * Default list-view (table) configuration for a list, mirroring Keystone's
  * `ui.listView`.
  *
@@ -2661,7 +2801,7 @@ export interface BulkAction {
  * field whose own `ui.listView.defaultColumn` declaration holds is shown as
  * a column (see {@link BaseFieldConfig.ui}) and no default sort is applied.
  */
-export type ListViewUIConfig = {
+export type ListViewUIConfig<TTypeInfo extends TypeInfo = TypeInfo> = {
   /**
    * The fields to show as columns in the list table, in order.
    *
@@ -2724,6 +2864,39 @@ export type ListViewUIConfig = {
    * ```
    */
   bulkActions?: BulkAction[]
+  /**
+   * Custom Row actions offered in each row's menu, in declaration order,
+   * between the built-in Edit / Copy link and Delete. `hasAccess` is resolved
+   * once per request and `isAvailable` per row on the server, so a row only
+   * offers the actions that apply to it. Dispatch re-reads the row through
+   * the secured context and re-runs both checks before the `handler` runs; a
+   * row that is missing, denied or no longer eligible reports the same
+   * "not run" outcome.
+   *
+   * @example
+   * ```typescript
+   * ui: {
+   *   listView: {
+   *     rowActions: [
+   *       {
+   *         key: 'publish',
+   *         label: 'Publish now',
+   *         icon: 'send',
+   *         isAvailable: ({ item }) => item.status !== 'published',
+   *         handler: async ({ id, context }) => {
+   *           const post = await context.db.Post.update({
+   *             where: { id },
+   *             data: { status: 'published' },
+   *           })
+   *           return { message: post ? 'Published' : 'Not published' }
+   *         },
+   *       },
+   *     ],
+   *   },
+   * }
+   * ```
+   */
+  rowActions?: RowAction<TTypeInfo>[]
 }
 
 /**

@@ -78,3 +78,5 @@ export { findDatabaseConnection, connectionStringFault } from './db/url.js'
 // resetting the client singleton between sequentially-generated projects in
 // one process, say.
 export { processGlobal, processGlobalKey } from './lib/process-global.js'
+
+export { isRowActionAvailable } from './config/row-action-availability.js'

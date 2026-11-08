@@ -28,12 +28,13 @@ import {
   DropdownMenuTrigger,
 } from '../primitives/dropdown-menu.js'
 import { EmptyState } from './EmptyState.js'
-import { CellRenderer } from './cells/CellRenderer.js'
+import { CellRenderer, rendersAnchorFreeCell } from './cells/CellRenderer.js'
 import type { CellValue } from './cells/registry.js'
 import { FilterBuilder } from './FilterBuilder.js'
 import { AvatarLabelCell } from './cells/AvatarLabelCell.js'
 import { RowSelectionBar } from './RowSelectionBar.js'
 import { BulkActions, type SerializedBulkAction } from './BulkActions.js'
+import { RowActions, type SerializedRowAction } from './RowActions.js'
 import { useRowSelection, getPageCheckboxState } from '../lib/useRowSelection.js'
 import { useBulkStatus } from '../lib/useBulkStatus.js'
 import type { SerializableFieldConfig } from '../lib/serializeFieldConfig.js'
@@ -67,24 +68,31 @@ function parseBulkDeleteResult(
 }
 
 /**
- * Read the outcome message a custom Bulk action server action returns (issue
- * #736). A successful run yields `{ bulkAction: true, message? }`; a failure
- * yields `{ bulkAction: false, error }`. Either way we surface a single status
- * line — the handler's own `message`, its `error`, or a generic completion note
- * — without leaking which selected rows the secured handler was denied.
+ * Read the status line for a custom Bulk or Row action from its server action
+ * result, discriminated by `key`: `{ [key]: true, message? }` on success,
+ * `{ [key]: false, error }` on failure. A handler's own `message`, else
+ * `${label} complete`; an `error`, prefixed with `errorPrefix`; else
+ * `fallback` for a shape this does not recognise.
  */
-function parseBulkActionResult(result: unknown, label: string): string {
-  if (typeof result === 'object' && result !== null && 'bulkAction' in result) {
-    const value = result as { bulkAction: unknown; message?: unknown; error?: unknown }
-    if (value.bulkAction === true) {
-      return typeof value.message === 'string' && value.message.length > 0
-        ? value.message
-        : `${label} complete`
-    }
-    if (typeof value.error === 'string' && value.error.length > 0) return value.error
+function parseActionResult(
+  result: unknown,
+  key: 'bulkAction' | 'rowAction',
+  label: string,
+  { fallback, errorPrefix = '' }: { fallback: string; errorPrefix?: string },
+): string {
+  if (typeof result !== 'object' || result === null || !(key in result)) return fallback
+  if (Reflect.get(result, key) === true) {
+    return 'message' in result && typeof result.message === 'string' && result.message.length > 0
+      ? result.message
+      : `${label} complete`
   }
-  return `${label} complete`
+  if ('error' in result && typeof result.error === 'string' && result.error.length > 0) {
+    return `${errorPrefix}${result.error}`
+  }
+  return fallback
 }
+
+const OUTCOME_UNKNOWN = 'the result is unknown — refresh to check'
 
 const PAGE_SIZES = [
   { value: 25, label: '25' },
@@ -241,6 +249,17 @@ export interface ListViewClientProps {
    * it here. When non-empty, row selection is enabled even if delete is denied.
    */
   bulkActions?: SerializedBulkAction[]
+  /**
+   * Serialisable metadata for the Row actions this session may see, in
+   * declaration order. Handlers never cross the boundary.
+   */
+  rowActions?: SerializedRowAction[]
+  /**
+   * The keys of the Row actions each row offers, keyed by row id, resolved on
+   * the server from each action's `isAvailable`. A row absent here offers only
+   * the built-in actions.
+   */
+  rowActionKeys?: Record<string, string[]>
 }
 
 export function ListViewClient({
@@ -269,6 +288,8 @@ export function ListViewClient({
   avatarColumn,
   labelColumn,
   bulkActions = [],
+  rowActions = [],
+  rowActionKeys = {},
 }: ListViewClientProps) {
   const router = useRouter()
   const sortBy = initialSort?.field ?? null
@@ -311,9 +332,6 @@ export function ListViewClient({
 
   const displayColumns =
     columns || Object.keys(fieldTypes).filter((key) => isDefaultColumnField(fields?.[key]))
-  const titleColumn =
-    labelColumn && displayColumns.includes(labelColumn) ? labelColumn : displayColumns[0]
-
   const totalPages = Math.ceil(total / pageSize)
   const hasNextPage = page < totalPages
   const hasPrevPage = page > 1
@@ -375,6 +393,16 @@ export function ListViewClient({
       : [...others.slice(0, before), column, ...others.slice(before)]
   }
 
+  // Reset to page 1 of the current filter: a delete can remove the rows that
+  // made the current page exist, leaving it out of range. `router.refresh()`
+  // first invalidates the client Router Cache (so a previously-visited page 1
+  // is not served stale), then the push lands on page 1 and fetches the
+  // now-shorter list fresh.
+  const refreshFromFirstPage = () => {
+    router.refresh()
+    router.push(buildPaginationUrl(1))
+  }
+
   const toggleColumn = (column: string, shown: boolean) => {
     const next = shown ? withColumn(column) : pickedColumns.filter((name) => name !== column)
     if (next.length === 0) return
@@ -419,13 +447,7 @@ export function ListViewClient({
     setBulkStatus(`${deleted} of ${total} deleted`)
     selection.clear()
 
-    // Reset to page 1 of the current filter: a bulk delete can remove the rows
-    // that made the current page exist (deleting across pages leaves the current
-    // page out of range). `router.refresh()` first invalidates the client Router
-    // Cache (so a previously-visited page 1 is not served stale), then the push
-    // lands on page 1 and fetches the now-shorter list fresh.
-    router.refresh()
-    router.push(buildPaginationUrl(1))
+    refreshFromFirstPage()
   }
 
   // Runs a custom Bulk action (issue #736); mirrors `handleBulkDelete`'s
@@ -437,11 +459,62 @@ export function ListViewClient({
     const label = bulkActions.find((a) => a.key === key)?.label ?? 'Action'
 
     const result = await serverAction({ listKey, action: 'bulkAction', key, ids })
-    setBulkStatus(parseBulkActionResult(result, label))
+    setBulkStatus(parseActionResult(result, 'bulkAction', label, { fallback: `${label} complete` }))
     selection.clear()
 
-    router.refresh()
-    router.push(buildPaginationUrl(1))
+    refreshFromFirstPage()
+  }
+
+  const itemHref = (id: string) => `${basePath}/${urlKey}/${id}`
+
+  const handleCopyLink = async (id: string) => {
+    const url = new URL(itemHref(id), window.location.origin).toString()
+    try {
+      await navigator.clipboard.writeText(url)
+      setBulkStatus('Link copied')
+    } catch {
+      setBulkStatus(`Copy this link: ${url}`)
+    }
+  }
+
+  const handleRowDelete = async (id: string, name: string) => {
+    if (!serverAction) return
+    let result: unknown
+    try {
+      result = await serverAction({ listKey, action: 'bulkDelete', ids: [id] })
+    } catch {
+      setBulkStatus(`Delete “${name}”: ${OUTCOME_UNKNOWN}`)
+      router.refresh()
+      return
+    }
+    const { deleted } = parseBulkDeleteResult(result, 1)
+    setBulkStatus(deleted === 1 ? `“${name}” deleted` : `“${name}” not deleted`)
+    if (deleted === 1 && selection.isSelected(id)) selection.toggle(id)
+    if (deleted === 1 && items.length === 1 && page > 1) refreshFromFirstPage()
+    else router.refresh()
+  }
+
+  const handleRowAction = async (id: string, key: string) => {
+    if (!serverAction) return
+    const label = rowActions.find((a) => a.key === key)?.label ?? 'Action'
+    try {
+      const result = await serverAction({ listKey, action: 'rowAction', key, id })
+      setBulkStatus(
+        parseActionResult(result, 'rowAction', label, {
+          fallback: `${label}: this action was not run`,
+          errorPrefix: `${label}: `,
+        }),
+      )
+    } catch {
+      setBulkStatus(`${label}: ${OUTCOME_UNKNOWN}`)
+    } finally {
+      router.refresh()
+    }
+  }
+
+  const rowActionsFor = (id: string): SerializedRowAction[] => {
+    const keys = rowActionKeys[id]
+    return keys ? rowActions.filter((action) => keys.includes(action.key)) : []
   }
 
   const rowName = (item: Record<string, unknown>, index: number) => {
@@ -459,6 +532,11 @@ export function ListViewClient({
       ...(ref ? { ref } : {}),
     }
   }
+
+  const titleColumn =
+    labelColumn && labelColumn !== 'id' && displayColumns.includes(labelColumn)
+      ? labelColumn
+      : (displayColumns.find((column) => !relationshipRefs[column]) ?? displayColumns[0])
 
   /**
    * Render one body cell. The label column of an avatar-opted-in list
@@ -777,7 +855,29 @@ export function ListViewClient({
                           column === titleColumn && CARD_TITLE_CELL,
                         )}
                       >
-                        {renderCell(column, item)}
+                        {column !== titleColumn ? (
+                          renderCell(column, item)
+                        ) : rendersAnchorFreeCell(columnField(column)) ? (
+                          <Link
+                            href={itemHref(rowId)}
+                            data-slot="row-title-link"
+                            className="font-medium text-foreground hover:underline focus-visible:underline"
+                          >
+                            {renderCell(column, item)}
+                          </Link>
+                        ) : (
+                          <span className="inline-flex items-center gap-2">
+                            {renderCell(column, item)}
+                            <Link
+                              href={itemHref(rowId)}
+                              data-slot="row-title-link"
+                              aria-label={`Open ${rowName(item, index)}`}
+                              className="text-xs font-medium text-muted-foreground hover:underline focus-visible:underline"
+                            >
+                              Open
+                            </Link>
+                          </span>
+                        )}
                       </TableCell>
                     ))}
                     <TableCell
@@ -788,12 +888,25 @@ export function ListViewClient({
                         'max-md:right-3',
                       )}
                     >
-                      <Link
-                        href={`${basePath}/${urlKey}/${item.id}`}
-                        className="text-primary hover:underline max-md:-m-3 max-md:inline-block max-md:p-3"
-                      >
-                        Edit
-                      </Link>
+                      <RowActions
+                        rowLabel={rowName(item, index)}
+                        href={itemHref(rowId)}
+                        actions={rowActionsFor(rowId)}
+                        onRun={serverAction ? (key) => handleRowAction(rowId, key) : undefined}
+                        onCopyLink={() => handleCopyLink(rowId)}
+                        onDelete={
+                          canBulkDelete
+                            ? () => handleRowDelete(rowId, rowName(item, index))
+                            : undefined
+                        }
+                        onStillRunning={() =>
+                          setBulkStatus(
+                            `Another action on “${rowName(item, index)}” is still running`,
+                          )
+                        }
+                        itemName={formatFieldName(listKey).toLowerCase()}
+                        className="max-md:-m-1.5 max-md:h-11 max-md:w-11"
+                      />
                     </TableCell>
                   </TableRow>
                 )
