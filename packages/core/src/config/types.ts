@@ -2635,7 +2635,8 @@ export interface BulkAction {
   /**
    * Optional visibility gate, evaluated server-side against the session before
    * the button is offered (user story 14 — "only see actions I may perform").
-   * Returning `false` hides the button.
+   * Only `true` shows the button and runs the action; anything else (or a
+   * throw) hides it and refuses it on dispatch.
    *
    * This ONLY controls visibility; the `handler` always runs through the
    * secured context, so per-row access is enforced regardless. It is also
@@ -2752,8 +2753,9 @@ export interface RowAction<TTypeInfo extends TypeInfo = TypeInfo> {
   destructive?: boolean
   /**
    * Optional visibility gate, resolved once per request against the session.
-   * Returning `false` hides the action on every row. Re-checked on dispatch
-   * before the row is read or locked.
+   * Only `true` shows the action and runs it; anything else (or a throw) hides
+   * it on every row and refuses it on dispatch. Re-checked on dispatch before
+   * the row is read or locked.
    */
   hasAccess?: (args: {
     session: import('../access/types.js').Session | null
