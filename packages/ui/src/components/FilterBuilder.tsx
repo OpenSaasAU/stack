@@ -28,6 +28,7 @@ import {
   singleTokenOptions,
   splitChips,
   splitComparison,
+  typedRecordLookup,
   unitsOf,
   withoutChip,
   type FilterBuilderCondition,
@@ -248,20 +249,25 @@ export function FilterBuilder({
   const editingChip = editing === null ? undefined : chips[editing]
   const editingToken = editingChip ? entries[editingChip.start]?.token : undefined
   const draftField = draft ? fields.get(draft.field) : undefined
-  const lookupField =
+  const draftLookupField =
     draft &&
     (draft.condition === 'eq' || draft.condition === 'not') &&
     isRecordLookupField(draftField)
       ? draft.field
       : undefined
+  const typedLookup = React.useMemo(
+    () => (draft ? null : typedRecordLookup(text, fields)),
+    [draft, text, fields],
+  )
+  const lookupField = draftLookupField ?? typedLookup?.field
   const search = useRelationshipSearch({
     initialItems: NO_RECORDS,
     listKey,
     fieldName: lookupField,
     serverAction,
-    query: text,
+    query: typedLookup?.query ?? text,
     take: LOOKUP_PAGE_SIZE,
-    loadOnOpen: lookupField !== undefined,
+    loadOnOpen: draftLookupField !== undefined,
   })
   const { searchResults, isSearching, searchApplied } = search
   const lookup = React.useMemo(
@@ -277,7 +283,7 @@ export function FilterBuilder({
   const { options, hint: optionsHint } = React.useMemo(() => {
     const offered = draft
       ? draftOptions(draft, text, fields, editingToken, lookup)
-      : rootOptions(text, fields)
+      : rootOptions(text, fields, lookup)
     return oneMember ? singleTokenOptions(offered) : offered
   }, [draft, text, fields, editingToken, lookup, oneMember])
   const hint = refusal ?? optionsHint

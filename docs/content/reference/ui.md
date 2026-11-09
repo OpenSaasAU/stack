@@ -599,7 +599,7 @@ spec and the config only, never from the list's data.
 Choosing a field goes straight to its values with the field's default
 condition. A condition row above the values switches it by click, by Tab or by
 Alt+← →:
-the field's own operators, then "is not" (or "does not contain"), "is any of"
+the field's own operators, then "is not" (or "does not contain" on a text field), "is any of"
 on a field with enumerated values, and "is empty" and "is not empty" on a field
 that can be empty, and "between" on a field that takes ranges. "Is any of" turns the values into a multi-select list: each
 tick updates the one chip and the list at once, and the menu stays open for
@@ -642,12 +642,18 @@ On a field with date inputs, Tab moves from the bar into them and on to
 There, Alt+← → switches the condition instead of Tab.
 Choosing a to-one relationship field lists the first page of its records, from
 the same access-scoped search the item form's relationship picker uses, and
-typing searches them. Relationships are searched only once their field is
+typing searches them. Typing the field and the text together, such as
+`author pri`, goes straight to the matching records: the leading words name the
+field (the longest field name or label the text starts with) and the rest is the
+search, so the first suggestions are the records, followed by "Author contains
+pri" and a free-text search. Relationships are searched only once their field is
 named. When the related list's label cannot be searched for this session, typing
-hides the records and offers only the "contains" text. Picking a record writes `field:#id` and its chip shows the record's Item
+hides the records and offers only the "contains" text. The conditions of a
+relationship field read "is" and "is not". Picking a record writes `field:#id` and its chip shows the record's Item
 label ("Author is Priya Nair"), while the URL carries the id. Picking under
-"does not contain" writes `-field:#id` ("Author is not Priya Nair"). Typing without
-picking writes label text instead, shown as "contains". The list view resolves
+"is not" writes `-field:#id` ("Author is not Priya Nair"). Typing without
+picking writes label text instead, shown as "contains" ("Author contains pri"),
+or "does not contain" under "is not". The list view resolves
 the label of each id in the URL through the secured context, so a bookmarked
 link shows the label too, and a record the session cannot read shows its raw
 id. An id the related list cannot hold is shown as the free text the list
