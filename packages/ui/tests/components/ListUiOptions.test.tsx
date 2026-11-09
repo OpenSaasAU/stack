@@ -47,6 +47,11 @@ const config: OpenSaasConfig = {
       access: { operation: OPEN },
       ui: { hideCreate: true, hideDelete: true, itemView: { defaultFieldMode: 'read' } },
     }),
+    EmptyHidden: list({
+      fields: { title: text() },
+      access: { operation: OPEN },
+      ui: { hideCreate: true },
+    }),
     Settings: list({
       isSingleton: true,
       fields: { siteName: text() },
@@ -143,25 +148,9 @@ describe('hideCreate', () => {
   })
 
   it('removes the empty-state Create link', async () => {
-    const empty: OpenSaasConfig = {
-      db: { provider: 'postgresql' },
-      lists: { Hidden: config.lists.Hidden },
-    }
-    const harness = await createTestContext(empty, null)
-    try {
-      render(
-        await ListView({
-          context: harness.context as unknown as AccessContext,
-          config: empty,
-          listKey: 'Hidden',
-          serverAction,
-        }),
-      )
-      expect(screen.getByText('No items yet')).toBeInTheDocument()
-      expect(hasCreateLink('hidden')).toBe(false)
-    } finally {
-      await harness.close()
-    }
+    render(await ListView({ context: admin, config, listKey: 'EmptyHidden', serverAction }))
+    expect(screen.getByText('No items yet')).toBeInTheDocument()
+    expect(hasCreateLink('empty-hidden')).toBe(false)
   })
 
   it('keeps the list header Create link when the option is absent', async () => {
