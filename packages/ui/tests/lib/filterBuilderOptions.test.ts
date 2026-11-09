@@ -8,6 +8,8 @@ import {
   checkRange,
   chipEditText,
   chipsOf,
+  conditionLabel,
+  conditionsOf,
   datePresets,
   dayBoundary,
   describeToken,
@@ -26,8 +28,10 @@ import {
   rootOptions,
   singleTokenOptions,
   splitChips,
+  typedRecordLookup,
   unitsOf,
   type FilterEntry,
+  type RecordLookup,
   type GroupEdit,
   type FilterOption,
 } from '../../src/lib/filterBuilderOptions.js'
@@ -808,5 +812,243 @@ describe('OR groups', () => {
     expect(alternativesOption('draft or', grouped)).toBeNull()
     expect(alternativesOption('draft or two words', grouped)).toBeNull()
     expect(alternativesOption('views > x or draft', grouped)).toBeNull()
+  })
+})
+
+describe('a relationship field and text typed together', () => {
+  const author: FilterFieldSuggestion = {
+    field: 'author',
+    operators: ['eq'],
+    freeText: false,
+    valueSource: { kind: 'relationship', listKey: 'User', many: false },
+    matchesById: true,
+  }
+  const authorEmail: FilterFieldSuggestion = {
+    field: 'authorEmail',
+    operators: ['eq'],
+    freeText: true,
+    valueSource: { kind: 'none' },
+  }
+  const title: FilterFieldSuggestion = {
+    field: 'title',
+    operators: ['eq'],
+    freeText: true,
+    valueSource: { kind: 'none' },
+  }
+  const looked = new Map(
+    [author, authorEmail, title].map((suggestion) => [suggestion.field, suggestion]),
+  )
+  const found = (records: Array<{ id: string; label: string }>): RecordLookup => ({
+    records,
+    loading: false,
+    searched: true,
+  })
+  const labels = (options: FilterOption[]) =>
+    options.map((option) => (option.kind === 'field' ? option.field : option.label))
+
+  it('names the field and the rest of the text as the lookup query', () => {
+    expect(typedRecordLookup('author pri', looked)).toEqual({ field: 'author', query: 'pri' })
+    expect(typedRecordLookup('Author  Priya Nair ', looked)).toEqual({
+      field: 'author',
+      query: 'Priya Nair',
+    })
+  })
+
+  it('offers the matching records first, then contains, then free text', () => {
+    const { options, hint } = rootOptions(
+      'author pri',
+      looked,
+      found([
+        { id: 'u1', label: 'Priya Nair' },
+        { id: 'u2', label: 'Priya Nair-Reed' },
+      ]),
+    )
+    expect(labels(options)).toEqual([
+      'Priya Nair',
+      'Priya Nair-Reed',
+      'Author contains pri',
+      'Search all text for “author pri”',
+    ])
+    expect(options.map((option) => option.group)).toEqual([
+      'Author',
+      'Author',
+      'Suggestions',
+      'Search',
+    ])
+    expect(hint).toBeNull()
+    const [first] = options
+    expect(first?.kind === 'apply' && filterQuery(first.tokens)).toBe('author:#u1')
+    expect(first?.kind === 'apply' && first.record).toEqual({
+      field: 'author',
+      id: 'u1',
+      label: 'Priya Nair',
+    })
+  })
+
+  it('keeps contains and free text while the records load', () => {
+    const { options, hint } = rootOptions('author pri', looked, {
+      records: [],
+      loading: true,
+      searched: false,
+    })
+    expect(labels(options)).toEqual(['Author contains pri', 'Search all text for “author pri”'])
+    expect(hint).toBe('Searching author…')
+  })
+
+  it('says when no record matches, and still offers contains', () => {
+    const { options, hint } = rootOptions('author zzz', looked, found([]))
+    expect(labels(options)).toEqual(['Author contains zzz', 'Search all text for “author zzz”'])
+    expect(hint).toBe('No author matches “zzz”.')
+  })
+
+  it('keeps the records hidden when the server did not apply the search', () => {
+    const { options } = rootOptions('author pri', looked, {
+      records: [{ id: 'u1', label: 'Priya Nair' }],
+      loading: false,
+      searched: false,
+    })
+    expect(labels(options)).toEqual(['Author contains pri', 'Search all text for “author pri”'])
+  })
+
+  it('offers no records for a field without a record lookup', () => {
+    expect(typedRecordLookup('title pri', looked)).toBeNull()
+    const { options } = rootOptions('title pri', looked, found([{ id: 'u1', label: 'Priya' }]))
+    expect(labels(options)).toEqual(['Title contains pri', 'Search all text for “title pri”'])
+  })
+
+  it('offers no records for a relationship that cannot match by id', () => {
+    const byLabel: FilterFieldSuggestion = {
+      field: 'author',
+      operators: ['eq'],
+      freeText: false,
+      valueSource: { kind: 'relationship', listKey: 'User', many: false },
+    }
+    const unqueryable = new Map([['author', byLabel]])
+    expect(typedRecordLookup('author pri', unqueryable)).toBeNull()
+    const { options } = rootOptions(
+      'author pri',
+      unqueryable,
+      found([{ id: 'u1', label: 'Priya Nair' }]),
+    )
+    expect(labels(options)).toEqual(['Author contains pri', 'Search all text for “author pri”'])
+  })
+
+  it('looks nothing up while the text could still be a longer field’s name', () => {
+    expect(typedRecordLookup('author em', looked)).toBeNull()
+    expect(typedRecordLookup('Author Email', looked)).toBeNull()
+    const { options } = rootOptions('author em', looked, found([{ id: 'u1', label: 'Emma' }]))
+    expect(options.some((option) => option.kind === 'apply' && option.record)).toBe(false)
+    expect(
+      options.some((option) => option.kind === 'field' && option.field === 'authorEmail'),
+    ).toBe(true)
+    expect(typedRecordLookup('author emx', looked)).toEqual({ field: 'author', query: 'emx' })
+  })
+
+  it('searches the words inside a wholly quoted query', () => {
+    expect(typedRecordLookup('author "pri"', looked)).toEqual({ field: 'author', query: 'pri' })
+    expect(typedRecordLookup('author "Priya Nair"', looked)).toEqual({
+      field: 'author',
+      query: 'Priya Nair',
+    })
+    expect(typedRecordLookup('author "say \\"hi\\""', looked)).toEqual({
+      field: 'author',
+      query: 'say "hi"',
+    })
+    expect(typedRecordLookup('author "pri" nair', looked)).toEqual({
+      field: 'author',
+      query: '"pri" nair',
+    })
+  })
+
+  it('prefers the longest field name the text starts with', () => {
+    expect(typedRecordLookup('author email ada', looked)).toBeNull()
+    const { options } = rootOptions('author email ada', looked, found([]))
+    expect(labels(options)[0]).toBe('Author Email contains ada')
+  })
+
+  it('leaves plain phrases, field tokens and groups to their own paths', () => {
+    expect(typedRecordLookup('author contains pri', looked)).toBeNull()
+    expect(typedRecordLookup('author is pri', looked)).toBeNull()
+    expect(typedRecordLookup('author:pri', looked)).toBeNull()
+    expect(typedRecordLookup('author pri title:x', looked)).toBeNull()
+    expect(typedRecordLookup('(author pri OR title:x)', looked)).toBeNull()
+    expect(typedRecordLookup('author', looked)).toBeNull()
+  })
+
+  it('offers no records without a lookup, as before', () => {
+    expect(labels(rootOptions('author pri', looked).options)).toEqual([
+      'Author contains pri',
+      'Search all text for “author pri”',
+    ])
+  })
+})
+
+describe('relationship condition labels', () => {
+  const author: FilterFieldSuggestion = {
+    field: 'author',
+    operators: ['eq'],
+    freeText: false,
+    valueSource: { kind: 'relationship', listKey: 'User', many: false },
+    matchesById: true,
+    canBeEmpty: true,
+  }
+  const title: FilterFieldSuggestion = {
+    field: 'title',
+    operators: ['eq'],
+    freeText: true,
+    valueSource: { kind: 'none' },
+  }
+
+  it('reads is and is not on a relationship, matching a picked record’s chip', () => {
+    expect(conditionsOf(author).map((condition) => conditionLabel(author, condition))).toEqual([
+      'is',
+      'is not',
+      'is empty',
+      'is not empty',
+    ])
+  })
+
+  it('keeps contains on a to-one relationship that cannot match by id', () => {
+    const byLabel: FilterFieldSuggestion = {
+      field: 'author',
+      operators: ['eq'],
+      freeText: false,
+      valueSource: { kind: 'relationship', listKey: 'User', many: false },
+    }
+    expect(conditionsOf(byLabel).map((condition) => conditionLabel(byLabel, condition))).toEqual([
+      'contains',
+      'does not contain',
+    ])
+  })
+
+  it('keeps contains on a to-many relationship', () => {
+    const tags: FilterFieldSuggestion = {
+      field: 'tags',
+      operators: ['eq'],
+      freeText: false,
+      valueSource: { kind: 'relationship', listKey: 'Tag', many: true },
+      matchesById: true,
+    }
+    expect(conditionsOf(tags).map((condition) => conditionLabel(tags, condition))).toEqual([
+      'contains',
+      'does not contain',
+    ])
+  })
+
+  it('keeps contains on a text field', () => {
+    expect(conditionsOf(title).map((condition) => conditionLabel(title, condition))).toEqual([
+      'contains',
+      'does not contain',
+    ])
+  })
+
+  it('still describes typed relationship text as contains', () => {
+    const fields = new Map([['author', author]])
+    expect(describeToken(hydrateTokens('author:pri')[0], fields).sentence).toBe(
+      'Author contains pri',
+    )
+    expect(describeToken(hydrateTokens('-author:pri')[0], fields).sentence).toBe(
+      'Author does not contain pri',
+    )
   })
 })
