@@ -337,6 +337,10 @@ export function conditionLabel(
   if (condition === 'empty') return 'is empty'
   if (condition === 'notEmpty') return 'is not empty'
   if (condition === 'range') return 'between'
+  if (isRecordLookupField(suggestion)) {
+    if (condition === 'eq') return 'is'
+    if (condition === 'not') return 'is not'
+  }
   if (condition === 'not') return shapeLabel(suggestion, 'eq', true, false)
   if (condition === 'anyOf') return shapeLabel(suggestion, 'eq', false, true)
   return shapeLabel(suggestion, condition, false, false)
@@ -1177,16 +1181,77 @@ function fieldValuePrefix(
   text: string,
 ): { suggestion: FilterFieldSuggestion; rest: string } | null {
   const lower = text.toLowerCase()
+  let longest: { suggestion: FilterFieldSuggestion; rest: string; length: number } | null = null
   for (const suggestion of fields.values()) {
     for (const name of [fieldLabel(suggestion.field), suggestion.field]) {
       const prefix = `${name.toLowerCase()} `
-      if (lower.startsWith(prefix)) {
-        const rest = text.slice(prefix.length).trim()
-        if (rest) return { suggestion, rest }
-      }
+      if (!lower.startsWith(prefix) || (longest && longest.length >= prefix.length)) continue
+      const rest = text.slice(prefix.length).trim()
+      if (rest) longest = { suggestion, rest, length: prefix.length }
     }
   }
-  return null
+  return longest && { suggestion: longest.suggestion, rest: longest.rest }
+}
+
+/**
+ * The record lookup typed root text opens: the leading field name, when that
+ * field looks its records up, and the rest of the text as the query. `null`
+ * for a field token, a group or a plain phrase, which keep their own paths.
+ */
+export function typedRecordLookup(
+  text: string,
+  fields: FilterFields,
+): { field: string; query: string } | null {
+  const typed = text.trim()
+  if (typed === '' || FIELD_TOKEN_SHAPE.test(typed)) return null
+  if (parseFilterQuery(typed).terms.some((term) => term.kind === 'group')) return null
+  if (parsePhrase(typed, fields) !== null) return null
+  const prefixed = fieldValuePrefix(fields, typed)
+  if (!prefixed || !isRecordLookupField(prefixed.suggestion)) return null
+  const lower = typed.toLowerCase()
+  for (const suggestion of fields.values()) {
+    if (suggestion === prefixed.suggestion) continue
+    for (const name of [fieldLabel(suggestion.field), suggestion.field]) {
+      if (name.toLowerCase().startsWith(lower)) return null
+    }
+  }
+  return { field: prefixed.suggestion.field, query: unquotedQuery(prefixed.rest) }
+}
+
+function unquotedQuery(rest: string): string {
+  const terms = parseFilterQuery(rest).terms
+  const [only] = terms
+  if (terms.length !== 1 || only.kind !== 'token' || only.field !== null) return rest
+  const [value] = only.values
+  return only.values.length === 1 && value.quoted && !only.negated ? value.text : rest
+}
+
+function recordOptions(
+  suggestion: FilterFieldSuggestion,
+  typed: string,
+  lookup: RecordLookup,
+  negated: boolean,
+  currentId: string | null,
+): FilterOptions {
+  const group = fieldLabel(suggestion.field)
+  const showRecords = typed === '' || lookup.searched
+  const options: FilterOption[] = (showRecords ? lookup.records : []).map((record) => ({
+    kind: 'apply',
+    tokens: [recordIdFilterToken(suggestion.field, record.id, negated)],
+    label: record.label,
+    group,
+    selected: record.id === currentId,
+    record: { field: suggestion.field, ...record },
+  }))
+  let hint: string | null = null
+  if (lookup.loading) hint = `Searching ${group.toLowerCase()}…`
+  else if (showRecords && lookup.records.length === 0) {
+    hint =
+      typed === ''
+        ? `No ${group.toLowerCase()} to choose from.`
+        : `No ${group.toLowerCase()} matches “${typed}”.`
+  }
+  return { options, hint }
 }
 
 function sentenceOf(tokens: readonly FilterToken[], fields: FilterFields): string {
@@ -1211,7 +1276,11 @@ function enumMatches(suggestion: FilterFieldSuggestion, needle: string) {
   )
 }
 
-export function rootOptions(text: string, fields: FilterFields): FilterOptions {
+export function rootOptions(
+  text: string,
+  fields: FilterFields,
+  lookup: RecordLookup | null = null,
+): FilterOptions {
   const typed = text.trim()
   if (typed === '') {
     return {
@@ -1232,6 +1301,14 @@ export function rootOptions(text: string, fields: FilterFields): FilterOptions {
     if (key === '' || seen.has(key)) return
     seen.add(key)
     options.push({ kind: 'apply', tokens, label: sentenceOf(tokens, fields), group })
+  }
+
+  const target = lookup ? typedRecordLookup(typed, fields) : null
+  const targetField = target ? fields.get(target.field) : undefined
+  if (lookup && target && targetField) {
+    const records = recordOptions(targetField, target.query, lookup, false, null)
+    options.push(...records.options)
+    hint = records.hint
   }
 
   if (FIELD_TOKEN_SHAPE.test(typed)) {
@@ -1527,25 +1604,9 @@ export function draftOptions(
     const negated = condition === 'not'
     const currentId =
       current && current.field === draft.field ? recordIdOf(current, fields, negated) : null
-    const group = fieldLabel(suggestion.field)
-    const showRecords = typed === '' || lookup.searched
-    for (const record of showRecords ? lookup.records : []) {
-      options.push({
-        kind: 'apply',
-        tokens: [recordIdFilterToken(suggestion.field, record.id, negated)],
-        label: record.label,
-        group,
-        selected: record.id === currentId,
-        record: { field: suggestion.field, ...record },
-      })
-    }
-    if (lookup.loading) hint = `Searching ${group.toLowerCase()}…`
-    else if (showRecords && lookup.records.length === 0) {
-      hint =
-        typed === ''
-          ? `No ${group.toLowerCase()} to choose from.`
-          : `No ${group.toLowerCase()} matches “${typed}”.`
-    }
+    const records = recordOptions(suggestion, typed, lookup, negated, currentId)
+    options.push(...records.options)
+    hint = records.hint
     if (typed !== '') {
       const token = fieldToken(suggestion.field, 'eq', typed, negated)
       options.push({

@@ -67,4 +67,44 @@ test.describe('Relationship lookup', () => {
     await expect(titleCell(page, `By ${similarName}`)).toHaveCount(1)
     await expect(titleCell(page, `By ${exactName}`)).toHaveCount(0)
   })
+
+  test('typing the field and a name together goes straight to the matching authors', async ({
+    page,
+  }) => {
+    const tag = Math.random().toString(36).slice(2, 8)
+    const name = `Typed ${tag}`
+    const author = generateTestUser(name)
+    await signUp(page, author)
+    await createPost(page, { title: `By ${name}`, slug: `lookup-typed-${tag}` })
+
+    await page.goto('/admin/post')
+    await page.waitForLoadState('networkidle')
+    const bar = page.getByRole('combobox', { name: 'Filter post' })
+    await bar.fill(`author ${name}`)
+
+    const options = page.getByRole('option')
+    await expect(options.first()).toHaveText(name)
+    await expect(page.getByRole('option', { name: `Author contains ${name}` })).toBeVisible()
+    await expect(
+      page.getByRole('option', { name: `Search all text for “author ${name}”` }),
+    ).toBeVisible()
+
+    await bar.press('Enter')
+    await page.waitForURL(/search=author(%3A|:)(%23|#)/, { timeout: 10000 })
+    await page.waitForLoadState('networkidle')
+    await expect(page.getByRole('group', { name: `Author is ${name}` })).toBeVisible()
+    await expect(titleCell(page, `By ${name}`)).toHaveCount(1)
+  })
+
+  test('names the relationship conditions "is" and "is not"', async ({ page }) => {
+    await signUp(page, generateTestUser('Conditions'))
+    await page.goto('/admin/post')
+    await page.waitForLoadState('networkidle')
+    await page.getByRole('combobox', { name: 'Filter post' }).fill('author')
+    await page.getByRole('option', { name: 'Author', exact: true }).click()
+    const conditions = page.getByRole('group', { name: 'Author condition' })
+    await expect(conditions.getByRole('button', { name: 'is', exact: true })).toBeVisible()
+    await expect(conditions.getByRole('button', { name: 'is not', exact: true })).toBeVisible()
+    await expect(conditions.getByRole('button', { name: 'does not contain' })).toHaveCount(0)
+  })
 })

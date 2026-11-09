@@ -798,10 +798,78 @@ describe('FilterBuilder', () => {
       expect(chipNames()).toEqual(['Text contains -author:#notanid', 'Text contains #u1,#notanid'])
     })
 
-    it('writes -field:#id for a record picked under "does not contain"', async () => {
+    it('names the conditions "is" and "is not", like a picked record’s chip', async () => {
+      const { user, bar } = setupLookup()
+      await user.type(bar, 'auth{Enter}')
+      const conditions = screen.getByRole('group', { name: 'Author condition' })
+      expect(
+        within(conditions)
+          .getAllByRole('button')
+          .map((b) => b.textContent),
+      ).toEqual(['is', 'is not'])
+    })
+
+    it('goes straight to matching records when the field and text are typed together', async () => {
+      const { user, bar, onApply, serverAction } = setupLookup()
+      await user.type(bar, 'author pri')
+      await waitFor(() =>
+        expect(optionNames()).toEqual([
+          'Priya Nair',
+          'Priya Nair-Reed',
+          'Author contains pri',
+          'Search all text for “author pri”',
+        ]),
+      )
+      expect(serverAction).toHaveBeenLastCalledWith({
+        listKey: 'Post',
+        action: 'relationshipOptions',
+        field: 'author',
+        search: 'pri',
+        selectedIds: [],
+        take: 10,
+      })
+      await user.keyboard('{Enter}')
+      expect(onApply).toHaveBeenCalledWith('author:#u1')
+      expect(chipNames()).toEqual(['Author is Priya Nair'])
+    })
+
+    it('keeps "contains" as the fallback for typed field and text', async () => {
+      const { user, bar, onApply } = setupLookup()
+      await user.type(bar, 'author pri')
+      await user.click(await screen.findByRole('option', { name: 'Author contains pri' }))
+      expect(onApply).toHaveBeenCalledWith('author:pri')
+      expect(chipNames()).toEqual(['Author contains pri'])
+    })
+
+    it('offers no records for typed field and text when the related list is denied', async () => {
+      const onApply = vi.fn<(query: string) => void>()
+      const serverAction = vi.fn(async () => ({ options: [], searched: true }))
+      const user = userEvent.setup()
+      render(
+        <FilterBuilder
+          suggestions={lookupSuggestions}
+          onApply={onApply}
+          listKey="Post"
+          serverAction={serverAction}
+        />,
+      )
+      const bar = screen.getByRole('combobox', { name: 'Filter' })
+      await user.type(bar, 'author pri')
+      expect(await screen.findByText('No author matches “pri”.')).toBeInTheDocument()
+      expect(optionNames()).toEqual(['Author contains pri', 'Search all text for “author pri”'])
+    })
+
+    it('looks nothing up for typed text naming a field without a record lookup', async () => {
+      const { user, bar, serverAction } = setupLookup()
+      await user.type(bar, 'title pri')
+      expect(optionNames()).toEqual(['Title contains pri', 'Search all text for “title pri”'])
+      expect(serverAction).not.toHaveBeenCalled()
+    })
+
+    it('writes -field:#id for a record picked under "is not"', async () => {
       const { user, bar, onApply } = setupLookup()
       await user.type(bar, 'auth{Enter}')
-      await user.click(screen.getByRole('button', { name: 'does not contain' }))
+      await user.click(screen.getByRole('button', { name: 'is not' }))
       await user.click(await screen.findByRole('option', { name: 'Priya Nair' }))
       expect(onApply).toHaveBeenCalledWith('-author:#u1')
       expect(chipNames()).toEqual(['Author is not Priya Nair'])
@@ -1438,10 +1506,7 @@ describe('FilterBuilder', () => {
       await user.type(bar, 'auth{Enter}')
       await screen.findByRole('option', { name: 'Priya Nair' })
       await user.keyboard('{Tab}')
-      expect(screen.getByRole('button', { name: 'does not contain' })).toHaveAttribute(
-        'aria-pressed',
-        'true',
-      )
+      expect(screen.getByRole('button', { name: 'is not' })).toHaveAttribute('aria-pressed', 'true')
       expect(bar).toHaveFocus()
       await user.click(await screen.findByRole('option', { name: 'Priya Nair' }))
       expect(onApply).toHaveBeenCalledWith('-author:#u1')
