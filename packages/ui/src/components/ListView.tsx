@@ -15,11 +15,13 @@ import { EmptyState } from './EmptyState.js'
 import { PageHeader } from './PageHeader.js'
 import { Button } from '../primitives/button.js'
 import type { ServerActionInput } from '../server/types.js'
+import { isRelationshipField, shouldHaveForeignKey } from '@opensaas/stack-core/fields'
 import {
   type AccessContext,
   type AccessControl,
   type AnyStackContext,
   type BulkAction,
+  type FieldConfig,
   type RowAction,
   engineContextOf,
   buildFilterWhere,
@@ -309,6 +311,36 @@ async function resolveCountLinks(
   return Object.fromEntries(entries.filter((entry) => entry !== null))
 }
 
+function readableFieldsOf<T>(
+  fields: Record<string, T>,
+  unreadable: ReadonlySet<string>,
+): Record<string, T> {
+  return Object.fromEntries(Object.entries(fields).filter(([name]) => !unreadable.has(name)))
+}
+
+function withheldKeysOf(
+  unreadable: ReadonlySet<string>,
+  listConfig: OpenSaasConfig['lists'][string],
+  listKey: string,
+  config: OpenSaasConfig,
+): Set<string> {
+  const keys = new Set(unreadable)
+  for (const name of unreadable) {
+    const field: FieldConfig | undefined = listConfig.fields[name]
+    if (!isRelationshipField(field)) continue
+    if (!Object.hasOwn(config.lists, field.ref.split('.')[0])) continue
+    if (shouldHaveForeignKey(listKey, name, field, config)) keys.add(`${name}Id`)
+  }
+  return keys
+}
+
+function withoutKeys(
+  item: Record<string, unknown>,
+  keys: ReadonlySet<string>,
+): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(item).filter(([key]) => !keys.has(key)))
+}
+
 /**
  * Default sort for the list table, mirroring Keystone's `ui.listView.initialSort`.
  * Plain serializable data so it can cross the server/client boundary.
@@ -395,13 +427,17 @@ export async function ListView({
     )
   }
 
-  const displayFields = withStructuralTimestampDefaults(listConfig.fields, listConfig, config.db)
-
   const unreadableFields = await collectUnreadableFields(listConfig, {
     session: context.session,
     context,
   })
   const readable = (name: string) => !unreadableFields.has(name)
+  const readableListFields = readableFieldsOf(listConfig.fields, unreadableFields)
+  const displayFields = readableFieldsOf(
+    withStructuralTimestampDefaults(listConfig.fields, listConfig, config.db),
+    unreadableFields,
+  )
+  const withheldKeys = withheldKeysOf(unreadableFields, listConfig, listKey, config)
   const availableColumns = [
     ...new Set([
       ...(columns ?? []).filter((name) => !Object.hasOwn(displayFields, name)),
@@ -537,7 +573,7 @@ export async function ListView({
   }
 
   const relationshipRefs: Record<string, string> = {}
-  Object.entries(listConfig.fields).forEach(([fieldName, field]) => {
+  Object.entries(readableListFields).forEach(([fieldName, field]) => {
     if (
       'type' in field &&
       field.type === 'relationship' &&
@@ -551,7 +587,7 @@ export async function ListView({
   // Resolve each relationship value before crossing the server/client boundary
   // — ListConfig objects carry functions and can't be passed as props.
   const itemsWithResolvedLabels = items.map((item) => {
-    const resolved: Record<string, unknown> = { ...item }
+    const resolved = withoutKeys(item, withheldKeys)
     for (const [fieldName, ref] of Object.entries(relationshipRefs)) {
       const field = listConfig.fields[fieldName]
       if (isToManyRelationshipField(field)) {
@@ -573,7 +609,7 @@ export async function ListView({
   })
 
   const serializedItems = jsonSafeClone(
-    itemsWithResolvedLabels.map((item) => applyClientValueTransforms(listConfig.fields, item)),
+    itemsWithResolvedLabels.map((item) => applyClientValueTransforms(readableListFields, item)),
   )
 
   const recordLabels = await resolveRecordLabels(
@@ -599,7 +635,9 @@ export async function ListView({
   // an initials bubble ahead of the emphasized Item label. The label column is
   // resolved through the shared label seam (`getLabelFieldName`), so it can
   // never drift from the field the Item label is read off.
-  const avatarColumn = listConfig.ui?.avatar ? getLabelFieldName(listConfig) : undefined
+  const labelField = getLabelFieldName(listConfig)
+  const labelColumn = readable(labelField) ? labelField : undefined
+  const avatarColumn = listConfig.ui?.avatar ? labelColumn : undefined
 
   const pageIds = items.flatMap((item) =>
     typeof item.id === 'string' || typeof item.id === 'number' ? [item.id] : [],
@@ -657,10 +695,7 @@ export async function ListView({
       <ListViewClient
         items={serializedItems || []}
         fieldTypes={Object.fromEntries(
-          Object.entries(displayFields).map(([key, field]) => [
-            key,
-            (field as { type: string }).type,
-          ]),
+          Object.entries(displayFields).map(([key, field]) => [key, field.type]),
         )}
         fields={serializeFieldConfigs(displayFields)}
         relationshipRefs={relationshipRefs}
@@ -687,7 +722,7 @@ export async function ListView({
         canDelete={!hideDelete && canDeleteList(listConfig.access?.operation?.delete)}
         canCreate={!hideCreate}
         avatarColumn={avatarColumn}
-        labelColumn={getLabelFieldName(listConfig)}
+        labelColumn={labelColumn}
         bulkActions={bulkActions}
         rowActions={visibleRowActions.map(serializeRowAction)}
         rowActionKeys={rowActionKeys}

@@ -198,6 +198,20 @@ const config: OpenSaasConfig = {
       },
       access: { operation: { query: () => true } },
     },
+    Dossier: {
+      fields: {
+        title: text(),
+        codename: text({ access: { read: () => false } }),
+        handlerAgent: relationship({ ref: 'Operative', access: { read: () => false } }),
+        ownMemo: text({ access: { read: ({ item }) => item.title === 'Mine' } }),
+      },
+      access: { operation: { query: () => true } },
+      ui: { labelField: 'codename', avatar: true },
+    },
+    Operative: {
+      fields: { name: text() },
+      access: { operation: { query: () => true } },
+    },
     Brittle: {
       fields: {
         name: text(),
@@ -309,6 +323,14 @@ beforeEach(async () => {
   await create('Draft', { title: 'Sketches', owner: { connect: { id: author.id } } })
   await create('Ledger', { name: 'Mine', secret: 's1', ownNote: 'n1', audit: 'a1' })
   await create('Ledger', { name: 'Theirs', secret: 's2', ownNote: 'n2', audit: 'a2' })
+  const operative = await create('Operative', { name: 'Smiley' })
+  await create('Dossier', {
+    title: 'Mine',
+    codename: 'Karla',
+    ownMemo: 'm1',
+    handlerAgent: { connect: { id: operative.id } },
+  })
+  await create('Dossier', { title: 'Theirs', codename: 'Gerald', ownMemo: 'm2' })
   await create('Gadget', { name: 'Anvil', active: true, meta: { a: 1 }, secret: 'hunter2hunter2' })
   await create('Gadget', {
     name: 'Bellows',
@@ -1180,6 +1202,43 @@ describe('ListView columns over a read rule that throws or hides every default (
       })
       expect(configured.defaultColumns).toEqual(['name'])
       expect(configured.columns).toEqual(['name'])
+    },
+    BOOT,
+  )
+})
+
+describe('ListView sends no field the session can never read to the client (#2290)', () => {
+  const NEVER_READABLE = ['codename', 'handlerAgent']
+
+  it(
+    'leaves an always-denied field name out of every client prop and keeps a row-dependent one',
+    async () => {
+      const props = await render(ada, {
+        listKey: 'Dossier',
+        urlControls: true,
+        visibleColumns: ['title', 'codename', 'handlerAgent', 'ownMemo'],
+      })
+      const payload = JSON.stringify(props)
+      for (const name of NEVER_READABLE) expect(payload).not.toContain(name)
+      expect(payload).not.toContain('Karla')
+      expect(Object.keys(props.fieldTypes)).toContain('ownMemo')
+      expect(Object.keys(props.fields ?? {})).toContain('ownMemo')
+      expect(props.columns).toContain('ownMemo')
+    },
+    BOOT,
+  )
+
+  it(
+    'withholds a session-dependent field from a session its rule denies and sends it to one it allows',
+    async () => {
+      const props = await render(ada, { listKey: 'Ledger' })
+      expect(Object.keys(props.fieldTypes)).not.toContain('secret')
+      expect(Object.keys(props.fieldTypes)).not.toContain('audit')
+      expect(Object.keys(props.fieldTypes)).toContain('ownNote')
+
+      const admin = await render({ role: 'admin' }, { listKey: 'Ledger' })
+      expect(Object.keys(admin.fieldTypes)).toContain('audit')
+      expect(Object.keys(admin.fields ?? {})).toContain('audit')
     },
     BOOT,
   )
