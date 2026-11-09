@@ -203,7 +203,9 @@ function fieldCondition(written: FilterToken, spec: FilterSpec): FilterCondition
  * whole literal (`-secret:x`) and is never negated, because `NOT` of free text
  * would turn a field the session cannot read into a filter. A free-text token
  * is read as its serialised form reads back, so a structured one with several
- * values is the words its URL holds.
+ * values is the words its URL holds. A `range` token is read the same way, so
+ * one whose bounds cannot be written `a..b` is the literal `"a..b"` its URL
+ * holds.
  *
  * An OR group, `(a OR b)`, is the `OR` of its tokens, each mapped exactly as
  * it would be on its own and negated by the same rules. A token in a group
@@ -277,7 +279,7 @@ export function buildFilterWhere(
   }
 
   for (const term of query.terms) {
-    if (term.kind === 'group') {
+    if (term.kind === 'group' || term.operator === 'range') {
       parseFilterQuery(serializeFilterQuery({ terms: [term] })).terms.forEach(addTerm)
     } else if (term.field === null) {
       filterQueryTokens(parseFilterQuery(serializeFilterToken(term))).forEach(addToken)
