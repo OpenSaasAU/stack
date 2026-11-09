@@ -645,11 +645,15 @@ the same access-scoped search the item form's relationship picker uses, and
 typing searches them. Typing the field and the text together, such as
 `author pri`, goes straight to the matching records: the leading words name the
 field (the longest field name or label the text starts with) and the rest is the
-search, so the first suggestions are the records, followed by "Author contains
-pri" and a free-text search. Relationships are searched only once their field is
+search (a wholly quoted search such as `author "pri"` searches the words
+inside the quotes), so the first suggestions are the records, followed by
+"Author contains pri" and a free-text search. While the text could still be
+the start of a longer field's name, such as `author em` beside an Author Email
+field, nothing is looked up. Relationships are searched only once their field is
 named. When the related list's label cannot be searched for this session, typing
-hides the records and offers only the "contains" text. The conditions of a
-relationship field read "is" and "is not". Picking a record writes `field:#id` and its chip shows the record's Item
+hides the records and offers only the "contains" text. Where its records can be picked, a
+to-one relationship field's conditions read "is" and "is not"; any other
+relationship field keeps "contains" and "does not contain". Picking a record writes `field:#id` and its chip shows the record's Item
 label ("Author is Priya Nair"), while the URL carries the id. Picking under
 "is not" writes `-field:#id` ("Author is not Priya Nair"). Typing without
 picking writes label text instead, shown as "contains" ("Author contains pri"),

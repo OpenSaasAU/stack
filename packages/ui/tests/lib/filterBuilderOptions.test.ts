@@ -916,7 +916,7 @@ describe('a relationship field and text typed together', () => {
     expect(labels(options)).toEqual(['Title contains pri', 'Search all text for “title pri”'])
   })
 
-  it('offers no records for a relationship the session cannot filter by id', () => {
+  it('offers no records for a relationship that cannot match by id', () => {
     const byLabel: FilterFieldSuggestion = {
       field: 'author',
       operators: ['eq'],
@@ -933,13 +933,31 @@ describe('a relationship field and text typed together', () => {
     expect(labels(options)).toEqual(['Author contains pri', 'Search all text for “author pri”'])
   })
 
-  it('offers no records when the session cannot query the related list', () => {
-    const { options } = rootOptions('author pri', looked, found([]))
+  it('looks nothing up while the text could still be a longer field’s name', () => {
+    expect(typedRecordLookup('author em', looked)).toBeNull()
+    expect(typedRecordLookup('Author Email', looked)).toBeNull()
+    const { options } = rootOptions('author em', looked, found([{ id: 'u1', label: 'Emma' }]))
     expect(options.some((option) => option.kind === 'apply' && option.record)).toBe(false)
+    expect(
+      options.some((option) => option.kind === 'field' && option.field === 'authorEmail'),
+    ).toBe(true)
+    expect(typedRecordLookup('author emx', looked)).toEqual({ field: 'author', query: 'emx' })
   })
 
-  it('offers no records for a list the session cannot query at all', () => {
-    expect(typedRecordLookup('author pri', new Map())).toBeNull()
+  it('searches the words inside a wholly quoted query', () => {
+    expect(typedRecordLookup('author "pri"', looked)).toEqual({ field: 'author', query: 'pri' })
+    expect(typedRecordLookup('author "Priya Nair"', looked)).toEqual({
+      field: 'author',
+      query: 'Priya Nair',
+    })
+    expect(typedRecordLookup('author "say \\"hi\\""', looked)).toEqual({
+      field: 'author',
+      query: 'say "hi"',
+    })
+    expect(typedRecordLookup('author "pri" nair', looked)).toEqual({
+      field: 'author',
+      query: '"pri" nair',
+    })
   })
 
   it('prefers the longest field name the text starts with', () => {
@@ -987,6 +1005,33 @@ describe('relationship condition labels', () => {
       'is not',
       'is empty',
       'is not empty',
+    ])
+  })
+
+  it('keeps contains on a to-one relationship that cannot match by id', () => {
+    const byLabel: FilterFieldSuggestion = {
+      field: 'author',
+      operators: ['eq'],
+      freeText: false,
+      valueSource: { kind: 'relationship', listKey: 'User', many: false },
+    }
+    expect(conditionsOf(byLabel).map((condition) => conditionLabel(byLabel, condition))).toEqual([
+      'contains',
+      'does not contain',
+    ])
+  })
+
+  it('keeps contains on a to-many relationship', () => {
+    const tags: FilterFieldSuggestion = {
+      field: 'tags',
+      operators: ['eq'],
+      freeText: false,
+      valueSource: { kind: 'relationship', listKey: 'Tag', many: true },
+      matchesById: true,
+    }
+    expect(conditionsOf(tags).map((condition) => conditionLabel(tags, condition))).toEqual([
+      'contains',
+      'does not contain',
     ])
   })
 

@@ -337,7 +337,7 @@ export function conditionLabel(
   if (condition === 'empty') return 'is empty'
   if (condition === 'notEmpty') return 'is not empty'
   if (condition === 'range') return 'between'
-  if (suggestion.valueSource.kind === 'relationship') {
+  if (isRecordLookupField(suggestion)) {
     if (condition === 'eq') return 'is'
     if (condition === 'not') return 'is not'
   }
@@ -1208,7 +1208,22 @@ export function typedRecordLookup(
   if (parsePhrase(typed, fields) !== null) return null
   const prefixed = fieldValuePrefix(fields, typed)
   if (!prefixed || !isRecordLookupField(prefixed.suggestion)) return null
-  return { field: prefixed.suggestion.field, query: prefixed.rest }
+  const lower = typed.toLowerCase()
+  for (const suggestion of fields.values()) {
+    if (suggestion === prefixed.suggestion) continue
+    for (const name of [fieldLabel(suggestion.field), suggestion.field]) {
+      if (name.toLowerCase().startsWith(lower)) return null
+    }
+  }
+  return { field: prefixed.suggestion.field, query: unquotedQuery(prefixed.rest) }
+}
+
+function unquotedQuery(rest: string): string {
+  const terms = parseFilterQuery(rest).terms
+  const [only] = terms
+  if (terms.length !== 1 || only.kind !== 'token' || only.field !== null) return rest
+  const [value] = only.values
+  return only.values.length === 1 && value.quoted && !only.negated ? value.text : rest
 }
 
 function recordOptions(
