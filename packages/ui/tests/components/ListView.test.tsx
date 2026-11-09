@@ -189,6 +189,35 @@ const config: OpenSaasConfig = {
         },
       },
     },
+    Ledger: {
+      fields: {
+        name: text(),
+        secret: text({ access: { read: () => false } }),
+        ownNote: text({ access: { read: ({ item }) => item.name === 'Mine' } }),
+        audit: text({ access: { read: ({ session }) => session?.role === 'admin' } }),
+      },
+      access: { operation: { query: () => true } },
+    },
+    Brittle: {
+      fields: {
+        name: text(),
+        meta: json({
+          access: {
+            read: () => {
+              throw new Error('rule boom')
+            },
+          },
+        }),
+      },
+      access: { operation: { query: () => true } },
+    },
+    Sealed: {
+      fields: {
+        secret: text({ access: { read: () => false } }),
+        hidden: text({ ui: { listView: { defaultColumn: false } } }),
+      },
+      access: { operation: { query: () => true } },
+    },
     Fragile: {
       fields: {
         name: text({
@@ -278,6 +307,8 @@ beforeEach(async () => {
   await create('Post', { title: 'Unfinished', published: false })
   await create('Draft', { title: 'Notes', owner: { connect: { id: author.id } } })
   await create('Draft', { title: 'Sketches', owner: { connect: { id: author.id } } })
+  await create('Ledger', { name: 'Mine', secret: 's1', ownNote: 'n1', audit: 'a1' })
+  await create('Ledger', { name: 'Theirs', secret: 's2', ownNote: 'n2', audit: 'a2' })
   await create('Gadget', { name: 'Anvil', active: true, meta: { a: 1 }, secret: 'hunter2hunter2' })
   await create('Gadget', {
     name: 'Bellows',
@@ -677,7 +708,7 @@ describe('ListView ?columns= resolution', () => {
 
       const none = await render(ada, { listKey: 'User', visibleColumns: ['nope', 'constructor'] })
       expect(none.columnsChosen).toBe(false)
-      expect(none.columns).toEqual(['name', 'billingAddress', 'fullName', 'posts', 'draftTitles'])
+      expect(none.columns).toEqual(['name', 'fullName', 'posts', 'draftTitles'])
     },
     BOOT,
   )
@@ -697,13 +728,13 @@ describe('ListView ?columns= resolution', () => {
   )
 
   it(
-    'still applies Field Visibility to a chosen column',
+    'ignores a chosen column whose read rule always denies this session',
     async () => {
       const props = await render(ada, {
         listKey: 'User',
         visibleColumns: ['name', 'billingAddress'],
       })
-      expect(props.columns).toEqual(['name', 'billingAddress'])
+      expect(props.columns).toEqual(['name'])
       for (const item of props.items) expect(item.billingAddress ?? null).toBeNull()
     },
     BOOT,
@@ -720,13 +751,12 @@ describe('ListView ?columns= resolution', () => {
   )
 
   it(
-    'offers every displayable field to the column picker',
+    'offers every displayable field this session can read to the column picker',
     async () => {
       const props = await render(ada, { listKey: 'User', urlControls: true })
       expect(props.pageSizeControl).toBe(true)
-      expect(props.availableColumns).toEqual(
-        expect.arrayContaining(['name', 'billingAddress', 'posts', 'drafts']),
-      )
+      expect(props.availableColumns).toEqual(expect.arrayContaining(['name', 'posts', 'drafts']))
+      expect(props.availableColumns).not.toContain('billingAddress')
     },
     BOOT,
   )
@@ -899,10 +929,10 @@ describe('ListView sorts only by what the read can order by (#2180)', () => {
       const user = await render(ada, { listKey: 'User' })
       expect(user.sortableFields).toMatchObject({
         name: true,
-        billingAddress: false,
         posts: false,
         fullName: false,
       })
+      expect(user.sortableFields).not.toHaveProperty('billingAddress')
       const post = await render(ada, { listKey: 'Post' })
       expect(post.sortableFields).toMatchObject({ title: true, author: false })
     },
@@ -910,7 +940,7 @@ describe('ListView sorts only by what the read can order by (#2180)', () => {
   )
 
   it(
-    'answers a read-denied field exactly as it answers one the list does not have',
+    'drops a read-denied configured column from the columns and the sortable set',
     async () => {
       const denied = await render(ada, {
         listKey: 'User',
@@ -926,7 +956,8 @@ describe('ListView sorts only by what the read can order by (#2180)', () => {
       })
       expect(denied.items).toEqual(absent.items)
       expect(denied.initialSort).toEqual(absent.initialSort)
-      expect(denied.sortableFields?.billingAddress).toBe(absent.sortableFields?.nope)
+      expect(denied.columns).toEqual(['name'])
+      expect(denied.sortableFields).not.toHaveProperty('billingAddress')
     },
     BOOT,
   )
@@ -1030,6 +1061,125 @@ describe('ListView when the read fails (#2180)', () => {
       expect(props.items).toEqual([])
       expect(props.total).toBe(0)
       expect(logged).toBe(0)
+    },
+    BOOT,
+  )
+})
+
+describe('ListView column picker offers only fields this session can read (#2262)', () => {
+  const admin: Session = { role: 'admin' }
+
+  it(
+    'leaves an always-denied field out of the picker, the defaults and `?columns=`',
+    async () => {
+      const props = await render(ada, {
+        listKey: 'Ledger',
+        urlControls: true,
+        visibleColumns: ['name', 'secret'],
+      })
+      expect(props.availableColumns).not.toContain('secret')
+      expect(props.defaultColumns).not.toContain('secret')
+      expect(props.columns).toEqual(['name'])
+
+      const only = await render(ada, {
+        listKey: 'Ledger',
+        urlControls: true,
+        visibleColumns: ['secret'],
+      })
+      expect(only.columnsChosen).toBe(false)
+      expect(only.columns).not.toContain('secret')
+    },
+    BOOT,
+  )
+
+  it(
+    'still offers a field whose read rule depends on the row',
+    async () => {
+      const props = await render(ada, {
+        listKey: 'Ledger',
+        urlControls: true,
+        visibleColumns: ['name', 'ownNote'],
+      })
+      expect(props.availableColumns).toContain('ownNote')
+      expect(props.columns).toEqual(['name', 'ownNote'])
+      const byName = Object.fromEntries(props.items.map((item) => [item.name, item]))
+      expect(byName.Mine.ownNote).toBe('n1')
+      expect(byName.Theirs.ownNote ?? null).toBeNull()
+    },
+    BOOT,
+  )
+
+  it(
+    'offers a field to the session its rule allows and withholds it from another',
+    async () => {
+      const allowed = await render(admin, {
+        listKey: 'Ledger',
+        urlControls: true,
+        visibleColumns: ['name', 'audit'],
+      })
+      expect(allowed.availableColumns).toContain('audit')
+      expect(allowed.columns).toEqual(['name', 'audit'])
+      expect(allowed.items.map((item) => item.audit).sort()).toEqual(['a1', 'a2'])
+
+      const denied = await render(ada, {
+        listKey: 'Ledger',
+        urlControls: true,
+        visibleColumns: ['name', 'audit'],
+      })
+      expect(denied.availableColumns).not.toContain('audit')
+      expect(denied.columns).toEqual(['name'])
+    },
+    BOOT,
+  )
+})
+
+describe('ListView columns over a read rule that throws or hides every default (#2262)', () => {
+  it(
+    'renders an empty list and hides the field whose rule throws',
+    async () => {
+      const props = await render(ada, {
+        listKey: 'Brittle',
+        urlControls: true,
+        visibleColumns: ['name', 'meta'],
+      })
+      expect(props.items).toEqual([])
+      expect(props.availableColumns).not.toContain('meta')
+      expect(props.defaultColumns).not.toContain('meta')
+      expect(props.columns).toEqual(['name'])
+    },
+    BOOT,
+  )
+
+  it(
+    'still reports the read failure once a row exists',
+    async () => {
+      await create('Brittle', { name: 'Has a row', meta: { a: 1 } })
+      const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      const html = renderToStaticMarkup(
+        await ListView({ context: contextAt(ada), config, basePath: '/admin', listKey: 'Brittle' }),
+      )
+      log.mockRestore()
+
+      expect(html).toContain('This list could not be loaded')
+      expect(html).not.toContain('rule boom')
+    },
+    BOOT,
+  )
+
+  it(
+    'falls back to the first readable field when every default column is unreadable',
+    async () => {
+      const computed = await render(ada, { listKey: 'Sealed', urlControls: true })
+      expect(computed.defaultColumns).toEqual(['hidden'])
+      expect(computed.columns).toEqual(['hidden'])
+
+      const configured = await render(ada, {
+        listKey: 'User',
+        columns: ['billingAddress'],
+        urlControls: true,
+      })
+      expect(configured.defaultColumns).toEqual(['name'])
+      expect(configured.columns).toEqual(['name'])
     },
     BOOT,
   )

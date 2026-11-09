@@ -1,7 +1,7 @@
 import type { ListConfig, OpenSaasConfig } from '../config/types.js'
 import type { Session, AccessContext } from '../access/types.js'
 import { checkAccess } from '../access/engine.js'
-import { isFieldReadableForPredicate } from '../access/field-access.js'
+import { classifyRowIndependentRead, isFieldReadableForPredicate } from '../access/field-access.js'
 import { parseFilterQuery } from './parse.js'
 import { buildFilterWhere } from './map.js'
 import type { FilterCondition, FilterFieldSuggestion, FilterSpec } from './types.js'
@@ -74,6 +74,27 @@ export async function collectFilterSpecs(
     if (spec) specs[fieldName] = spec
   })
   return specs
+}
+
+/**
+ * The fields of a list whose `read` rule is row-independent and denies this
+ * session, so no row can ever show them: the same omission the MCP vocabulary
+ * makes (ADR-0053). A row-dependent rule is not named, and a rule that throws
+ * is, so a field this session cannot classify stays hidden. A session denied
+ * the list's `query` gets an empty set and no field rule is asked.
+ */
+export async function collectUnreadableFields(
+  listConfig: OpenSaasConfig['lists'][string],
+  args: FilterAccessArgs,
+): Promise<Set<string>> {
+  if (!(await canQueryList(listConfig, args))) return new Set()
+  const fields = Object.entries(listConfig.fields)
+  const answers = await Promise.all(
+    fields.map(([, field]) =>
+      classifyRowIndependentRead(field.access, args).catch((): 'deny' => 'deny'),
+    ),
+  )
+  return new Set(fields.flatMap(([name], index) => (answers[index] === 'deny' ? [name] : [])))
 }
 
 /**
