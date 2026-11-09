@@ -80,6 +80,7 @@ export { findDatabaseConnection, connectionStringFault } from './db/url.js'
 export { processGlobal, processGlobalKey } from './lib/process-global.js'
 
 export { isRowActionAvailable } from './config/row-action-availability.js'
+export { collectUnreadableFields } from './filter/collect.js'
 export { resolvePresetViews } from './config/preset-views.js'
 export { checkHasAccess, filterByHasAccess } from './config/has-access-gate.js'
 export type { AccessGated } from './config/has-access-gate.js'

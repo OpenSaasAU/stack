@@ -50,6 +50,7 @@ import {
   type ResolvedFilterRecord,
 } from '../lib/filterBuilderOptions.js'
 import {
+  collectUnreadableFields,
   filterByHasAccess,
   isRowActionAvailable,
   RELATIONSHIP_OPTIONS_MAX_TAKE,
@@ -396,16 +397,21 @@ export async function ListView({
 
   const displayFields = withStructuralTimestampDefaults(listConfig.fields, listConfig, config.db)
 
+  const unreadableFields = await collectUnreadableFields(listConfig, {
+    session: context.session,
+    context,
+  })
+  const readable = (name: string) => !unreadableFields.has(name)
   const availableColumns = [
     ...new Set([
       ...(columns ?? []).filter((name) => !Object.hasOwn(displayFields, name)),
       ...Object.keys(displayFields),
     ]),
-  ]
+  ].filter(readable)
   const chosenColumns = [...new Set(visibleColumns ?? [])].filter((name) =>
     availableColumns.includes(name),
   )
-  const defaultColumns = columns ?? computeDefaultColumns(displayFields)
+  const defaultColumns = (columns ?? computeDefaultColumns(displayFields)).filter(readable)
   const baseColumns = chosenColumns.length > 0 ? chosenColumns : defaultColumns
 
   const pageSize = Math.min(

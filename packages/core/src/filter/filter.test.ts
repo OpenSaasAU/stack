@@ -11,6 +11,7 @@ import {
   buildListFilterWhere,
   collectFilterSpecs,
   collectFilterSuggestions,
+  collectUnreadableFields,
   type FilterAccessArgs,
 } from './collect.js'
 import type { FilterOperator, FilterSpec, FilterToken, FilterValue } from './types.js'
@@ -983,6 +984,44 @@ describe('core field Filter specs', () => {
       noAccessArgs,
     )
     expect(Object.keys(collected)).toEqual(['name'])
+  })
+})
+
+describe('collectUnreadableFields', () => {
+  const rules = list({
+    access: READABLE,
+    fields: {
+      name: text(),
+      secret: text({ access: { read: () => false } }),
+      ownNote: text({ access: { read: ({ item }) => item.name === 'Mine' } }),
+      audit: text({ access: { read: ({ session }) => session?.role === 'admin' } }),
+    },
+  })
+
+  it('names only the fields a row-independent rule denies this session', async () => {
+    expect([...(await collectUnreadableFields(rules, noAccessArgs))].sort()).toEqual([
+      'audit',
+      'secret',
+    ])
+    expect([
+      ...(await collectUnreadableFields(rules, { ...noAccessArgs, session: { role: 'admin' } })),
+    ]).toEqual(['secret'])
+  })
+
+  it('asks no field rule for a session denied the list', async () => {
+    const asked = list({
+      access: { operation: { query: () => false } },
+      fields: {
+        title: text({
+          access: {
+            read: () => {
+              throw new Error('asked')
+            },
+          },
+        }),
+      },
+    })
+    expect([...(await collectUnreadableFields(asked, noAccessArgs))]).toEqual([])
   })
 })
 
