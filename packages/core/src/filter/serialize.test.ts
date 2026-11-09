@@ -600,6 +600,72 @@ describe('a structured range with awkward bounds round-trips through its URL (pr
   })
 })
 
+const TOP_LEVEL_BOUND = ['', '1', '2', '5', 'a', ',', '(', ')', '..', '.', '"', ' ', '-', '\\']
+const TOP_LEVEL_RANGE_FIELDS = ['a', 'status', 'title', 'zz']
+
+describe('a top-level structured range filters exactly as its URL does (property)', () => {
+  const random = seededRandom(2271)
+  const pick = <T>(items: readonly T[]): T => items[Math.floor(random() * items.length)]
+  const bound = (): FilterValue =>
+    v(
+      Array.from({ length: Math.floor(random() * 3) }, () => pick(TOP_LEVEL_BOUND)).join(''),
+      random() < 0.3,
+    )
+  const range = (): FilterToken =>
+    token({
+      field: pick(TOP_LEVEL_RANGE_FIELDS),
+      operator: 'range',
+      negated: random() < 0.4,
+      values: [bound(), bound()],
+    })
+  const structured = (): FilterQuery => {
+    const terms: FilterTerm[] = Array.from({ length: 1 + Math.floor(random() * 2) }, range)
+    if (random() < 0.5) terms.push(pick(PLAIN_MEMBERS))
+    return query(...terms)
+  }
+
+  it('builds the same condition from the query and from its URL, and writes a stable URL', () => {
+    let quoted = 0
+    let empty = 0
+    for (let run = 0; run < RUNS * 2; run++) {
+      const generated = structured()
+      const ranges = filterQueryTokens(generated).filter((term) => term.operator === 'range')
+      if (ranges.some((term) => term.values.some((value) => value.quoted))) quoted++
+      if (ranges.some((term) => term.values.some((value) => value.text === ''))) empty++
+      const written = serializeFilterQuery(generated)
+      const readBack = parseFilterQuery(written)
+      expect(buildFilterWhere(generated, PROPERTY_SPECS), JSON.stringify(generated)).toEqual(
+        buildFilterWhere(readBack, PROPERTY_SPECS),
+      )
+      expect(serializeFilterQuery(readBack), written).toBe(written)
+      expect(parseFilterQuery(serializeFilterQuery(readBack)), written).toEqual(readBack)
+    }
+    expect(quoted).toBeGreaterThan(50)
+    expect(empty).toBeGreaterThan(50)
+  })
+
+  it.each([
+    [
+      '-a:"1..2"',
+      token({ field: 'a', operator: 'range', negated: true, values: [v('1', true), v('2')] }),
+    ],
+    ['zz:..', token({ field: 'zz', operator: 'range', values: [v(''), v('')] })],
+  ])('filters the hand-built range written %s as that URL does', (_written, range) => {
+    const readBack = parseFilterQuery(serializeFilterQuery(query(range)))
+    expect(buildFilterWhere(query(range), PROPERTY_SPECS)).toEqual(
+      buildFilterWhere(readBack, PROPERTY_SPECS),
+    )
+  })
+
+  it('keeps the range meaning of a writable top-level range', () => {
+    const range = token({ field: 'a', operator: 'range', values: [v('1'), v('5')] })
+    expect(serializeFilterQuery(query(range))).toBe('a:1..5')
+    expect(buildFilterWhere(query(range), PROPERTY_SPECS)).toEqual({
+      AND: [{ a: { gte: '1' } }, { a: { lte: '5' } }],
+    })
+  })
+})
+
 describe('a free-text word outside a group that would open one', () => {
   it('is quoted as the text it is written as, so a range keeps its `..`', () => {
     const structured = query(
