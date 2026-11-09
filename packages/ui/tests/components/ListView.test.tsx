@@ -198,6 +198,26 @@ const config: OpenSaasConfig = {
       },
       access: { operation: { query: () => true } },
     },
+    Brittle: {
+      fields: {
+        name: text(),
+        meta: json({
+          access: {
+            read: () => {
+              throw new Error('rule boom')
+            },
+          },
+        }),
+      },
+      access: { operation: { query: () => true } },
+    },
+    Sealed: {
+      fields: {
+        secret: text({ access: { read: () => false } }),
+        hidden: text({ ui: { listView: { defaultColumn: false } } }),
+      },
+      access: { operation: { query: () => true } },
+    },
     Fragile: {
       fields: {
         name: text({
@@ -920,7 +940,7 @@ describe('ListView sorts only by what the read can order by (#2180)', () => {
   )
 
   it(
-    'reads a read-denied configured column as one the list does not have, and drops it',
+    'drops a read-denied configured column from the columns and the sortable set',
     async () => {
       const denied = await render(ada, {
         listKey: 'User',
@@ -1108,6 +1128,58 @@ describe('ListView column picker offers only fields this session can read (#2262
       })
       expect(denied.availableColumns).not.toContain('audit')
       expect(denied.columns).toEqual(['name'])
+    },
+    BOOT,
+  )
+})
+
+describe('ListView columns over a read rule that throws or hides every default (#2262)', () => {
+  it(
+    'renders an empty list and hides the field whose rule throws',
+    async () => {
+      const props = await render(ada, {
+        listKey: 'Brittle',
+        urlControls: true,
+        visibleColumns: ['name', 'meta'],
+      })
+      expect(props.items).toEqual([])
+      expect(props.availableColumns).not.toContain('meta')
+      expect(props.defaultColumns).not.toContain('meta')
+      expect(props.columns).toEqual(['name'])
+    },
+    BOOT,
+  )
+
+  it(
+    'still reports the read failure once a row exists',
+    async () => {
+      await create('Brittle', { name: 'Has a row', meta: { a: 1 } })
+      const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      const html = renderToStaticMarkup(
+        await ListView({ context: contextAt(ada), config, basePath: '/admin', listKey: 'Brittle' }),
+      )
+      log.mockRestore()
+
+      expect(html).toContain('This list could not be loaded')
+      expect(html).not.toContain('rule boom')
+    },
+    BOOT,
+  )
+
+  it(
+    'falls back to the first readable field when every default column is unreadable',
+    async () => {
+      const computed = await render(ada, { listKey: 'Sealed', urlControls: true })
+      expect(computed.defaultColumns).toEqual(['hidden'])
+      expect(computed.columns).toEqual(['hidden'])
+
+      const configured = await render(ada, {
+        listKey: 'User',
+        columns: ['billingAddress'],
+        urlControls: true,
+      })
+      expect(configured.defaultColumns).toEqual(['name'])
+      expect(configured.columns).toEqual(['name'])
     },
     BOOT,
   )

@@ -411,7 +411,11 @@ export async function ListView({
   const chosenColumns = [...new Set(visibleColumns ?? [])].filter((name) =>
     availableColumns.includes(name),
   )
-  const defaultColumns = (columns ?? computeDefaultColumns(displayFields)).filter(readable)
+  const readableDefaults = (columns ?? computeDefaultColumns(displayFields)).filter(readable)
+  const defaultColumns =
+    readableDefaults.length > 0
+      ? readableDefaults
+      : Object.keys(displayFields).filter(readable).slice(0, 1)
   const baseColumns = chosenColumns.length > 0 ? chosenColumns : defaultColumns
 
   const pageSize = Math.min(

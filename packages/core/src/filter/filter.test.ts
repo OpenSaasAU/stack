@@ -1008,6 +1008,23 @@ describe('collectUnreadableFields', () => {
     ]).toEqual(['secret'])
   })
 
+  it('names a field whose rule throws without reading the row, and spares its siblings', async () => {
+    const throwing = list({
+      access: READABLE,
+      fields: {
+        name: text(),
+        broken: text({
+          access: {
+            read: () => {
+              throw new Error('rule failed')
+            },
+          },
+        }),
+      },
+    })
+    expect([...(await collectUnreadableFields(throwing, noAccessArgs))]).toEqual(['broken'])
+  })
+
   it('asks no field rule for a session denied the list', async () => {
     const asked = list({
       access: { operation: { query: () => false } },
