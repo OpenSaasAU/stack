@@ -204,11 +204,20 @@ const INT32_MAX = 2147483647
 const INT64_MIN = -(2n ** 63n)
 const INT64_MAX = 2n ** 63n - 1n
 
-const hasNul = (value: unknown): boolean => {
-  if (typeof value === 'string') return value.includes('\u0000')
-  if (Array.isArray(value)) return value.some(hasNul)
-  if (typeof value === 'object' && value !== null) {
-    return Object.entries(value).some(([key, child]) => hasNul(key) || hasNul(child))
+const hasNul = (root: unknown): boolean => {
+  const seen = new Set<object>()
+  const pending: unknown[] = [root]
+  while (pending.length > 0) {
+    const value = pending.pop()
+    if (typeof value === 'string') {
+      if (value.includes('\u0000')) return true
+    } else if (typeof value === 'object' && value !== null && !seen.has(value)) {
+      seen.add(value)
+      if (Array.isArray(value)) pending.push(...value)
+      else {
+        for (const [key, child] of Object.entries(value)) pending.push(key, child)
+      }
+    }
   }
   return false
 }
@@ -218,6 +227,7 @@ function isCalendarDate(value: unknown): boolean {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
   if (match === null) return false
   const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])]
+  if (year < 1) return false
   const date = new Date(0)
   date.setUTCFullYear(year, month - 1, day)
   return (
@@ -346,7 +356,8 @@ export function text<
       message: `${formatFieldName(fieldName)} must not contain NUL characters`,
     })
     if (isRequired && operation === 'update') return noNul.optional()
-    return nullable ? noNul.optional().nullable() : isRequired ? noNul : noNul.optional()
+    if (isRequired) return noNul
+    return nullable ? noNul.optional().nullable() : noNul.optional()
   }
 
   return {
@@ -412,11 +423,19 @@ export function integer<
     type: 'integer',
     ...options,
     getZodSchema: (fieldName: string, operation: 'create' | 'update') => {
-      const baseSchema = z
+      const whole = z
         .number({ message: `${formatFieldName(fieldName)} must be a number` })
         .int({ message: `${formatFieldName(fieldName)} must be a whole number` })
-        .min(INT32_MIN, { message: `${formatFieldName(fieldName)} is below the 32-bit range` })
-        .max(INT32_MAX, { message: `${formatFieldName(fieldName)} is above the 32-bit range` })
+      const baseSchema =
+        options?.db?.nativeType === undefined
+          ? whole
+              .min(INT32_MIN, {
+                message: `${formatFieldName(fieldName)} is below the 32-bit range`,
+              })
+              .max(INT32_MAX, {
+                message: `${formatFieldName(fieldName)} is above the 32-bit range`,
+              })
+          : whole
 
       const withMin =
         options?.validation?.min !== undefined
@@ -434,7 +453,10 @@ export function integer<
 
       const isRequired = options?.validation?.isRequired
       if (isRequired && operation === 'update') return withMax.optional()
-      return !isRequired ? withMax.optional().nullable() : withMax
+      if (isRequired) return withMax
+      return (options?.db?.isNullable ?? !isRequired)
+        ? withMax.optional().nullable()
+        : withMax.optional()
     },
     getContractField: (fieldName: string, listKey: string) => {
       checkedDefault(
@@ -582,7 +604,10 @@ export function decimal<
 
       const isRequired = options?.validation?.isRequired
       if (isRequired && operation === 'update') return schema.optional()
-      return !isRequired ? schema.optional().nullable() : schema
+      if (isRequired) return schema
+      return (options?.db?.isNullable ?? !isRequired)
+        ? schema.optional().nullable()
+        : schema.optional()
     },
     getContractField: (fieldName: string, listKey: string) => {
       const size = checkedDecimalSize(
@@ -705,7 +730,10 @@ export function bigInt<
       }
 
       if (isRequired && operation === 'update') return schema.optional()
-      return !isRequired ? schema.optional().nullable() : schema
+      if (isRequired) return schema
+      return (options?.db?.isNullable ?? !isRequired)
+        ? schema.optional().nullable()
+        : schema.optional()
     },
     getContractField: (fieldName: string, listKey: string) => {
       const defaultValue = options?.defaultValue
@@ -948,7 +976,9 @@ export function calendarDay<
       } else if (isRequired && operation === 'update') {
         return dateSchema.optional()
       } else {
-        return dateSchema.optional().nullable()
+        return (options?.db?.isNullable ?? !isRequired)
+          ? dateSchema.optional().nullable()
+          : dateSchema.optional()
       }
     },
     getContractField: (fieldName: string, listKey: string) => {

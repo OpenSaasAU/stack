@@ -54,4 +54,32 @@ describe('values a column cannot hold are refused by validation', () => {
     })
     expect(accepts(withDefault, null)).toBe(false)
   })
+
+  test('required text stays required even when db.isNullable is true', () => {
+    const field = text({ validation: { isRequired: true }, db: { isNullable: true } })
+    expect(accepts(field, null)).toBe(false)
+    expect(accepts(field, undefined)).toBe(false)
+  })
+
+  test('null follows db.isNullable on numeric and date fields', () => {
+    expect(accepts(integer(), null)).toBe(true)
+    expect(accepts(integer({ db: { isNullable: false } }), null)).toBe(false)
+    expect(accepts(decimal({ db: { isNullable: false } }), null)).toBe(false)
+    expect(accepts(bigInt({ db: { isNullable: false } }), null)).toBe(false)
+    expect(accepts(calendarDay({ db: { isNullable: false } }), null)).toBe(false)
+  })
+
+  test('integer with a native type override skips the 32-bit range', () => {
+    expect(accepts(integer({ db: { nativeType: 'BigInt' } }), 2147483648)).toBe(true)
+  })
+
+  test('calendarDay refuses year 0000', () => {
+    expect(accepts(calendarDay(), '0000-01-01')).toBe(false)
+  })
+
+  test('json with a cycle is handled without throwing', () => {
+    const cyclic: Record<string, unknown> = {}
+    cyclic.self = cyclic
+    expect(() => accepts(json(), cyclic)).not.toThrow()
+  })
 })
