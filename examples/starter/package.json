@@ -19,7 +19,7 @@
     "@opensaas/stack-core": "workspace:*",
     "@opensaas/stack-ui": "workspace:*",
     "@prisma/orm-postgres": "8.0.0-rc.22",
-    "@tailwindcss/postcss": "^4.3.3",
+    "@tailwindcss/postcss": "^4.3.5",
     "next": "^16.4.2",
     "postcss": "^8.5.28",
     "react": "^19.3.1",
