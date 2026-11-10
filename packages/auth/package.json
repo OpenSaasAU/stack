@@ -91,7 +91,7 @@
     "@opensaas/stack-cli": "workspace:*",
     "@opensaas/stack-core": "workspace:*",
     "@prisma/orm-postgres": "8.0.0-rc.22",
-    "@types/node": "^26.6.3",
+    "@types/node": "^26.6.6",
     "@types/pg": "^8.23.1",
     "@types/react": "^19.2.18",
     "@typescript/native": "npm:typescript@^7.0.2",
