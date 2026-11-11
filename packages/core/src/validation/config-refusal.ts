@@ -21,6 +21,9 @@ export type ConfigRefusalReason =
   | 'field-descriptor-error'
   | 'default-value-rejected-by-validation'
   | 'non-identifier-name'
+  | 'unsupported-provider'
+  | 'invalid-list-key'
+  | 'unknown-relationship-target'
 
 /**
  * A config declaration the Prisma 8 contract cannot carry, found before
