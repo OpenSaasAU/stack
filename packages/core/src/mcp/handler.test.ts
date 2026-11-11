@@ -445,6 +445,40 @@ describe('the MCP surface', () => {
       }
     })
 
+    test.each(['GET', 'DELETE'] as const)(
+      '%s answers 405 with Allow: POST',
+      async (verb) => {
+        const response = await handlersFor()[verb](
+          new Request('http://localhost/api/mcp', { method: verb }),
+        )
+
+        expect(response.status).toBe(405)
+        expect(response.headers.get('Allow')).toBe('POST')
+      },
+      BOOT,
+    )
+
+    test(
+      'a malformed JSON body is a -32700 parse error with status 400',
+      async () => {
+        const response = await handlersFor().POST(
+          new Request('http://localhost/api/mcp', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: '{bad json',
+          }),
+        )
+
+        expect(response.status).toBe(400)
+        expect(await response.json()).toEqual({
+          jsonrpc: '2.0',
+          id: null,
+          error: { code: -32700, message: 'Parse error' },
+        })
+      },
+      BOOT,
+    )
+
     test(
       'a config with MCP disabled answers 404 on every verb',
       async () => {

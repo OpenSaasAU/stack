@@ -216,8 +216,22 @@ export function createMcpHandlers(options: {
       })
     }
 
+    let parsed: unknown
     try {
-      const body = (await req.json()) as {
+      parsed = await req.json()
+    } catch {
+      return new Response(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id: null,
+          error: { code: -32700, message: 'Parse error' },
+        }),
+        { status: 400, headers: { 'Content-Type': 'application/json' } },
+      )
+    }
+
+    try {
+      const body = parsed as {
         jsonrpc?: string
         id?: number | string
         method: string
@@ -269,10 +283,13 @@ export function createMcpHandlers(options: {
     }
   }
 
+  const methodNotAllowed = async () =>
+    new Response(null, { status: 405, headers: { Allow: 'POST' } })
+
   return {
-    GET: handler,
+    GET: methodNotAllowed,
     POST: handler,
-    DELETE: handler,
+    DELETE: methodNotAllowed,
   }
 }
 
