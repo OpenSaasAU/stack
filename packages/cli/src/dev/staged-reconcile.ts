@@ -128,11 +128,17 @@ export async function planDatabaseUpdate(
 
   const run = await runPrismaCli(cwd, args)
   if (run.exitCode !== 0)
-    return { ok: false, failure: { exitCode: run.exitCode, output: run.output } }
+    return {
+      ok: false,
+      failure: { exitCode: run.exitCode, output: formatReconcileFailure(run.output) },
+    }
 
   const plan = readPlan(run.stdout)
   if (plan === undefined) {
-    return { ok: false, failure: { exitCode: run.exitCode, output: run.output } }
+    return {
+      ok: false,
+      failure: { exitCode: run.exitCode, output: formatReconcileFailure(run.output) },
+    }
   }
   return { ok: true, plan }
 }
@@ -376,4 +382,58 @@ export function planId(plan: ReconcilePlan): string {
     ...plan.accessChanges.map((subject) => `allow:${subject}`),
   ]
   return createHash('sha256').update(JSON.stringify(content)).digest('hex').slice(0, 12)
+}
+
+const PROGRESS_KINDS = new Set(['step-started', 'step-finished'])
+
+function collectText(value: unknown, into: string[]): void {
+  if (typeof value === 'string') return
+  if (Array.isArray(value)) {
+    for (const item of value) collectText(item, into)
+    return
+  }
+  if (typeof value !== 'object' || value === null) return
+  for (const [key, child] of Object.entries(value)) {
+    if (typeof child === 'string' && (key === 'text' || key === 'message')) into.push(child)
+    else collectText(child, into)
+  }
+}
+
+/**
+ * The human-readable part of a failed `--json` run. Progress envelopes are
+ * dropped, an envelope carrying text or messages is reduced to that text, and
+ * a line that is not JSON, or an envelope with no text in it, passes through
+ * untouched so nothing the CLI said is lost.
+ */
+export function formatReconcileFailure(output: string): string {
+  const lines: string[] = []
+  for (const line of output.split('\n')) {
+    const trimmed = line.trim()
+    if (trimmed.length === 0) continue
+    if (!trimmed.startsWith('{')) {
+      lines.push(line)
+      continue
+    }
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(trimmed)
+    } catch {
+      lines.push(line)
+      continue
+    }
+    if (
+      typeof parsed === 'object' &&
+      parsed !== null &&
+      'kind' in parsed &&
+      typeof parsed.kind === 'string' &&
+      PROGRESS_KINDS.has(parsed.kind)
+    ) {
+      continue
+    }
+    const text: string[] = []
+    collectText(parsed, text)
+    if (text.length === 0) lines.push(line)
+    else lines.push(text.join(''))
+  }
+  return lines.join('\n')
 }

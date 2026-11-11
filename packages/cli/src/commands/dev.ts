@@ -106,7 +106,14 @@ async function reconcile(cwd: string): Promise<boolean> {
   const refs = snapshotMigrationRefs(cwd)
   const run = await runPrismaCli(cwd, ['db', 'update'], 'interactive')
   restoreRefsAfterReconcile(cwd, refs)
-  if (run.exitCode === 0) return true
+  if (run.exitCode === 0) {
+    console.log(
+      chalk.gray(
+        'Any "Advanced ref" line above is Prisma\'s own: the loop restores migration refs.',
+      ),
+    )
+    return true
+  }
 
   console.error(
     chalk.red(
