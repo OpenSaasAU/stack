@@ -462,3 +462,16 @@ describe('validateRelations', () => {
     expect(refusals[0].message).toContain('composite primary key')
   })
 })
+
+describe('unknown relationship target (#2319)', () => {
+  it('names the list and field holding a ref to an undeclared list', async () => {
+    const { relationship } = await import('../fields/index.js')
+    const refusals = validateRelations({
+      db: { provider: 'postgresql' },
+      lists: { Post: { fields: { author: relationship({ ref: 'Nope.x' }) } } },
+    } as unknown as OpenSaasConfig)
+    expect(refusals).toHaveLength(1)
+    expect(refusals[0]?.message).toContain('Post')
+    expect(refusals[0]?.message).toContain('fields.author')
+  })
+})
