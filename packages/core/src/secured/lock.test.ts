@@ -589,3 +589,34 @@ describe.skipIf(escape.kind !== 'postgres')(
     }, 60_000)
   },
 )
+
+describe('lock statement across bundle module instances', () => {
+  test('binds keys as plain values and casts in the statement text', async () => {
+    const bound: unknown[] = []
+    let text = ''
+    const builder = { build: () => ({}) }
+    const raw = {
+      sql: (strings: TemplateStringsArray, ...values: unknown[]) => {
+        text = strings.join('?')
+        bound.push(...values)
+        return { returnsRow: () => builder, affectedCount: () => builder }
+      },
+    }
+    const contract = {
+      domain: {},
+      storage: {},
+    }
+    const lane = createRowLockLane(raw, contract, {
+      query: () => ({ toArray: async () => [] }),
+    } as never)
+    expect(lane).toBeDefined()
+    await lane?.lock(
+      'Slot',
+      { namespace: 'public', table: 'Slot', column: 'id', codecId: 'pg/uuid@1' },
+      ['a', 'b'],
+      'forUpdate',
+    )
+    expect(bound).toEqual(['a', 'b', 2])
+    expect(text).toContain('IN (?::uuid, ?::uuid) ORDER BY')
+  })
+})

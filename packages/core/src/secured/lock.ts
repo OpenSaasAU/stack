@@ -4,7 +4,6 @@
 // the clause text. See ADR-0047, ADR-0062 and ADR-0078.
 
 import type { ParamRef, RuntimeScope, SqlOrmPlan } from '@prisma/orm-postgres/relational-core'
-import { param } from '@prisma/orm-postgres/relational-core'
 import { codecRefForStorageColumn } from '@prisma/orm-postgres/relational-core/codec-descriptor-registry'
 import type { SqlStorage } from '@prisma/orm-postgres/family-contract/types'
 import { quoteIdentifier } from '@prisma/orm-postgres/target/sql-utils'
@@ -267,22 +266,28 @@ function soleKeyColumn(storage: SqlStorage, namespace: string, table: string): s
  * list is the read's own and carries no meaning: Postgres acquires in the
  * `ORDER BY`, not in the list.
  */
+function pgCastOf(codecId: string): string {
+  const match = /^pg\/([a-z0-9_]+)@/.exec(codecId)
+  return match === null || match[1] === 'text' ? '' : `::${match[1]}`
+}
+
 function lockStatement(
   identity: RowLockIdentity,
   keys: readonly RowLockKey[],
   strength: RowLockStrength,
-): { strings: TemplateStringsArray; values: (ParamRef | number)[] } {
+): { strings: TemplateStringsArray; values: (string | number)[] } {
   const column = quoteIdentifier(identity.column)
   const table = `${quoteIdentifier(identity.namespace)}.${quoteIdentifier(identity.table)}`
+  const cast = pgCastOf(identity.codecId)
   const parts = [
     `SELECT ${column} FROM ${table} WHERE ${column} IN (`,
-    ...keys.slice(1).map(() => ', '),
-    `) ORDER BY ${column} LIMIT `,
+    ...keys.slice(1).map(() => `${cast}, `),
+    `${cast}) ORDER BY ${column} LIMIT `,
     ROW_LOCK_CLAUSES[strength],
   ]
   return {
     strings: Object.assign(parts, { raw: parts }),
-    values: [...keys.map((key) => param(key, { codecId: identity.codecId })), keys.length],
+    values: [...keys, keys.length],
   }
 }
 
