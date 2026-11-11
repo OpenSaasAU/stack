@@ -1,4 +1,4 @@
-import Markdoc, { type Node } from '@markdoc/markdoc'
+import Markdoc, { type Config, type Node } from '@markdoc/markdoc'
 import { codeToHtml } from 'shiki'
 import { renderPlainCode, resolveCodeLanguage } from './code-highlighting'
 
@@ -22,7 +22,7 @@ export const markdocConfig = {
   nodes: {
     heading: {
       ...Markdoc.nodes.heading,
-      transform(node: Node, config: Parameters<typeof Markdoc.transform>[1]) {
+      transform(node: Node, config: Config) {
         const attributes = node.transformAttributes(config)
         const children = node.transformChildren(config)
         return new Markdoc.Tag(
