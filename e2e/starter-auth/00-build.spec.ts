@@ -81,13 +81,13 @@ test.describe('Build Validation', () => {
   })
 
   test('should have valid Next.js configuration', async () => {
-    const nextConfigPath = path.join(exampleDir, 'next.config.js')
+    const nextConfigPath = path.join(exampleDir, 'next.config.mjs')
 
     expect(fs.existsSync(nextConfigPath)).toBe(true)
 
     // File should contain valid Next.js config
     const configContent = fs.readFileSync(nextConfigPath, 'utf-8')
-    expect(configContent).toContain('module.exports')
+    expect(configContent).toContain('export default')
   })
 
   test('should have valid opensaas.config.ts', async () => {
