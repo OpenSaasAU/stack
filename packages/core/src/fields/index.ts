@@ -868,12 +868,17 @@ export function timestamp<
         default: hasDefaultNow ? { kind: 'now' } : undefined,
       })
     },
-    // An unparseable date degrades to free text.
+    // An unparseable date degrades to free text. `eq` on a date-only value matches that whole UTC day.
     getFilterSpec: (fieldName: string): FilterSpec => ({
       operators: COMPARISON_OPERATORS,
       toCondition: (operator, value) => {
-        const date = new Date(value.trim())
+        const typed = value.trim()
+        const date = new Date(typed)
         if (Number.isNaN(date.getTime())) return null
+        if (operator === 'eq' && DATE_VALUE_MATCH.test(typed)) {
+          const next = new Date(date.getTime() + 86_400_000)
+          return { [fieldName]: { gte: date, lt: next } }
+        }
         return { [fieldName]: { [prismaComparisonKey(operator)]: date } }
       },
       empty: emptyWhenNullable(fieldName, nullable),
