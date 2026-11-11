@@ -3,7 +3,7 @@
 // Prisma owns quoting, placeholders, codecs and the executor; the stack owns
 // the clause text. See ADR-0047, ADR-0062 and ADR-0078.
 
-import type { ParamRef, RuntimeScope, SqlOrmPlan } from '@prisma/orm-postgres/relational-core'
+import type { RuntimeScope, SqlOrmPlan } from '@prisma/orm-postgres/relational-core'
 import { codecRefForStorageColumn } from '@prisma/orm-postgres/relational-core/codec-descriptor-registry'
 import type { SqlStorage } from '@prisma/orm-postgres/family-contract/types'
 import { quoteIdentifier } from '@prisma/orm-postgres/target/sql-utils'
@@ -151,7 +151,7 @@ interface RowLockRawBuilder {
 /** The contract-bound raw tag (`client.raw.sql`), as the lock statement invokes it. */
 type RowLockRawTag = (
   strings: TemplateStringsArray,
-  ...values: readonly (ParamRef | string | number)[]
+  ...values: readonly (string | number)[]
 ) => RowLockRawBuilder
 
 /**
@@ -250,13 +250,40 @@ function soleKeyColumn(storage: SqlStorage, namespace: string, table: string): s
   return typeof column === 'string' ? column : undefined
 }
 
+const KEY_CASTS: Readonly<Record<string, string>> = {
+  'pg/text@1': '',
+  'pg/char@1': '',
+  'sql/text@1': '',
+  'sql/char@1': '',
+  'sql/varchar@1': '',
+  'sql/int@1': '::int4',
+  'pg/int@1': '::int4',
+  'pg/int8number@1': '::int8',
+  'pg/unboundedint@1': '::numeric',
+  'pg/varchar@1': '',
+  'pg/uuid@1': '::uuid',
+  'pg/int2@1': '::int2',
+  'pg/int4@1': '::int4',
+  'pg/int8@1': '::int8',
+  'pg/numeric@1': '::numeric',
+  'pg/bpchar@1': '::bpchar',
+}
+
+function pgCastOf(codecId: string): string {
+  const cast = KEY_CASTS[codecId]
+  if (cast === undefined) {
+    throw new Error(`Cannot lock rows keyed by codec "${codecId}": no key cast is defined for it`)
+  }
+  return cast
+}
+
 /**
  * The statement, assembled: `SELECT <pk> FROM <table> WHERE <pk> IN ($1…$n)
  * ORDER BY <pk> LIMIT $n+1 <clause>`, the clause being `strength`'s.
  *
  * The engine writes the clause text and nothing else. Identifiers are quoted
  * by the target package's own helper, each key is bound with the identity
- * column's codec — so a `uuid` key renders `$1::uuid` and a text key `$1` —
+ * column's cast written into the text — so a `uuid` key renders `$1::uuid` —
  * and the `LIMIT` is the key count, true by construction and the one bound an
  * armed `lints()` would otherwise refuse (ADR-0062).
  *
@@ -266,11 +293,6 @@ function soleKeyColumn(storage: SqlStorage, namespace: string, table: string): s
  * list is the read's own and carries no meaning: Postgres acquires in the
  * `ORDER BY`, not in the list.
  */
-function pgCastOf(codecId: string): string {
-  const match = /^pg\/([a-z0-9_]+)@/.exec(codecId)
-  return match === null || match[1] === 'text' ? '' : `::${match[1]}`
-}
-
 function lockStatement(
   identity: RowLockIdentity,
   keys: readonly RowLockKey[],

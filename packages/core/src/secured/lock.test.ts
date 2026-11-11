@@ -592,31 +592,29 @@ describe.skipIf(escape.kind !== 'postgres')(
 
 describe('lock statement across bundle module instances', () => {
   test('binds keys as plain values and casts in the statement text', async () => {
-    const bound: unknown[] = []
-    let text = ''
-    const builder = { build: () => ({}) }
-    const raw = {
-      sql: (strings: TemplateStringsArray, ...values: unknown[]) => {
-        text = strings.join('?')
-        bound.push(...values)
-        return { returnsRow: () => builder, affectedCount: () => builder }
-      },
+    const database = await createTestDatabase(config)
+    try {
+      const seed = database.context(anonymous)
+      const slot = await seed.db.Slot.create({ data: { name: 'a', capacity: 1 } })
+      const bound: unknown[] = []
+      let text = ''
+      const recordingRaw = {
+        sql: (strings: TemplateStringsArray, ...values: (string | number)[]) => {
+          text = strings.join('?')
+          bound.push(...values)
+          return database.client.raw.sql(strings, ...values)
+        },
+      }
+      const locked = await database.client.transaction(async (tx) => {
+        const lane = createRowLockLane(recordingRaw, database.client.contract, tx)
+        if (lane === undefined) throw new Error('lane unavailable')
+        return await lane.lock('Slot', lane.identity('Slot'), [String(slot?.id)], 'forUpdate')
+      })
+      expect(locked).toEqual([String(slot?.id)])
+      expect(bound).toEqual([String(slot?.id), 1])
+      expect(text).toMatch(/IN \(\?(::\w+)?\) ORDER BY/)
+    } finally {
+      await database.close()
     }
-    const contract = {
-      domain: {},
-      storage: {},
-    }
-    const lane = createRowLockLane(raw, contract, {
-      query: () => ({ toArray: async () => [] }),
-    } as never)
-    expect(lane).toBeDefined()
-    await lane?.lock(
-      'Slot',
-      { namespace: 'public', table: 'Slot', column: 'id', codecId: 'pg/uuid@1' },
-      ['a', 'b'],
-      'forUpdate',
-    )
-    expect(bound).toEqual(['a', 'b', 2])
-    expect(text).toContain('IN (?::uuid, ?::uuid) ORDER BY')
   })
 })
