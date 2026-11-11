@@ -24,7 +24,18 @@
  */
 
 import { getAllDocSlugs, getDocBySlug } from '../lib/content.js'
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
+import { slugifyHeading } from '../lib/markdoc.js'
 import { DOC_REDIRECTS } from '../lib/redirects.mjs'
+
+const PUBLIC_DIR = join(import.meta.dirname, '..', 'public')
+
+function headingIds(content: string): Set<string> {
+  const ids = new Set<string>()
+  for (const match of content.matchAll(/^#{1,6}\s+(.+)$/gm)) ids.add(slugifyHeading(match[1]))
+  return ids
+}
 
 /**
  * Doc paths that MUST resolve, expressed as full `/docs/...` paths. The
@@ -83,8 +94,7 @@ function resolves(path: string, slugSet: Set<string>): boolean {
  *
  * Matches markdown links `[text](href)` where href is an internal `/docs/...`
  * path. External URLs (http/https/mailto) and same-page anchors (`#...`) are
- * ignored. Any `#fragment` on an internal link is stripped before resolution
- * (we only verify the page exists, not the heading anchor).
+ * ignored. Root-relative links outside `/docs` must name a file in `public`.
  */
 function extractInternalDocLinks(markdown: string): string[] {
   const links: string[] = []
@@ -92,7 +102,7 @@ function extractInternalDocLinks(markdown: string): string[] {
   let match: RegExpExecArray | null
   while ((match = linkRegex.exec(markdown)) !== null) {
     const href = match[1].trim()
-    if (href.startsWith('/docs/') || href === '/docs') {
+    if (href.startsWith('/') && !href.startsWith('//')) {
       links.push(href)
     }
   }
@@ -125,9 +135,24 @@ function main(): void {
     const fromKey = docSlug.join('/')
     for (const href of extractInternalDocLinks(doc.content)) {
       const target = href.split('#')[0].split('?')[0]
+      if (!(href.startsWith('/docs/') || href === '/docs')) {
+        if (!existsSync(join(PUBLIC_DIR, target))) {
+          errors.push(`Broken root-relative link in /docs/${fromKey}: ${href}`)
+        }
+        continue
+      }
+      const fragment = href.includes('#') ? href.split('#')[1] : ''
       const targetSlug = hrefToSlug(href)
       if (targetSlug === '') continue // bare `/docs` → docs landing, always valid
-      if (slugSet.has(targetSlug)) continue
+      if (slugSet.has(targetSlug)) {
+        if (fragment !== '') {
+          const targetDoc = getDocBySlug(targetSlug.split('/'))
+          if (targetDoc !== null && !headingIds(targetDoc.content).has(fragment)) {
+            errors.push(`Broken anchor in /docs/${fromKey}: ${href}`)
+          }
+        }
+        continue
+      }
       if (redirectMap.has(target)) {
         warnings.push(
           `Redirected internal link in /docs/${fromKey}: ${href} — update to ${redirectMap.get(target)}`,
