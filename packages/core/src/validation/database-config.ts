@@ -273,7 +273,7 @@ function refuseNonPascalListKeys(config: OpenSaasConfig): ConfigRefusal[] {
       listKey,
       entry: `lists.${listKey}`,
       reason: 'invalid-list-key' as const,
-      message: `List "${listKey}": list keys must be PascalCase (e.g. "${listKey.charAt(0).toUpperCase()}${listKey.slice(1).replace(/[_-]+(.)/g, (_, c: string) => c.toUpperCase())}"). Rename the key in lists.`,
+      message: `List "${listKey}": list keys must be PascalCase (e.g. "${listKey.charAt(0).toUpperCase()}${listKey.slice(1)}"). Rename the key in lists.`,
     }))
 }
 
