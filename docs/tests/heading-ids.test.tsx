@@ -14,3 +14,9 @@ test('headings carry the id extractHeadings computes', () => {
     assert.ok(html.includes(`id="${id}"`), `missing id ${id} in ${html}`)
   }
 })
+
+test('an explicit id annotation is kept', () => {
+  const tree = Markdoc.transform(Markdoc.parse('## Title {% #custom %}\n'), markdocConfig)
+  const html = renderToStaticMarkup(Markdoc.renderers.react(tree, React) as React.ReactElement)
+  assert.ok(html.includes('id="custom"'), html)
+})

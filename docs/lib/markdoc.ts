@@ -27,7 +27,7 @@ export const markdocConfig = {
         const children = node.transformChildren(config)
         return new Markdoc.Tag(
           `h${node.attributes.level}`,
-          { ...attributes, id: slugifyHeading(nodeText(node)) },
+          { ...attributes, id: attributes.id ?? (slugifyHeading(nodeText(node)) || undefined) },
           children,
         )
       },

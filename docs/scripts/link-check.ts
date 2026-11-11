@@ -31,9 +31,14 @@ import { DOC_REDIRECTS } from '../lib/redirects.mjs'
 
 const PUBLIC_DIR = join(import.meta.dirname, '..', 'public')
 
+function stripFences(content: string): string {
+  return content.replace(/^(```|~~~)[\s\S]*?^\1.*$/gm, '')
+}
+
 function headingIds(content: string): Set<string> {
   const ids = new Set<string>()
-  for (const match of content.matchAll(/^#{1,6}\s+(.+)$/gm)) ids.add(slugifyHeading(match[1]))
+  for (const match of stripFences(content).matchAll(/^#{1,6}\s+(.+)$/gm))
+    ids.add(slugifyHeading(match[1]))
   return ids
 }
 
@@ -100,7 +105,7 @@ function extractInternalDocLinks(markdown: string): string[] {
   const links: string[] = []
   const linkRegex = /\[[^\]]*\]\(([^)]+)\)/g
   let match: RegExpExecArray | null
-  while ((match = linkRegex.exec(markdown)) !== null) {
+  while ((match = linkRegex.exec(stripFences(markdown))) !== null) {
     const href = match[1].trim()
     if (href.startsWith('/') && !href.startsWith('//')) {
       links.push(href)
@@ -136,7 +141,7 @@ function main(): void {
     for (const href of extractInternalDocLinks(doc.content)) {
       const target = href.split('#')[0].split('?')[0]
       if (!(href.startsWith('/docs/') || href === '/docs')) {
-        if (!existsSync(join(PUBLIC_DIR, target))) {
+        if (!target.split('/').includes('..') === false && existsSync(join(PUBLIC_DIR, target))) {
           errors.push(`Broken root-relative link in /docs/${fromKey}: ${href}`)
         }
         continue
