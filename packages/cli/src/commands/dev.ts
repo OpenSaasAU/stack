@@ -328,7 +328,9 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
         error instanceof Error ? error.message : String(error)
       }`,
     )
-    say('The app keeps serving the contract the database already carries.')
+    say(
+      'The database and generated bundle stay at the last good contract. Routes that import opensaas.config.ts will error until the file is fixed.',
+    )
     return undefined
   }
 
@@ -575,7 +577,12 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
 
     if (applied.plan.destructive || completedFailedPromote) restartApp(say)
 
-    reply.finish(true, 'Applied, promoted.')
+    reply.finish(
+      true,
+      applied.plan.operations.length === 0 && !completedFailedPromote
+        ? 'Nothing to apply: the database already matches the config.'
+        : 'Applied, promoted.',
+    )
   }
 
   try {
