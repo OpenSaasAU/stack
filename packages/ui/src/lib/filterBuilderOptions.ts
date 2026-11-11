@@ -393,8 +393,21 @@ function plainDate(value: string): Date | null {
   return localDay(date) === value.trim() ? date : null
 }
 
+const DAY_ONLY =
+  /^(?:\d{1,2}[/.-]\d{1,2}[/.-]\d{4}|[A-Za-z]{3,9}\.? \d{1,2},? \d{4}|\d{1,2} [A-Za-z]{3,9}\.?,? \d{4})$/
+
+function typedDay(value: string): Date | null {
+  const plain = plainDate(value)
+  if (plain) return plain
+  const typed = value.trim()
+  if (!DAY_ONLY.test(typed) || PLAIN_DATE.test(typed)) return null
+  const parsed = new Date(typed)
+  if (Number.isNaN(parsed.getTime())) return null
+  return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate())
+}
+
 export function dayBoundary(day: string, end: boolean): string | null {
-  const date = plainDate(day)
+  const date = typedDay(day)
   if (!date) return null
   if (end) date.setHours(23, 59, 59, 999)
   return localInstant(date)

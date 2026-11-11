@@ -9,6 +9,7 @@ import {
   chipEditText,
   chipsOf,
   conditionLabel,
+  conditionTokens,
   conditionsOf,
   datePresets,
   dayBoundary,
@@ -288,6 +289,17 @@ describe('a typed or pasted timestamp token', () => {
   it('shows a plain date already in a URL as written', () => {
     const [chip] = chipsOf(ungrouped(hydrateTokens('at:2026-01-01..2026-01-31')), everyField)
     expect(chip.description.sentence).toBe('At between 2026-01-01 and 2026-01-31')
+  })
+})
+
+describe('a date-only eq on a timestamp', () => {
+  it('yields the same tokens for 8/4/2026 as for 2026-08-04', () => {
+    expect(conditionTokens(at, 'eq', '8/4/2026')).toEqual(conditionTokens(at, 'eq', '2026-08-04'))
+  })
+
+  it('leaves a typed time as one instant', () => {
+    const [token] = conditionTokens(at, 'eq', '2026-08-04 10:00')
+    expect(token?.operator).toBe('eq')
   })
 })
 
