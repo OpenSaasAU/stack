@@ -280,6 +280,7 @@ export async function resetPasswordAction(input: ResetPasswordInput): Promise<Au
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
+import { signOutAndConfirm } from '@opensaas/stack-auth/server'
 import type {
   ${authActionTypeImports.join(',\n  ')},
 } from '@opensaas/stack-auth/ui'
@@ -301,8 +302,8 @@ export async function signInAction(input: SignInInput): Promise<AuthActionResult
 }
 
 export async function signOutAction(): Promise<void> {
-  await auth.api.signOut({ headers: await headers() })
-  redirect('/sign-in')
+  const logoutUrl = await signOutAndConfirm(auth, await headers())
+  redirect(logoutUrl ?? '/sign-in')
 }${passwordActionSnippets}${socialActionSnippet}
 `,
     })

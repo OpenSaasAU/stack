@@ -884,8 +884,8 @@ export async function signInAction(input: SignInInput): Promise<AuthActionResult
 }
 
 export async function signOutAction(): Promise<void> {
-  await auth.api.signOut({ headers: await headers() })
-  redirect('/sign-in')
+  const logoutUrl = await signOutAndConfirm(auth, await headers())
+  redirect(logoutUrl ?? '/sign-in')
 }
 
 export async function signUpAction(input: SignUpInput): Promise<AuthActionResult> {

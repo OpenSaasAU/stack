@@ -730,6 +730,40 @@ export async function getSessionFromAuth<TResolvedSession>(
   return result
 }
 
+export interface SignOutAuth {
+  api: {
+    signOut: (args: { headers: Headers }) => Promise<unknown>
+    getSession: (args: {
+      headers: Headers
+      query?: { disableCookieCache?: boolean }
+    }) => Promise<unknown>
+  }
+}
+
+/**
+ * Signs out and confirms the session is really gone. Returns the identity
+ * provider's logout URL when better-auth supplies one, else `null`. Throws
+ * when the session survives, because better-auth swallows a failed delete.
+ */
+export async function signOutAndConfirm(
+  auth: SignOutAuth,
+  headers: Headers,
+): Promise<string | null> {
+  const result = await auth.api.signOut({ headers })
+  const remaining = await auth.api.getSession({
+    headers,
+    query: { disableCookieCache: true },
+  })
+  if (remaining) throw new Error('Sign out failed: the session is still active')
+  if (typeof result === 'object' && result !== null) {
+    const url = Reflect.get(result, 'url')
+    if (typeof url === 'string' && url.length > 0 && Reflect.get(result, 'redirect') !== false) {
+      return url
+    }
+  }
+  return null
+}
+
 async function resolveSessionFillIn(auth: object): Promise<SessionFillIn | null> {
   const accessor = Reflect.get(auth, SESSION_FILL_IN)
   if (typeof accessor !== 'function') return null
