@@ -238,12 +238,20 @@ When you open this project in Claude Code, the MCP server will be automatically 
   }
 }
 
+const PROJECT_TYPES: readonly string[] = ['prisma', 'nextjs', 'keystone']
+
 async function migrateCommand(options: MigrateOptions): Promise<void> {
   const cwd = process.cwd()
 
   console.log(chalk.bold.cyan('\n🚀 OpenSaaS Stack Migration\n'))
 
   const spinner = ora('Detecting project type...').start()
+
+  if (options.type !== undefined && !PROJECT_TYPES.includes(options.type)) {
+    spinner.fail(chalk.red(`Unknown project type "${options.type}"`))
+    console.log(chalk.dim(`\nUse --type with one of: ${PROJECT_TYPES.join(', ')}.`))
+    process.exit(1)
+  }
 
   let projectTypes: ProjectType[]
   if (options.type) {

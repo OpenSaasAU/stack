@@ -651,9 +651,7 @@ describe('devCommand', () => {
       write()
       watcherHandlers.get('change')?.()
       await until(() =>
-        said
-          .slice(before)
-          .some((line) => /promoted|Plan id:|keeps serving the contract/.test(line)),
+        said.slice(before).some((line) => /promoted|Plan id:|last good contract/.test(line)),
       )
       await new Promise((resolve) => setTimeout(resolve, 50))
     }
