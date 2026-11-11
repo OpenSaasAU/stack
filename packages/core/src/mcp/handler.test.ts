@@ -459,13 +459,31 @@ describe('the MCP surface', () => {
     )
 
     test(
-      'a malformed JSON body is a -32700 parse error with status 400',
+      'an unauthenticated GET keeps its 401 challenge',
       async () => {
+        const response = await handlersFor(undefined, async () => null).GET(
+          new Request('http://localhost/api/mcp', { method: 'GET' }),
+        )
+
+        expect(response.status).toBe(401)
+      },
+      BOOT,
+    )
+
+    test.each([
+      ['{bad json', -32700, 'Parse error'],
+      ['', -32700, 'Parse error'],
+      ['null', -32600, 'Invalid Request'],
+      ['42', -32600, 'Invalid Request'],
+      ['[]', -32600, 'Invalid Request'],
+    ])(
+      'the body %j is a 400 JSON-RPC error',
+      async (raw, code, message) => {
         const response = await handlersFor().POST(
           new Request('http://localhost/api/mcp', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: '{bad json',
+            body: raw === '' ? undefined : raw,
           }),
         )
 
@@ -473,7 +491,7 @@ describe('the MCP surface', () => {
         expect(await response.json()).toEqual({
           jsonrpc: '2.0',
           id: null,
-          error: { code: -32700, message: 'Parse error' },
+          error: { code, message },
         })
       },
       BOOT,

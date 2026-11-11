@@ -216,28 +216,22 @@ export function createMcpHandlers(options: {
       })
     }
 
+    if (req.method !== 'POST') {
+      return new Response(null, { status: 405, headers: { Allow: 'POST' } })
+    }
+
     let parsed: unknown
     try {
       parsed = await req.json()
-    } catch {
-      return new Response(
-        JSON.stringify({
-          jsonrpc: '2.0',
-          id: null,
-          error: { code: -32700, message: 'Parse error' },
-        }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } },
-      )
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) throw error
+      return jsonRpcError(-32700, 'Parse error')
     }
 
+    if (!isRpcEnvelope(parsed)) return jsonRpcError(-32600, 'Invalid Request')
+
     try {
-      const body = parsed as {
-        jsonrpc?: string
-        id?: number | string
-        method: string
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- MCP protocol params are dynamic and depend on tool being called
-        params?: any
-      }
+      const body = parsed
 
       if (body.method === 'initialize') {
         return handleInitialize(body.params, body.id)
@@ -283,14 +277,36 @@ export function createMcpHandlers(options: {
     }
   }
 
-  const methodNotAllowed = async () =>
-    new Response(null, { status: 405, headers: { Allow: 'POST' } })
-
   return {
-    GET: methodNotAllowed,
+    GET: handler,
     POST: handler,
-    DELETE: methodNotAllowed,
+    DELETE: handler,
   }
+}
+
+function jsonRpcError(code: number, message: string): Response {
+  return new Response(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code, message } }), {
+    status: 400,
+    headers: { 'Content-Type': 'application/json' },
+  })
+}
+
+type RpcEnvelope = {
+  jsonrpc?: string
+  id?: number | string
+  method: string
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- MCP protocol params are dynamic and depend on tool being called
+  params?: any
+}
+
+function isRpcEnvelope(value: unknown): value is RpcEnvelope {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    'method' in value &&
+    typeof value.method === 'string'
+  )
 }
 
 /**
