@@ -271,6 +271,7 @@ action performs a server-side `redirect()` to the provider and resolves to `void
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
+import { signOutAndConfirm } from '@opensaas/stack-auth/server'
 import type {
   AuthActionResult,
   SignInInput,
@@ -1984,6 +1985,7 @@ export const POST = auth.handler
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
+import { signOutAndConfirm } from '@opensaas/stack-auth/server'
 import type { AuthActionResult, SignInInput } from '@opensaas/stack-auth/ui'
 
 export async function signInAction(input: SignInInput): Promise<AuthActionResult> {

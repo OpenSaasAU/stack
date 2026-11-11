@@ -1,6 +1,7 @@
 ---
 '@opensaas/stack-auth': minor
 '@opensaas/stack-cli': patch
+'@opensaas/stack-ui': patch
 create-opensaas-app: patch
 ---
 

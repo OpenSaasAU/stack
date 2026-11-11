@@ -859,6 +859,7 @@ still succeeds and the cookie is still cleared while the row stays valid.
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
+import { signOutAndConfirm } from '@opensaas/stack-auth/server'
 import type {
   AuthActionResult,
   SignInInput,
