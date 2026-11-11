@@ -91,13 +91,24 @@ function startMCPServer(): void {
 
   const serverPath = getServerPath()
 
-  const child = spawn('node', [serverPath], {
-    stdio: 'inherit',
+  const child = spawn(process.execPath, [serverPath], {
+    stdio: ['pipe', 'inherit', 'inherit'],
   })
+
+  process.stdin.pipe(child.stdin)
+  process.stdin.on('end', () => child.kill('SIGTERM'))
+
+  for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP'] as const) {
+    process.on(signal, () => child.kill(signal))
+  }
 
   child.on('error', (error) => {
     console.error('❌ Error starting server:', error.message)
     process.exit(1)
+  })
+
+  child.on('exit', (code, signal) => {
+    process.exit(code ?? (signal ? 1 : 0))
   })
 }
 
