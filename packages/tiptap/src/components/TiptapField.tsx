@@ -72,7 +72,7 @@ export function TiptapField({
       immediatelyRender: false,
       onUpdate: ({ editor }) => {
         if (!isEditable || !onChange) return
-        // ProseMirror attrs are null-prototype; React server actions encode those as "$T" (#2302)
+        // Null-prototype attrs reach server actions as "$T"; keep this clone
         const json: JSONContent = JSON.parse(JSON.stringify(editor.getJSON()))
         lastEmitted.current = json
         onChange(json)

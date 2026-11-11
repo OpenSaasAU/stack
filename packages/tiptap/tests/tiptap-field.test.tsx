@@ -60,6 +60,15 @@ function ControlledField({
   )
 }
 
+function hasOnlyPlainObjects(value: unknown): boolean {
+  if (Array.isArray(value)) return value.every(hasOnlyPlainObjects)
+  if (value === null || typeof value !== 'object') return true
+  return (
+    Object.getPrototypeOf(value) === Object.prototype &&
+    Object.values(value).every(hasOnlyPlainObjects)
+  )
+}
+
 describe('TiptapField', () => {
   describe('does not emit an edit nobody made', () => {
     it('emits nothing on mount with a null value', async () => {
@@ -336,11 +345,44 @@ describe('TiptapField accessibility', () => {
 
   it('emits plain-prototype objects so a server action can serialise attrs', async () => {
     const onChange = vi.fn()
-    const { container } = render(<ControlledField initial={null} onChange={onChange} />)
+    const { container } = render(
+      <TiptapField
+        name="content"
+        label="Content"
+        value={null}
+        onChange={onChange}
+        features={{ heading: { levels: [2] }, link: {} }}
+      />,
+    )
     const editor = await mounted(container)
 
     act(() => {
-      editor.chain().setContent(paragraph('title')).setNode('heading', { level: 2 }).run()
+      editor
+        .chain()
+        .setContent(
+          {
+            type: 'doc',
+            content: [
+              {
+                type: 'heading',
+                attrs: { level: 2 },
+                content: [{ type: 'text', text: 'title' }],
+              },
+              {
+                type: 'paragraph',
+                content: [
+                  {
+                    type: 'text',
+                    text: 'link',
+                    marks: [{ type: 'link', attrs: { href: 'https://example.com' } }],
+                  },
+                ],
+              },
+            ],
+          },
+          { emitUpdate: true },
+        )
+        .run()
     })
 
     await waitFor(() => expect(onChange).toHaveBeenCalled())
@@ -349,5 +391,6 @@ describe('TiptapField accessibility', () => {
     expect(heading?.type).toBe('heading')
     expect(Object.getPrototypeOf(heading?.attrs)).toBe(Object.prototype)
     expect(heading?.attrs).toEqual({ level: 2 })
+    expect(hasOnlyPlainObjects(emitted)).toBe(true)
   })
 })
