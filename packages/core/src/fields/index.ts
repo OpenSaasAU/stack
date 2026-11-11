@@ -193,8 +193,33 @@ function fitsDecimal(value: unknown, precision: number, scale: number): boolean 
   const text = typeof value === 'number' ? value.toFixed(20).replace(/\.?0+$/, '') : value.trim()
   const parts = decimalParts(text)
   if (parts === null) return false
-  const integerDigits = parts[2].replace(/^0+/, '').length
-  return integerDigits <= precision - scale
+  const fraction = parts[3] ?? ''
+  let scaled = BigInt(`${parts[2] || '0'}${fraction.slice(0, scale).padEnd(scale, '0')}`)
+  if (fraction.length > scale && fraction.charCodeAt(scale) >= 53) scaled += 1n
+  return (scaled === 0n ? 1 : scaled.toString().length) <= precision
+}
+
+const INT32_MIN = -2147483648
+const INT32_MAX = 2147483647
+const INT64_MIN = -(2n ** 63n)
+const INT64_MAX = 2n ** 63n - 1n
+
+const hasNul = (root: unknown): boolean => {
+  const seen = new Set<object>()
+  const pending: unknown[] = [root]
+  while (pending.length > 0) {
+    const value = pending.pop()
+    if (typeof value === 'string') {
+      if (value.includes('\u0000')) return true
+    } else if (typeof value === 'object' && value !== null && !seen.has(value)) {
+      seen.add(value)
+      if (Array.isArray(value)) pending.push(...value)
+      else {
+        for (const [key, child] of Object.entries(value)) pending.push(key, child)
+      }
+    }
+  }
+  return false
 }
 
 function isCalendarDate(value: unknown): boolean {
@@ -202,6 +227,7 @@ function isCalendarDate(value: unknown): boolean {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
   if (match === null) return false
   const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])]
+  if (year < 1) return false
   const date = new Date(0)
   date.setUTCFullYear(year, month - 1, day)
   return (
@@ -297,6 +323,7 @@ export function text<
   TKey extends import('../config/types.js').FieldKeys<TTypeInfo['fields']> =
     import('../config/types.js').FieldKeys<TTypeInfo['fields']>,
 >(options?: Omit<TextField<TTypeInfo, TKey>, 'type' | 'nullable'>): TextField<TTypeInfo, TKey> {
+  const nullable = options?.db?.isNullable ?? !options?.validation?.isRequired
   const zodSchema = (fieldName: string, operation: 'create' | 'update') => {
     const validation = options?.validation
     const isRequired = validation?.isRequired
@@ -325,14 +352,13 @@ export function text<
           })
         : withMin
 
-    if (isRequired && operation === 'update') {
-      return withMax.optional()
-    }
-
-    return !isRequired ? withMax.optional().nullable() : withMax
+    const noNul = withMax.refine((value) => !value.includes('\u0000'), {
+      message: `${formatFieldName(fieldName)} must not contain NUL characters`,
+    })
+    if (isRequired && operation === 'update') return noNul.optional()
+    if (isRequired) return noNul
+    return nullable ? noNul.optional().nullable() : noNul.optional()
   }
-
-  const nullable = options?.db?.isNullable ?? !options?.validation?.isRequired
 
   return {
     type: 'text',
@@ -397,9 +423,19 @@ export function integer<
     type: 'integer',
     ...options,
     getZodSchema: (fieldName: string, operation: 'create' | 'update') => {
-      const baseSchema = z.number({
-        message: `${formatFieldName(fieldName)} must be a number`,
-      })
+      const whole = z
+        .number({ message: `${formatFieldName(fieldName)} must be a number` })
+        .int({ message: `${formatFieldName(fieldName)} must be a whole number` })
+      const baseSchema =
+        options?.db?.nativeType === undefined
+          ? whole
+              .min(INT32_MIN, {
+                message: `${formatFieldName(fieldName)} is below the 32-bit range`,
+              })
+              .max(INT32_MAX, {
+                message: `${formatFieldName(fieldName)} is above the 32-bit range`,
+              })
+          : whole
 
       const withMin =
         options?.validation?.min !== undefined
@@ -417,7 +453,10 @@ export function integer<
 
       const isRequired = options?.validation?.isRequired
       if (isRequired && operation === 'update') return withMax.optional()
-      return !isRequired ? withMax.optional().nullable() : withMax
+      if (isRequired) return withMax
+      return (options?.db?.isNullable ?? !isRequired)
+        ? withMax.optional().nullable()
+        : withMax.optional()
     },
     getContractField: (fieldName: string, listKey: string) => {
       checkedDefault(
@@ -533,7 +572,9 @@ export function decimal<
         },
       )
 
-      let schema = baseSchema
+      let schema = baseSchema.refine((val) => fitsDecimal(val, precision, scale), {
+        message: `${formatFieldName(fieldName)} must be a finite number with at most ${precision - scale} integer digits`,
+      })
 
       if (options?.validation?.min !== undefined) {
         const minValue = parseFloat(options.validation.min)
@@ -563,7 +604,10 @@ export function decimal<
 
       const isRequired = options?.validation?.isRequired
       if (isRequired && operation === 'update') return schema.optional()
-      return !isRequired ? schema.optional().nullable() : schema
+      if (isRequired) return schema
+      return (options?.db?.isNullable ?? !isRequired)
+        ? schema.optional().nullable()
+        : schema.optional()
     },
     getContractField: (fieldName: string, listKey: string) => {
       const size = checkedDecimalSize(
@@ -667,7 +711,9 @@ export function bigInt<
           return BigInt(trimmed)
         })
 
-      let schema = coerced
+      let schema = coerced.refine((val) => val >= INT64_MIN && val <= INT64_MAX, {
+        message: `${formatFieldName(fieldName)} is outside the 64-bit range`,
+      })
 
       if (validation?.min !== undefined) {
         const min = validation.min
@@ -684,7 +730,10 @@ export function bigInt<
       }
 
       if (isRequired && operation === 'update') return schema.optional()
-      return !isRequired ? schema.optional().nullable() : schema
+      if (isRequired) return schema
+      return (options?.db?.isNullable ?? !isRequired)
+        ? schema.optional().nullable()
+        : schema.optional()
     },
     getContractField: (fieldName: string, listKey: string) => {
       const defaultValue = options?.defaultValue
@@ -741,8 +790,11 @@ export function checkbox<
     type: 'checkbox',
     ...options,
     defaultValue: options?.defaultValue ?? false,
-    getZodSchema: () => {
-      return z.boolean().optional().nullable()
+    getZodSchema: (fieldName: string) => {
+      const schema = z
+        .boolean({ message: `${formatFieldName(fieldName)} must be true or false` })
+        .optional()
+      return options?.db?.isNullable === true ? schema.nullable() : schema
     },
     getContractField: (fieldName: string, listKey: string) => {
       checkedDefault(
@@ -915,13 +967,18 @@ export function calendarDay<
         .regex(/^\d{4}-\d{2}-\d{2}$/, {
           message: `${formatFieldName(fieldName)} must be in YYYY-MM-DD format`,
         })
+        .refine(isCalendarDate, {
+          message: `${formatFieldName(fieldName)} must be a real calendar date in YYYY-MM-DD format`,
+        })
 
       if (isRequired && operation === 'create') {
         return dateSchema
       } else if (isRequired && operation === 'update') {
         return dateSchema.optional()
       } else {
-        return dateSchema.optional().nullable()
+        return (options?.db?.isNullable ?? !isRequired)
+          ? dateSchema.optional().nullable()
+          : dateSchema.optional()
       }
     },
     getContractField: (fieldName: string, listKey: string) => {
@@ -1185,7 +1242,7 @@ export function select<
       if (options.validation?.isRequired) {
         if (operation === 'update') schema = schema.optional()
       } else {
-        schema = schema.optional().nullable()
+        schema = nullable ? schema.optional().nullable() : schema.optional()
       }
 
       return schema
@@ -1637,7 +1694,9 @@ export function json<
       const validation = options?.validation
       const isRequired = validation?.isRequired
 
-      const baseSchema = z.unknown()
+      const baseSchema = z.unknown().refine((value) => !hasNul(value), {
+        message: `${formatFieldName(fieldName)} must not contain NUL characters`,
+      })
 
       if (isRequired && operation === 'create') {
         // Required in create mode: a value must be provided and it must be

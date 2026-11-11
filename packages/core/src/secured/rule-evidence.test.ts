@@ -606,7 +606,7 @@ describe('what a read rule can rest on', () => {
             where: { id: ticketId },
             data: { hasPrivateNote: value },
           }),
-        ).rejects.toThrow(/hasPrivateNote/)
+        ).rejects.toThrow(/hasPrivateNote|has private note/i)
 
         expect(await summaryFor('bob')).toBeUndefined()
       },
