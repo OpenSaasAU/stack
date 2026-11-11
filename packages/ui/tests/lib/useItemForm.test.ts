@@ -604,3 +604,22 @@ describe('useItemForm with an invalid field', () => {
     expect(clearedFirst).not.toHaveBeenCalled()
   })
 })
+
+describe('a submit that ends in a Next redirect', () => {
+  it('lets the redirect through instead of reporting it as a form error', async () => {
+    const { redirect } = await import('next/navigation.js')
+    const onSubmit = vi.fn(async () => {
+      redirect('/admin/post')
+    })
+    const { result } = renderHook(() =>
+      useItemForm({ fields: { title: text() }, mode: 'create', onSubmit }),
+    )
+
+    await expect(
+      act(async () => {
+        result.current.handleSubmit({ preventDefault: () => {}, stopPropagation: () => {} })
+      }),
+    ).rejects.toMatchObject({ digest: expect.stringContaining('NEXT_REDIRECT') })
+    expect(result.current.generalError).toBeNull()
+  })
+})

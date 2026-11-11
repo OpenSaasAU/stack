@@ -205,8 +205,11 @@ test.describe('Admin UI', () => {
       await page.click('button[type="submit"]')
       await page.waitForURL(/\/admin\/post$/, { timeout: 10000 })
 
-      // Click to edit - use the Edit link in the Actions column
-      await page.locator('tr:has-text("Edit Test Post")').locator('a:has-text("Edit")').click()
+      // Open the post through its row title link
+      await page
+        .locator('tr:has-text("Edit Test Post")')
+        .locator('[data-slot="row-title-link"]')
+        .click()
       await page.waitForLoadState('networkidle')
 
       // Fields should be populated

@@ -99,7 +99,11 @@ export type {
 // (ADR-0017). Additive: a field without one is simply not filterable.
 export type {
   FilterSpec,
+  FilterNegation,
   FilterOperator,
+  FilterDatePicker,
   FilterCondition,
   FilterValueSource,
+  FilterValueFormat,
+  FilterValuePattern,
 } from './filter/index.js'

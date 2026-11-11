@@ -641,6 +641,6 @@ const editor = useEditor({
 ## Learn More
 
 - [Tiptap Documentation](https://tiptap.dev)
-- [Custom Fields Guide](/guides/custom-fields)
-- [Field Types Reference](/api-reference/fields)
-- [Access Control Guide](/guides/access-control)
+- [Custom Fields Guide](/docs/how-to/custom-fields)
+- [Field Types Reference](/docs/reference/fields-api)
+- [Access Control Guide](/docs/concepts/access-control)

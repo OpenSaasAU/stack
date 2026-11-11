@@ -56,7 +56,7 @@ test.describe('json-demo custom field registration', () => {
     // untouched field would show up here as the editor holding the text
     // `"{}"` instead of nothing.
     const productRow = page.locator('tr', { has: page.locator(`text=${uniqueName}`) })
-    await productRow.getByRole('link', { name: 'Edit' }).click()
+    await productRow.locator('[data-slot="row-title-link"]').click()
     await page.waitForLoadState('networkidle')
 
     await expect(page.locator('textarea[name="settings"]')).toHaveValue('')

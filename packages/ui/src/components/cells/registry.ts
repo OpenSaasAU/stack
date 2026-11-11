@@ -34,6 +34,11 @@ export type CellComponentProps = {
   fieldName: string
   /** Admin base path, used by relationship Cells to build links. */
   basePath?: string
+  /**
+   * Where the value links, when the list view resolves a link for it: a to-many
+   * count's matching rows on the other list.
+   */
+  href?: string
 }
 
 /**
@@ -68,6 +73,23 @@ const cellComponentRegistry: Record<string, CellComponent> = {
   password: PasswordCell,
   json: JsonCell,
 }
+
+/**
+ * The admin UI's own Cells that render no anchor of their own, so a row title
+ * may wrap them in a link. {@link registerCellComponent} never adds to it.
+ */
+export const anchorFreeCellComponents: ReadonlySet<CellComponent> = Object.freeze(
+  new Set<CellComponent>([
+    TextCell,
+    IntegerCell,
+    CheckboxCell,
+    SelectCell,
+    TimestampCell,
+    CalendarDayCell,
+    PasswordCell,
+    JsonCell,
+  ]),
+)
 
 /**
  * Register a default Cell component for a field type. A third-party field

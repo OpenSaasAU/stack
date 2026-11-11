@@ -2,357 +2,1085 @@
 
 import * as React from 'react'
 import { usePathname, useRouter } from 'next/navigation.js'
-import { Plus, X } from 'lucide-react'
-import type { FilterFieldSuggestion, FilterOperator, FilterValueSource } from '@opensaas/stack-core'
-import { Card } from '../primitives/card.js'
-import { Input } from '../primitives/input.js'
-import { Button } from '../primitives/button.js'
-import { cn, formatFieldName } from '../lib/utils.js'
-import { type FilterRow, queryToState, stateToQuery } from '../lib/filterBuilderState.js'
+import { Check, Search, X } from 'lucide-react'
+import type { FilterFieldSuggestion, FilterToken } from '@opensaas/stack-core'
+import { Popover, PopoverAnchor, PopoverContent } from '../primitives/popover.js'
+import { cn } from '../lib/utils.js'
+import {
+  alternativeRefusal,
+  chipEditText,
+  chipsOf,
+  conditionLabel,
+  conditionsOf,
+  conditionTakesValue,
+  draftOptions,
+  draftTokens,
+  entriesQuery,
+  fieldLabel,
+  hydrateEntries,
+  isFieldCondition,
+  isRecordLookupField,
+  joinChips,
+  normaliseTokens,
+  placeChoice,
+  placeEntries,
+  rootOptions,
+  singleTokenOptions,
+  splitChips,
+  splitComparison,
+  typedRecordLookup,
+  unitsOf,
+  withoutChip,
+  type FilterBuilderCondition,
+  type FilterChip,
+  type FilterDraft,
+  type FilterEntry,
+  type FilterOption,
+  type FilterRecord,
+  type GroupEdit,
+  type RecordLookup,
+  type ResolvedFilterRecord,
+} from '../lib/filterBuilderOptions.js'
+import { useRelationshipSearch } from '../lib/useRelationshipSearch.js'
+import type { ServerActionInput } from '../server/types.js'
 
-/**
- * Human-readable labels for the grammar's operators. `eq` reads as "is" because
- * every field's `eq` mapping is an equality/contains match; the comparisons only
- * ever appear on numeric/date fields.
- */
-const OPERATOR_LABELS: Record<FilterOperator, string> = {
-  eq: 'is',
-  gt: 'greater than',
-  gte: 'greater or equal',
-  lt: 'less than',
-  lte: 'less or equal',
-}
+const NO_RECORDS: FilterRecord[] = []
+const LOOKUP_PAGE_SIZE = 10
+const OR_PREFIX = /^or\s$/i
 
-/**
- * Native `<select>`/`<option>` controls (rather than a Radix popover) keep the
- * builder's field/operator/value pickers robust across jsdom unit tests and real
- * browsers, and serialisation-free. Styled to match the `Input` primitive using
- * theme tokens only.
- */
-const NATIVE_CONTROL_CLASS =
-  'h-10 rounded-md max-md:max-w-full border border-input bg-background px-3 py-2 text-sm text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50'
+const loose = (tokens: readonly FilterToken[]): FilterEntry[] =>
+  tokens.map((token) => ({ token, group: null }))
 
 /**
  * Per-part `classNames` slots for {@link FilterBuilder}. Each merges onto its
  * `data-slot` part via `cn`, consistent with the other admin components' Slot
- * extension seam (#709/#729/#733).
+ * extension seam (ADR-0016).
  */
 export interface FilterBuilderClassNames {
-  /** Card wrapper (`data-slot="filter-builder"`). */
+  /** The wrapper (`data-slot="filter-builder"`). */
   root?: string
-  /** Wrapper around the structured condition rows. */
-  conditions?: string
-  /** A single condition row (`data-slot="filter-builder-condition"`). */
-  condition?: string
-  /** The field `<select>` in a row (`data-slot="filter-builder-field"`). */
-  field?: string
-  /** The operator `<select>` in a row (`data-slot="filter-builder-operator"`). */
-  operator?: string
-  /** The value input/select in a row (`data-slot="filter-builder-value"`). */
-  value?: string
-  /** The per-row remove button (`data-slot="filter-builder-remove"`). */
-  remove?: string
-  /** The free-text form row (`data-slot="filter-builder-form"`). */
-  form?: string
-  /** The free-text search input (`data-slot="filter-builder-search"`). */
-  search?: string
-  /** The "Add filter" button (`data-slot="filter-builder-add"`). */
-  add?: string
-  /** The Apply button (`data-slot="filter-builder-apply"`). */
-  apply?: string
+  /** The bar holding the chips and the input (`data-slot="filter-builder-bar"`). */
+  bar?: string
+  /** One committed Filter token (`data-slot="filter-builder-chip"`). */
+  chip?: string
+  /** A chip's remove button (`data-slot="filter-builder-chip-remove"`). */
+  chipRemove?: string
+  /** An OR group of chips, bounded as one unit (`data-slot="filter-builder-group"`). */
+  group?: string
+  /** The `and` or `or` button between chips (`data-slot="filter-builder-connector"`). */
+  connector?: string
+  /** The field being built, before its value (`data-slot="filter-builder-draft"`). */
+  draft?: string
+  /** The combobox input (`data-slot="filter-builder-input"`). */
+  input?: string
   /** The Clear button (`data-slot="filter-builder-clear"`). */
   clear?: string
+  /** The suggestion menu (`data-slot="filter-builder-menu"`). */
+  menu?: string
+  /** One suggestion (`data-slot="filter-builder-option"`). */
+  option?: string
+  /** The in-place explanation of a value that does not fit (`data-slot="filter-builder-hint"`). */
+  hint?: string
+  /** The date inputs offered for a date field (`data-slot="filter-builder-dates"`). */
+  dates?: string
+}
+
+/** Imperative entry points a page holding a {@link FilterBuilder} `ref` may call. */
+export interface FilterBuilderHandle {
+  /**
+   * Open the builder with `field` staged, so the next step is choosing its
+   * condition or value. Does nothing for a field absent from `suggestions`.
+   */
+  startFilter: (field: string) => void
+  /** The query the builder holds now, including a change whose navigation has not landed. */
+  currentQuery: () => string
+  /**
+   * Add `tokens` to the builder's current query, replacing an earlier choice
+   * on the same field, and apply the result.
+   */
+  addTokens: (tokens: FilterToken[]) => void
+  /** Replace the builder's query with `query` and apply it. */
+  applyQuery: (query: string) => void
 }
 
 export interface FilterBuilderProps {
+  /** Receives the {@link FilterBuilderHandle}. */
+  ref?: React.Ref<FilterBuilderHandle>
   /**
    * Serializable per-field filter metadata (field name, supported operators,
-   * free-text flag, value source). Produced server-side by the core engine's
-   * `collectFilterSuggestions` — it carries no functions, so it crosses the
-   * server/client boundary. When empty, only the free-text box is shown.
+   * free-text flag, value source, value format). Produced server-side by the
+   * core engine's `collectFilterSuggestions` — it carries no functions, so it
+   * crosses the server/client boundary. When empty, only free-text search is offered.
    */
   suggestions: FilterFieldSuggestion[]
-  /** The current `?search=` query, used to hydrate the builder on mount. */
+  /** The current `?search=` query, shown as chips. A change to it replaces them. */
   defaultValue?: string
   /**
-   * Called with the serialised `?search=` query when the user applies filters.
-   * When omitted, the builder navigates to `?search=<query>` on the current
-   * pathname itself (standalone use).
+   * Called inside a transition with the serialised `?search=` query each time a
+   * Filter token is committed, edited or removed. When omitted, the builder
+   * navigates to `?search=<query>` on the current pathname itself.
    */
   onApply?: (query: string) => void
-  /** Placeholder for the free-text search box. */
+  /** Placeholder for the input while no filter is applied. */
   placeholder?: string
+  /** Accessible name of the combobox. */
+  label?: string
+  /** The number of rows the applied query returns, announced when it changes. */
+  resultCount?: number
+  /**
+   * The list being filtered. With {@link serverAction}, choosing a to-one
+   * relationship field browses and searches its records, and picking one
+   * writes `field:#id`.
+   */
+  listKey?: string
+  /**
+   * The generic server action, asked for a relationship field's records via
+   * its `relationshipOptions` operation. Without it, a relationship field takes
+   * typed label text, matched as contains.
+   */
+  serverAction?: (input: ServerActionInput) => Promise<unknown>
+  /**
+   * The records the `field:#id` tokens in {@link defaultValue} name, keyed by
+   * field: each id the related list accepts, with its Item label, or `null`
+   * when the session cannot read it and the chip shows the raw id. A `#id`
+   * absent here is shown as the free text the server searches for instead.
+   */
+  recordLabels?: Record<string, ResolvedFilterRecord[]>
   className?: string
   /** Structured per-part class overrides; each merges onto its `data-slot` part. */
   classNames?: FilterBuilderClassNames
 }
 
-/**
- * The default value a fresh row gets for a given value source: enums start
- * unset (the user picks from the dropdown), everything else starts empty.
- */
-function initialValueForSource(_source: FilterValueSource): string {
-  return ''
+const GROUP_HEADING = 'px-2 pb-1 pt-2 text-xs font-medium text-muted-foreground'
+
+function groupsOf(options: FilterOption[]): Array<{ group: string; entries: number[] }> {
+  const groups: Array<{ group: string; entries: number[] }> = []
+  options.forEach((option, index) => {
+    const last = groups.at(-1)
+    if (last && last.group === option.group) last.entries.push(index)
+    else groups.push({ group: option.group, entries: [index] })
+  })
+  return groups
 }
 
 /**
- * Constructs the admin list's `?search=` filter query from a friendly UI —
- * structured field/operator/value rows plus a free-text box — and produces the
- * exact grammar the filter engine already consumes (`serializeFilterQuery`,
- * ADR-0017). It never invents a parallel filter path: the applied query flows
- * through the same URL param the secured `context.db` reads server-side, so
- * filtering can only ever narrow, never widen, what a session may see.
+ * The admin list's Filter builder: one bar where the admin types, suggestions
+ * build the `?search=` query, and each committed Filter token becomes a chip
+ * (ADR-0017, ADR-0083). The query is read and written only through core's
+ * `parseFilterQuery` and `serializeFilterQuery`, and flows through the same URL
+ * param the secured `context.db` reads server-side, so filtering can only ever
+ * narrow what a session may see.
  *
- * Available fields, operators and value suggestions are derived entirely from
- * the serializable {@link FilterFieldSuggestion}s (each field's self-contained
- * `getFilterSpec`) — there is no `switch` on field type here, mirroring the
- * cell/field-component registry pattern.
+ * Every commit applies at once; partly typed text never does. Fields, their
+ * conditions and their values derive entirely from the serializable
+ * {@link FilterFieldSuggestion}s, with no `switch` on field type. The bar is a
+ * labelled combobox: DOM focus stays on its input and `aria-activedescendant`
+ * names the active suggestion. `/` focuses it from anywhere on the page.
  */
 export function FilterBuilder({
+  ref,
   suggestions,
   defaultValue = '',
   onApply,
-  placeholder = 'Search…',
+  placeholder = 'Filter or search…',
+  label = 'Filter',
+  resultCount,
+  listKey,
+  serverAction,
+  recordLabels,
   className,
   classNames,
 }: FilterBuilderProps) {
   const router = useRouter()
   const pathname = usePathname()
-
-  // Hydrate once from the incoming query. The parent remounts this component
-  // (via a `key` on the applied query) when the URL changes, so the builder
-  // always reflects the active filter without an effect-driven prop copy.
-  const [state, setState] = React.useState(() => queryToState(defaultValue, suggestions))
-  const searchRef = React.useRef<HTMLInputElement>(null)
-
-  const suggestionByField = React.useMemo(
-    () => new Map(suggestions.map((s) => [s.field, s])),
+  const [isPending, startTransition] = React.useTransition()
+  const fields = React.useMemo(
+    () => new Map(suggestions.map((suggestion) => [suggestion.field, suggestion])),
     [suggestions],
   )
 
-  const applyQuery = (query: string) => {
-    if (onApply) {
-      onApply(query)
+  const [entries, setEntries] = React.useState(() => hydrateEntries(defaultValue))
+  const [seenValue, setSeenValue] = React.useState(defaultValue)
+  const [pendingQueries, setPendingQueries] = React.useState<readonly string[]>([])
+  const [text, setText] = React.useState('')
+  const [draft, setDraft] = React.useState<FilterDraft | null>(null)
+  const [editing, setEditing] = React.useState<number | null>(null)
+  const [armed, setArmed] = React.useState<number | null>(null)
+  const [alternativeOf, setAlternativeOf] = React.useState<number | null>(null)
+  const [refusal, setRefusal] = React.useState<string | null>(null)
+  const [open, setOpen] = React.useState(false)
+  const [activeIndex, setActiveIndex] = React.useState(0)
+  const [dates, setDates] = React.useState({ from: '', to: '' })
+
+  if (defaultValue !== seenValue) {
+    setSeenValue(defaultValue)
+    const landed = pendingQueries.indexOf(defaultValue.trim())
+    if (landed >= 0) {
+      setPendingQueries(pendingQueries.slice(landed + 1))
+    } else if (entriesQuery(entries) !== defaultValue.trim()) {
+      setPendingQueries([])
+      setEntries(hydrateEntries(defaultValue))
+      setEditing(null)
+      setArmed(null)
+      setAlternativeOf(null)
+      setRefusal(null)
+      setDraft(null)
+    }
+  }
+
+  const inputRef = React.useRef<HTMLInputElement>(null)
+  const barRef = React.useRef<HTMLDivElement>(null)
+  const dateFromRef = React.useRef<HTMLInputElement>(null)
+  const quietFocus = React.useRef(false)
+  const baseId = React.useId()
+  const listId = `${baseId}-list`
+  const optionId = (index: number) => `${baseId}-option-${index}`
+
+  const [picked, setPicked] = React.useState<ReadonlyMap<string, FilterRecord>>(() => new Map())
+  const recordOf = React.useCallback(
+    (field: string, id: string): ResolvedFilterRecord | undefined =>
+      picked.get(JSON.stringify([field, id])) ??
+      recordLabels?.[field]?.find((record) => record.id === id),
+    [picked, recordLabels],
+  )
+
+  const chips = React.useMemo(() => chipsOf(entries, fields, recordOf), [entries, fields, recordOf])
+  const units = React.useMemo(() => unitsOf(chips), [chips])
+  const editingChip = editing === null ? undefined : chips[editing]
+  const editingToken = editingChip ? entries[editingChip.start]?.token : undefined
+  const draftField = draft ? fields.get(draft.field) : undefined
+  const draftLookupField =
+    draft &&
+    (draft.condition === 'eq' || draft.condition === 'not') &&
+    isRecordLookupField(draftField)
+      ? draft.field
+      : undefined
+  const typedLookup = React.useMemo(
+    () => (draft ? null : typedRecordLookup(text, fields)),
+    [draft, text, fields],
+  )
+  const lookupField = draftLookupField ?? typedLookup?.field
+  const search = useRelationshipSearch({
+    initialItems: NO_RECORDS,
+    listKey,
+    fieldName: lookupField,
+    serverAction,
+    query: typedLookup?.query ?? text,
+    take: LOOKUP_PAGE_SIZE,
+    loadOnOpen: draftLookupField !== undefined,
+  })
+  const { searchResults, isSearching, searchApplied } = search
+  const lookup = React.useMemo(
+    (): RecordLookup | null =>
+      serverAction && listKey && lookupField !== undefined
+        ? { records: searchResults, loading: isSearching, searched: searchApplied }
+        : null,
+    [serverAction, listKey, lookupField, searchResults, isSearching, searchApplied],
+  )
+  const oneMember =
+    (alternativeOf !== null && editingChip === undefined) ||
+    (editingChip !== undefined && editingChip.group !== null)
+  const { options, hint: optionsHint } = React.useMemo(() => {
+    const offered = draft
+      ? draftOptions(draft, text, fields, editingToken, lookup)
+      : rootOptions(text, fields, lookup)
+    return oneMember ? singleTokenOptions(offered) : offered
+  }, [draft, text, fields, editingToken, lookup, oneMember])
+  const hint = refusal ?? optionsHint
+  const active = options.length === 0 ? -1 : Math.min(activeIndex, options.length - 1)
+  const conditions = React.useMemo(() => (draftField ? conditionsOf(draftField) : []), [draftField])
+  const hasDateForm =
+    draft !== null && draftField?.datePicker !== undefined && conditionTakesValue(draft.condition)
+
+  React.useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== '/' || event.defaultPrevented) return
+      if (event.metaKey || event.ctrlKey || event.altKey) return
+      const target = event.target
+      if (
+        target instanceof HTMLElement &&
+        (target.isContentEditable || target.closest('input, textarea, select') !== null)
+      ) {
+        return
+      }
+      event.preventDefault()
+      inputRef.current?.focus()
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [])
+
+  React.useEffect(() => {
+    if (open && active >= 0) {
+      document.getElementById(`${baseId}-option-${active}`)?.scrollIntoView?.({ block: 'nearest' })
+    }
+  }, [open, active, baseId])
+
+  const focusInput = () => {
+    if (document.activeElement !== inputRef.current) quietFocus.current = true
+    inputRef.current?.focus()
+    quietFocus.current = false
+  }
+
+  const reset = () => {
+    setDraft(null)
+    setText('')
+    setEditing(null)
+    setArmed(null)
+    setAlternativeOf(null)
+    setRefusal(null)
+    setActiveIndex(0)
+    setDates({ from: '', to: '' })
+  }
+
+  const apply = (next: FilterEntry[]) => {
+    setEntries(next)
+    setRefusal(null)
+    const query = entriesQuery(next)
+    setPendingQueries((pending) => (query === seenValue.trim() ? [] : [...pending, query]))
+    startTransition(() => {
+      if (onApply) onApply(query)
+      else router.push(query ? `${pathname}?search=${encodeURIComponent(query)}` : pathname)
+    })
+  }
+
+  const place = (added: readonly FilterEntry[], replace: boolean): GroupEdit =>
+    placeChoice(
+      entries,
+      chips,
+      added,
+      { alternativeOf, editing: editingChip ?? null },
+      fields,
+      replace,
+    )
+
+  const refuse = (message: string) => {
+    setRefusal(message)
+    setOpen(true)
+    focusInput()
+  }
+
+  const commit = (added: readonly FilterEntry[], replace = true) => {
+    const placed = place(added, replace)
+    if (!placed.ok) {
+      refuse(placed.message)
       return
     }
-    router.push(query ? `${pathname}?search=${encodeURIComponent(query)}` : pathname)
+    apply(placed.entries)
+    reset()
+    setOpen(false)
+    focusInput()
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    applyQuery(stateToQuery(state))
+  const stageField = (field: string) => {
+    const suggestion = fields.get(field)
+    if (!suggestion) return
+    setDraft({ field, condition: conditionsOf(suggestion)[0] ?? 'eq' })
+    setText('')
+    setDates({ from: '', to: '' })
+    setArmed(null)
+    setActiveIndex(0)
+    setOpen(true)
+    focusInput()
   }
 
-  const handleClear = () => {
-    setState({ rows: [], freeText: '' })
-    applyQuery('')
-  }
+  const latest = React.useRef({ entries, fields, apply, stageField })
+  React.useEffect(() => {
+    latest.current = { entries, fields, apply, stageField }
+  })
 
-  const addRow = () => {
-    const first = suggestions[0]
-    if (!first) return
-    const newRow: FilterRow = {
-      id: `row-${Date.now()}-${state.rows.length}`,
-      field: first.field,
-      operator: first.operators[0] ?? 'eq',
-      value: initialValueForSource(first.valueSource),
+  React.useImperativeHandle(
+    ref,
+    () => ({
+      startFilter: (field: string) => {
+        if (!latest.current.fields.has(field)) return
+        setEditing(null)
+        latest.current.stageField(field)
+      },
+      currentQuery: () => entriesQuery(latest.current.entries),
+      addTokens: (added: FilterToken[]) => {
+        const current = latest.current
+        setEditing(null)
+        setArmed(null)
+        setAlternativeOf(null)
+        current.apply(placeEntries(current.entries, loose(added), null, current.fields, true))
+      },
+      applyQuery: (query: string) => {
+        setEditing(null)
+        setArmed(null)
+        setAlternativeOf(null)
+        latest.current.apply(hydrateEntries(query))
+      },
+    }),
+    [],
+  )
+
+  const toggle = (chosen: FilterToken[]) => {
+    const placed = chosen.length > 0 ? place(loose(chosen), true) : null
+    if (placed !== null && !placed.ok) {
+      refuse(placed.message)
+      return
     }
-    setState((prev) => ({ ...prev, rows: [...prev.rows, newRow] }))
+    const next = placed === null ? withoutChip(entries, editingChip) : placed.entries
+    apply(next)
+    const at = chosen.length > 0 ? next.findIndex((entry) => entry.token === chosen[0]) : -1
+    const chip = chipsOf(next, fields, recordOf).findIndex(({ start }) => start === at)
+    setEditing(chip >= 0 ? chip : null)
+    setAlternativeOf(null)
+    setText('')
+    setArmed(null)
+    focusInput()
   }
 
-  const removeRow = (id: string) => {
-    setState((prev) => ({ ...prev, rows: prev.rows.filter((row) => row.id !== id) }))
-  }
-
-  const updateRow = (id: string, patch: Partial<Omit<FilterRow, 'id'>>) => {
-    setState((prev) => ({
-      ...prev,
-      rows: prev.rows.map((row) => {
-        if (row.id !== id) return row
-        // Changing the field resets the operator to one the new field supports
-        // and clears the value (its meaning/source differs per field).
-        if (patch.field !== undefined && patch.field !== row.field) {
-          const suggestion = suggestionByField.get(patch.field)
-          return {
-            ...row,
-            field: patch.field,
-            operator: suggestion?.operators[0] ?? 'eq',
-            value: suggestion ? initialValueForSource(suggestion.valueSource) : '',
-          }
-        }
-        return { ...row, ...patch }
-      }),
-    }))
-  }
-
-  const renderValueControl = (row: FilterRow) => {
-    const suggestion = suggestionByField.get(row.field)
-    const source = suggestion?.valueSource ?? { kind: 'none' as const }
-    const valueClass = cn(NATIVE_CONTROL_CLASS, 'min-w-[10rem]', classNames?.value)
-
-    if (source.kind === 'enum') {
-      return (
-        <select
-          data-slot="filter-builder-value"
-          aria-label="Filter value"
-          className={valueClass}
-          value={row.value}
-          onChange={(e) => updateRow(row.id, { value: e.target.value })}
-        >
-          <option value="">Select…</option>
-          {source.options.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
+  const choose = (option: FilterOption) => {
+    if (option.kind === 'field') {
+      stageField(option.field)
+      return
+    }
+    if (option.kind === 'toggle') {
+      toggle(option.tokens)
+      return
+    }
+    const { record } = option
+    if (record) {
+      setPicked((previous) =>
+        new Map(previous).set(JSON.stringify([record.field, record.id]), {
+          id: record.id,
+          label: record.label,
+        }),
       )
     }
+    commit(option.entries ?? loose(option.tokens))
+  }
 
-    const relationshipPlaceholder =
-      source.kind === 'relationship' ? `Search ${formatFieldName(source.listKey)}…` : 'Value'
+  const editChip = (index: number) => {
+    const chip = chips[index]
+    const token = chip ? entries[chip.start]?.token : undefined
+    if (!chip || !token) return
+    setArmed(null)
+    setAlternativeOf(null)
+    setEditing(index)
+    setActiveIndex(0)
+    setOpen(true)
+    setDates({ from: '', to: '' })
+    const edit = chipEditText(chip, token, fields)
+    setDraft(edit.draft)
+    setText(edit.text)
+    focusInput()
+  }
 
+  const removeChip = (index: number) => {
+    const chip = chips[index]
+    if (!chip) return
+    apply(withoutChip(entries, chip))
+    reset()
+    focusInput()
+  }
+
+  const applyDates = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+    if (!draft || !draftField) return
+    const typed = draft.condition === 'range' ? `${dates.from}..${dates.to}` : dates.from
+    const check = draftTokens(draftField, draft.condition, typed)
+    if (check.ok) commit(loose(check.tokens))
+  }
+
+  const joinAfter = (index: number) => {
+    const joined = joinChips(entries, chips, index)
+    setArmed(null)
+    if (joined.ok) apply(joined.entries)
+    else refuse(joined.message)
+  }
+
+  const splitAfter = (index: number) => {
+    apply(splitChips(entries, chips, index))
+    setArmed(null)
+  }
+
+  const clearAll = () => {
+    apply([])
+    reset()
+    setOpen(false)
+    focusInput()
+  }
+
+  const cancel = () => {
+    reset()
+    setOpen(false)
+  }
+
+  const setCondition = (condition: FilterBuilderCondition) => {
+    if (!draft) return
+    setDraft({ ...draft, condition })
+    setActiveIndex(0)
+    focusInput()
+  }
+
+  const stepCondition = (step: number) => {
+    if (!draft) return
+    const at = conditions.indexOf(draft.condition)
+    setCondition(conditions[(at + step + conditions.length) % conditions.length])
+  }
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.nativeEvent.isComposing) return
+    const empty = text === ''
+    switch (event.key) {
+      case 'ArrowDown':
+        event.preventDefault()
+        setArmed(null)
+        if (!open) setOpen(true)
+        else if (options.length > 0) setActiveIndex((active + 1) % options.length)
+        break
+      case 'ArrowUp':
+        event.preventDefault()
+        setArmed(null)
+        if (!open) setOpen(true)
+        else if (options.length > 0) {
+          setActiveIndex((active < 1 ? options.length : active) - 1)
+        }
+        break
+      case 'Enter':
+        event.preventDefault()
+        if (armed !== null) editChip(armed)
+        else if (open && active >= 0) choose(options[active])
+        else setOpen(true)
+        break
+      case 'Tab':
+        if (hasDateForm && open && !event.shiftKey) {
+          event.preventDefault()
+          dateFromRef.current?.focus()
+        } else if (!hasDateForm && draft && conditions.length > 1) {
+          event.preventDefault()
+          stepCondition(event.shiftKey ? -1 : 1)
+        } else {
+          setOpen(false)
+        }
+        break
+      case 'Escape':
+        event.preventDefault()
+        if (draft || editing !== null || alternativeOf !== null || !empty) cancel()
+        else if (open) setOpen(false)
+        else setArmed(null)
+        break
+      case 'Backspace':
+        if (!empty) break
+        if (draft || editing !== null) {
+          event.preventDefault()
+          reset()
+        } else if (alternativeOf !== null) {
+          event.preventDefault()
+          setAlternativeOf(null)
+        } else if (armed !== null) {
+          event.preventDefault()
+          removeChip(armed)
+        } else if (chips.length > 0) {
+          event.preventDefault()
+          setArmed(chips.length - 1)
+          setOpen(false)
+        }
+        break
+      case 'Delete':
+        if (armed !== null) {
+          event.preventDefault()
+          removeChip(armed)
+        }
+        break
+      case 'ArrowLeft':
+        if (event.altKey && draft && conditions.length > 1) {
+          event.preventDefault()
+          stepCondition(-1)
+          break
+        }
+        if (!empty || draft || chips.length === 0) break
+        event.preventDefault()
+        setOpen(false)
+        setArmed(armed === null ? chips.length - 1 : Math.max(0, armed - 1))
+        break
+      case 'ArrowRight':
+        if (event.altKey && draft && conditions.length > 1) {
+          event.preventDefault()
+          stepCondition(1)
+          break
+        }
+        if (!empty || armed === null) break
+        event.preventDefault()
+        setArmed(armed + 1 >= chips.length ? null : armed + 1)
+        break
+    }
+  }
+
+  const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    let value = event.target.value
+    setOpen(true)
+    setActiveIndex(0)
+    setRefusal(null)
+    if (!draft && editing === null && alternativeOf === null && OR_PREFIX.test(value)) {
+      if (chips.length > 0) {
+        const refused = alternativeRefusal(entries, chips, chips.length - 1)
+        setArmed(null)
+        if (refused !== null) {
+          setRefusal(refused)
+          setText(value)
+          return
+        }
+        setAlternativeOf(chips.length - 1)
+        setText('')
+        return
+      }
+    }
+    setArmed(null)
+    if (draft && draftField && draft.condition !== 'not') {
+      const comparison = splitComparison(draftField, value)
+      if (comparison) {
+        setDraft({ ...draft, condition: comparison.operator })
+        value = comparison.rest
+      } else if (text === '' && value.startsWith('=')) {
+        const widened =
+          draft.condition === 'gt' ? 'gte' : draft.condition === 'lt' ? 'lte' : undefined
+        if (widened && draftField.operators.includes(widened)) {
+          setDraft({ ...draft, condition: widened })
+          value = value.slice(1)
+        }
+      }
+    }
+    setText(value)
+  }
+
+  const handlePaste = (event: React.ClipboardEvent<HTMLInputElement>) => {
+    if (draft) return
+    const pasted = hydrateEntries(event.clipboardData.getData('text'))
+    const grouped = pasted.some(({ group }) => group !== null)
+    if (!grouped && !pasted.some(({ token }) => isFieldCondition(token, fields))) return
+    event.preventDefault()
+    commit(
+      pasted.map(({ token, group }) => ({
+        token: normaliseTokens([token], fields)[0] ?? token,
+        group,
+      })),
+      false,
+    )
+  }
+
+  const armedSentence = armed === null ? null : chips[armed]?.description.sentence
+  const resultMessage =
+    resultCount === undefined ? '' : `${resultCount} ${resultCount === 1 ? 'result' : 'results'}`
+  const chipPart =
+    'inline-flex h-full items-center px-1.5 hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+
+  const renderChip = ({ description }: FilterChip, index: number) => (
+    <span
+      key={`chip-${index}-${description.sentence}`}
+      role="group"
+      aria-label={description.sentence}
+      data-slot="filter-builder-chip"
+      data-armed={armed === index ? '' : undefined}
+      data-editing={editing === index ? '' : undefined}
+      className={cn(
+        'inline-flex h-7 max-w-full items-center overflow-hidden rounded-md border border-border bg-muted text-xs text-foreground',
+        'data-[armed]:ring-2 data-[armed]:ring-ring data-[editing]:border-primary data-[editing]:bg-accent',
+        classNames?.chip,
+      )}
+    >
+      <button
+        type="button"
+        tabIndex={-1}
+        data-slot="filter-builder-chip-field"
+        aria-label={`Edit ${description.sentence}`}
+        onClick={() => editChip(index)}
+        className={cn(chipPart, 'font-medium')}
+      >
+        {description.field}
+      </button>
+      <button
+        type="button"
+        tabIndex={-1}
+        data-slot="filter-builder-chip-condition"
+        aria-label={`Change condition of ${description.sentence}`}
+        onClick={() => editChip(index)}
+        className={cn(chipPart, 'text-muted-foreground')}
+      >
+        {description.condition}
+      </button>
+      {description.value !== '' && (
+        <button
+          type="button"
+          tabIndex={-1}
+          data-slot="filter-builder-chip-value"
+          aria-label={`Change value of ${description.sentence}`}
+          onClick={() => editChip(index)}
+          className={cn(chipPart, 'min-w-0 truncate font-semibold')}
+        >
+          <span className="truncate">{description.value}</span>
+        </button>
+      )}
+      <button
+        type="button"
+        data-slot="filter-builder-chip-remove"
+        aria-label={`Remove ${description.sentence}`}
+        onClick={() => removeChip(index)}
+        className={cn(chipPart, 'text-muted-foreground max-md:px-2.5', classNames?.chipRemove)}
+      >
+        <X className="h-3.5 w-3.5" aria-hidden="true" />
+      </button>
+    </span>
+  )
+
+  const renderConnector = (index: number, joined: boolean) => {
+    const left = chips[index]?.description.sentence ?? ''
+    const right = chips[index + 1]?.description.sentence ?? ''
+    const word = joined ? 'or' : 'and'
     return (
-      <Input
-        data-slot="filter-builder-value"
-        aria-label="Filter value"
-        className={cn('h-10 min-w-[10rem] flex-1', classNames?.value)}
-        value={row.value}
-        placeholder={relationshipPlaceholder}
-        onChange={(e) => updateRow(row.id, { value: e.target.value })}
-      />
+      <button
+        key={`connector-${index}`}
+        type="button"
+        data-slot="filter-builder-connector"
+        data-joined={joined ? '' : undefined}
+        aria-label={`Change ${word} to ${joined ? 'and' : 'or'} between ${left} and ${right}`}
+        onClick={() => (joined ? splitAfter(index) : joinAfter(index))}
+        className={cn(
+          'inline-flex h-6 items-center rounded-md px-1 text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          'data-[joined]:font-medium data-[joined]:text-primary',
+          classNames?.connector,
+        )}
+      >
+        {word}
+      </button>
     )
   }
 
   return (
-    <Card data-slot="filter-builder" className={cn('space-y-3 p-4', className, classNames?.root)}>
-      {state.rows.length > 0 && (
-        <div
-          data-slot="filter-builder-conditions"
-          className={cn('space-y-2', classNames?.conditions)}
-        >
-          {state.rows.map((row) => {
-            const suggestion = suggestionByField.get(row.field)
-            const operators = suggestion?.operators ?? ['eq']
-            return (
-              <div
-                key={row.id}
-                data-slot="filter-builder-condition"
-                className={cn('flex flex-wrap items-center gap-2', classNames?.condition)}
-              >
-                <select
-                  data-slot="filter-builder-field"
-                  aria-label="Filter field"
-                  className={cn(NATIVE_CONTROL_CLASS, classNames?.field)}
-                  value={row.field}
-                  onChange={(e) => updateRow(row.id, { field: e.target.value })}
-                >
-                  {suggestions.map((s) => (
-                    <option key={s.field} value={s.field}>
-                      {formatFieldName(s.field)}
-                    </option>
-                  ))}
-                </select>
-
-                {operators.length > 1 && (
-                  <select
-                    data-slot="filter-builder-operator"
-                    aria-label="Filter operator"
-                    className={cn(NATIVE_CONTROL_CLASS, classNames?.operator)}
-                    value={row.operator}
-                    onChange={(e) =>
-                      updateRow(row.id, { operator: e.target.value as FilterOperator })
-                    }
-                  >
-                    {operators.map((op) => (
-                      <option key={op} value={op}>
-                        {OPERATOR_LABELS[op]}
-                      </option>
-                    ))}
-                  </select>
-                )}
-
-                {renderValueControl(row)}
-
-                <button
-                  type="button"
-                  data-slot="filter-builder-remove"
-                  aria-label="Remove filter"
-                  onClick={() => removeRow(row.id)}
-                  className={cn(
-                    'inline-flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground',
-                    classNames?.remove,
-                  )}
-                >
-                  <X className="h-4 w-4" aria-hidden="true" />
-                </button>
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      <form
-        data-slot="filter-builder-form"
-        onSubmit={handleSubmit}
-        className={cn('flex flex-wrap items-center gap-2', classNames?.form)}
+    <div data-slot="filter-builder" className={cn('relative', className, classNames?.root)}>
+      <Popover
+        open={open}
+        onOpenChange={(next) => {
+          if (next) return
+          setOpen(false)
+          setDraft(null)
+          setEditing(null)
+        }}
       >
-        <div className="relative min-w-[12rem] flex-1">
-          <Input
-            ref={searchRef}
-            data-slot="filter-builder-search"
-            aria-label="Search"
-            type="text"
-            value={state.freeText}
-            placeholder={placeholder}
-            className={cn('pr-10', classNames?.search)}
-            onChange={(e) => setState((prev) => ({ ...prev, freeText: e.target.value }))}
-          />
-          {state.freeText && (
-            <button
-              type="button"
-              data-slot="filter-builder-search-clear"
-              aria-label="Clear filter text"
-              onClick={() => {
-                searchRef.current?.focus()
-                setState((prev) => ({ ...prev, freeText: '' }))
+        <PopoverAnchor asChild>
+          <div
+            ref={barRef}
+            data-slot="filter-builder-bar"
+            aria-busy={isPending || undefined}
+            onMouseDown={(event) => {
+              if (event.target !== event.currentTarget) return
+              event.preventDefault()
+              inputRef.current?.focus()
+              setOpen(true)
+            }}
+            className={cn(
+              'relative flex min-h-10 w-full flex-wrap items-center gap-1.5 overflow-hidden rounded-md border border-input bg-background px-2 py-1 text-sm ring-offset-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2',
+              classNames?.bar,
+            )}
+          >
+            <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+            {units.map((unit, unitIndex) => {
+              const members = chips.slice(unit.first, unit.last + 1)
+              const rendered = members.flatMap((chip, offset) => {
+                const index = unit.first + offset
+                const chipNode = renderChip(chip, index)
+                return offset === 0 ? [chipNode] : [renderConnector(index - 1, true), chipNode]
+              })
+              return (
+                <React.Fragment key={`unit-${unit.first}`}>
+                  {unitIndex > 0 && renderConnector(unit.first - 1, false)}
+                  {unit.group === null ? (
+                    rendered
+                  ) : (
+                    <span
+                      role="group"
+                      aria-label={`Any of: ${members.map((chip) => chip.description.sentence).join(' or ')}`}
+                      data-slot="filter-builder-group"
+                      data-alternative={
+                        alternativeOf !== null &&
+                        unit.first <= alternativeOf &&
+                        alternativeOf <= unit.last
+                          ? ''
+                          : undefined
+                      }
+                      className={cn(
+                        'inline-flex max-w-full flex-wrap items-center gap-1 rounded-lg border border-dashed border-primary/60 bg-primary/5 p-0.5',
+                        'data-[alternative]:border-solid data-[alternative]:border-primary',
+                        classNames?.group,
+                      )}
+                    >
+                      {rendered}
+                    </span>
+                  )}
+                </React.Fragment>
+              )
+            })}
+            {alternativeOf !== null && (
+              <span
+                data-slot="filter-builder-alternative"
+                className="inline-flex h-7 items-center rounded-md px-1 text-xs font-medium text-primary"
+              >
+                or
+              </span>
+            )}
+            {draft && (
+              <span
+                data-slot="filter-builder-draft"
+                className={cn(
+                  'inline-flex h-7 items-center gap-1 rounded-md border border-dashed border-primary px-1.5 text-xs',
+                  classNames?.draft,
+                )}
+              >
+                <span className="font-medium">{fieldLabel(draft.field)}</span>
+                {draftField && (
+                  <span className="text-muted-foreground">
+                    {conditionLabel(draftField, draft.condition)}
+                  </span>
+                )}
+              </span>
+            )}
+            <input
+              ref={inputRef}
+              type="text"
+              role="combobox"
+              aria-label={label}
+              aria-expanded={open}
+              aria-controls={open ? listId : undefined}
+              aria-autocomplete="list"
+              aria-activedescendant={open && active >= 0 ? optionId(active) : undefined}
+              autoComplete="off"
+              spellCheck={false}
+              data-slot="filter-builder-input"
+              value={text}
+              placeholder={
+                draft
+                  ? 'Type a value…'
+                  : alternativeOf !== null
+                    ? 'Add an alternative…'
+                    : entries.length > 0
+                      ? 'Add a filter…'
+                      : placeholder
+              }
+              onChange={handleChange}
+              onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
+              onFocus={() => {
+                if (!quietFocus.current) setOpen(true)
               }}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground max-md:right-0 max-md:p-3"
-            >
-              <X className="h-4 w-4" aria-hidden="true" />
-            </button>
+              onClick={() => setOpen(true)}
+              className={cn(
+                'h-8 min-w-[8rem] flex-1 bg-transparent outline-none placeholder:text-muted-foreground',
+                classNames?.input,
+              )}
+            />
+            {entries.length > 0 ? (
+              <button
+                type="button"
+                data-slot="filter-builder-clear"
+                onClick={clearAll}
+                className={cn(
+                  'inline-flex h-7 items-center rounded-md px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground',
+                  classNames?.clear,
+                )}
+              >
+                Clear
+              </button>
+            ) : (
+              <kbd
+                aria-hidden="true"
+                className="rounded border border-border px-1.5 text-xs text-muted-foreground max-md:hidden"
+              >
+                /
+              </kbd>
+            )}
+            {isPending && (
+              <span
+                role="progressbar"
+                aria-label="Updating results"
+                data-slot="filter-builder-progress"
+                className="absolute inset-x-0 bottom-0 h-0.5 animate-pulse bg-primary"
+              />
+            )}
+          </div>
+        </PopoverAnchor>
+        <PopoverContent
+          align="start"
+          data-slot="filter-builder-menu"
+          onOpenAutoFocus={(event) => event.preventDefault()}
+          onCloseAutoFocus={(event) => event.preventDefault()}
+          onEscapeKeyDown={(event) => {
+            event.preventDefault()
+            cancel()
+          }}
+          onInteractOutside={(event) => {
+            const target = event.target
+            if (target instanceof Node && barRef.current?.contains(target)) event.preventDefault()
+          }}
+          className={cn(
+            'w-[min(28rem,var(--radix-popover-trigger-width))] min-w-[16rem] p-0',
+            classNames?.menu,
           )}
-        </div>
-
-        {suggestions.length > 0 && (
-          <Button
-            type="button"
-            variant="outline"
-            data-slot="filter-builder-add"
-            onClick={addRow}
-            className={classNames?.add}
+        >
+          {draft && hasDateForm && (
+            <form
+              aria-label={`${fieldLabel(draft.field)} dates`}
+              data-slot="filter-builder-dates"
+              onSubmit={applyDates}
+              className={cn(
+                'flex flex-wrap items-end gap-2 border-b border-border p-2 text-xs',
+                classNames?.dates,
+              )}
+            >
+              <label className="flex flex-col gap-1">
+                <span className="text-muted-foreground">
+                  {draft.condition === 'range' ? 'From' : 'Date'}
+                </span>
+                <input
+                  ref={dateFromRef}
+                  type="date"
+                  required
+                  value={dates.from}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Tab' || !event.shiftKey) return
+                    event.preventDefault()
+                    inputRef.current?.focus()
+                  }}
+                  onChange={(event) => setDates({ ...dates, from: event.target.value })}
+                  className="h-8 rounded-md border border-input bg-background px-2"
+                />
+              </label>
+              {draft.condition === 'range' && (
+                <label className="flex flex-col gap-1">
+                  <span className="text-muted-foreground">To</span>
+                  <input
+                    type="date"
+                    required
+                    value={dates.to}
+                    onChange={(event) => setDates({ ...dates, to: event.target.value })}
+                    className="h-8 rounded-md border border-input bg-background px-2"
+                  />
+                </label>
+              )}
+              <button
+                type="submit"
+                className="h-8 rounded-md border border-border px-3 hover:bg-accent hover:text-accent-foreground"
+              >
+                Apply dates
+              </button>
+            </form>
+          )}
+          {draft && draftField && conditions.length > 1 && (
+            <div
+              role="group"
+              aria-label={`${fieldLabel(draft.field)} condition`}
+              data-slot="filter-builder-menu-conditions"
+              className="flex flex-wrap items-center gap-1 border-b border-border p-2"
+            >
+              {conditions.map((condition) => (
+                <button
+                  key={condition}
+                  type="button"
+                  tabIndex={-1}
+                  aria-pressed={draft.condition === condition}
+                  data-slot="filter-builder-menu-condition"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => setCondition(condition)}
+                  className="rounded-md border border-border px-2 py-0.5 text-xs aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground"
+                >
+                  {conditionLabel(draftField, condition)}
+                </button>
+              ))}
+            </div>
+          )}
+          <div
+            id={listId}
+            role="listbox"
+            aria-multiselectable={draft?.condition === 'anyOf' || undefined}
+            aria-label={draft ? `${fieldLabel(draft.field)} values` : 'Filter suggestions'}
+            className="max-h-[300px] overflow-y-auto p-1"
           >
-            <Plus aria-hidden="true" />
-            Add filter
-          </Button>
-        )}
-
-        <Button type="submit" data-slot="filter-builder-apply" className={classNames?.apply}>
-          Apply
-        </Button>
-
-        {(state.rows.length > 0 || state.freeText) && (
-          <Button
-            type="button"
-            variant="ghost"
-            data-slot="filter-builder-clear"
-            onClick={handleClear}
-            className={classNames?.clear}
+            {groupsOf(options).map(({ group, entries }) => (
+              <div
+                key={`${group}-${entries[0]}`}
+                role="group"
+                aria-labelledby={`${baseId}-group-${entries[0]}`}
+              >
+                <div id={`${baseId}-group-${entries[0]}`} className={GROUP_HEADING}>
+                  {group}
+                </div>
+                {entries.map((index) => {
+                  const option = options[index]
+                  return (
+                    <div
+                      key={index}
+                      id={optionId(index)}
+                      role="option"
+                      aria-selected={option.kind !== 'field' && option.selected === true}
+                      data-slot="filter-builder-option"
+                      data-active={index === active ? '' : undefined}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onMouseMove={() => {
+                        if (index !== active) setActiveIndex(index)
+                      }}
+                      onClick={() => choose(option)}
+                      className={cn(
+                        'flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 text-sm wrap-anywhere',
+                        'hover:bg-accent hover:text-accent-foreground data-[active]:bg-accent data-[active]:text-accent-foreground',
+                        'aria-selected:font-medium',
+                        classNames?.option,
+                      )}
+                    >
+                      {option.kind === 'toggle' && (
+                        <Check
+                          aria-hidden="true"
+                          data-slot="filter-builder-option-check"
+                          className={cn(
+                            'mr-2 h-3.5 w-3.5 shrink-0',
+                            !option.selected && 'invisible',
+                          )}
+                        />
+                      )}
+                      {option.kind === 'field' ? fieldLabel(option.field) : option.label}
+                    </div>
+                  )
+                })}
+              </div>
+            ))}
+          </div>
+          <div aria-live="polite">
+            {hint && (
+              <p
+                data-slot="filter-builder-hint"
+                className={cn(
+                  'border-t border-border px-3 py-2 text-sm text-muted-foreground',
+                  classNames?.hint,
+                )}
+              >
+                {hint}
+              </p>
+            )}
+            <span className="sr-only">
+              {`${options.length} ${options.length === 1 ? 'suggestion' : 'suggestions'}`}
+            </span>
+          </div>
+          <p
+            aria-hidden="true"
+            className="flex flex-wrap gap-x-3 border-t border-border px-3 py-1.5 text-xs text-muted-foreground"
           >
-            Clear
-          </Button>
-        )}
-      </form>
-    </Card>
+            <span>↑↓ move</span>
+            <span>Enter select</span>
+            {hasDateForm && <span>Tab dates</span>}
+            {conditions.length > 1 && (
+              <span>{hasDateForm ? 'Alt+←→ change condition' : 'Tab change condition'}</span>
+            )}
+            <span>Esc {draft || editing !== null ? 'cancel' : 'close'}</span>
+          </p>
+        </PopoverContent>
+      </Popover>
+      <div aria-live="polite" className="sr-only" data-slot="filter-builder-status">
+        {armedSentence
+          ? `${armedSentence} selected. Backspace removes it, Enter edits it.`
+          : resultMessage}
+      </div>
+    </div>
   )
 }

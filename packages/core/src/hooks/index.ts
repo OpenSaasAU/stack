@@ -2,7 +2,7 @@ import type { Hooks } from '../config/types.js'
 import type { AccessContext } from '../access/types.js'
 import type { FieldConfig } from '../config/types.js'
 import { validateWithZod } from '../validation/schema.js'
-import { checkFieldAccess } from '../access/field-access.js'
+import { checkFieldAccess, writeRuleRow } from '../access/field-access.js'
 
 export class ValidationError extends Error {
   public errors: string[]
@@ -543,6 +543,7 @@ export async function splitMultiColumnFields(
         item,
         context,
         inputData,
+        ruleRow: writeRuleRow(item, fields, undefined, undefined),
       }))
 
     if (!canWrite) {

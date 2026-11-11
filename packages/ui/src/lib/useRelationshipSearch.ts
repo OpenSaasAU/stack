@@ -28,6 +28,10 @@ export interface UseRelationshipSearchOptions {
    * already server-rendered has no reason to set this.
    */
   loadOnOpen?: boolean
+  /** The search text, when the caller owns it. `setSearchQuery` then does nothing. */
+  query?: string
+  /** Bounds each response's window, as the `relationshipOptions` op's `take`. */
+  take?: number
 }
 
 export interface UseRelationshipSearchResult {
@@ -36,6 +40,8 @@ export interface UseRelationshipSearchResult {
   /** Candidate options for the current query — the initial window when empty, the live search response otherwise. */
   searchResults: RelationshipSearchOption[]
   isSearching: boolean
+  /** Whether `searchResults` were filtered by the current, non-empty query. */
+  searchApplied: boolean
   /** Resolves a label for any id ever seen (initial window or a past search response), so a value stays labelled once fetched. */
   resolveLabel: (id: string) => string | undefined
 }
@@ -49,6 +55,12 @@ function extractOptions(result: unknown): RelationshipSearchOption[] {
     return (result as { options: RelationshipSearchOption[] }).options
   }
   return []
+}
+
+function reportsSearched(result: unknown): boolean {
+  return typeof result === 'object' && result !== null && 'searched' in result
+    ? result.searched === true
+    : false
 }
 
 function mergeFetchedLabels(
@@ -82,19 +94,27 @@ export function useRelationshipSearch({
   selectedIds = [],
   debounceMs = 300,
   loadOnOpen = false,
+  query,
+  take,
 }: UseRelationshipSearchOptions): UseRelationshipSearchResult {
-  const [searchQuery, setSearchQuery] = useState('')
+  const [ownQuery, setOwnQuery] = useState('')
+  const searchQuery = query ?? ownQuery
   // Only ever written from a resolved server search response — never derived
   // from render inputs — so it's a legitimate piece of state, not a value
   // that belongs in an effect-driven copy of props.
   const [liveResults, setLiveResults] = useState<{
+    fieldName: string | undefined
     query: string
     options: RelationshipSearchOption[]
+    searched: boolean
   } | null>(null)
   // The deferred empty-query window (#1365), distinct from `liveResults` so
   // clearing the search box falls back to it rather than to `initialItems` —
   // which a `loadOnOpen` caller leaves empty on purpose.
-  const [openResults, setOpenResults] = useState<RelationshipSearchOption[] | null>(null)
+  const [openResults, setOpenResults] = useState<{
+    fieldName: string | undefined
+    options: RelationshipSearchOption[]
+  } | null>(null)
   // A count, not a boolean: the debounced search and the `loadOnOpen` fetch
   // below can be in flight at once (the control opens, then the user types
   // before the open-fetch resolves), and a boolean one of them can clear
@@ -108,16 +128,23 @@ export function useRelationshipSearch({
   // Includes the debounce wait, while `liveResults` still answers the previous
   // query: Enter there would otherwise pick a row the new query never matched.
   const awaitingResults =
-    canSearchServer && trimmedQuery !== '' && liveResults?.query !== trimmedQuery
+    canSearchServer &&
+    trimmedQuery !== '' &&
+    (liveResults?.query !== trimmedQuery || liveResults.fieldName !== fieldName)
   const isSearching = pendingRequests > 0 || awaitingResults
+  const currentOpenResults =
+    openResults !== null && openResults.fieldName === fieldName ? openResults.options : null
+  const searchApplied =
+    trimmedQuery !== '' &&
+    (!canSearchServer || (!awaitingResults && liveResults?.searched === true))
 
   // Props that change often (inline callbacks, freshly-derived arrays) are
   // read from a ref inside the debounced callback so the search effect only
   // re-runs when the query itself (or the search mode) changes. Updated in an
   // effect (not during render) per the rules of hooks.
-  const latestRef = useRef({ serverAction, listKey, fieldName, selectedIds })
+  const latestRef = useRef({ serverAction, listKey, fieldName, selectedIds, take })
   useEffect(() => {
-    latestRef.current = { serverAction, listKey, fieldName, selectedIds }
+    latestRef.current = { serverAction, listKey, fieldName, selectedIds, take }
   })
 
   // Derived directly from render inputs — no effect needed for the
@@ -130,7 +157,7 @@ export function useRelationshipSearch({
       ? awaitingResults
         ? []
         : (liveResults?.options ?? [])
-      : (openResults ?? initialItems)
+      : (currentOpenResults ?? initialItems)
 
   // The debounced server search is the one genuine side effect — it
   // synchronizes with an external system (the server action).
@@ -147,6 +174,7 @@ export function useRelationshipSearch({
         listKey: currentListKey,
         fieldName: currentFieldName,
         selectedIds: currentSelectedIds,
+        take: currentTake,
       } = latestRef.current
       void action!({
         listKey: currentListKey!,
@@ -154,17 +182,28 @@ export function useRelationshipSearch({
         field: currentFieldName!,
         search: trimmedQuery,
         selectedIds: currentSelectedIds,
+        ...(currentTake === undefined ? {} : { take: currentTake }),
       })
         .then((result) => {
           if (cancelled) return
           const options = extractOptions(result)
-          setLiveResults({ query: trimmedQuery, options })
+          setLiveResults({
+            fieldName: currentFieldName,
+            query: trimmedQuery,
+            options,
+            searched: reportsSearched(result),
+          })
           setFetchedLabels((prev) => mergeFetchedLabels(prev, options))
         })
         .catch((error: unknown) => {
           if (cancelled) return
           console.error('Failed to search relationship options:', error)
-          setLiveResults({ query: trimmedQuery, options: [] })
+          setLiveResults({
+            fieldName: currentFieldName,
+            query: trimmedQuery,
+            options: [],
+            searched: true,
+          })
         })
         // Unconditional: a superseded request still leaves the flight it
         // started, and `pendingRequests` counts flights, not results — only
@@ -176,54 +215,72 @@ export function useRelationshipSearch({
       cancelled = true
       clearTimeout(timer)
     }
-  }, [trimmedQuery, canSearchServer, debounceMs])
+  }, [trimmedQuery, canSearchServer, debounceMs, fieldName])
 
-  // The deferred empty-query fetch (#1365): runs once, the first time
+  // The deferred empty-query fetch (#1365): runs once per field, the first time
   // `loadOnOpen` turns true, and is never debounced — the control has already
-  // opened and is waiting on it. A failure clears the guard so the next open
-  // retries, rather than leaving the control permanently empty for a
-  // transient error.
-  const hasLoadedOpenRef = useRef(false)
+  // opened and is waiting on it. A failure or an abandoned fetch clears the
+  // guard so the next open retries, rather than leaving the control
+  // permanently empty.
+  const loadedOpenForRef = useRef<{ fieldName: string | undefined } | null>(null)
   useEffect(() => {
-    if (!loadOnOpen || !canSearchServer || hasLoadedOpenRef.current) return
-    hasLoadedOpenRef.current = true
+    if (!loadOnOpen || !canSearchServer) return
+    if (loadedOpenForRef.current?.fieldName === fieldName) return
+    loadedOpenForRef.current = { fieldName }
 
     let cancelled = false
+    let settled = false
     setPendingRequests((n) => n + 1)
     const {
       serverAction: action,
       listKey: currentListKey,
       fieldName: currentFieldName,
       selectedIds: currentSelectedIds,
+      take: currentTake,
     } = latestRef.current
     void action!({
       listKey: currentListKey!,
       action: 'relationshipOptions',
       field: currentFieldName!,
       selectedIds: currentSelectedIds,
+      ...(currentTake === undefined ? {} : { take: currentTake }),
     })
       .then((result) => {
+        settled = true
         if (cancelled) return
         const options = extractOptions(result)
-        setOpenResults(options)
+        setOpenResults({ fieldName: currentFieldName, options })
         setFetchedLabels((prev) => mergeFetchedLabels(prev, options))
       })
       .catch((error: unknown) => {
-        hasLoadedOpenRef.current = false
+        settled = true
+        if (loadedOpenForRef.current?.fieldName === currentFieldName) {
+          loadedOpenForRef.current = null
+        }
         if (cancelled) return
         console.error('Failed to load relationship options:', error)
-        setOpenResults([])
+        setOpenResults({ fieldName: currentFieldName, options: [] })
       })
       // Unconditional for the same reason as the debounced search above.
       .finally(() => setPendingRequests((n) => n - 1))
 
     return () => {
       cancelled = true
+      if (!settled && loadedOpenForRef.current?.fieldName === currentFieldName) {
+        loadedOpenForRef.current = null
+      }
     }
-  }, [loadOnOpen, canSearchServer])
+  }, [loadOnOpen, canSearchServer, fieldName])
 
   const resolveLabel = (id: string) =>
     fetchedLabels.get(id) ?? initialItems.find((item) => item.id === id)?.label
 
-  return { searchQuery, setSearchQuery, searchResults, isSearching, resolveLabel }
+  return {
+    searchQuery,
+    setSearchQuery: setOwnQuery,
+    searchResults,
+    isSearching,
+    searchApplied,
+    resolveLabel,
+  }
 }

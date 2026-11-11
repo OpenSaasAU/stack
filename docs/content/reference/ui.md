@@ -260,13 +260,80 @@ The list view displays items in a table with search, sorting, and actions.
 
 **Features:**
 
-- Sortable columns
+- Sortable columns, from a column header or the toolbar's Sort menu
+- A column picker
+- Comfortable and compact density
 - Search functionality
-- Edit and delete actions
+- A menu of [Row actions](#row-actions) on every row, and a row title that links to the item page
 - Pagination — `page` and `pageSize` props, defaulting to `1` and `50`. The
-  total is the same access-scoped read counted in the database, so it can only
-  ever equal the number of rows the session may page through.
-- Responsive table layout
+  admin picks 25, 50 or 100 rows per page once there are more than 25 rows;
+  `?pageSize=` still accepts any size up to the cap of 200, and a size outside
+  the presets shows as its own pressed option. The total is the same access-scoped read counted in the
+  database, so it can only ever equal the number of rows the session may page
+  through.
+- Cards on phones: below the `md` breakpoint each row renders as a card, with
+  every cell labelled by its column and the Row actions menu pinned to its top
+  corner, so nothing scrolls sideways
+
+#### Columns
+
+`?columns=title,status,views` sets the visible columns, in that order. The
+toolbar's Columns menu writes it, and a "Reset columns" item drops it again.
+`AdminUI` hands the selection to `ListView` as `visibleColumns`, and `ListView`
+resolves it on the server against the list's displayable fields:
+
+- A name the list does not display is ignored, unless
+  `ui.listView.initialColumns` names it. When no valid name remains, the view
+  falls back to `ui.listView.initialColumns`, else the default columns.
+- A to-many relationship is counted only for a column that is shown, so the
+  server resolves the set before it reads. A count in a column you add is
+  therefore the same access-scoped count a default column shows.
+- Field Visibility still applies. Adding a column the session may not read
+  shows the column, never the value.
+
+A pick that lands back on the default set drops `?columns=`, so the default
+set never appears in the URL.
+
+A field the applied query filters on is shown even when the chosen or default
+columns hide it, so you can see why each row matched. The server adds it to
+the visible set for that render only: it is appended after the other columns,
+never becomes the row's title column, the Columns menu shows it ticked and
+locked, and it is never written to `?columns=`. Free text adds no column. `ListViewClient` takes these as
+`autoColumns`.
+
+`ListViewClient` takes the resolved set as `columns`, every pickable column as
+`availableColumns`, the fallback set as `defaultColumns`, and `columnsChosen`
+to say whether `columns` came from the URL, which is what navigation then
+carries along. The Columns menu renders only when `availableColumns` is
+supplied, and the rows-per-page control only when `pageSizeControl` is set,
+since each works only on a page that reads its param back.
+
+`ListView` passes both only when its `urlControls` prop is set, which says the
+page reads `?columns=` and `?pageSize=` back into `visibleColumns` and
+`pageSize`. `AdminUI` sets it. A host rendering `ListView` on its own gets
+neither control unless it reads those params and sets `urlControls`.
+
+#### Sorting
+
+Sort stays single-column. The toolbar's Sort menu offers the same columns the
+headers do, so sorting works when the headers are hidden on a phone, and a
+relationship column is never sortable from either.
+
+#### Density
+
+Density is a per-browser preference, stored in `localStorage` under
+`opensaas-list-density` (`DENSITY_STORAGE_KEY`), the same way the theme choice
+is. The server always renders comfortable, and the stored choice applies once
+the page hydrates, so a remembered compact table never causes a hydration
+mismatch. The table wrapper carries `data-density="comfortable" | "compact"` for
+styling.
+
+#### Slots
+
+The list view adds `list-view-toolbar`, `list-view-sort`, `list-view-columns`,
+`list-view-density`, `list-view-table` (with `data-density`),
+`list-view-pagination` and `list-view-page-size`. The table's own `table-*`
+slots are unchanged.
 
 A column offers a sort only when this session's read can order by it, and a
 `?sort=` naming anything else is ignored. `ListView` works that out on the
@@ -275,18 +342,443 @@ If you render the exported `ListViewClient` directly, pass `sortableFields`
 yourself: a column it does not mark `true` has no sort affordance, so omitting
 the prop leaves the table unsortable.
 
+### Row actions
+
+Each row has a menu of **Row actions**. Edit, Copy link and Delete are built in;
+Delete asks for confirmation, and shows only where the list's `delete` access is
+not statically `false` and `ui.hideDelete` does not hide it. Per-row update and
+delete access is not computed, so a delete the session may not perform reports
+"not deleted" in the status line with no reason. The row title links to the item
+page. The title column is the label column, else the first non-relationship
+column, else the first column. When it is a relationship, or renders through a
+`ui.cell` override or a Cell a package registered, whose markup may hold its own
+link, the item link sits beside the cell as "Open" rather than wrapping it.
+
+A list declares its own Row actions under `ui.listView.rowActions`. They appear
+between the built-ins, in declaration order:
+
+```typescript
+import { list } from '@opensaas/stack-core'
+import { select, text } from '@opensaas/stack-core/fields'
+
+const Post = list({
+  fields: {
+    title: text(),
+    status: select({
+      options: [
+        { label: 'Draft', value: 'draft' },
+        { label: 'Published', value: 'published' },
+      ],
+    }),
+  },
+  ui: {
+    listView: {
+      rowActions: [
+        {
+          key: 'publish',
+          label: 'Publish now',
+          icon: 'send',
+          destructive: false,
+          hasAccess: ({ session }) => session !== null,
+          isAvailable: ({ item }) => item.status !== 'published',
+          handler: async ({ id, context }) => {
+            const post = await context.db.Post.update({
+              where: { id },
+              data: { status: 'published' },
+            })
+            return { message: post ? 'Published' : 'Not published' }
+          },
+        },
+      ],
+    },
+  },
+})
+```
+
+| Option        | Required | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `key`         | yes      | Stable id the client sends back to dispatch the action. Unique within the list: `config()` throws on a duplicate, naming the list and the key.                                                                                                                                                                                                                                                                                                                             |
+| `label`       | yes      | Menu item text.                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `icon`        | no       | One of `archive`, `check`, `copy`, `download`, `eye`, `eye-off`, `flag`, `lock`, `mail`, `refresh`, `send`, `star`, `trash`, `undo`, `unlock`, `upload`.                                                                                                                                                                                                                                                                                                                   |
+| `destructive` | no       | Styles the item as destructive and confirms before running.                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `hasAccess`   | no       | `({ session, context, listKey }) => boolean \| Promise<boolean>`. Resolved once per request; only `true` shows and runs it, and anything else, or a throw, hides it on every row and refuses it.                                                                                                                                                                                                                                                                           |
+| `isAvailable` | no       | `({ item, session }) => boolean`, **synchronous**, evaluated on the server for each row, so a page of rows never fans out into queries. `item` is the row's own columns, foreign keys and computed fields, read with no includes exactly as dispatch re-reads it. If that read fails, each row offers only the actions that declare no `isAvailable`. A result that is not a boolean, a Promise included, is logged and treated as unavailable here and at dispatch alike. |
+| `handler`     | yes      | `({ listKey, id, item, context }) => { message? }`. `id` is the list's own id type. Runs on the server inside a transaction holding a row lock on the target row; do all work through `context.db`.                                                                                                                                                                                                                                                                        |
+
+Only `key`, `label`, `icon` and `destructive` cross to the client, and each row
+receives only the keys available on it. Handlers, `hasAccess` and `isAvailable`
+never leave the server. Without a `serverAction` the list view offers no custom
+actions, so it skips the availability read altogether.
+
+Running an action dispatches `{ action: 'rowAction', key, id }` through the
+admin's `serverAction`. The server re-runs `hasAccess` before it touches the
+row, so a refused session never takes a lock. It then opens a transaction, takes
+a row lock on the target row (`.forUpdate()`), re-reads the row through the
+secured context in its own statement after the lock, and re-runs `isAvailable`
+against that read before the handler runs. A row that is missing, that the session can
+no longer read, or that is no longer eligible all answer with the same "not run"
+outcome, so a stale page can neither run an action nor learn why it was refused.
+
+The handler runs inside that transaction, still holding the lock, and its
+`context` is bound to it. Its `context.db` writes commit atomically with the
+check: a handler that throws rolls them back, and two concurrent dispatches of a
+one-shot action (`isAvailable: ({ item }) => item.sentAt === null`) run the
+handler once, the second answering "not run". Because the lock is held for as
+long as the handler runs, keep slow external calls (an email, a payment API)
+short, or make them after the handler returns. The outcome — the handler's
+`message`, or that the action was not run — appears in the list's status line,
+which survives the refresh that follows. When the dispatch itself fails (the
+network drops, or a deploy invalidated the server action), the server may still
+have run it, so the status line says the result is unknown and the list
+refreshes. Choosing another action, or confirming a Delete, on a row whose
+action is still running runs nothing and says that another action is still
+running.
+
+The menu is keyboard operable: Enter, Space or ArrowDown on the trigger opens
+it, the arrow keys, Home and End move through it, Escape closes it, and focus
+returns to the trigger, including after a confirmation dialog closes. Its parts
+carry the `row-actions-trigger`, `dropdown-menu-content` and `dropdown-menu-item`
+slots, and the row title link carries `row-title-link`.
+
+### Preset views
+
+A list can offer **Preset views**: named starting points shown as tabs above
+the Filter builder, after an implicit **All** tab. Declare them under
+`ui.listView.presets`, each with a non-empty key unique within the list
+(`config()` throws otherwise):
+
+```ts
+import { quoteFilterValue } from '@opensaas/stack-core'
+
+ui: {
+  listView: {
+    presets: [
+      {
+        key: 'my-drafts',
+        label: 'My drafts',
+        // A string, or a function of the session returning one
+        search: ({ session }) => `status:draft author:#${session?.userId ?? ''}`,
+        sort: { field: 'title', direction: 'asc' }, // optional
+        hasAccess: ({ session }) => typeof session?.userId === 'string', // optional
+      },
+      {
+        key: 'named-for-me',
+        label: 'Named for me',
+        search: ({ session }) => `title:${quoteFilterValue(session?.name ?? '')}`,
+      },
+    ],
+  },
+}
+```
+
+- **`search`** is a query in the [`?search=` grammar](#filtering-and-sorting),
+  or a function of `{ session, context, listKey }` returning one. It is
+  resolved on the server for every request, then runs through the same filter
+  engine and secured `context.db` as a typed `?search=`, so a preset can only
+  narrow what the session may already see. To match the session's own records,
+  use `author:#<id>`: it matches exactly that related record, where
+  `author:"Ada"` would match every author whose name contains "Ada". Quote any
+  other value built from session data with `quoteFilterValue` from
+  `@opensaas/stack-core`: it always reads back as exactly one value, whatever
+  quotes, backslashes, commas or operators the data holds.
+- **`sort`** applies while the preset is open. It goes through the same check as
+  `?sort=`, so a field the session cannot order by is ignored. An explicit
+  `?sort=` wins over it; without either, `initialSort` applies.
+- **`hasAccess`** hides the tab from a session. Only `true` opens it; any other
+  result, or a throw, counts as denied.
+
+`?preset=<key>` opens a preset. Because the server resolves `search` against
+the session of whoever opens the link, a shared "My drafts" link shows each
+recipient their own drafts. Paging keeps `?preset=`. The first edit — a filter,
+sort, column or page-size change — writes the preset's resolved query out as
+`?search=` (with `?sort=`) and drops `?preset=`, so nothing on screen changes
+and the admin carries on refining from there. The All tab returns to the plain
+list.
+
+A key the list does not declare, one whose `hasAccess` denies the session, or
+one whose `search` throws opens the plain list, exactly as a link with no
+`?preset=` would. While a preset is open, `?search=` is ignored.
+
+Tabs carry no counts. Only each visible preset's `key` and `label`, and the
+open preset's resolved query and sort, cross to the client; `search` and
+`hasAccess` never leave the server. `ListView` takes the key as its `preset`
+prop, which `AdminUI` reads from `?preset=`, and hands `ListViewClient` the tabs
+as `presets` and the open key as `activePreset`. The tabs are links in a
+`nav` labelled "<List> views", the open one marked `aria-current="page"`, and
+carry the `preset-tabs` and `preset-tab` slots. All is current only on the plain
+list; while a `?search=` filters it, no tab is. An open preset with no rows names
+the preset ("No rows in “My drafts”") rather than its resolved query.
+
 ### Filtering and sorting
 
 The list view's Filter builder and the `?search=` query it serialises are one
 grammar. A token is `field:value`, optionally with a comparison
 (`views:>100`); a bare word is free text, OR-matched across every field that
-declares itself free-text. Tokens combine with implicit AND, and a token the
-list cannot honour — an unknown field, an unsupported operator, an empty value —
-degrades to free text rather than erroring.
+declares itself free-text. A value with spaces is quoted
+(`title:"Ada Lovelace"`), and quoted text is always literal: `"status:draft"`
+searches for those words rather than filtering on `status`. Inside quotes, `\"`
+is a literal quote and `\\` a literal backslash. Tokens combine with implicit
+AND. A token with an empty value (`title:` or `""`) filters nothing, and a token
+the list cannot honour — an unknown field or an unsupported operator — degrades
+to free text rather than erroring.
+
+| Syntax                 | Meaning                                                 |
+| ---------------------- | ------------------------------------------------------- |
+| `field:value`          | Is, or contains on a text or relationship field         |
+| `-field:value`         | Is not, or does not contain                             |
+| `field:a,b`            | Is any of these values; each value is quoted on its own |
+| `field:!` / `-field:!` | Is empty / is not empty, on a field that can be empty   |
+| `field:"!"`            | The literal text `!`                                    |
+| `(a OR b)`             | An OR group: rows matching any of its tokens            |
+
+"Is not" keeps the rows with no value: `-category:product` returns uncategorised
+rows too, which SQL's `NOT` alone would drop. `field:!` is understood only on a
+field whose Filter spec says what empty means; on any other field it degrades to
+free text. A token that cannot map in any part is searched as one free-text
+word, and its chip shows exactly that word. A positive token searches its
+values with the field name dropped: `nosuchfield:Findable` searches `Findable`,
+and `status:draft,bogus` searches `draft,bogus` rather than for drafts. A
+negated token searches its whole literal and is never negated: `-secret:x`, on
+a field the session cannot read or the list does not have, searches for
+`-secret:x`, so negation never turns an unreadable field into a filter. A comma
+in a free-text word is part of the word.
+
+An OR group joins two or more tokens: `(status:draft OR author:#42) views:>100`
+is drafts or anything of that author's, with more than 100 views. The keyword
+is uppercase `OR`, the `(` sits directly before the first token and the `)`
+directly after the last, no member holds an unquoted parenthesis of its own, and
+groups do not nest. Anything else keeps its literal meaning: `a OR b` without
+parentheses, a lowercase `(a or b)`, a quoted `"OR"`, an unmatched parenthesis,
+a nested `((a OR b) OR c)` and `(see OR note(1) later)` are all free-text
+words. Quote a value to keep a parenthesis in it: `(title:"f(x)" OR beta)`. Each token in a group maps exactly as it would on its own, negation
+included, and a range inside a group is one `a..b` token. A token in a group
+that cannot map stays in place as its free-text alternative and is never
+dropped: `(status:draft OR secret:x)`, on a field the session cannot read,
+matches drafts or rows whose text contains `x`, and a negated one searches its
+literal `-secret:x`. Inside a group, two values on one field are both kept.
+Whatever the query, it is ANDed with the list's access filter, so a group can
+only ever narrow what the session may see.
 
 Each field type declares which operators it accepts. Text fields accept `eq`
-only, and lower it to `contains`. Numbers, decimals, big integers and timestamps
-accept `eq`, `gt`, `gte`, `lt` and `lte`.
+only, and lower it to `contains`. Numbers, decimals, big integers, timestamps
+and calendar days accept `eq`, `gt`, `gte`, `lt` and `lte`. A timestamp takes
+anything JavaScript's `Date` parses; a calendar day takes a `YYYY-MM-DD` date, and
+one the month does not have, such as `2026-02-31`, degrades to free text.
+
+`field:a..b` is an inclusive range in one token: `views:1000..5000` is
+`views:>=1000 views:<=5000`. It splits at the first `..`, and any field that
+accepts both `gte` and `lte` takes one, because the engine lowers each bound
+through that field's own `gte` and `lte` conditions. A range with a bound the
+field does not take (`views:ten..20`) degrades to free text as `ten..20`, like
+any other unmappable token, and a quoted `"1..2"` is always a literal value.
+On a field that takes no range, `field:a..b` keeps the meaning it always had:
+that field's own `is`/`contains` on the literal `a..b`, so `title:wait...what`
+is still "Title contains wait...what". The two-token form stays valid and is
+never rewritten. `-views:1000..5000` excludes the range, keeping the rows with
+no value like any other "is not", and a list is never a range:
+`title:a..b,c` matches either of the literal values `a..b` and `c`.
+A to-one relationship takes the related record's Item label, matched as
+`contains` (`author:pri`), or one record by its id, written `field:#id`
+(`author:#0190a3c2-…`). An id token matches exactly that record through the
+relation, so the related list's `query` access applies and a record the session
+cannot read matches nothing. The id is parsed as the related list's id
+strategy declares (`uuid7`, `cuid2`, `int autoincrement`); one that list cannot
+hold degrades to free text. `-author:#id` excludes that record, keeping the rows
+with no author, and `author:#a,#b` matches either. A quoted `author:"#42"` is
+label text, never an id.
+
+#### The Filter builder bar
+
+The Filter builder is one bar at the top of the list. Focusing it lists every
+filterable field. Typing suggests fields whose names match, values a field
+enumerates in config (`draft` offers "Status is Draft"), plain phrases such as
+`views > 5000`, `status is draft` or `status draft`, and always a free-text
+search for exactly what was typed. Suggestions come from each field's Filter
+spec and the config only, never from the list's data.
+
+Choosing a field goes straight to its values with the field's default
+condition. A condition row above the values switches it by click, by Tab or by
+Alt+← →:
+the field's own operators, then "is not" (or "does not contain" on a text field), "is any of"
+on a field with enumerated values, and "is empty" and "is not empty" on a field
+that can be empty, and "between" on a field that takes ranges. "Is any of" turns the values into a multi-select list: each
+tick updates the one chip and the list at once, and the menu stays open for
+the next. Phrases such as `status is not draft`, `views != 3` and
+`author is empty` read the same way. Typing `>`, `>=`, `<` or `<=`
+at the start of a value sets the comparison. A value that does not fit the
+field (`abc` for a whole number) is explained under the suggestions instead of
+being applied. "Search all text" reads what was typed in the URL grammar, so a
+quoted `"Ada Lovelace"` stays one phrase.
+
+A field that takes ranges also offers **between**. Its value is typed as
+`1000-5000`, `1000 to 5000` or `1000..5000` (the dash that leaves two values
+the field takes is the separator, so `-10--5` and `2026-01-01-2026-01-31`
+read as expected), and the plain phrase `views between 1000 and 5000` works
+too. A range is always written to the URL as one `a..b` token. Pasted `>=` and
+`<=` tokens on one field, side by side, read back as one "between" chip, while
+the URL keeps the two tokens exactly as written; editing that chip writes it
+back as one range.
+
+Timestamp and calendar day fields add date inputs and presets: Today, Last 7
+days, Last 30 days, This month, Last month and This year. A preset writes the
+absolute dates it covers on the day it is picked, and the chip shows them, so a
+bookmarked preset filter keeps its dates and reads as stale; there is no
+relative-date grammar. A calendar day is written as plain `YYYY-MM-DD` dates. A
+timestamp is written as full ISO instants in the browser's own offset, from the
+first millisecond of the first day to the last millisecond of the last, so the
+whole end day is included and results follow the admin's time zone:
+`publishedAt:2026-11-02T00:00:00.000+11:00..2026-11-08T23:59:59.999+11:00`. A
+plain date typed or pasted against a timestamp is read the same way: "is
+2026-11-03" covers that local day, "at most" runs to its end and "at least"
+from its start, and `created at 2026-01-01 to 2026-01-31` is a range. Any other
+time typed against a timestamp is written as an ISO instant in the browser's
+offset, and text that is not a time is explained rather than applied. A
+comparison or range chip shows an instant on a day boundary as its date, an
+"is" chip shows its instant as written, and a plain date already in a URL is
+shown as written until the chip is edited and applied again.
+
+On a field with date inputs, Tab moves from the bar into them and on to
+**Apply dates**, and Shift+Tab from the first date input returns to the bar.
+There, Alt+← → switches the condition instead of Tab.
+Choosing a to-one relationship field lists the first page of its records, from
+the same access-scoped search the item form's relationship picker uses, and
+typing searches them. Typing the field and the text together, such as
+`author pri`, goes straight to the matching records: the leading words name the
+field (the longest field name or label the text starts with) and the rest is the
+search (a wholly quoted search such as `author "pri"` searches the words
+inside the quotes), so the first suggestions are the records, followed by
+"Author contains pri" and a free-text search. While the text could still be
+the start of a longer field's name, such as `author em` beside an Author Email
+field, nothing is looked up. Relationships are searched only once their field is
+named. When the related list's label cannot be searched for this session, typing
+hides the records and offers only the "contains" text. Where its records can be picked, a
+to-one relationship field's conditions read "is" and "is not"; any other
+relationship field keeps "contains" and "does not contain". Picking a record writes `field:#id` and its chip shows the record's Item
+label ("Author is Priya Nair"), while the URL carries the id. Picking under
+"is not" writes `-field:#id` ("Author is not Priya Nair"). Typing without
+picking writes label text instead, shown as "contains" ("Author contains pri"),
+or "does not contain" under "is not". The list view resolves
+the label of each id in the URL through the secured context, so a bookmarked
+link shows the label too, and a record the session cannot read shows its raw
+id. An id the related list cannot hold is shown as the free text the list
+searches for ("Text contains #abc"). Without a `serverAction` the builder cannot search, and a relationship
+field takes typed label text only.
+
+On a to-many count Cell, the count links to the other list filtered to this row
+(`/admin/post?search=author:%23<id>`), where the relationship names its other
+side, the other list has a list view (it is not a singleton), and the session
+may query that list and filter that side by id.
+
+#### Filtering from the table
+
+- **Header funnels.** A column whose field this session may filter shows a
+  funnel button ("Filter by Status") in its header. It opens the Filter builder
+  with that field staged, so the next step is picking a condition or value.
+- **Value funnels.** A select (or other enumerated) value and a to-one
+  relationship value show a funnel beside the Cell ("Filter to Status is
+  Draft"). It adds `status:draft`, quoted where the grammar needs it, or
+  `author:#<id>` to the current query, replacing an earlier `is` on the same
+  field the way the builder does. On an open Preset view it expands the preset
+  to `?search=` first, so the rows on screen are only narrowed. The funnel is a
+  wrapper the list view puts around the rendered Cell: the Cell registry and
+  custom Cells are unchanged, and the label column gets none, nor does a value
+  the query already filters its field to. Both funnels appear only on fields
+  in this session's Filter specs, and both build on the Filter builder's
+  current query, so a chip whose navigation has not landed yet is kept.
+- **The zero-results empty state.** When the query returns no rows, the list
+  view counts, for each of the first five terms, how many rows the query
+  returns with that term removed, and offers the one that returns the most:
+  "Remove “Status is Draft” to see 12 rows". A paired `>=`/`<=` range is one
+  term, and so is an OR group, which is removed whole. **Clear filters** (**Show all** on a Preset view) is always offered,
+  and is the only way out when no single removal returns rows. Each count is
+  one secured `context.db` count with the access filter ANDed, run in parallel
+  and only when the total is zero, so it reveals nothing the session could not
+  already list. `ListViewClient` takes the result as `filterRemoval`
+  (`{ search, query, sentence, rows }`: the query it was counted against, the
+  query without the term, the term's chip text and the rows left).
+
+`FilterBuilder` takes a `ref` whose `FilterBuilderHandle` has
+`startFilter(field)` (the header funnel), `addTokens(tokens)` (the value
+funnel, which adds its filter outside any OR group), `currentQuery()` and `applyQuery(query)` (the removal). The funnels'
+slots are `list-view-header-filter`, `list-view-value-filter` and
+`list-view-value-filter-button`; the empty state's removal is
+`list-view-empty-remove`.
+
+Each committed Filter token becomes a chip, and the list updates at once: the
+builder navigates with `router.push` inside a transition, so the current rows
+stay on screen with a progress indicator and Back steps through each change.
+There is no Apply button, and text still being typed never navigates. Clicking
+any part of a chip edits it in place, its × removes it, and **Clear** removes
+every chip. A second `is` or `is any of` filter on a field replaces the first,
+while an `is not` never does, and typing two
+at once (`status:draft status:published`) keeps the last; a hand-written pair in
+the URL stays as written and matches nothing. Pasting a query in the URL grammar
+turns it into chips, and a filtered URL reproduces the same chips. A token whose
+value the field does not take (`views:abc`) shows as a "Text contains" chip,
+because the engine searches it as free text, and is written back exactly as it
+was read.
+
+Chips are joined by connector buttons. Between two filters the connector reads
+**and**; clicking it joins them into an OR group, and the group is drawn as one
+bordered unit whose members are joined by **or**. Clicking an **or** splits the
+group there. Typing `or` and a space after the last filter starts an
+alternative to it, and Backspace on the empty bar backs out of it. This
+happens whenever `or ` starts an empty input with chips present, so a search for
+a phrase that starts with "or" is typed quoted: `"or else"`. An
+alternative is one filter, since groups do not nest: while one is being typed,
+only suggestions that write a single filter are offered. Typing `draft or priya`
+searches for those words by default, as the URL reads them, and offers the
+whole group as the next suggestion, each side read as a filter or as text to
+search for. An `or` inside quotes, or inside an option's exact label, never
+splits. Typing or pasting a group in the URL grammar, `(draft OR priya)`,
+applies exactly that group. A group left with one member
+stops being a group. The "replace the first `is`" rule above applies outside
+groups only: inside one, `status:draft` and `status:published` are both kept,
+and a filter added outside never removes a group's member. A "between" chip
+joins a group as its one `a..b` token. One whose ends cannot be written that
+way, such as `title:>="Ada L" title:<=Bob`, stays a `>=` and `<=` pair, and the
+builder refuses to put it in a group, with a hint saying why. `>=` and `<=`
+tokens are never read as one "between" chip across a group's edge.
+
+| Key             | Does                                                         |
+| --------------- | ------------------------------------------------------------ |
+| `/`             | Focuses the bar from anywhere on the page                    |
+| ↑ ↓             | Moves through the suggestions                                |
+| Enter           | Takes the active suggestion, or edits the selected chip      |
+| Tab / Shift+Tab | Switches the condition while a field is staged               |
+| Tab (dates)     | Moves into the date inputs of a field with dates             |
+| Alt+← →         | Switches the condition while a field is staged               |
+| Backspace, ← →  | Selects a chip from an empty bar; Backspace again removes it |
+| Esc             | Cancels the filter being built and closes the suggestions    |
+| `or` then space | Starts an alternative to the last filter                     |
+
+The bar is a labelled combobox. DOM focus stays on its input and
+`aria-activedescendant` names the active suggestion; the number of suggestions
+and the list's result count are announced through live regions.
+
+`FilterBuilder` is exported from `@opensaas/stack-ui` and
+`@opensaas/stack-ui/standalone`. It takes `suggestions` (from core's
+`collectFilterSuggestions`), `defaultValue` (the current `?search=`) and an
+optional `onApply(query)`, called inside a transition on every commit; without
+it the builder navigates to `?search=` on the current path itself. Optional
+`label`, `placeholder` and `resultCount` name the combobox, prompt the empty
+bar and announce the row count. With `listKey` and `serverAction` it looks up
+relationship records, and `recordLabels` (keyed by field, `{ id, label }`
+pairs, with a `null` label for a record the session cannot read) names the
+records the `field:#id` tokens in `defaultValue` point at. Its
+slots are `filter-builder` (root),
+`filter-builder-bar`, `filter-builder-chip` (with `data-armed` and
+`data-editing`), `filter-builder-chip-field`, `filter-builder-chip-condition`,
+`filter-builder-chip-value`, `filter-builder-chip-remove`,
+`filter-builder-group` (an OR group, with `data-alternative` while one is being
+added to it), `filter-builder-connector` (the **and** or **or** button between
+chips, with `data-joined` on an **or**), `filter-builder-alternative` (the
+**or** shown while an alternative is being typed), `filter-builder-draft`, `filter-builder-input`, `filter-builder-clear`,
+`filter-builder-progress`, `filter-builder-menu`,
+`filter-builder-menu-conditions`, `filter-builder-menu-condition`,
+`filter-builder-dates`, `filter-builder-option` (with `data-active`), `filter-builder-option-check`
+(the tick on an "is any of" value) and `filter-builder-hint`. An "is empty"
+chip has no `filter-builder-chip-value` part.
 
 #### What filtering costs
 
@@ -301,7 +793,7 @@ Three consequences of lowering these filters onto the secured read's closed
   three count expressions map onto a relation quantifier: `orders:0` becomes
   `none`, and `orders:>0` and `orders:>=1` both become `some`. Anything else —
   `orders:3`, `orders:>=2`, `orders:<5` — has no quantifier to lower to, so it
-  falls through to the free-text pass.
+  falls through to the free-text pass. The builder offers exactly those three.
 - **Sorting by a to-many count is gone.** `orderBy` takes this list's own scalar
   columns; a relationship is refused. Order by a stored counter column if you
   need that ordering.
@@ -663,6 +1155,12 @@ Low-level shadcn/ui components for building custom interfaces.
 - `Card`, `CardHeader`, `CardContent`, `CardFooter` - Card components
 - `Dialog`, `DialogContent`, `DialogHeader`, `DialogFooter` - Modal dialogs
 - `Popover`, `PopoverTrigger`, `PopoverContent` - Popover components
+- `DropdownMenu`, `DropdownMenuTrigger`, `DropdownMenuContent`, `DropdownMenuItem`,
+  `DropdownMenuCheckboxItem`, `DropdownMenuRadioGroup`, `DropdownMenuRadioItem`,
+  `DropdownMenuLabel`, `DropdownMenuSeparator` and the submenu parts - Menus on
+  Radix's dropdown menu, keyboard-navigable, with a `dropdown-menu-*`
+  `data-slot` on the rendered parts (trigger, content, items, label, shortcut,
+  separator and submenu trigger and content). `DropdownMenuItem` takes `destructive`
 
 **Data Display:**
 

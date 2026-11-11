@@ -180,12 +180,12 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.waitForURL(/\/admin\/post$/, { timeout: 10000 })
       await page.waitForLoadState('networkidle')
 
-      // Wait for the post to appear in the table before clicking Edit
+      // Wait for the post to appear in the table before opening it
       await expect(page.locator(`text=${uniqueTitle}`)).toBeVisible({ timeout: 5000 })
 
-      // Click on the Edit link for the created post - use the row containing our unique title
+      // Open the created post through its row title link - use the row containing our unique title
       const postRow = page.locator('tr', { has: page.locator(`text=${uniqueTitle}`) })
-      await postRow.getByRole('link', { name: 'Edit' }).click()
+      await postRow.locator('[data-slot="row-title-link"]').click()
       await page.waitForLoadState('networkidle')
 
       // Verify publishedAt is set - it's displayed as a button with the date/time
@@ -220,9 +220,9 @@ test.describe('Posts CRUD and Access Control', () => {
       // Wait for the specific post to appear
       await expect(page.locator(`text=${uniqueTitle}`)).toBeVisible({ timeout: 5000 })
 
-      // Find the row containing our post and click its Edit link
+      // Find the row containing our post and open it through its title link
       const postRow = page.locator('tr', { has: page.locator(`text=${uniqueTitle}`) })
-      await postRow.getByRole('link', { name: 'Edit' }).click()
+      await postRow.locator('[data-slot="row-title-link"]').click()
       await page.waitForLoadState('networkidle')
 
       // Update title
@@ -259,7 +259,7 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.waitForURL(/\/admin\/post$/, { timeout: 10000 })
 
       // Get the post URL/ID
-      await page.getByRole('link', { name: 'Edit' }).first().click()
+      await page.locator('[data-slot="row-title-link"]').first().click()
       const postUrl = page.url()
 
       // Sign out and sign in as different user
@@ -358,7 +358,7 @@ test.describe('Posts CRUD and Access Control', () => {
       await page.waitForURL(/\/admin\/post$/, { timeout: 10000 })
 
       // Verify author can see internal notes
-      await page.getByRole('link', { name: 'Edit' }).first().click()
+      await page.locator('[data-slot="row-title-link"]').first().click()
       await page.waitForLoadState('networkidle')
 
       const notesField = page.locator('textarea[name="internalNotes"]')

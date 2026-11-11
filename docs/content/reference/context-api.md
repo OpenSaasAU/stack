@@ -466,9 +466,9 @@ async function serverAction(props: ServerActionInput) {
 
 Import the props type as `ServerActionInput` from `@opensaas/stack-ui/server`, not `ServerActionProps` from `@opensaas/stack-core/internal` directly — `internal` carries no semver guarantee.
 
-`props` is a **discriminated union on `action`**, eleven members wide. None of them throws — an access denial, a validation failure, and even a hook's own bug are all caught and turned into that action's own result shape carrying an `error` string, following [Silent failure](#silent-failure) for the first two and `databaseErrorMessage`'s own contract for the third ("anything else is a hook's own throw or a bug, and reaches the caller as its own message"). So the wrapper above needs no `try/catch` at all for the ordinary case. The one narrow exception is `bulkAction`'s own `hasAccess` check, which runs outside any `try`/`catch` here and so can still reject the call if it throws — see [`bulkAction`](#bulkaction).
+`props` is a **discriminated union on `action`**, twelve members wide. None of them throws — an access denial, a validation failure, and even a hook's own bug are all caught and turned into that action's own result shape carrying an `error` string, following [Silent failure](#silent-failure) for the first two and `databaseErrorMessage`'s own contract for the third ("anything else is a hook's own throw or a bug, and reaches the caller as its own message"). So the wrapper above needs no `try/catch` at all for the ordinary case.
 
-`create`, `update` and `delete` share a `{ success: boolean, … }` result. Every other action returns a shape named for itself instead — `{ options }`, `{ created }`, `{ updated }`, `{ deleted, total }`, `{ removed }`, `{ added }`, `{ linked }`, `{ bulkAction }` — deliberately, so a caller that redirects on `success` can never mistake an in-place relationship-table edit for the create/update/delete case it was written for.
+`create`, `update` and `delete` share a `{ success: boolean, … }` result. Every other action returns a shape named for itself instead — `{ options }`, `{ created }`, `{ updated }`, `{ deleted, total }`, `{ removed }`, `{ added }`, `{ linked }`, `{ bulkAction }`, `{ rowAction }` — deliberately, so a caller that redirects on `success` can never mistake an in-place relationship-table edit for the create/update/delete case it was written for.
 
 ### `create`, `update`, `delete`
 
@@ -516,10 +516,22 @@ Deletes each id **row by row through the secured context**, so every row's own d
 Runs a list's own custom bulk action ([`ui.listView.bulkActions`](/docs/reference/config-api)), looked up server-side by `key` — the client only ever sends the serialisable `{ key, ids }`, never the handler itself. Refusals:
 
 - `key` names no declared action on `listKey` → `{ bulkAction: false, error: 'Bulk action "…" not found on list "…"' }`.
-- The action's own `hasAccess` (if declared) returns false → `{ bulkAction: false, error: 'Access denied' }`. This is re-checked here on every call, so a client cannot invoke a bulk action its own UI merely hid. `hasAccess` itself runs outside a `try`/`catch`, unlike every other check in this section — if it **throws** rather than returning `false`, that reaches the caller as a rejection, not as `{ bulkAction: false }`.
+- The action's own `hasAccess` (if declared) returns anything other than `true`, or throws → `{ bulkAction: false, error: 'Access denied' }`. A throw is logged. This is re-checked here on every call, so a client cannot invoke a bulk action its own UI merely hid.
 - The handler throws a `ValidationError` or `DatabaseError` → that error's own message. Anything else the handler throws is logged server-side and reaches the caller only as `{ bulkAction: false, error: 'Action failed' }`, so a handler bug never leaks an internal detail.
 
 The handler receives `{ listKey, ids, context }` and does its own row-by-row work through `context.db`, so per-id access control and hooks still apply inside it — this action is a lookup-and-dispatch, not a bypass.
+
+### `rowAction`
+
+`{ listKey, action: 'rowAction', key, id }` → `{ rowAction: true, message? }` or `{ rowAction: false, error }`.
+
+Runs a list's own Row action ([`ui.listView.rowActions`](/docs/reference/ui#row-actions)), looked up server-side by `key`. It re-runs the action's `hasAccess` first, before anything touches the row, so a refused session never takes a lock. It then opens a [transaction](#transactions), takes a [row lock](#the-row-lock) on the target row with `.forUpdate()`, re-reads the row in its own statement after the lock, and re-runs `isAvailable` against that read before the handler runs. `isAvailable` must return a boolean synchronously; any other result, a Promise included, is logged and treated as unavailable, exactly as the list view treats it. Refusals:
+
+- `key` names no declared action on `listKey` → `{ rowAction: false, error: 'Row action "…" not found on list "…"' }`.
+- `hasAccess` returns anything other than `true` or throws, `id` is not an id the list can hold, the row is missing or denied, or `isAvailable` rejects the re-read row, throws or returns a non-boolean → `{ rowAction: false, error: 'This action was not run' }`. These are one outcome, so a caller cannot tell a denied row from a missing one ([Silent failure](#silent-failure)).
+- The handler throws a `ValidationError` or `DatabaseError` → that error's own message. Anything else is logged server-side and reaches the caller as `{ rowAction: false, error: 'Action failed' }`. Either way the transaction rolls back, so none of the handler's writes persist.
+
+The handler receives `{ listKey, id, item, context }`, where `id` is parsed through the list's id type (a `number` on an `int autoincrement` list), `item` is the post-lock re-read row, and `context` is bound to the transaction. The handler runs inside the transaction while it holds the row lock, so its `context.db` writes commit atomically with the check, and a concurrent dispatch on the same row waits for it and then re-checks `isAvailable` against what it committed. The lock is held for as long as the handler runs: keep slow external calls short, or make them after the handler returns.
 
 ### `removeRelated`, `updateRelated`, `createRelated`, `linkRelated`
 

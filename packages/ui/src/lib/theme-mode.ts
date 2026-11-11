@@ -10,6 +10,8 @@
  * component can never disagree about how the choice is stored or applied.
  */
 
+import { createStoredChoice } from './storedChoice.js'
+
 /** The three states a user can pick: pin light, pin dark, or follow the OS. */
 export type ThemeChoice = 'light' | 'dark' | 'system'
 
@@ -33,19 +35,10 @@ export function applyThemeChoice(choice: ThemeChoice): void {
   }
 }
 
-/** Read the persisted choice, defaulting to `'system'` when unset or unreadable. */
-export function readStoredChoice(): ThemeChoice {
-  try {
-    const stored = localStorage.getItem(THEME_STORAGE_KEY)
-    return isThemeChoice(stored) ? stored : 'system'
-  } catch {
-    return 'system'
-  }
-}
+const themeChoice = createStoredChoice(THEME_STORAGE_KEY, isThemeChoice, 'system')
 
-// In-page subscribers so a same-tab write re-renders the toggle. The browser's
-// `storage` event only fires in *other* tabs, so we notify locally on write.
-const listeners = new Set<() => void>()
+/** Read the persisted choice, defaulting to `'system'` when unset or unreadable. */
+export const readStoredChoice: () => ThemeChoice = themeChoice.read
 
 /**
  * Subscribe to color-scheme choice changes (this tab's writes + other tabs'
@@ -53,33 +46,10 @@ const listeners = new Set<() => void>()
  * `React.useSyncExternalStore`, which keeps the control hydration-safe without
  * calling `setState` inside an effect.
  */
-export function subscribeThemeChoice(listener: () => void): () => void {
-  listeners.add(listener)
-  try {
-    window.addEventListener('storage', listener)
-  } catch {
-    // `window` may be unavailable; the in-tab listener set still works.
-  }
-  return () => {
-    listeners.delete(listener)
-    try {
-      window.removeEventListener('storage', listener)
-    } catch {
-      // Ignore — mirror of the add above.
-    }
-  }
-}
+export const subscribeThemeChoice: (listener: () => void) => () => void = themeChoice.subscribe
 
 /** Persist the choice, ignoring failures (private mode / disabled storage). */
-export function storeChoice(choice: ThemeChoice): void {
-  try {
-    localStorage.setItem(THEME_STORAGE_KEY, choice)
-  } catch {
-    // Storage can be unavailable (private browsing, quota); the in-page choice
-    // still applies for this session, so a write failure is non-fatal.
-  }
-  for (const listener of listeners) listener()
-}
+export const storeChoice: (choice: ThemeChoice) => void = themeChoice.store
 
 /**
  * Self-contained inline script for the document `<head>`. It runs before first

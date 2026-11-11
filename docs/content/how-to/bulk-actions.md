@@ -87,8 +87,8 @@ Two rules keep custom actions safe:
 - **`destructive`** — when `true`, the admin must confirm in a dialog before the
   action runs (the same affordance as the built-in Delete).
 - **`hasAccess`** — an optional server-side gate, `({ session, context, listKey })
-=> boolean | Promise<boolean>`. Return `false` to hide the button from sessions
-  that may not perform it. It is re-checked on dispatch, so hiding a button is a
+=> boolean | Promise<boolean>`. Only `true` shows the button and runs the
+  action; anything else, or a throw, hides it and refuses it. It is re-checked on dispatch, so hiding a button is a
   UX affordance — the real boundary is your `handler` running through the secured
   context.
 
