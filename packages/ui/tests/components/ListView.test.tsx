@@ -13,6 +13,7 @@ import {
   virtual,
 } from '@opensaas/stack-core/fields'
 import { createTestDatabase, type TestDatabase } from '@opensaas/stack-core/testing'
+import { RELATIONSHIP_OPTIONS_MAX_TAKE } from '@opensaas/stack-core/internal'
 import { notFound, redirect } from 'next/navigation.js'
 import { ListView } from '../../src/components/ListView.js'
 import { ListViewClient, type ListViewClientProps } from '../../src/components/ListViewClient.js'
@@ -22,6 +23,11 @@ vi.mock('next/navigation.js', async (importOriginal) => ({
   useRouter: () => ({ push: vi.fn() }),
   usePathname: () => '/admin/fragile',
   useSearchParams: () => new URLSearchParams(),
+}))
+
+vi.mock('@opensaas/stack-core/internal', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@opensaas/stack-core/internal')>()),
+  RELATIONSHIP_OPTIONS_MAX_TAKE: 2,
 }))
 
 vi.mock('next/link.js', () => ({
@@ -112,6 +118,43 @@ const config: OpenSaasConfig = {
         posts: relationship({ ref: 'Post.vault', many: true }),
       },
     },
+    Shelf: {
+      fields: {
+        name: text(),
+        crates: relationship({ ref: 'Crate.shelf', many: true }),
+      },
+      access: { operation: { query: () => true } },
+    },
+    Crate: {
+      fields: { name: text(), shelf: relationship({ ref: 'Shelf.crates' }) },
+    },
+    Bin: {
+      fields: {
+        name: text(),
+        boxes: relationship({ ref: 'Box.bin', many: true }),
+        notices: relationship({ ref: 'Notice.bin', many: true }),
+      },
+      access: { operation: { query: () => true } },
+    },
+    Box: {
+      fields: {
+        name: text(),
+        bin: relationship({
+          ref: 'Bin.boxes',
+          access: {
+            read: () => {
+              throw new Error('box rule failed')
+            },
+          },
+        }),
+      },
+      access: { operation: { query: () => true } },
+    },
+    Notice: {
+      fields: { body: text(), bin: relationship({ ref: 'Bin.notices' }) },
+      access: { operation: { query: () => true } },
+      isSingleton: true,
+    },
     Gadget: {
       fields: {
         name: text({ validation: { isRequired: true } }),
@@ -146,6 +189,49 @@ const config: OpenSaasConfig = {
         },
       },
     },
+    Ledger: {
+      fields: {
+        name: text(),
+        secret: text({ access: { read: () => false } }),
+        ownNote: text({ access: { read: ({ item }) => item.name === 'Mine' } }),
+        audit: text({ access: { read: ({ session }) => session?.role === 'admin' } }),
+      },
+      access: { operation: { query: () => true } },
+    },
+    Dossier: {
+      fields: {
+        title: text(),
+        codename: text({ access: { read: () => false } }),
+        handlerAgent: relationship({ ref: 'Operative', access: { read: () => false } }),
+        ownMemo: text({ access: { read: ({ item }) => item.title === 'Mine' } }),
+      },
+      access: { operation: { query: () => true } },
+      ui: { labelField: 'codename', avatar: true },
+    },
+    Operative: {
+      fields: { name: text() },
+      access: { operation: { query: () => true } },
+    },
+    Brittle: {
+      fields: {
+        name: text(),
+        meta: json({
+          access: {
+            read: () => {
+              throw new Error('rule boom')
+            },
+          },
+        }),
+      },
+      access: { operation: { query: () => true } },
+    },
+    Sealed: {
+      fields: {
+        secret: text({ access: { read: () => false } }),
+        hidden: text({ ui: { listView: { defaultColumn: false } } }),
+      },
+      access: { operation: { query: () => true } },
+    },
     Fragile: {
       fields: {
         name: text({
@@ -164,6 +250,7 @@ const config: OpenSaasConfig = {
 
 let database: TestDatabase
 let ada: Session = {}
+let vaultId = ''
 
 /**
  * ListView returns `<div className="p-8">{header}<ListViewClient ... /></div>`.
@@ -218,6 +305,7 @@ beforeEach(async () => {
   await create('User', { name: 'Grace' })
   const editor = await create('Editor', { name: 'Editor', email: 'editor@example.com' })
   const vault = await create('Vault', { note: 'sealed' })
+  vaultId = String(vault.id)
   await create('Post', {
     title: 'On Engines',
     published: true,
@@ -233,6 +321,16 @@ beforeEach(async () => {
   await create('Post', { title: 'Unfinished', published: false })
   await create('Draft', { title: 'Notes', owner: { connect: { id: author.id } } })
   await create('Draft', { title: 'Sketches', owner: { connect: { id: author.id } } })
+  await create('Ledger', { name: 'Mine', secret: 's1', ownNote: 'n1', audit: 'a1' })
+  await create('Ledger', { name: 'Theirs', secret: 's2', ownNote: 'n2', audit: 'a2' })
+  const operative = await create('Operative', { name: 'Smiley' })
+  await create('Dossier', {
+    title: 'Mine',
+    codename: 'Karla',
+    ownMemo: 'm1',
+    handlerAgent: { connect: { id: operative.id } },
+  })
+  await create('Dossier', { title: 'Theirs', codename: 'Gerald', ownMemo: 'm2' })
   await create('Gadget', { name: 'Anvil', active: true, meta: { a: 1 }, secret: 'hunter2hunter2' })
   await create('Gadget', {
     name: 'Bellows',
@@ -374,6 +472,135 @@ describe('ListView server-side filtering (filter engine over the secured surface
   )
 })
 
+describe('ListView relationship lookup by id', () => {
+  it(
+    'filters to exactly the record a `field:#id` token names and resolves its label',
+    async () => {
+      await create('User', { name: 'Ada Reed' })
+      const props = await render(ada, { listKey: 'Post', search: `author:#${ada.userId}` })
+      expect(props.items.map((item) => item.title).sort()).toEqual(['On Engines', 'On Looms'])
+      expect(props.recordLabels).toEqual({ author: [{ id: String(ada.userId), label: 'Ada' }] })
+    },
+    BOOT,
+  )
+
+  it(
+    'excludes the record a negated `-field:#id` names and resolves its label',
+    async () => {
+      const props = await render(ada, { listKey: 'Post', search: `-author:#${ada.userId}` })
+      const titles = props.items.map((item) => item.title)
+      expect(titles).not.toContain('On Engines')
+      expect(titles).not.toContain('On Looms')
+      expect(props.recordLabels).toEqual({ author: [{ id: String(ada.userId), label: 'Ada' }] })
+    },
+    BOOT,
+  )
+
+  it(
+    'resolves each label of a `field:#a,#b` token',
+    async () => {
+      const props = await render(ada, {
+        listKey: 'Post',
+        search: `author:#${ada.userId},#0190a3c2-7b1e-7000-8000-000000000001`,
+      })
+      expect(props.items.map((item) => item.title).sort()).toEqual(['On Engines', 'On Looms'])
+      expect(props.recordLabels).toEqual({
+        author: [
+          { id: String(ada.userId), label: 'Ada' },
+          { id: '0190a3c2-7b1e-7000-8000-000000000001', label: null },
+        ],
+      })
+    },
+    BOOT,
+  )
+
+  it(
+    'matches nothing and resolves no label for a record the session cannot read',
+    async () => {
+      const props = await render(ada, { listKey: 'Post', search: `vault:#${vaultId}` })
+      expect(props.items).toEqual([])
+      expect(props.recordLabels).toEqual({})
+    },
+    BOOT,
+  )
+
+  it(
+    'resolves no label for an id the related list cannot hold, which searches as text',
+    async () => {
+      const props = await render(ada, { listKey: 'Post', search: 'author:#nope' })
+      expect(props.items).toEqual([])
+      expect(props.recordLabels).toEqual({})
+    },
+    BOOT,
+  )
+
+  it(
+    'reads labels for at most RELATIONSHIP_OPTIONS_MAX_TAKE ids, and past that shows the raw id',
+    async () => {
+      expect(RELATIONSHIP_OPTIONS_MAX_TAKE).toBe(2)
+      const unknownIds = [
+        '0190a3c2-7b1e-7000-8000-000000000001',
+        '0190a3c2-7b1e-7000-8000-000000000002',
+      ]
+      const adaId = String(ada.userId)
+      const search = [...unknownIds, adaId].map((id) => `author:#${id}`).join(' ')
+      const props = await render(ada, { listKey: 'Post', search })
+      const records = props.recordLabels?.author ?? []
+      expect(records).toHaveLength(RELATIONSHIP_OPTIONS_MAX_TAKE + 1)
+      expect(records.every((record) => record.label === null)).toBe(true)
+      expect(records.at(-1)).toEqual({ id: adaId, label: null })
+
+      const within = await render(ada, { listKey: 'Post', search: `author:#${adaId}` })
+      expect(within.recordLabels).toEqual({ author: [{ id: adaId, label: 'Ada' }] })
+    },
+    BOOT,
+  )
+
+  it(
+    'links a to-many count to the other list filtered by the row id',
+    async () => {
+      const props = await render(ada, { listKey: 'User' })
+      expect(props.countLinks).toEqual({ posts: { urlKey: 'post', field: 'author' } })
+      const markup = renderToStaticMarkup(<ListViewClient {...props} />)
+      expect(markup).toContain(
+        `href="/admin/post?search=${encodeURIComponent(`author:#${ada.userId}`)}"`,
+      )
+    },
+    BOOT,
+  )
+
+  it(
+    'links no count whose other list the session cannot filter',
+    async () => {
+      await create('Shelf', { name: 'Top' })
+      const props = await render(ada, { listKey: 'Shelf' })
+      expect(props.items.map((item) => item.crates)).toEqual([0])
+      expect(props.countLinks).toEqual({})
+    },
+    BOOT,
+  )
+
+  it(
+    'renders without a link when the other list’s field rule throws, and links no singleton',
+    async () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+      try {
+        await create('Bin', { name: 'Blue' })
+        const props = await render(ada, { listKey: 'Bin', columns: ['name', 'boxes', 'notices'] })
+        expect(props.items.map((item) => item.name)).toEqual(['Blue'])
+        expect(props.countLinks).toEqual({})
+        expect(consoleError).toHaveBeenCalledWith(
+          'Count link to "Box.bin" could not be resolved:',
+          expect.any(Error),
+        )
+      } finally {
+        consoleError.mockRestore()
+      }
+    },
+    BOOT,
+  )
+})
+
 describe('ListView excludes read-denied fields from filtering and sorting (#915)', () => {
   it(
     'drops a read-denied field from the collected filter suggestions',
@@ -475,6 +702,116 @@ describe('ListView to-many relationship count: presence filter, no count sort (A
       const props = await render(ada, { listKey: 'User', search: 'posts:>5' })
       expect(props.items).toEqual([])
       expect(props.total).toBe(0)
+    },
+    BOOT,
+  )
+})
+
+describe('ListView ?columns= resolution', () => {
+  it(
+    'shows the chosen columns, in order, and counts a to-many the defaults leave out',
+    async () => {
+      const props = await render(ada, { listKey: 'User', visibleColumns: ['drafts', 'name'] })
+      expect(props.columns).toEqual(['drafts', 'name'])
+      expect(props.columnsChosen).toBe(true)
+      const byName = Object.fromEntries(props.items.map((item) => [item.name, item]))
+      expect(byName.Ada.drafts).toBe(2)
+      expect(byName.Grace.drafts).toBe(0)
+      expect(byName.Ada.posts).toBeUndefined()
+    },
+    BOOT,
+  )
+
+  it(
+    'ignores names the list does not display, falling back to the defaults when none remain',
+    async () => {
+      const some = await render(ada, { listKey: 'User', visibleColumns: ['nope', 'name', 'name'] })
+      expect(some.columns).toEqual(['name'])
+
+      const none = await render(ada, { listKey: 'User', visibleColumns: ['nope', 'constructor'] })
+      expect(none.columnsChosen).toBe(false)
+      expect(none.columns).toEqual(['name', 'fullName', 'posts', 'draftTitles'])
+    },
+    BOOT,
+  )
+
+  it(
+    'falls back to the configured columns when nothing valid was chosen',
+    async () => {
+      const props = await render(ada, {
+        listKey: 'User',
+        columns: ['name', 'posts'],
+        visibleColumns: ['nope'],
+      })
+      expect(props.columns).toEqual(['name', 'posts'])
+      expect(props.columnsChosen).toBe(false)
+    },
+    BOOT,
+  )
+
+  it(
+    'ignores a chosen column whose read rule always denies this session',
+    async () => {
+      const props = await render(ada, {
+        listKey: 'User',
+        visibleColumns: ['name', 'billingAddress'],
+      })
+      expect(props.columns).toEqual(['name'])
+      for (const item of props.items) expect(item.billingAddress ?? null).toBeNull()
+    },
+    BOOT,
+  )
+
+  it(
+    'offers no column picker or size control to a host that does not read the params back',
+    async () => {
+      const props = await render(ada, { listKey: 'User' })
+      expect(props.availableColumns).toBeUndefined()
+      expect(props.pageSizeControl).toBe(false)
+    },
+    BOOT,
+  )
+
+  it(
+    'offers every displayable field this session can read to the column picker',
+    async () => {
+      const props = await render(ada, { listKey: 'User', urlControls: true })
+      expect(props.pageSizeControl).toBe(true)
+      expect(props.availableColumns).toEqual(expect.arrayContaining(['name', 'posts', 'drafts']))
+      expect(props.availableColumns).not.toContain('billingAddress')
+    },
+    BOOT,
+  )
+
+  it(
+    'keeps a configured column outside the fields pickable and choosable',
+    async () => {
+      const configured = await render(ada, {
+        listKey: 'User',
+        columns: ['id', 'name'],
+        urlControls: true,
+      })
+      expect(configured.columns).toEqual(['id', 'name'])
+      expect(configured.defaultColumns).toEqual(['id', 'name'])
+      expect(configured.availableColumns?.slice(0, 2)).toEqual(['id', 'name'])
+
+      const toggled = await render(ada, {
+        listKey: 'User',
+        columns: ['id', 'name'],
+        visibleColumns: ['id', 'name', 'posts'],
+      })
+      expect(toggled.columns).toEqual(['id', 'name', 'posts'])
+      expect(toggled.columnsChosen).toBe(true)
+      expect(toggled.items.every((item) => typeof item.id === 'string')).toBe(true)
+    },
+    BOOT,
+  )
+
+  it(
+    'marks a chosen column sortable when the read can order by it',
+    async () => {
+      const props = await render(ada, { listKey: 'User', visibleColumns: ['name', 'drafts'] })
+      expect(props.sortableFields).toEqual({ name: true, drafts: false })
     },
     BOOT,
   )
@@ -614,10 +951,10 @@ describe('ListView sorts only by what the read can order by (#2180)', () => {
       const user = await render(ada, { listKey: 'User' })
       expect(user.sortableFields).toMatchObject({
         name: true,
-        billingAddress: false,
         posts: false,
         fullName: false,
       })
+      expect(user.sortableFields).not.toHaveProperty('billingAddress')
       const post = await render(ada, { listKey: 'Post' })
       expect(post.sortableFields).toMatchObject({ title: true, author: false })
     },
@@ -625,7 +962,7 @@ describe('ListView sorts only by what the read can order by (#2180)', () => {
   )
 
   it(
-    'answers a read-denied field exactly as it answers one the list does not have',
+    'drops a read-denied configured column from the columns and the sortable set',
     async () => {
       const denied = await render(ada, {
         listKey: 'User',
@@ -641,7 +978,8 @@ describe('ListView sorts only by what the read can order by (#2180)', () => {
       })
       expect(denied.items).toEqual(absent.items)
       expect(denied.initialSort).toEqual(absent.initialSort)
-      expect(denied.sortableFields?.billingAddress).toBe(absent.sortableFields?.nope)
+      expect(denied.columns).toEqual(['name'])
+      expect(denied.sortableFields).not.toHaveProperty('billingAddress')
     },
     BOOT,
   )
@@ -745,6 +1083,162 @@ describe('ListView when the read fails (#2180)', () => {
       expect(props.items).toEqual([])
       expect(props.total).toBe(0)
       expect(logged).toBe(0)
+    },
+    BOOT,
+  )
+})
+
+describe('ListView column picker offers only fields this session can read (#2262)', () => {
+  const admin: Session = { role: 'admin' }
+
+  it(
+    'leaves an always-denied field out of the picker, the defaults and `?columns=`',
+    async () => {
+      const props = await render(ada, {
+        listKey: 'Ledger',
+        urlControls: true,
+        visibleColumns: ['name', 'secret'],
+      })
+      expect(props.availableColumns).not.toContain('secret')
+      expect(props.defaultColumns).not.toContain('secret')
+      expect(props.columns).toEqual(['name'])
+
+      const only = await render(ada, {
+        listKey: 'Ledger',
+        urlControls: true,
+        visibleColumns: ['secret'],
+      })
+      expect(only.columnsChosen).toBe(false)
+      expect(only.columns).not.toContain('secret')
+    },
+    BOOT,
+  )
+
+  it(
+    'still offers a field whose read rule depends on the row',
+    async () => {
+      const props = await render(ada, {
+        listKey: 'Ledger',
+        urlControls: true,
+        visibleColumns: ['name', 'ownNote'],
+      })
+      expect(props.availableColumns).toContain('ownNote')
+      expect(props.columns).toEqual(['name', 'ownNote'])
+      const byName = Object.fromEntries(props.items.map((item) => [item.name, item]))
+      expect(byName.Mine.ownNote).toBe('n1')
+      expect(byName.Theirs.ownNote ?? null).toBeNull()
+    },
+    BOOT,
+  )
+
+  it(
+    'offers a field to the session its rule allows and withholds it from another',
+    async () => {
+      const allowed = await render(admin, {
+        listKey: 'Ledger',
+        urlControls: true,
+        visibleColumns: ['name', 'audit'],
+      })
+      expect(allowed.availableColumns).toContain('audit')
+      expect(allowed.columns).toEqual(['name', 'audit'])
+      expect(allowed.items.map((item) => item.audit).sort()).toEqual(['a1', 'a2'])
+
+      const denied = await render(ada, {
+        listKey: 'Ledger',
+        urlControls: true,
+        visibleColumns: ['name', 'audit'],
+      })
+      expect(denied.availableColumns).not.toContain('audit')
+      expect(denied.columns).toEqual(['name'])
+    },
+    BOOT,
+  )
+})
+
+describe('ListView columns over a read rule that throws or hides every default (#2262)', () => {
+  it(
+    'renders an empty list and hides the field whose rule throws',
+    async () => {
+      const props = await render(ada, {
+        listKey: 'Brittle',
+        urlControls: true,
+        visibleColumns: ['name', 'meta'],
+      })
+      expect(props.items).toEqual([])
+      expect(props.availableColumns).not.toContain('meta')
+      expect(props.defaultColumns).not.toContain('meta')
+      expect(props.columns).toEqual(['name'])
+    },
+    BOOT,
+  )
+
+  it(
+    'still reports the read failure once a row exists',
+    async () => {
+      await create('Brittle', { name: 'Has a row', meta: { a: 1 } })
+      const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      const html = renderToStaticMarkup(
+        await ListView({ context: contextAt(ada), config, basePath: '/admin', listKey: 'Brittle' }),
+      )
+      log.mockRestore()
+
+      expect(html).toContain('This list could not be loaded')
+      expect(html).not.toContain('rule boom')
+    },
+    BOOT,
+  )
+
+  it(
+    'falls back to the first readable field when every default column is unreadable',
+    async () => {
+      const computed = await render(ada, { listKey: 'Sealed', urlControls: true })
+      expect(computed.defaultColumns).toEqual(['hidden'])
+      expect(computed.columns).toEqual(['hidden'])
+
+      const configured = await render(ada, {
+        listKey: 'User',
+        columns: ['billingAddress'],
+        urlControls: true,
+      })
+      expect(configured.defaultColumns).toEqual(['name'])
+      expect(configured.columns).toEqual(['name'])
+    },
+    BOOT,
+  )
+})
+
+describe('ListView sends no field the session can never read to the client (#2290)', () => {
+  const NEVER_READABLE = ['codename', 'handlerAgent']
+
+  it(
+    'leaves an always-denied field name out of every client prop and keeps a row-dependent one',
+    async () => {
+      const props = await render(ada, {
+        listKey: 'Dossier',
+        urlControls: true,
+        visibleColumns: ['title', 'codename', 'handlerAgent', 'ownMemo'],
+      })
+      const payload = JSON.stringify(props)
+      for (const name of NEVER_READABLE) expect(payload).not.toContain(name)
+      expect(payload).not.toContain('Karla')
+      expect(Object.keys(props.fieldTypes)).toContain('ownMemo')
+      expect(Object.keys(props.fields ?? {})).toContain('ownMemo')
+      expect(props.columns).toContain('ownMemo')
+    },
+    BOOT,
+  )
+
+  it(
+    'withholds a session-dependent field from a session its rule denies and sends it to one it allows',
+    async () => {
+      const props = await render(ada, { listKey: 'Ledger' })
+      expect(Object.keys(props.fieldTypes)).not.toContain('secret')
+      expect(Object.keys(props.fieldTypes)).not.toContain('audit')
+      expect(Object.keys(props.fieldTypes)).toContain('ownNote')
+
+      const admin = await render({ role: 'admin' }, { listKey: 'Ledger' })
+      expect(Object.keys(admin.fieldTypes)).toContain('audit')
+      expect(Object.keys(admin.fields ?? {})).toContain('audit')
     },
     BOOT,
   )

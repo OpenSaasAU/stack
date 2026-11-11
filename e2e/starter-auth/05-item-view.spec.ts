@@ -40,10 +40,13 @@ test.describe('Item view layout', () => {
     await createPost(page, { title: 'View Post A', slug: 'view-post-a', viewCount: 5 })
     await createPost(page, { title: 'View Post B', slug: 'view-post-b', viewCount: 10 })
 
-    // Open the current user's edit page via its row Edit link.
+    // Open the current user's edit page via its row title link.
     await page.goto('/admin/user')
     await page.waitForLoadState('networkidle')
-    await page.locator('tr', { hasText: testUser.email }).locator('a:has-text("Edit")').click()
+    await page
+      .locator('tr', { hasText: testUser.email })
+      .locator('[data-slot="row-title-link"]')
+      .click()
     await page.waitForURL(/\/admin\/user\/[^/]+$/, { timeout: 10000 })
 
     // The User has several to-many relationships (posts, sessions, accounts), so
@@ -118,7 +121,10 @@ test.describe('Item view layout', () => {
 
     await page.goto('/admin/user')
     await page.waitForLoadState('networkidle')
-    await page.locator('tr', { hasText: testUser.email }).locator('a:has-text("Edit")').click()
+    await page
+      .locator('tr', { hasText: testUser.email })
+      .locator('[data-slot="row-title-link"]')
+      .click()
     await page.waitForURL(/\/admin\/user\/[^/]+$/, { timeout: 10000 })
 
     const posts = page.locator('[data-slot="relationship-table"]', {
@@ -140,7 +146,10 @@ test.describe('Item view layout', () => {
 
     await page.goto('/admin/post')
     await page.waitForLoadState('networkidle')
-    await page.locator('tr', { hasText: 'Single Card Post' }).locator('a:has-text("Edit")').click()
+    await page
+      .locator('tr', { hasText: 'Single Card Post' })
+      .locator('[data-slot="row-title-link"]')
+      .click()
     await page.waitForURL(/\/admin\/post\/[^/]+$/, { timeout: 10000 })
 
     // Post has no to-many relationship → no Relationship table, no split layout.

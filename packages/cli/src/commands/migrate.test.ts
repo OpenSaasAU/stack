@@ -169,3 +169,20 @@ describe('setupClaudeCode', () => {
     })
   })
 })
+
+describe('migrate --type validation', () => {
+  it('refuses an unknown project type and exits non-zero', async () => {
+    const exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`exit ${code}`)
+    }) as never)
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    await expect(
+      createMigrateCommand().parseAsync(['node', 'migrate', '--type', 'bogus']),
+    ).rejects.toThrow('exit 1')
+
+    expect(log.mock.calls.flat().join('\n')).toContain('prisma, nextjs, keystone')
+    exit.mockRestore()
+    log.mockRestore()
+  })
+})

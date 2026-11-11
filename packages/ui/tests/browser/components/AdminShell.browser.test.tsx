@@ -196,19 +196,21 @@ describe('the admin under the prebuilt stylesheet', () => {
   describe('sticky actions cell', () => {
     const renderRow = (rowColor?: string) =>
       render(
-        <Table>
-          <TableBody>
-            <TableRow style={{ backgroundColor: rowColor }}>
-              <TableCell>{'unbroken'.repeat(60)}</TableCell>
-              <TableCell
-                data-testid="actions"
-                className={cn('max-md:before:bg-background', STICKY_ACTIONS_CELL)}
-              >
-                Edit
-              </TableCell>
-            </TableRow>
-          </TableBody>
-        </Table>,
+        <div data-testid="card" className="bg-card">
+          <Table>
+            <TableBody>
+              <TableRow style={{ backgroundColor: rowColor }}>
+                <TableCell>{'unbroken'.repeat(60)}</TableCell>
+                <TableCell
+                  data-testid="actions"
+                  className={cn('max-md:before:bg-card', STICKY_ACTIONS_CELL)}
+                >
+                  Edit
+                </TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
+        </div>,
       )
 
     beforeEach(async () => {
@@ -232,7 +234,9 @@ describe('the admin under the prebuilt stylesheet', () => {
 
       expect(tint.backgroundColor).toBe('rgba(15, 23, 42, 0.5)')
       expect(tint.position).toBe('absolute')
-      expect(surface.backgroundColor).toBe(getComputedStyle(document.body).backgroundColor)
+      expect(surface.backgroundColor).toBe(
+        getComputedStyle(screen.getByTestId('card')).backgroundColor,
+      )
       expect(surface.position).toBe('absolute')
       expect(surface.top).toBe('0px')
       expect(Number(surface.zIndex)).toBeLessThan(0)

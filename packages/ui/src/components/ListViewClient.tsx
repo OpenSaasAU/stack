@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import Link from 'next/link.js'
-import { Inbox, Plus, SearchX } from 'lucide-react'
+import { ArrowUpDown, Columns3, Funnel, Inbox, Plus, SearchX } from 'lucide-react'
 import { useRouter } from 'next/navigation.js'
 import { cn, formatFieldName, isCountAlignedColumn } from '../lib/utils.js'
 import {
@@ -16,20 +16,99 @@ import {
 } from '../primitives/table.js'
 import { Button } from '../primitives/button.js'
 import { Checkbox } from '../primitives/checkbox.js'
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '../primitives/dropdown-menu.js'
 import { EmptyState } from './EmptyState.js'
-import { CellRenderer } from './cells/CellRenderer.js'
+import { CellRenderer, rendersAnchorFreeCell } from './cells/CellRenderer.js'
 import type { CellValue } from './cells/registry.js'
-import { FilterBuilder } from './FilterBuilder.js'
+import { FilterBuilder, type FilterBuilderHandle } from './FilterBuilder.js'
 import { AvatarLabelCell } from './cells/AvatarLabelCell.js'
 import { RowSelectionBar } from './RowSelectionBar.js'
 import { BulkActions, type SerializedBulkAction } from './BulkActions.js'
+import { RowActions, type SerializedRowAction } from './RowActions.js'
+import { PresetTabs, type SerializedPresetView } from './PresetTabs.js'
 import { useRowSelection, getPageCheckboxState } from '../lib/useRowSelection.js'
 import { useBulkStatus } from '../lib/useBulkStatus.js'
 import type { SerializableFieldConfig } from '../lib/serializeFieldConfig.js'
 import { isDefaultColumnField } from '../lib/defaultColumns.js'
-import { STICKY_ACTIONS_CELL, VISIBLE_TABLE_MESSAGE } from '../lib/tableClasses.js'
+import {
+  readServerDensity,
+  readStoredDensity,
+  storeDensity,
+  subscribeDensity,
+} from '../lib/density.js'
+import { DEFAULT_PAGE_SIZE } from '../lib/pageSize.js'
+import { CARD_CELL, CARD_PINNED_CELL, CARD_ROW, CARD_TITLE_CELL } from '../lib/tableClasses.js'
 import type { ServerActionInput } from '../server/types.js'
-import type { FilterFieldSuggestion } from '@opensaas/stack-core'
+import {
+  describeToken,
+  fieldToken,
+  entriesQuery,
+  hydrateEntries,
+  isRecordLookupField,
+  placeEntries,
+  type FilterFields,
+  type ResolvedFilterRecord,
+} from '../lib/filterBuilderOptions.js'
+import {
+  recordIdFilterToken,
+  serializeFilterQuery,
+  type FilterFieldSuggestion,
+  type FilterToken,
+} from '@opensaas/stack-core'
+
+/** Where a to-many count links: the other list's URL key and its field naming this list. */
+export interface CountFilterLink {
+  urlKey: string
+  field: string
+}
+
+/**
+ * The filter term whose removal returns the most rows when the applied query
+ * returns none, resolved on the server for this session.
+ */
+export interface FilterRemoval {
+  /** The applied query the removal was counted against. */
+  search: string
+  /** The query without the term. */
+  query: string
+  /** The term's chip text, e.g. `Status is Draft`. */
+  sentence: string
+  /** How many rows `query` returns for this session. */
+  rows: number
+}
+
+function valueFilterToken(
+  suggestion: FilterFieldSuggestion | undefined,
+  column: string,
+  value: unknown,
+): { token: FilterToken; label: string | null } | null {
+  if (!suggestion) return null
+  if (isRecordLookupField(suggestion)) {
+    if (typeof value !== 'object' || value === null || !('id' in value)) return null
+    const id = value.id
+    if (typeof id !== 'string' && typeof id !== 'number') return null
+    const label = 'label' in value && typeof value.label === 'string' ? value.label : null
+    return { token: recordIdFilterToken(column, String(id)), label }
+  }
+  if (suggestion.valueSource.kind !== 'enum') return null
+  if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
+    return null
+  }
+  const option = suggestion.valueSource.options.find(
+    (candidate) => candidate.value === String(value),
+  )
+  return option ? { token: fieldToken(column, 'eq', option.value), label: null } : null
+}
 
 /**
  * Read the `{ deleted, total }` count a bulk-delete server action returns. The
@@ -49,23 +128,90 @@ function parseBulkDeleteResult(
 }
 
 /**
- * Read the outcome message a custom Bulk action server action returns (issue
- * #736). A successful run yields `{ bulkAction: true, message? }`; a failure
- * yields `{ bulkAction: false, error }`. Either way we surface a single status
- * line — the handler's own `message`, its `error`, or a generic completion note
- * — without leaking which selected rows the secured handler was denied.
+ * Read the status line for a custom Bulk or Row action from its server action
+ * result, discriminated by `key`: `{ [key]: true, message? }` on success,
+ * `{ [key]: false, error }` on failure. A handler's own `message`, else
+ * `${label} complete`; an `error`, prefixed with `errorPrefix`; else
+ * `fallback` for a shape this does not recognise.
  */
-function parseBulkActionResult(result: unknown, label: string): string {
-  if (typeof result === 'object' && result !== null && 'bulkAction' in result) {
-    const value = result as { bulkAction: unknown; message?: unknown; error?: unknown }
-    if (value.bulkAction === true) {
-      return typeof value.message === 'string' && value.message.length > 0
-        ? value.message
-        : `${label} complete`
-    }
-    if (typeof value.error === 'string' && value.error.length > 0) return value.error
+function parseActionResult(
+  result: unknown,
+  key: 'bulkAction' | 'rowAction',
+  label: string,
+  { fallback, errorPrefix = '' }: { fallback: string; errorPrefix?: string },
+): string {
+  if (typeof result !== 'object' || result === null || !(key in result)) return fallback
+  if (Reflect.get(result, key) === true) {
+    return 'message' in result && typeof result.message === 'string' && result.message.length > 0
+      ? result.message
+      : `${label} complete`
   }
-  return `${label} complete`
+  if ('error' in result && typeof result.error === 'string' && result.error.length > 0) {
+    return `${errorPrefix}${result.error}`
+  }
+  return fallback
+}
+
+const OUTCOME_UNKNOWN = 'the result is unknown — refresh to check'
+
+const PAGE_SIZES = [
+  { value: 25, label: '25' },
+  { value: 50, label: '50' },
+  { value: 100, label: '100' },
+]
+
+const DENSITIES = [
+  { value: 'comfortable', label: 'Comfortable' },
+  { value: 'compact', label: 'Compact' },
+] as const
+
+function SegmentedControl<T extends string | number>({
+  label,
+  slot,
+  options,
+  value,
+  onChange,
+  className,
+}: {
+  label: string
+  slot: string
+  options: ReadonlyArray<{ value: T; label: string }>
+  value: T
+  onChange: (value: T) => void
+  className?: string
+}) {
+  return (
+    <div
+      role="group"
+      aria-label={label}
+      data-slot={slot}
+      className="inline-flex overflow-hidden rounded-md border"
+    >
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          aria-pressed={value === option.value}
+          onClick={() => onChange(option.value)}
+          className={cn(
+            'h-9 px-3 font-sans text-sm text-muted-foreground transition-colors outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring aria-pressed:bg-muted aria-pressed:font-medium aria-pressed:text-foreground',
+            className,
+          )}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+interface ListUrlState {
+  preset: string | null
+  search: string
+  sort: { field: string; direction: 'asc' | 'desc' } | null
+  page: number
+  pageSize: number
+  columns: string[] | null
 }
 
 export interface ListViewClientProps {
@@ -84,6 +230,28 @@ export interface ListViewClientProps {
   fields?: Record<string, SerializableFieldConfig>
   relationshipRefs: Record<string, string>
   columns?: string[]
+  /**
+   * Every column the column picker offers, in order. `ListView` passes the
+   * list's displayable fields, after any configured column outside them. The
+   * picker writes `?columns=`, so it is offered only when this is supplied by
+   * a page that reads that param back into `columns`.
+   */
+  availableColumns?: string[]
+  /**
+   * The column set shown when no `?columns=` is chosen. A pick that lands on
+   * exactly this set drops `?columns=` instead of writing it.
+   */
+  defaultColumns?: string[]
+  /**
+   * Whether `columns` is the admin's own `?columns=` choice, which navigation
+   * then carries along and the picker offers to reset.
+   */
+  columnsChosen?: boolean
+  /**
+   * Whether to offer the rows-per-page control. It writes `?pageSize=`, so a
+   * page sets this only when it reads that param back into `pageSize`.
+   */
+  pageSizeControl?: boolean
   /**
    * Which columns offer a sort affordance, keyed by column name. `ListView`
    * resolves this on the server by asking whether this session's read can order
@@ -109,6 +277,29 @@ export interface ListViewClientProps {
    * operator / value pickers. When empty, the builder shows only free-text search.
    */
   filterSuggestions?: FilterFieldSuggestion[]
+  /**
+   * The Preset views this session may open, as `{ key, label }`, in
+   * declaration order. When non-empty, they render as tabs after an implicit
+   * "All" tab.
+   */
+  presets?: SerializedPresetView[]
+  /**
+   * The key of the open Preset view. `search` and `initialSort` then carry its
+   * resolved query and sort, so the first edit writes them out as `?search=`
+   * and `?sort=` and drops `?preset=`, leaving the rows on screen unchanged.
+   */
+  activePreset?: string
+  /**
+   * The records the `field:#id` tokens in `search` name, keyed by field: each
+   * id the related list accepts, with the Item label resolved server-side
+   * through the secured context, or `null` when the session cannot read it.
+   */
+  recordLabels?: Record<string, ResolvedFilterRecord[]>
+  /**
+   * The to-many columns whose count links to the matching rows on the other
+   * list, filtered by `field:#id`, keyed by column.
+   */
+  countLinks?: Record<string, CountFilterLink>
   /**
    * The generic server action (rebuilds the session context server-side). Used
    * by the built-in Bulk action Delete to remove each selected row through the
@@ -142,6 +333,29 @@ export interface ListViewClientProps {
    * it here. When non-empty, row selection is enabled even if delete is denied.
    */
   bulkActions?: SerializedBulkAction[]
+  /**
+   * Serialisable metadata for the Row actions this session may see, in
+   * declaration order. Handlers never cross the boundary.
+   */
+  rowActions?: SerializedRowAction[]
+  /**
+   * The keys of the Row actions each row offers, keyed by row id, resolved on
+   * the server from each action's `isAvailable`. A row absent here offers only
+   * the built-in actions.
+   */
+  rowActionKeys?: Record<string, string[]>
+  /**
+   * The columns shown only because the applied query filters on them,
+   * resolved on the server and shown after `columns`. They are never written
+   * to `?columns=` and never become the row's title column.
+   */
+  autoColumns?: string[]
+  /**
+   * When the applied query returns no rows, the term whose removal returns
+   * the most, counted on the server through the secured context. `null` or
+   * absent when no single removal returns any.
+   */
+  filterRemoval?: FilterRemoval | null
 }
 
 export function ListViewClient({
@@ -150,6 +364,10 @@ export function ListViewClient({
   fields,
   relationshipRefs,
   columns,
+  availableColumns,
+  defaultColumns,
+  columnsChosen = false,
+  pageSizeControl = false,
   sortableFields = {},
   initialSort,
   listKey,
@@ -160,16 +378,33 @@ export function ListViewClient({
   total,
   search: initialSearch,
   filterSuggestions = [],
+  presets = [],
+  activePreset,
+  recordLabels,
+  countLinks = {},
   serverAction,
   canDelete = false,
   canCreate = true,
   avatarColumn,
   labelColumn,
   bulkActions = [],
+  rowActions = [],
+  rowActionKeys = {},
+  autoColumns = [],
+  filterRemoval,
 }: ListViewClientProps) {
   const router = useRouter()
+  const filterBuilder = React.useRef<FilterBuilderHandle>(null)
+  const filterFields: FilterFields = React.useMemo(
+    () => new Map(filterSuggestions.map((suggestion) => [suggestion.field, suggestion])),
+    [filterSuggestions],
+  )
+  const appliedEntries = React.useMemo(() => hydrateEntries(initialSearch ?? ''), [initialSearch])
+  const [isFiltering, startFiltering] = React.useTransition()
   const sortBy = initialSort?.field ?? null
   const sortOrder = initialSort?.direction ?? 'asc'
+  const density = React.useSyncExternalStore(subscribeDensity, readStoredDensity, readServerDensity)
+  const compact = density === 'compact'
 
   // Row selection (issue #733) is keyed on the active `search` filter query
   // (the ADR-0017 filter engine's URL param, parsed server-side in `ListView`)
@@ -200,70 +435,137 @@ export function ListViewClient({
     selection.togglePage(pageIds)
   }
 
-  // Absent an explicit `columns` list, curate off each field's own declared
-  // `ui.listView.defaultColumn` (issue #1018) — the same declaration
-  // `deriveItemView.ts`'s server-side layout helper reads, no field
-  // name/type matching here. The column set itself still comes from
-  // `fieldTypes` (not `Object.keys(fields)`): `fields` may cover only a
-  // subset of columns (`columnField` above synthesises a fallback for any
-  // column missing from it), and a column absent from `fields` has no
-  // declaration to curate by, so it defaults to shown — same as when
-  // `fields` is omitted entirely.
-  const displayColumns =
+  const baseColumns =
     columns || Object.keys(fieldTypes).filter((key) => isDefaultColumnField(fields?.[key]))
-
-  // Items are already sorted by the server via orderBy; no in-memory sort needed.
-
+  const chosenColumns = baseColumns.filter((column) => !autoColumns.includes(column))
+  const displayColumns = [
+    ...baseColumns,
+    ...autoColumns.filter((column) => !baseColumns.includes(column)),
+  ]
   const totalPages = Math.ceil(total / pageSize)
   const hasNextPage = page < totalPages
   const hasPrevPage = page > 1
 
-  // Echo a non-default page size into nav URLs so an active `?pageSize=` survives
-  // sorting/searching/paging. DEFAULT_PAGE_SIZE mirrors ListView's own default.
-  const DEFAULT_PAGE_SIZE = 50
-  const withPageSize = (params: URLSearchParams) => {
-    if (pageSize !== DEFAULT_PAGE_SIZE) params.set('pageSize', String(pageSize))
-    return params
+  const activePresetLabel =
+    activePreset === undefined
+      ? undefined
+      : presets.find((preset) => preset.key === activePreset)?.label
+
+  const current: ListUrlState = {
+    preset: activePreset ?? null,
+    search: initialSearch ?? '',
+    sort: sortBy ? { field: sortBy, direction: sortOrder } : null,
+    page,
+    pageSize,
+    columns: columnsChosen ? chosenColumns : null,
   }
+
+  const buildUrl = (changes: Partial<ListUrlState>) => {
+    const next = { ...current, ...changes }
+    const params = new URLSearchParams()
+    const search = next.search.trim()
+    if (next.preset) params.set('preset', next.preset)
+    else if (search) params.set('search', search)
+    if (next.sort) params.set('sort', `${next.sort.field}:${next.sort.direction}`)
+    params.set('page', String(next.page))
+    if (next.pageSize !== DEFAULT_PAGE_SIZE) params.set('pageSize', String(next.pageSize))
+    if (next.columns && next.columns.length > 0) params.set('columns', next.columns.join(','))
+    return `${basePath}/${urlKey}?${params.toString()}`
+  }
+
+  const editUrl = (changes: Partial<ListUrlState>) => buildUrl({ ...changes, preset: null })
+
+  const presetHref = (key: string | null) =>
+    buildUrl({ preset: key, search: '', sort: null, page: 1 })
+
+  const sortTo = (field: string, direction: 'asc' | 'desc') =>
+    router.push(editUrl({ sort: { field, direction }, page: 1 }))
 
   const handleSort = (column: string) => {
-    const newDirection = sortBy === column ? (sortOrder === 'asc' ? 'desc' : 'asc') : 'asc'
-    const params = new URLSearchParams()
-    if (initialSearch) {
-      params.set('search', initialSearch)
-    }
-    params.set('sort', `${column}:${newDirection}`)
-    params.set('page', '1')
-    router.push(`${basePath}/${urlKey}?${withPageSize(params).toString()}`)
+    sortTo(column, sortBy === column ? (sortOrder === 'asc' ? 'desc' : 'asc') : 'asc')
   }
 
-  // Writes a Filter builder query into the `?search=` URL param, resetting to
-  // page 1. An empty query drops the param (clears the filter).
   const applyQuery = (query: string) => {
-    const params = new URLSearchParams()
-    const trimmed = query.trim()
-    if (trimmed) {
-      params.set('search', trimmed)
-    }
-    if (sortBy) {
-      params.set('sort', `${sortBy}:${sortOrder}`)
-    }
-    params.set('page', '1')
-    const qs = withPageSize(params).toString()
-    router.push(`${basePath}/${urlKey}${qs ? `?${qs}` : ''}`)
+    startFiltering(() => router.push(editUrl({ search: query, page: 1 })))
   }
 
-  const buildPaginationUrl = (newPage: number) => {
-    const params = new URLSearchParams()
-    if (initialSearch) {
-      params.set('search', initialSearch)
-    }
-    if (sortBy) {
-      params.set('sort', `${sortBy}:${sortOrder}`)
-    }
-    params.set('page', newPage.toString())
-    return `${basePath}/${urlKey}?${withPageSize(params).toString()}`
+  const appliedQuery = entriesQuery(appliedEntries)
+
+  const isAppliedFilter = (token: FilterToken) =>
+    entriesQuery(
+      placeEntries(appliedEntries, [{ token, group: null }], null, filterFields, true),
+    ) === appliedQuery
+
+  const removal = filterRemoval && filterRemoval.search === appliedQuery ? filterRemoval : null
+
+  const applyRemoval = (chosen: FilterRemoval) => {
+    const builder = filterBuilder.current
+    if (builder && builder.currentQuery() === chosen.search) builder.applyQuery(chosen.query)
   }
+
+  const buildPaginationUrl = (newPage: number) => buildUrl({ page: newPage })
+
+  const confirmedColumns = chosenColumns.join(',')
+  const [pendingColumns, setPendingColumns] = React.useState<{
+    over: string
+    columns: string[]
+  } | null>(null)
+  if (pendingColumns !== null && pendingColumns.over !== confirmedColumns) setPendingColumns(null)
+  const pending = pendingColumns?.over === confirmedColumns ? pendingColumns.columns : null
+  const pickedColumns = pending ?? chosenColumns
+
+  const isDefaultSet = (names: string[]) =>
+    defaultColumns !== undefined &&
+    names.length === defaultColumns.length &&
+    names.every((name) => defaultColumns.includes(name))
+
+  const pickerOrder = (name: string) => availableColumns?.indexOf(name) ?? -1
+
+  const withColumn = (column: string) => {
+    const others = pickedColumns.filter((name) => name !== column)
+    const before = others.findIndex((name) => pickerOrder(name) > pickerOrder(column))
+    return before === -1
+      ? [...others, column]
+      : [...others.slice(0, before), column, ...others.slice(before)]
+  }
+
+  // Reset to page 1 of the current filter: a delete can remove the rows that
+  // made the current page exist, leaving it out of range. `router.refresh()`
+  // first invalidates the client Router Cache (so a previously-visited page 1
+  // is not served stale), then the push lands on page 1 and fetches the
+  // now-shorter list fresh.
+  const refreshFromFirstPage = () => {
+    router.refresh()
+    router.push(buildPaginationUrl(1))
+  }
+
+  const toggleColumn = (column: string, shown: boolean) => {
+    const next = shown ? withColumn(column) : pickedColumns.filter((name) => name !== column)
+    if (next.length === 0) return
+    const backToDefault = isDefaultSet(next)
+    setPendingColumns({
+      over: confirmedColumns,
+      columns: backToDefault && defaultColumns ? defaultColumns : next,
+    })
+    router.push(editUrl({ columns: backToDefault ? null : next }))
+  }
+
+  const resetColumns = () => {
+    setPendingColumns(null)
+    router.push(editUrl({ columns: null }))
+  }
+
+  const canResetColumns = pending ? !isDefaultSet(pending) : columnsChosen
+
+  const pageSizeOptions = PAGE_SIZES.some((option) => option.value === pageSize)
+    ? PAGE_SIZES
+    : [...PAGE_SIZES, { value: pageSize, label: String(pageSize) }].sort(
+        (a, b) => a.value - b.value,
+      )
+  const showPageSizes = pageSizeControl && total > PAGE_SIZES[0].value
+
+  const sortOptions = displayColumns.filter((column) => sortableFields[column] === true)
+  if (sortBy && !sortOptions.includes(sortBy)) sortOptions.push(sortBy)
 
   const handleBulkDelete = async () => {
     if (!serverAction) return
@@ -281,13 +583,7 @@ export function ListViewClient({
     setBulkStatus(`${deleted} of ${total} deleted`, { handoff: true })
     selection.clear()
 
-    // Reset to page 1 of the current filter: a bulk delete can remove the rows
-    // that made the current page exist (deleting across pages leaves the current
-    // page out of range). `router.refresh()` first invalidates the client Router
-    // Cache (so a previously-visited page 1 is not served stale), then the push
-    // lands on page 1 and fetches the now-shorter list fresh.
-    router.refresh()
-    router.push(buildPaginationUrl(1))
+    refreshFromFirstPage()
   }
 
   // Runs a custom Bulk action (issue #736); mirrors `handleBulkDelete`'s
@@ -299,11 +595,68 @@ export function ListViewClient({
     const label = bulkActions.find((a) => a.key === key)?.label ?? 'Action'
 
     const result = await serverAction({ listKey, action: 'bulkAction', key, ids })
-    setBulkStatus(parseBulkActionResult(result, label), { handoff: true })
+    setBulkStatus(
+      parseActionResult(result, 'bulkAction', label, { fallback: `${label} complete` }),
+      { handoff: true },
+    )
     selection.clear()
 
-    router.refresh()
-    router.push(buildPaginationUrl(1))
+    refreshFromFirstPage()
+  }
+
+  const itemHref = (id: string) => `${basePath}/${urlKey}/${id}`
+
+  const handleCopyLink = async (id: string) => {
+    const url = new URL(itemHref(id), window.location.origin).toString()
+    try {
+      await navigator.clipboard.writeText(url)
+      setBulkStatus('Link copied')
+    } catch {
+      setBulkStatus(`Copy this link: ${url}`)
+    }
+  }
+
+  const handleRowDelete = async (id: string, name: string) => {
+    if (!serverAction) return
+    let result: unknown
+    try {
+      result = await serverAction({ listKey, action: 'bulkDelete', ids: [id] })
+    } catch {
+      setBulkStatus(`Delete “${name}”: ${OUTCOME_UNKNOWN}`, { handoff: true })
+      router.refresh()
+      return
+    }
+    const { deleted } = parseBulkDeleteResult(result, 1)
+    setBulkStatus(deleted === 1 ? `“${name}” deleted` : `“${name}” not deleted`, {
+      handoff: true,
+    })
+    if (deleted === 1 && selection.isSelected(id)) selection.toggle(id)
+    if (deleted === 1 && items.length === 1 && page > 1) refreshFromFirstPage()
+    else router.refresh()
+  }
+
+  const handleRowAction = async (id: string, key: string) => {
+    if (!serverAction) return
+    const label = rowActions.find((a) => a.key === key)?.label ?? 'Action'
+    try {
+      const result = await serverAction({ listKey, action: 'rowAction', key, id })
+      setBulkStatus(
+        parseActionResult(result, 'rowAction', label, {
+          fallback: `${label}: this action was not run`,
+          errorPrefix: `${label}: `,
+        }),
+        { handoff: true },
+      )
+    } catch {
+      setBulkStatus(`${label}: ${OUTCOME_UNKNOWN}`, { handoff: true })
+    } finally {
+      router.refresh()
+    }
+  }
+
+  const rowActionsFor = (id: string): SerializedRowAction[] => {
+    const keys = rowActionKeys[id]
+    return keys ? rowActions.filter((action) => keys.includes(action.key)) : []
   }
 
   const rowName = (item: Record<string, unknown>, index: number) => {
@@ -322,6 +675,11 @@ export function ListViewClient({
     }
   }
 
+  const titleColumn =
+    labelColumn && labelColumn !== 'id' && chosenColumns.includes(labelColumn)
+      ? labelColumn
+      : (chosenColumns.find((column) => !relationshipRefs[column]) ?? chosenColumns[0])
+
   /**
    * Render one body cell. The label column of an avatar-opted-in list
    * (`avatarColumn`) renders through {@link AvatarLabelCell} — unless that
@@ -337,28 +695,195 @@ export function ListViewClient({
    */
   const renderCell = (column: string, item: Record<string, unknown>) => {
     const field = columnField(column)
+    const countLink = Object.hasOwn(countLinks, column) ? countLinks[column] : undefined
+    const id = typeof item.id === 'string' || typeof item.id === 'number' ? String(item.id) : null
+    const href =
+      countLink && id !== null
+        ? `${basePath}/${countLink.urlKey}?search=${encodeURIComponent(
+            serializeFilterQuery({ terms: [recordIdFilterToken(countLink.field, id)] }),
+          )}`
+        : undefined
     const cellProps = {
       value: item[column] as CellValue,
       field,
       fieldName: column,
       basePath,
+      ...(href ? { href } : {}),
     }
-    if (column === avatarColumn && !field.ui?.cell) {
-      return <AvatarLabelCell {...cellProps} />
-    }
-    return <CellRenderer {...cellProps} />
+    const cell =
+      column === avatarColumn && !field.ui?.cell ? (
+        <AvatarLabelCell {...cellProps} />
+      ) : (
+        <CellRenderer {...cellProps} />
+      )
+    const funnel =
+      column === titleColumn
+        ? null
+        : valueFilterToken(filterFields.get(column), column, item[column])
+    if (!funnel || isAppliedFilter(funnel.token)) return cell
+    const sentence = describeToken(funnel.token, filterFields, (_, recordId) =>
+      funnel.label === null ? undefined : { id: recordId, label: funnel.label },
+    ).sentence
+    return (
+      <span
+        data-slot="list-view-value-filter"
+        className="group/value inline-flex items-center gap-1"
+      >
+        {cell}
+        <button
+          type="button"
+          data-slot="list-view-value-filter-button"
+          aria-label={`Filter to ${sentence}`}
+          title={`Filter to ${sentence}`}
+          onClick={() => filterBuilder.current?.addTokens([funnel.token])}
+          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover/value:opacity-100 max-md:opacity-100"
+        >
+          <Funnel className="h-3.5 w-3.5" aria-hidden="true" />
+        </button>
+      </span>
+    )
   }
+
+  const headerFilter = (column: string) =>
+    filterFields.has(column) ? (
+      <button
+        type="button"
+        data-slot="list-view-header-filter"
+        aria-label={`Filter by ${formatFieldName(column)}`}
+        title={`Filter by ${formatFieldName(column)}`}
+        onClick={() => filterBuilder.current?.startFilter(column)}
+        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <Funnel className="h-3.5 w-3.5" aria-hidden="true" />
+      </button>
+    ) : null
 
   return (
     <div className="space-y-4">
-      {/* Keyed on the active query so it remounts (and re-reads the URL) whenever
-          the applied filter changes (issue #731). */}
+      {presets.length > 0 && (
+        <PresetTabs
+          presets={presets}
+          activePreset={activePreset}
+          searching={(initialSearch ?? '').trim() !== ''}
+          hrefFor={presetHref}
+          label={`${formatFieldName(listKey)} views`}
+        />
+      )}
       <FilterBuilder
-        key={initialSearch ?? ''}
+        ref={filterBuilder}
         suggestions={filterSuggestions}
         defaultValue={initialSearch ?? ''}
         onApply={applyQuery}
+        listKey={listKey}
+        serverAction={serverAction}
+        recordLabels={recordLabels}
+        label={`Filter ${formatFieldName(listKey).toLowerCase()}`}
+        resultCount={total}
       />
+
+      <div data-slot="list-view-toolbar" className="flex flex-wrap items-center justify-end gap-2">
+        {sortOptions.length > 0 && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                data-slot="list-view-sort"
+                aria-label={
+                  sortBy
+                    ? `Sort: ${formatFieldName(sortBy)}, ${sortOrder === 'asc' ? 'ascending' : 'descending'}`
+                    : 'Sort'
+                }
+              >
+                <ArrowUpDown aria-hidden="true" />
+                <span>
+                  {sortBy
+                    ? `Sort: ${formatFieldName(sortBy)} ${sortOrder === 'asc' ? '↑' : '↓'}`
+                    : 'Sort'}
+                </span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel>Sort by</DropdownMenuLabel>
+              <DropdownMenuRadioGroup
+                value={sortBy ?? ''}
+                onValueChange={(field) => {
+                  if (field !== sortBy) sortTo(field, sortBy ? sortOrder : 'asc')
+                }}
+              >
+                {sortOptions.map((column) => (
+                  <DropdownMenuRadioItem key={column} value={column}>
+                    {formatFieldName(column)}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuRadioGroup
+                value={sortBy ? sortOrder : ''}
+                onValueChange={(direction) => {
+                  if (
+                    sortBy &&
+                    direction !== sortOrder &&
+                    (direction === 'asc' || direction === 'desc')
+                  )
+                    sortTo(sortBy, direction)
+                }}
+              >
+                <DropdownMenuRadioItem value="asc" disabled={!sortBy}>
+                  Ascending
+                </DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="desc" disabled={!sortBy}>
+                  Descending
+                </DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+
+        {availableColumns && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="outline" size="sm" data-slot="list-view-columns">
+                <Columns3 aria-hidden="true" />
+                <span>Columns</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel>Show columns</DropdownMenuLabel>
+              {availableColumns.map((column) => {
+                const filtered = autoColumns.includes(column)
+                const shown = filtered || pickedColumns.includes(column)
+                return (
+                  <DropdownMenuCheckboxItem
+                    key={column}
+                    checked={shown}
+                    disabled={filtered || (shown && pickedColumns.length === 1)}
+                    onSelect={(event) => event.preventDefault()}
+                    onCheckedChange={(checked) => toggleColumn(column, checked === true)}
+                  >
+                    {formatFieldName(column)}
+                  </DropdownMenuCheckboxItem>
+                )
+              })}
+              {canResetColumns && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={resetColumns}>Reset columns</DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+
+        <SegmentedControl
+          label="Row density"
+          slot="list-view-density"
+          options={DENSITIES}
+          value={density}
+          onChange={storeDensity}
+        />
+      </div>
 
       {/* Always mounted (outside the selection bar) so the report survives the
           selection clearing after a bulk action. */}
@@ -391,12 +916,20 @@ export function ListViewClient({
         />
       )}
 
-      <div className="rounded-lg border">
-        <Table>
-          <TableHeader>
-            <TableRow>
+      <div
+        data-slot="list-view-table"
+        data-density={density}
+        aria-busy={isFiltering || undefined}
+        className="rounded-lg border transition-opacity aria-busy:opacity-60 max-md:border-0 max-md:*:overflow-visible"
+      >
+        <Table className="max-md:block">
+          <TableHeader className={selectionEnabled ? 'max-md:block' : 'max-md:hidden'}>
+            <TableRow className="max-md:flex max-md:border-0 max-md:hover:bg-transparent">
               {selectionEnabled && (
-                <TableHead data-slot="selection-header" className="w-10">
+                <TableHead
+                  data-slot="selection-header"
+                  className={cn('w-10', compact && 'h-9', 'max-md:h-auto max-md:px-3 max-md:pb-2')}
+                >
                   <Checkbox
                     aria-label="Select all rows on this page"
                     checked={getPageCheckboxState(selection.selectedIds, pageIds)}
@@ -409,10 +942,21 @@ export function ListViewClient({
                 const field = columnField(column)
                 const numeric = isCountAlignedColumn(field)
                 const sortable = sortableFields[column] === true
+                const filter = headerFilter(column)
+                const sortButton = (
+                  <TableSortButton
+                    numeric={numeric}
+                    direction={sortBy === column ? sortOrder : undefined}
+                    onClick={() => handleSort(column)}
+                    className={cn(compact && 'min-h-9')}
+                  >
+                    {formatFieldName(column)}
+                  </TableSortButton>
+                )
                 return (
                   <TableHead
                     key={column}
-                    className={cn(sortable && 'p-0')}
+                    className={cn(sortable && 'p-0', compact && 'h-9', 'max-md:hidden')}
                     aria-sort={
                       sortable && sortBy === column
                         ? sortOrder === 'asc'
@@ -421,14 +965,13 @@ export function ListViewClient({
                         : undefined
                     }
                   >
-                    {sortable ? (
-                      <TableSortButton
-                        numeric={numeric}
-                        direction={sortBy === column ? sortOrder : undefined}
-                        onClick={() => handleSort(column)}
-                      >
-                        {formatFieldName(column)}
-                      </TableSortButton>
+                    {sortable && filter ? (
+                      <div className="flex items-center pr-2">
+                        {sortButton}
+                        {filter}
+                      </div>
+                    ) : sortable ? (
+                      sortButton
                     ) : (
                       <div
                         className={cn(
@@ -437,41 +980,55 @@ export function ListViewClient({
                         )}
                       >
                         <span>{formatFieldName(column)}</span>
+                        {filter}
                       </div>
                     )}
                   </TableHead>
                 )
               })}
-              <TableHead
-                className={cn('text-right max-md:before:bg-background', STICKY_ACTIONS_CELL)}
-              >
+              <TableHead className={cn('text-right', compact && 'h-9', 'max-md:hidden')}>
                 Actions
               </TableHead>
             </TableRow>
           </TableHeader>
-          <TableBody>
+          <TableBody className="max-md:block max-md:space-y-2 max-md:p-px">
             {items.length === 0 ? (
-              <TableRow>
+              <TableRow className="max-md:block max-md:rounded-lg max-md:ring-1 max-md:ring-border">
                 <TableCell
                   data-slot="list-view-empty"
                   colSpan={displayColumns.length + 1 + (selectionEnabled ? 1 : 0)}
-                  className="p-0"
+                  className="p-0 max-md:block"
                 >
                   {initialSearch ? (
                     <EmptyState
-                      className={cn('border-0', VISIBLE_TABLE_MESSAGE)}
+                      className="border-0"
                       icon={<SearchX className="h-6 w-6" />}
                       title="No matches found"
-                      description={`Nothing matched “${initialSearch}”. Try a different search term.`}
+                      description={
+                        activePresetLabel === undefined
+                          ? `Nothing matched “${initialSearch}”. Try a different search term.`
+                          : `No rows in “${activePresetLabel}”.`
+                      }
                       actions={
-                        <Button variant="outline" size="sm" onClick={() => applyQuery('')}>
-                          Clear search
-                        </Button>
+                        <>
+                          {removal && (
+                            <Button
+                              size="sm"
+                              data-slot="list-view-empty-remove"
+                              onClick={() => applyRemoval(removal)}
+                            >
+                              {`Remove “${removal.sentence}” to see ${removal.rows} ${removal.rows === 1 ? 'row' : 'rows'}`}
+                            </Button>
+                          )}
+                          <Button variant="outline" size="sm" onClick={() => applyQuery('')}>
+                            {activePresetLabel === undefined ? 'Clear filters' : 'Show all'}
+                          </Button>
+                        </>
                       }
                     />
                   ) : (
                     <EmptyState
-                      className={cn('border-0', VISIBLE_TABLE_MESSAGE)}
+                      className="border-0"
                       icon={<Inbox className="h-6 w-6" />}
                       title="No items yet"
                       description={
@@ -500,9 +1057,18 @@ export function ListViewClient({
                   <TableRow
                     key={rowId}
                     data-state={selection.isSelected(rowId) ? 'selected' : undefined}
+                    className={cn(CARD_ROW, selectionEnabled && 'max-md:pl-11')}
                   >
                     {selectionEnabled && (
-                      <TableCell data-slot="selection-cell" className="w-10">
+                      <TableCell
+                        data-slot="selection-cell"
+                        className={cn(
+                          'w-10',
+                          compact && 'py-1.5',
+                          CARD_PINNED_CELL,
+                          'max-md:left-3',
+                        )}
+                      >
                         <Checkbox
                           aria-label={`Select ${rowName(item, index)}`}
                           checked={selection.isSelected(rowId)}
@@ -513,20 +1079,66 @@ export function ListViewClient({
                     {displayColumns.map((column) => (
                       <TableCell
                         key={column}
-                        className={cn(isCountAlignedColumn(columnField(column)) && 'text-right')}
+                        data-label={formatFieldName(column)}
+                        className={cn(
+                          isCountAlignedColumn(columnField(column)) && 'text-right',
+                          compact && 'py-1.5',
+                          CARD_CELL,
+                          column === titleColumn && CARD_TITLE_CELL,
+                        )}
                       >
-                        {renderCell(column, item)}
+                        {column !== titleColumn ? (
+                          renderCell(column, item)
+                        ) : rendersAnchorFreeCell(columnField(column)) ? (
+                          <Link
+                            href={itemHref(rowId)}
+                            data-slot="row-title-link"
+                            className="font-medium text-foreground hover:underline focus-visible:underline"
+                          >
+                            {renderCell(column, item)}
+                          </Link>
+                        ) : (
+                          <span className="inline-flex items-center gap-2">
+                            {renderCell(column, item)}
+                            <Link
+                              href={itemHref(rowId)}
+                              data-slot="row-title-link"
+                              aria-label={`Open ${rowName(item, index)}`}
+                              className="text-xs font-medium text-muted-foreground hover:underline focus-visible:underline"
+                            >
+                              Open
+                            </Link>
+                          </span>
+                        )}
                       </TableCell>
                     ))}
                     <TableCell
-                      className={cn('text-right max-md:before:bg-background', STICKY_ACTIONS_CELL)}
+                      className={cn(
+                        'text-right',
+                        compact && 'py-1.5',
+                        CARD_PINNED_CELL,
+                        'max-md:right-3',
+                      )}
                     >
-                      <Link
-                        href={`${basePath}/${urlKey}/${item.id}`}
-                        className="text-primary hover:underline max-md:-m-3 max-md:inline-block max-md:p-3"
-                      >
-                        Edit
-                      </Link>
+                      <RowActions
+                        rowLabel={rowName(item, index)}
+                        href={itemHref(rowId)}
+                        actions={rowActionsFor(rowId)}
+                        onRun={serverAction ? (key) => handleRowAction(rowId, key) : undefined}
+                        onCopyLink={() => handleCopyLink(rowId)}
+                        onDelete={
+                          canBulkDelete
+                            ? () => handleRowDelete(rowId, rowName(item, index))
+                            : undefined
+                        }
+                        onStillRunning={() =>
+                          setBulkStatus(
+                            `Another action on “${rowName(item, index)}” is still running`,
+                          )
+                        }
+                        itemName={formatFieldName(listKey).toLowerCase()}
+                        className="max-md:-m-1.5 max-md:h-11 max-md:w-11"
+                      />
                     </TableCell>
                   </TableRow>
                 )
@@ -536,30 +1148,51 @@ export function ListViewClient({
         </Table>
       </div>
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between max-md:flex-wrap max-md:gap-2">
-          <p className="text-sm tabular-nums text-muted-foreground">
-            Showing {(page - 1) * pageSize + 1} to {Math.min(page * pageSize, total)} of {total}{' '}
-            results
-          </p>
-          <div className="flex items-center space-x-2">
-            <Button
-              variant="outline"
-              onClick={() => router.push(buildPaginationUrl(page - 1))}
-              disabled={!hasPrevPage}
-            >
-              Previous
-            </Button>
-            <span className="text-sm text-muted-foreground">
-              Page {page} of {totalPages}
-            </span>
-            <Button
-              variant="outline"
-              onClick={() => router.push(buildPaginationUrl(page + 1))}
-              disabled={!hasNextPage}
-            >
-              Next
-            </Button>
+      {total > 0 && (
+        <div
+          data-slot="list-view-pagination"
+          className="flex flex-wrap items-center justify-between gap-2"
+        >
+          {totalPages > 1 ? (
+            <p className="text-sm tabular-nums text-muted-foreground">
+              Showing {(page - 1) * pageSize + 1} to {Math.min(page * pageSize, total)} of {total}{' '}
+              results
+            </p>
+          ) : (
+            <span />
+          )}
+          <div className="flex flex-wrap items-center gap-2">
+            {showPageSizes && (
+              <SegmentedControl
+                label="Rows per page"
+                slot="list-view-page-size"
+                options={pageSizeOptions}
+                value={pageSize}
+                onChange={(size) => router.push(editUrl({ page: 1, pageSize: size }))}
+                className="min-w-10 tabular-nums"
+              />
+            )}
+            {totalPages > 1 && (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => router.push(buildPaginationUrl(page - 1))}
+                  disabled={!hasPrevPage}
+                >
+                  Previous
+                </Button>
+                <span className="text-sm text-muted-foreground">
+                  Page {page} of {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  onClick={() => router.push(buildPaginationUrl(page + 1))}
+                  disabled={!hasNextPage}
+                >
+                  Next
+                </Button>
+              </>
+            )}
           </div>
         </div>
       )}

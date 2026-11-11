@@ -33,6 +33,7 @@ import {
   getRelationshipOptions,
   type RelationshipOption,
   isRelationshipLabelReadable,
+  relationshipSearchWhere,
 } from '../query/relationship-options.js'
 import {
   runWritePipeline,
@@ -44,6 +45,8 @@ import { resolveJunctionEdge, ownsForeignKey } from './junction.js'
 import { isRelationshipField } from '../fields/index.js'
 import { parseListId, type ListIdValue } from '../contract/id-boundary.js'
 import { reportAfterTransactionFailures } from './transaction-boundary.js'
+import { isRowActionAvailable } from '../config/row-action-availability.js'
+import { checkHasAccess } from '../config/has-access-gate.js'
 import {
   TransactionRegistry,
   TransactionRolledBackError,
@@ -64,6 +67,10 @@ export type ServerActionProps =
   // message? }` shape, never `success`, so a redirect-on-`success` wrapper
   // does not hijack it.
   | { listKey: string; action: 'bulkAction'; key: string; ids: string[] }
+  // A Row action declared in `ui.listView.rowActions`. Returns a distinct
+  // `{ rowAction }` shape, never `success`, so a redirect-on-`success` wrapper
+  // does not hijack it.
+  | { listKey: string; action: 'rowAction'; key: string; id: string }
   // Relationship-table row removal (ADR-0018, #739). `listKey`/`id` target the
   // RELATED row, so the related list's own access control and hooks apply —
   // never the parent's. The other relationship-table actions below share this
@@ -142,8 +149,9 @@ export type ServerActionProps =
       field: string
       parentId: string
     }
-  // Returns a distinct `{ options }` shape, never `success`, so a UI wrapper
-  // that redirects on `success` does not navigate away mid-edit.
+  // Returns a distinct `{ options, searched }` shape, never `success`, so a UI
+  // wrapper that redirects on `success` does not navigate away mid-edit.
+  // `searched` is false when `search` was not applied to the options.
   | {
       listKey: string
       action: 'relationshipOptions'
@@ -602,6 +610,8 @@ function logDatabaseFailure(error: unknown, listKey: string, action: string): vo
   console.error(`Database error on "${action}" for list "${listKey}":`, error.cause ?? error)
 }
 
+const ROW_ACTION_NOT_RUN = 'This action was not run'
+
 function clientFailure(
   error: unknown,
   config: OpenSaasConfig,
@@ -835,6 +845,8 @@ export function getContext<TConfig extends OpenSaasConfig>(
       }
     | { bulkAction: true; message?: string }
     | { bulkAction: false; error: string; code?: string }
+    | { rowAction: true; message?: string }
+    | { rowAction: false; error: string; code?: string }
     | { updated: boolean; error?: string; fieldErrors?: Record<string, string>; code?: string }
     | {
         added: boolean
@@ -844,7 +856,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
         code?: string
       }
     | { linked: boolean; error?: string; fieldErrors?: Record<string, string>; code?: string }
-    | { options: RelationshipOption[] }
+    | { options: RelationshipOption[]; searched: boolean }
   > {
     if (!Object.hasOwn(config.lists, props.listKey)) {
       return {
@@ -909,17 +921,10 @@ export function getContext<TConfig extends OpenSaasConfig>(
           error: `Bulk action "${props.key}" not found on list "${props.listKey}"`,
         }
       }
+      if (!(await checkHasAccess(action, context, props.listKey, 'Bulk action'))) {
+        return { bulkAction: false, error: 'Access denied' }
+      }
       try {
-        if (action.hasAccess) {
-          const allowed = await action.hasAccess({
-            session: context.session,
-            context,
-            listKey: props.listKey,
-          })
-          if (!allowed) {
-            return { bulkAction: false, error: 'Access denied' }
-          }
-        }
         const result = await action.handler({
           listKey: props.listKey,
           ids: props.ids,
@@ -931,6 +936,52 @@ export function getContext<TConfig extends OpenSaasConfig>(
           genericMessage: 'Action failed',
         })
         return { bulkAction: false, error: failure.error, code: failure.code }
+      }
+    }
+
+    // A missing row, a denied row, a failed `hasAccess` and a row that is no
+    // longer eligible all answer with this one outcome, so a caller cannot tell
+    // them apart (Silent failure).
+    if (props.action === 'rowAction') {
+      const notRun = { rowAction: false, error: ROW_ACTION_NOT_RUN } as const
+      const rowActions = listConfig.ui?.listView?.rowActions ?? []
+      const action = rowActions.find((a) => a.key === props.key)
+      if (!action) {
+        return {
+          rowAction: false,
+          error: `Row action "${props.key}" not found on list "${props.listKey}"`,
+        }
+      }
+      const id = parseId(props.listKey, props.id)
+      if (id === null) return notRun
+      if (!(await checkHasAccess(action, context, props.listKey, 'Row action'))) return notRun
+      try {
+        return await transaction(async (tx) => {
+          const list = tx.db[props.listKey]
+          const locked = await list
+            .where({ id: { equals: id } })
+            .forUpdate()
+            .first()
+          if (locked === null) return notRun
+          const item = await list.where({ id: { equals: id } }).first()
+          if (item === null) return notRun
+          const txContext = engineContextOf(tx)
+          if (!isRowActionAvailable(action, props.listKey, item, txContext.session)) {
+            return notRun
+          }
+          const result = await action.handler({
+            listKey: props.listKey,
+            id,
+            item,
+            context: txContext,
+          })
+          return { rowAction: true, message: result?.message } as const
+        })
+      } catch (error) {
+        const failure = clientFailure(error, config, props.listKey, props.action, {
+          genericMessage: 'Action failed',
+        })
+        return { rowAction: false, error: failure.error, code: failure.code }
       }
     }
 
@@ -1260,8 +1311,13 @@ export function getContext<TConfig extends OpenSaasConfig>(
           take: props.take,
           selectedIds: props.selectedIds,
         })
+        const searched =
+          relationshipSearchWhere(config, relatedListKey, {
+            search: props.search,
+            labelReadable,
+          }) !== undefined
 
-        return { options }
+        return { options, searched }
       }
 
       let result: WrittenRow = null

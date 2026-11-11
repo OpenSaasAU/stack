@@ -19,6 +19,8 @@ export interface SetupStep {
   args: string[]
   /** The command the user can run to retry just this step. */
   retry: string
+  /** A non-zero exit does not stop the plan; later steps decide whether setup worked. */
+  tolerateFailure?: boolean
 }
 
 export interface NextStepsOptions {
@@ -34,6 +36,7 @@ export function planSetupSteps(): SetupStep[] {
       title: 'Installing dependencies',
       args: ['install'],
       retry: `${PACKAGE_MANAGER} install`,
+      tolerateFailure: true,
     },
     {
       title: 'Generating schema and types',

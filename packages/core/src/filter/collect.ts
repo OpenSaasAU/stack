@@ -1,7 +1,7 @@
 import type { ListConfig, OpenSaasConfig } from '../config/types.js'
 import type { Session, AccessContext } from '../access/types.js'
 import { checkAccess } from '../access/engine.js'
-import { isFieldReadableForPredicate } from '../access/field-access.js'
+import { classifyRowIndependentRead, isFieldReadableForPredicate } from '../access/field-access.js'
 import { parseFilterQuery } from './parse.js'
 import { buildFilterWhere } from './map.js'
 import type { FilterCondition, FilterFieldSuggestion, FilterSpec } from './types.js'
@@ -13,6 +13,15 @@ import type { FilterCondition, FilterFieldSuggestion, FilterSpec } from './types
 export type FilterAccessArgs = {
   session: Session | null
   context: AccessContext & { _isSudo?: boolean }
+}
+
+async function canQueryList(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  listConfig: ListConfig<any>,
+  args: FilterAccessArgs,
+): Promise<boolean> {
+  if (args.context._isSudo === true) return true
+  return (await checkAccess(listConfig.access?.operation?.query, args)) !== false
 }
 
 /**
@@ -48,10 +57,7 @@ export async function collectFilterSpecs(
   args: FilterAccessArgs,
 ): Promise<Record<string, FilterSpec>> {
   const specs: Record<string, FilterSpec> = {}
-  if (args.context._isSudo !== true) {
-    const access = await checkAccess(listConfig.access?.operation?.query, args)
-    if (access === false) return specs
-  }
+  if (!(await canQueryList(listConfig, args))) return specs
   const filterableFields = Object.entries(listConfig.fields).filter(
     ([, field]) => typeof field.getFilterSpec === 'function',
   )
@@ -68,6 +74,27 @@ export async function collectFilterSpecs(
     if (spec) specs[fieldName] = spec
   })
   return specs
+}
+
+/**
+ * The fields of a list whose `read` rule is row-independent and denies this
+ * session, so no row can ever show them: the same omission the MCP vocabulary
+ * makes (ADR-0053). A row-dependent rule is not named, and a rule that throws
+ * is, so a field this session cannot classify stays hidden. A session denied
+ * the list's `query` gets an empty set and no field rule is asked.
+ */
+export async function collectUnreadableFields(
+  listConfig: OpenSaasConfig['lists'][string],
+  args: FilterAccessArgs,
+): Promise<Set<string>> {
+  if (!(await canQueryList(listConfig, args))) return new Set()
+  const fields = Object.entries(listConfig.fields)
+  const answers = await Promise.all(
+    fields.map(([, field]) =>
+      classifyRowIndependentRead(field.access, args).catch((): 'deny' => 'deny'),
+    ),
+  )
+  return new Set(fields.flatMap(([name], index) => (answers[index] === 'deny' ? [name] : [])))
 }
 
 /**
@@ -105,11 +132,48 @@ export async function collectFilterSuggestions(
   config: OpenSaasConfig,
   args: FilterAccessArgs,
 ): Promise<FilterFieldSuggestion[]> {
-  const specs = await collectFilterSpecs(listConfig, listKey, config, args)
-  return Object.entries(specs).map(([field, spec]) => ({
-    field,
-    operators: spec.operators,
-    freeText: spec.freeText ?? false,
-    valueSource: spec.suggestions.valueSource,
-  }))
+  return filterSuggestionsOf(await collectFilterSpecs(listConfig, listKey, config, args))
+}
+
+/**
+ * The client-serializable suggestion metadata for Filter specs already
+ * collected with {@link collectFilterSpecs}, so a caller that also builds a
+ * `where` from those specs asks each field's `read` rule once.
+ */
+export function filterSuggestionsOf(specs: Record<string, FilterSpec>): FilterFieldSuggestion[] {
+  return Object.entries(specs).map(([field, spec]) => {
+    const suggestion: FilterFieldSuggestion = {
+      field,
+      operators: spec.operators,
+      freeText: spec.freeText ?? false,
+      valueSource: spec.suggestions.valueSource,
+    }
+    if (spec.suggestions.valueFormat) suggestion.valueFormat = spec.suggestions.valueFormat
+    if (spec.suggestions.datePicker) suggestion.datePicker = spec.suggestions.datePicker
+    if (spec.toIdCondition) suggestion.matchesById = true
+    if (spec.empty !== undefined) suggestion.canBeEmpty = true
+    if (spec.negation !== undefined) suggestion.negation = spec.negation
+    return suggestion
+  })
+}
+
+/**
+ * Whether this session may filter one field of a list by a related record's id
+ * (`field:#id`): it may query the list, read the field in a predicate, and the
+ * field's {@link FilterSpec} has `toIdCondition`. Asks only that field's rules.
+ */
+export async function isFieldFilterableById(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  listConfig: ListConfig<any>,
+  listKey: string,
+  fieldName: string,
+  config: OpenSaasConfig,
+  args: FilterAccessArgs,
+): Promise<boolean> {
+  if (!Object.hasOwn(listConfig.fields, fieldName)) return false
+  const field = listConfig.fields[fieldName]
+  if (typeof field.getFilterSpec !== 'function') return false
+  if (!(await canQueryList(listConfig, args))) return false
+  if (!(await isFieldReadableForPredicate(field.access, args))) return false
+  return field.getFilterSpec(fieldName, listKey, config)?.toIdCondition !== undefined
 }

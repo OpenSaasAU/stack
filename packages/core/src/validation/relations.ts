@@ -150,6 +150,19 @@ function refuseRelationshipField(config: OpenSaasConfig, end: RelationshipEnd): 
   const entry = `fields.${end.fieldKey}`
   const [targetListKey] = end.field.ref.split('.')
 
+  if (targetListKey && config.lists[targetListKey] === undefined) {
+    return [
+      {
+        listKey: end.listKey,
+        entry,
+        reason: 'unknown-relationship-target',
+        message:
+          `List "${end.listKey}": ${entry} refs "${end.field.ref}", but no list "${targetListKey}" is declared. ` +
+          `Fix the ref or declare the list.`,
+      },
+    ]
+  }
+
   if (targetListKey && isCompositeKeyed(config.lists[targetListKey])) {
     refusals.push({
       listKey: end.listKey,

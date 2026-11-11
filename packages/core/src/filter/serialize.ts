@@ -1,73 +1,171 @@
-import type { FilterOperator, FilterToken } from './types.js'
+import {
+  FILTER_GROUP_KEYWORD,
+  FILTER_OPERATOR_PREFIXES,
+  fieldPrefixLength,
+  isFilterWhitespace,
+  readFilterGroup,
+  splitRangeValue,
+} from './parse.js'
+import type { FilterQuery, FilterTerm, FilterToken, FilterValue } from './types.js'
 
-/**
- * The comparison-operator prefix each {@link FilterOperator} serialises to. The
- * exact inverse of the prefixes {@link parseFilterQuery} recognises (`eq` has no
- * prefix — a plain `field:value`).
- */
-const OPERATOR_PREFIX: Record<FilterOperator, string> = {
-  eq: '',
-  gt: '>',
-  gte: '>=',
-  lt: '<',
-  lte: '<=',
+type Placement = 'top' | 'member'
+
+function hasWhitespace(text: string): boolean {
+  for (const ch of text) if (isFilterWhitespace(ch)) return true
+  return false
+}
+
+function mustQuote(
+  token: FilterToken,
+  value: FilterValue,
+  index: number,
+  placement: Placement,
+): boolean {
+  const { text } = value
+  if (value.quoted || text.startsWith('"') || hasWhitespace(text)) return true
+  if (placement === 'member' && /[()]/.test(text)) return true
+  if (token.field === null) {
+    if (text === '' || fieldPrefixLength(text) > 0) return true
+    return !token.negated && text.startsWith('-') && text !== '-'
+  }
+  if (text.includes(',')) return true
+  if (index > 0) return false
+  if (token.operator === 'eq') {
+    if (/^(?:[<>]|\/\/)/.test(text)) return true
+    return token.values.length === 1 && (text === '!' || splitRangeValue(text) !== null)
+  }
+  if (token.operator === 'gt' || token.operator === 'lt') return text.startsWith('=')
+  return false
+}
+
+function quote(value: string): string {
+  let escaped = ''
+  for (let i = 0; i < value.length; i++) {
+    const ch = value[i]
+    const next = value[i + 1]
+    if (ch === '"') escaped += '\\"'
+    else if (ch === '\\' && (next === undefined || next === '"' || next === '\\')) escaped += '\\\\'
+    else escaped += ch
+  }
+  return `"${escaped}"`
 }
 
 /**
- * Whether a value must be wrapped in double quotes to survive re-parsing.
- *
- * A value is quoted when it contains whitespace (so `parseFilterQuery` keeps it
- * as one token) or an embedded quote. When `guardOperatorChars` is set (an `eq`
- * field token, where a leading `>`/`<` would otherwise be read as a comparison
- * operator), a value starting with `<`/`>` is also quoted so it round-trips as a
- * literal value rather than an operator.
- */
-function quoteIfNeeded(value: string, guardOperatorChars: boolean): string {
-  const needsQuote =
-    /\s/.test(value) ||
-    value.includes('"') ||
-    (guardOperatorChars && (value.startsWith('>') || value.startsWith('<')))
-  return needsQuote ? `"${value}"` : value
-}
-
-/**
- * Serialise {@link FilterToken}s back into a filter query string — the exact
- * inverse of {@link parseFilterQuery} (ADR-0017). This is the grammar-producing
- * half the Filter builder UI relies on: the builder turns UI state into tokens
- * and serialises them into the `?search=` URL param the engine already consumes,
- * so the same quoting and operator-prefix rules live next to the parser and can
- * never drift.
- *
- * Pure and field-agnostic (no DB/Prisma imports). Tokens are joined with the
- * grammar's implicit AND (a single space). A token with an empty value carries
- * no filter and is omitted, so `serializeFilterQuery` never emits a dangling
- * `field:` or a stray quote pair.
+ * Quote `text` as a single filter value, so a query built from data — a
+ * session's name, a record's title — reads back as exactly that value and
+ * never as extra tokens. `parseFilterQuery(field + ':' + quoteFilterValue(text))`
+ * is one `eq` token on `field` whose only value is `text`, whatever `text`
+ * holds: quotes, backslashes, whitespace, commas, a leading `-`, `!` or an
+ * operator prefix.
  *
  * @example
- * serializeFilterQuery([
- *   { field: 'role',   operator: 'eq', value: 'Editor',       raw: '' },
- *   { field: 'orders', operator: 'gt', value: '5',            raw: '' },
- *   { field: 'name',   operator: 'eq', value: 'Ada Lovelace', raw: '' },
- *   { field: null,     operator: 'eq', value: 'beta',         raw: '' },
- * ])
- * // 'role:Editor orders:>5 name:"Ada Lovelace" beta'
+ * ```typescript
+ * search: ({ session }) => `status:draft author:${quoteFilterValue(String(session?.name ?? ''))}`
+ * ```
  */
-export function serializeFilterQuery(tokens: FilterToken[]): string {
-  const parts: string[] = []
+export function quoteFilterValue(text: string): string {
+  return quote(text)
+}
 
-  for (const token of tokens) {
-    if (token.value === '') continue
+function serializeValues(token: FilterToken, placement: Placement): string {
+  const values: FilterValue[] =
+    token.values.length > 0 ? token.values : [{ text: '', quoted: false }]
+  return values
+    .map((value, index) =>
+      mustQuote(token, value, index, placement) ? quote(value.text) : value.text,
+    )
+    .join(',')
+}
 
-    if (token.field === null) {
-      // A leading `>`/`<` stays literal for a bare word (the parser only
-      // treats them as operators after a `field:`), so no operator guard here.
-      parts.push(quoteIfNeeded(token.value, false))
-      continue
-    }
+function rangeText(token: FilterToken, placement: Placement): string | null {
+  if (token.field === null || token.values.length !== 2) return null
+  const [low, high] = token.values
+  if (low.quoted || high.quoted) return null
+  const text = `${low.text}..${high.text}`
+  const bounds = splitRangeValue(text)
+  if (bounds === null || bounds[0] !== low.text) return null
+  if (text.startsWith('"') || hasWhitespace(text) || /^(?:[<>]|\/\/)/.test(text)) return null
+  if (placement === 'member' && /[()]/.test(text)) return null
+  return text
+}
 
-    const prefix = OPERATOR_PREFIX[token.operator]
-    parts.push(`${token.field}:${prefix}${quoteIfNeeded(token.value, prefix === '')}`)
+function rangeLiteral(token: FilterToken): FilterToken {
+  const text = token.values.map((value) => value.text).join('..')
+  return { ...token, operator: 'eq', values: [{ text, quoted: false }] }
+}
+
+function writeToken(token: FilterToken, placement: Placement): string {
+  const negation = token.negated ? '-' : ''
+  if (token.operator === 'empty') {
+    return token.field === null ? `${negation}!` : `${negation}${token.field}:!`
   }
+  if (token.operator === 'range') {
+    const range = rangeText(token, placement)
+    if (range !== null && token.field !== null) return `${negation}${token.field}:${range}`
+    return writeToken(rangeLiteral(token), placement)
+  }
+  const text = serializeValues(token, placement)
+  if (token.field === null) return `${negation}${text}`
+  return `${negation}${token.field}:${FILTER_OPERATOR_PREFIXES[token.operator]}${text}`
+}
 
+function writeGroup(tokens: readonly FilterToken[]): string {
+  const members = tokens.map((token) => writeToken(token, 'member'))
+  return `(${members.join(` ${FILTER_GROUP_KEYWORD} `)})`
+}
+
+function writeTerm(term: FilterTerm): string {
+  return term.kind === 'group' ? writeGroup(term.tokens) : writeToken(term, 'top')
+}
+
+/**
+ * Serialise one {@link FilterToken} to its query-string form, as
+ * {@link serializeFilterQuery} writes it outside a group.
+ */
+export function serializeFilterToken(token: FilterToken): string {
+  return writeToken(token, 'top')
+}
+
+/**
+ * Serialise a {@link FilterQuery} into the `?search=` grammar, joining its
+ * terms with the grammar's implicit AND (a space). The inverse of
+ * {@link parseFilterQuery}: for every query `parseFilterQuery` returns,
+ * `parseFilterQuery(serializeFilterQuery(query))` is that query again, quoting
+ * included. Every token is written, including one whose values are empty or
+ * absent (`field:` or `""`).
+ *
+ * A value is quoted when it says so or when it would otherwise read back as
+ * different syntax: whitespace, a leading quote, a comma in a field token's
+ * value, a free-text word that looks like `field:value` or starts with `-`, a
+ * lone `!` or `a..b`, or a value an operator prefix would swallow. A `range`
+ * token is written `field:a..b`; one whose bounds cannot be written that way
+ * is written as the single literal value `"a..b"`, which never reads back as a
+ * range. Inside quotes a quote is written `\"`, and a backslash that precedes
+ * a quote or ends the value is written `\\`.
+ *
+ * An OR group is written `(a OR b)`, quoting every member value that holds a
+ * parenthesis, since a member word with an unquoted parenthesis is no group.
+ * A `range` member whose bounds hold one cannot be written as a range inside
+ * a group, and is written as its quoted literal `"a..b"`. A group of one
+ * token is written as that token, and an empty group is not written. A
+ * free-text word outside a group that would read back as the start of a
+ * group is written quoted, as the word it is.
+ *
+ * @example
+ * serializeFilterQuery(parseFilterQuery('-name:"Ada \\"the Countess\\"",Grace (status:draft OR "OR")'))
+ * // '-name:"Ada \\"the Countess\\"",Grace (status:draft OR "OR")'
+ */
+export function serializeFilterQuery(query: FilterQuery): string {
+  const terms = query.terms.flatMap((term) =>
+    term.kind === 'group' && term.tokens.length < 2 ? term.tokens : [term],
+  )
+  const parts = terms.map(writeTerm)
+  for (let index = parts.length - 1; index >= 0; index--) {
+    const term = terms[index]
+    if (term.kind === 'group' || term.field !== null || term.negated) continue
+    if (!parts[index].startsWith('(')) continue
+    const offset = parts.slice(0, index).reduce((length, part) => length + part.length + 1, 0)
+    if (readFilterGroup(parts.join(' '), offset) !== null) parts[index] = quote(parts[index])
+  }
   return parts.join(' ')
 }

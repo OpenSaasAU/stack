@@ -245,12 +245,46 @@ function refuseDuplicateExtensionPacks(config: OpenSaasConfig): ConfigRefusal[] 
  * `sort` is absent from {@link ListIndexFieldRef}'s type; this catches the
  * runtime object that still carries one.
  */
+function refuseUnsupportedProvider(config: OpenSaasConfig): ConfigRefusal[] {
+  const refusals: ConfigRefusal[] = []
+  const db: { provider?: unknown; url?: unknown } = config.db ?? {}
+  if (db.provider !== 'postgresql') {
+    refusals.push({
+      entry: 'db.provider',
+      reason: 'unsupported-provider',
+      message: `db.provider is ${JSON.stringify(db.provider)}, but 'postgresql' is the only supported provider (ADR-0063). Set db.provider to 'postgresql'.`,
+    })
+  }
+  if (db.url !== undefined) {
+    refusals.push({
+      entry: 'db.url',
+      reason: 'unsupported-provider',
+      message:
+        'db.url is not a config key: the runtime resolves the connection from DATABASE_URL or the Dev database (ADR-0063). Remove db.url and set DATABASE_URL instead.',
+    })
+  }
+  return refusals
+}
+
+function refuseNonPascalListKeys(config: OpenSaasConfig): ConfigRefusal[] {
+  return Object.keys(config.lists)
+    .filter((listKey) => IDENTIFIER.test(listKey) && !/^[A-Z][A-Za-z0-9]*$/.test(listKey))
+    .map((listKey) => ({
+      listKey,
+      entry: `lists.${listKey}`,
+      reason: 'invalid-list-key' as const,
+      message: `List "${listKey}": list keys must be PascalCase (e.g. "${listKey.charAt(0).toUpperCase()}${listKey.slice(1)}"). Rename the key in lists.`,
+    }))
+}
+
 export function validateDatabaseConfig(config: OpenSaasConfig): ConfigRefusal[] {
   const refusals: ConfigRefusal[] = [
     ...refuseInvalidExtensionNames(config),
     ...refuseInvalidExtensionSources(config),
     ...refuseDuplicateExtensionPacks(config),
     ...refuseUnknownIdField('db.idField', config.db?.idField),
+    ...refuseUnsupportedProvider(config),
+    ...refuseNonPascalListKeys(config),
   ]
 
   for (const [listKey, listConfig] of Object.entries(config.lists)) {

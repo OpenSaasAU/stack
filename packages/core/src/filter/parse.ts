@@ -1,99 +1,259 @@
-import type { FilterOperator, FilterToken } from './types.js'
+import type {
+  FilterGroup,
+  FilterOperator,
+  FilterQuery,
+  FilterTerm,
+  FilterToken,
+  FilterValue,
+} from './types.js'
+
+const FIELD_PREFIX_RE = /([A-Za-z_][A-Za-z0-9_]*):/y
+
+const WHITESPACE_RE = /\s/
+
+const RANGE_SEPARATOR = '..'
+
+const GROUP_OPEN = '('
+
+const GROUP_CLOSE = ')'
+
+/** The keyword joining the tokens of an OR group: `(a OR b)`. */
+export const FILTER_GROUP_KEYWORD = 'OR'
+
+const FILTER_OPERATORS: readonly FilterOperator[] = ['eq', 'gt', 'gte', 'lt', 'lte']
 
 /**
- * A field prefix is an identifier (letter/underscore, then word chars)
- * immediately followed by a colon, e.g. `role:` or `orders:`.
+ * The prefix each {@link FilterOperator} is written with after `field:`: none
+ * for `eq`, and `>`, `>=`, `<`, `<=` for the comparisons.
  */
-const FIELD_PREFIX_RE = /^([A-Za-z_][A-Za-z0-9_]*):/
-
-function isWhitespace(ch: string): boolean {
-  return ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r'
+export const FILTER_OPERATOR_PREFIXES: Readonly<Record<FilterOperator, string>> = {
+  eq: '',
+  gt: '>',
+  gte: '>=',
+  lt: '<',
+  lte: '<=',
 }
 
 /**
- * Parse a filter query string into {@link FilterToken}s (ADR-0017 grammar).
- *
- * Pure and field-agnostic: it recognises the *syntax* (field prefix, comparison
- * operator, quoted value, bare word) but never validates field names or values
- * — that is the mapping step's job, where unknown/unmappable tokens degrade to
- * free text. This parser therefore never throws; malformed input simply parses
- * as bare free-text words.
- *
- * Grammar:
- * - `field:value` → a field token with the `eq` operator.
- * - `field:>value`, `field:>=value`, `field:<value`, `field:<=value` →
- *   comparison operators.
- * - `field:"multi word"` / bare `"multi word"` → quoted values keep spaces.
- * - anything else (`beta`, `>5`) → a bare free-text token (`field: null`).
- *
- * A `word:` is *not* treated as a field prefix when the colon is immediately
- * followed by `//` (a URL scheme like `http://x` or `https://…`); the whole
- * token stays free text so a pasted URL is searched verbatim rather than
- * mangled into `{ field: 'http', value: '//x' }`.
- *
- * @example
- * parseFilterQuery('role:Editor orders:>5 name:"Ada Lovelace" beta')
- * // [
- * //   { field: 'role',   operator: 'eq',  value: 'Editor',       raw: 'role:Editor' },
- * //   { field: 'orders', operator: 'gt',  value: '5',            raw: 'orders:>5' },
- * //   { field: 'name',   operator: 'eq',  value: 'Ada Lovelace', raw: 'name:"Ada Lovelace"' },
- * //   { field: null,     operator: 'eq',  value: 'beta',         raw: 'beta' },
- * // ]
+ * Every comparison prefix and its operator, longest prefix first, so a reader
+ * matching them in order takes `>=` before `>`.
  */
-export function parseFilterQuery(query: string): FilterToken[] {
-  const tokens: FilterToken[] = []
-  if (!query) return tokens
+export const FILTER_COMPARISON_PREFIXES: ReadonlyArray<readonly [string, FilterOperator]> =
+  FILTER_OPERATORS.filter((operator) => FILTER_OPERATOR_PREFIXES[operator] !== '')
+    .map((operator): readonly [string, FilterOperator] => [
+      FILTER_OPERATOR_PREFIXES[operator],
+      operator,
+    ])
+    .sort((a, b) => b[0].length - a[0].length)
 
+export function isFilterWhitespace(ch: string): boolean {
+  return WHITESPACE_RE.test(ch)
+}
+
+/**
+ * The length of the field prefix (`name:`) at `start` in `text`, or `0` when
+ * there is none. A `word:` followed by `//` is a URL scheme, not a field.
+ */
+export function fieldPrefixLength(text: string, start = 0): number {
+  FIELD_PREFIX_RE.lastIndex = start
+  const match = FIELD_PREFIX_RE.exec(text)
+  if (!match || text.startsWith('//', start + match[0].length)) return 0
+  return match[0].length
+}
+
+/**
+ * The two bounds of an unquoted single value written as an inclusive range
+ * (`a..b`), split at its first `..`, or `null` when it is not one: a bound is
+ * missing, or the value holds a comma.
+ */
+export function splitRangeValue(value: string): [string, string] | null {
+  const at = value.indexOf(RANGE_SEPARATOR)
+  if (at <= 0 || at + RANGE_SEPARATOR.length >= value.length || value.includes(',')) return null
+  return [value.slice(0, at), value.slice(at + RANGE_SEPARATOR.length)]
+}
+
+export interface FilterRead<T> {
+  value: T
+  end: number
+}
+
+function endsPlainToken(query: string, at: number): boolean {
+  return at >= query.length || isFilterWhitespace(query[at])
+}
+
+function readToken(query: string, start: number, inGroup: boolean): FilterRead<FilterToken> {
   const n = query.length
-  let i = 0
+  let i = start
 
-  while (i < n) {
-    while (i < n && isWhitespace(query[i])) i++
-    if (i >= n) break
+  const endsToken = (at: number) =>
+    endsPlainToken(query, at) || (inGroup && query[at] === GROUP_CLOSE)
 
-    const start = i
-
-    let field: string | null = null
-    const prefixMatch = FIELD_PREFIX_RE.exec(query.slice(i))
-    if (prefixMatch && !query.startsWith('//', i + prefixMatch[0].length)) {
-      field = prefixMatch[1]
-      i += prefixMatch[0].length
+  const readValue = (inList: boolean): FilterValue => {
+    if (query[i] !== '"') {
+      const from = i
+      while (!endsToken(i) && !(inList && query[i] === ',')) i++
+      return { text: query.slice(from, i), quoted: false }
     }
-
-    let operator: FilterOperator = 'eq'
-    if (field) {
-      if (query.startsWith('>=', i)) {
-        operator = 'gte'
+    i++
+    let text = ''
+    while (i < n && query[i] !== '"') {
+      const next = query[i + 1]
+      if (query[i] === '\\' && (next === '"' || next === '\\')) {
+        text += next
         i += 2
-      } else if (query.startsWith('<=', i)) {
-        operator = 'lte'
-        i += 2
-      } else if (query[i] === '>') {
-        operator = 'gt'
-        i += 1
-      } else if (query[i] === '<') {
-        operator = 'lt'
-        i += 1
-      }
-    }
-
-    let value = ''
-    if (query[i] === '"') {
-      i++
-      while (i < n && query[i] !== '"') {
-        value += query[i]
-        i++
-      }
-      if (i < n) i++
-    } else {
-      while (i < n && !isWhitespace(query[i])) {
-        value += query[i]
+      } else {
+        text += query[i]
         i++
       }
     }
-
-    tokens.push({ field, operator, value, raw: query.slice(start, i) })
+    if (i < n) i++
+    return { text, quoted: true }
   }
 
-  return tokens
+  const negated = query[i] === '-' && !endsToken(i + 1)
+  if (negated) i++
+
+  const prefixLength = fieldPrefixLength(query, i)
+  if (prefixLength === 0) {
+    const value = readValue(false)
+    return {
+      value: { kind: 'token', field: null, operator: 'eq', negated, values: [value] },
+      end: i,
+    }
+  }
+  const field = query.slice(i, i + prefixLength - 1)
+  i += prefixLength
+
+  let operator: FilterOperator = 'eq'
+  const comparison = FILTER_COMPARISON_PREFIXES.find(([prefix]) => query.startsWith(prefix, i))
+  if (comparison) {
+    operator = comparison[1]
+    i += comparison[0].length
+  }
+
+  if (operator === 'eq' && query[i] === '!' && endsToken(i + 1)) {
+    return {
+      value: { kind: 'token', field, operator: 'empty', negated, values: [] },
+      end: i + 1,
+    }
+  }
+
+  const values = [readValue(true)]
+  while (query[i] === ',') {
+    i++
+    values.push(readValue(true))
+  }
+  const range =
+    operator === 'eq' && values.length === 1 && !values[0].quoted
+      ? splitRangeValue(values[0].text)
+      : null
+  if (range) {
+    return {
+      value: {
+        kind: 'token',
+        field,
+        operator: 'range',
+        negated,
+        values: range.map((text) => ({ text, quoted: false })),
+      },
+      end: i,
+    }
+  }
+  return { value: { kind: 'token', field, operator, negated, values }, end: i }
+}
+
+function skipWhitespace(query: string, at: number): number {
+  let i = at
+  while (i < query.length && isFilterWhitespace(query[i])) i++
+  return i
+}
+
+function holdsParenthesis(token: FilterToken): boolean {
+  return token.values.some((value) => !value.quoted && /[()]/.test(value.text))
+}
+
+export function readFilterGroup(query: string, start: number): FilterRead<FilterGroup> | null {
+  if (query[start] !== GROUP_OPEN) return null
+  const tokens: FilterToken[] = []
+  let i = start + 1
+  for (;;) {
+    if (endsPlainToken(query, i) || query[i] === GROUP_OPEN || query[i] === GROUP_CLOSE) {
+      return null
+    }
+    const member = readToken(query, i, true)
+    if (holdsParenthesis(member.value)) return null
+    tokens.push(member.value)
+    i = member.end
+    if (query[i] === GROUP_CLOSE) {
+      if (!endsPlainToken(query, i + 1) || tokens.length < 2) return null
+      return { value: { kind: 'group', tokens }, end: i + 1 }
+    }
+    const keyword = skipWhitespace(query, i)
+    if (keyword === i || !query.startsWith(FILTER_GROUP_KEYWORD, keyword)) return null
+    const next = skipWhitespace(query, keyword + FILTER_GROUP_KEYWORD.length)
+    if (next === keyword + FILTER_GROUP_KEYWORD.length) return null
+    i = next
+  }
+}
+
+/**
+ * Parse a filter query string into a structured {@link FilterQuery}
+ * (ADR-0017, ADR-0083). Never throws: input it cannot read as syntax parses as
+ * bare free-text words.
+ *
+ * - `field:value` is a field token with the `eq` operator, and `field:>value`,
+ *   `field:>=value`, `field:<value`, `field:<=value` are comparisons.
+ * - `field:a,b` carries several values, and `field:!` is the `empty` operator.
+ * - `field:a..b` is an inclusive `range` token whose two values are its
+ *   bounds, split at the first `..`. A quoted value is never a range, and
+ *   neither is a list: `field:a..b,c` is `eq` on `a..b` and `c`.
+ * - A leading `-` followed by more of the token negates it: `-field:value`.
+ *   A `-` on its own is a free-text word.
+ * - `(a OR b)` is an OR group of the tokens `a` and `b`: `(` directly before
+ *   the first token, the uppercase keyword `OR` between tokens, and `)`
+ *   directly after the last. No member may hold an unquoted parenthesis of its
+ *   own. Anything else, such as a lowercase `or`, a nested, inner or
+ *   unmatched parenthesis (`(a OR f(x) y)`), or a group of one token, reads as
+ *   it would without the group: literal words.
+ * - A value in double quotes keeps its spaces and commas and is literal:
+ *   `"status:draft"` and `"OR"` are free-text words and `field:"!"` the text
+ *   `!`. Inside quotes, `\"` is a quote and `\\` a backslash; any other
+ *   backslash is itself.
+ * - Anything else (`beta`, `>5`, `http://x`) is a free-text word (`field: null`),
+ *   whose commas are ordinary characters.
+ *
+ * Validating fields and values is the engine's job, where a token that cannot
+ * map degrades to free text. {@link serializeFilterQuery} is the inverse.
+ *
+ * @example
+ * parseFilterQuery('-role:Editor (status:draft OR author:#42) name:"Ada Lovelace" beta')
+ * // { terms: [
+ * //   { kind: 'token', field: 'role', operator: 'eq', negated: true, values: [{ text: 'Editor', quoted: false }] },
+ * //   { kind: 'group', tokens: [
+ * //     { kind: 'token', field: 'status', operator: 'eq', negated: false, values: [{ text: 'draft', quoted: false }] },
+ * //     { kind: 'token', field: 'author', operator: 'eq', negated: false, values: [{ text: '#42', quoted: false }] },
+ * //   ] },
+ * //   { kind: 'token', field: 'name', operator: 'eq', negated: false, values: [{ text: 'Ada Lovelace', quoted: true }] },
+ * //   { kind: 'token', field: null, operator: 'eq', negated: false, values: [{ text: 'beta', quoted: false }] },
+ * // ] }
+ */
+export function parseFilterQuery(query: string): FilterQuery {
+  const terms: FilterTerm[] = []
+  let i = skipWhitespace(query, 0)
+  while (i < query.length) {
+    const read: FilterRead<FilterTerm> = readFilterGroup(query, i) ?? readToken(query, i, false)
+    terms.push(read.value)
+    i = skipWhitespace(query, read.end)
+  }
+  return { terms }
+}
+
+/** The tokens of one {@link FilterTerm}: the token itself, or a group's tokens. */
+export function filterTermTokens(term: FilterTerm): FilterToken[] {
+  return term.kind === 'group' ? term.tokens : [term]
+}
+
+/** Every token of a {@link FilterQuery}, with its groups flattened, in order. */
+export function filterQueryTokens(query: FilterQuery): FilterToken[] {
+  return query.terms.flatMap(filterTermTokens)
 }
