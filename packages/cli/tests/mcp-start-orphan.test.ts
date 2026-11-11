@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, afterEach } from 'vitest'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
@@ -32,9 +32,23 @@ function childPids(parent: number): Promise<number[]> {
   })
 }
 
+const cleanup: Array<() => void> = []
+
+afterEach(() => {
+  for (const fn of cleanup.splice(0)) fn()
+})
+
 async function startAndFindChild() {
   const parent = spawn(process.execPath, [bin, 'mcp', 'start'], { stdio: ['pipe', 'pipe', 'pipe'] })
   let pids: number[] = []
+  cleanup.push(() => {
+    parent.kill('SIGKILL')
+    for (const pid of pids) {
+      try {
+        process.kill(pid, 'SIGKILL')
+      } catch {}
+    }
+  })
   for (let i = 0; i < 100 && pids.length === 0; i++) {
     await new Promise((r) => setTimeout(r, 100))
     pids = await childPids(parent.pid!)

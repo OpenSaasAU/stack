@@ -6,6 +6,7 @@ import { Command } from 'commander'
 import { spawn } from 'child_process'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
+import { constants as osConstants } from 'os'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -95,8 +96,8 @@ function startMCPServer(): void {
     stdio: ['pipe', 'inherit', 'inherit'],
   })
 
+  child.stdin.on('error', () => {})
   process.stdin.pipe(child.stdin)
-  process.stdin.on('end', () => child.kill('SIGTERM'))
 
   for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP'] as const) {
     process.on(signal, () => child.kill(signal))
@@ -108,7 +109,7 @@ function startMCPServer(): void {
   })
 
   child.on('exit', (code, signal) => {
-    process.exit(code ?? (signal ? 1 : 0))
+    process.exit(code ?? (signal ? 128 + osConstants.signals[signal] : 0))
   })
 }
 
