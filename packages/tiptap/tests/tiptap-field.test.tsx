@@ -333,4 +333,21 @@ describe('TiptapField accessibility', () => {
     rerender(<TiptapField {...props} />)
     await waitFor(() => expect(getByRole('textbox').hasAttribute('aria-invalid')).toBe(false))
   })
+
+  it('emits plain-prototype objects so a server action can serialise attrs', async () => {
+    const onChange = vi.fn()
+    const { container } = render(<ControlledField initial={null} onChange={onChange} />)
+    const editor = await mounted(container)
+
+    act(() => {
+      editor.chain().setContent(paragraph('title')).setNode('heading', { level: 2 }).run()
+    })
+
+    await waitFor(() => expect(onChange).toHaveBeenCalled())
+    const emitted: JSONContent = onChange.mock.calls[onChange.mock.calls.length - 1][0]
+    const heading = emitted.content?.[0]
+    expect(heading?.type).toBe('heading')
+    expect(Object.getPrototypeOf(heading?.attrs)).toBe(Object.prototype)
+    expect(heading?.attrs).toEqual({ level: 2 })
+  })
 })
