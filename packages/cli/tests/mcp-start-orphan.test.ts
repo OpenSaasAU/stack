@@ -46,7 +46,9 @@ async function startAndFindChild() {
     for (const pid of pids) {
       try {
         process.kill(pid, 'SIGKILL')
-      } catch {}
+      } catch {
+        // already gone
+      }
     }
   })
   for (let i = 0; i < 100 && pids.length === 0; i++) {
