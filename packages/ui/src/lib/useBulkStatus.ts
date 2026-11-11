@@ -6,7 +6,7 @@ export interface BulkStatus {
   /** The report to show on this mount, or `null` when there is none. */
   status: string | null
   /** Show the report and hand it to the next mount of this list (the refresh that follows the action). */
-  setStatus: (status: string) => void
+  setStatus: (status: string, options?: { handoff?: boolean }) => void
   /** Dismiss the report. */
   clearStatus: () => void
 }
@@ -66,8 +66,9 @@ export function useBulkStatus(listKey: string): BulkStatus {
   }, [storageKey])
 
   const setStatus = React.useCallback(
-    (value: string) => {
+    (value: string, options?: { handoff?: boolean }) => {
       setLocal(value)
+      if (options?.handoff !== true) return
       try {
         window.sessionStorage.setItem(storageKey, JSON.stringify({ text: value, at: Date.now() }))
       } catch {

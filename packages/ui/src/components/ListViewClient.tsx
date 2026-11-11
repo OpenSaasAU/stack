@@ -186,7 +186,6 @@ export function ListViewClient({
   // they are not rendered.
   const canRunBulkActions = hasCustomBulkActions && !!serverAction
 
-  // the remount would discard.
   const { status: bulkStatus, setStatus: setBulkStatus, clearStatus } = useBulkStatus(listKey)
 
   const pageIds = items.map((item) => String(item.id))
@@ -279,7 +278,7 @@ export function ListViewClient({
     const { deleted, total } = parseBulkDeleteResult(result, ids.length)
 
     // Set before navigating so it isn't lost on the remount navigation triggers.
-    setBulkStatus(`${deleted} of ${total} deleted`)
+    setBulkStatus(`${deleted} of ${total} deleted`, { handoff: true })
     selection.clear()
 
     // Reset to page 1 of the current filter: a bulk delete can remove the rows
@@ -300,7 +299,7 @@ export function ListViewClient({
     const label = bulkActions.find((a) => a.key === key)?.label ?? 'Action'
 
     const result = await serverAction({ listKey, action: 'bulkAction', key, ids })
-    setBulkStatus(parseBulkActionResult(result, label))
+    setBulkStatus(parseBulkActionResult(result, label), { handoff: true })
     selection.clear()
 
     router.refresh()

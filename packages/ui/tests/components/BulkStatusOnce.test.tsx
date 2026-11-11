@@ -20,9 +20,9 @@ const props = {
   total: 1,
 }
 
-function Setter() {
+function Setter({ handoff = true }: { handoff?: boolean }) {
   const { setStatus } = useBulkStatus('Post')
-  return <button onClick={() => setStatus('Post published')}>set</button>
+  return <button onClick={() => setStatus('Post published', { handoff })}>set</button>
 }
 
 beforeEach(() => window.sessionStorage.clear())
@@ -37,6 +37,15 @@ describe('list status line', () => {
     const first = render(<ListViewClient {...props} />)
     expect(screen.getByRole('status')).toHaveTextContent('Post published')
     first.unmount()
+
+    render(<ListViewClient {...props} />)
+    expect(screen.queryByText('Post published')).toBeNull()
+  })
+
+  it('does not carry a status to a later mount when no refresh follows it', () => {
+    const { unmount } = render(<Setter handoff={false} />)
+    act(() => screen.getByText('set').click())
+    unmount()
 
     render(<ListViewClient {...props} />)
     expect(screen.queryByText('Post published')).toBeNull()
