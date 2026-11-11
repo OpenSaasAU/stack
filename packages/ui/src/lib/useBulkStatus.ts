@@ -2,90 +2,89 @@
 
 import * as React from 'react'
 
-/**
- * The persisted "N of M deleted" report for a list's Bulk actions (issue #733).
- *
- * The report must outlive the table refresh a bulk delete triggers:
- * `router.refresh()` re-runs the async `ListView` Server Component behind the
- * admin `<Suspense>` boundary, which remounts `ListViewClient` and would discard
- * plain React state. Persisting the message in `sessionStorage` (read back via
- * `useSyncExternalStore`, the same store pattern as row selection) means the
- * report survives that remount and is shown against the refreshed table.
- */
 export interface BulkStatus {
-  /** The current report text, or `null` when there is none. */
+  /** The report to show on this mount, or `null` when there is none. */
   status: string | null
-  /** Set (and persist) the report. */
+  /** Show the report and hand it to the next mount of this list (the refresh that follows the action). */
   setStatus: (status: string) => void
-  /** Clear the report (e.g. when the user starts a new selection). */
+  /** Dismiss the report. */
   clearStatus: () => void
 }
 
+const KEY_PREFIX = 'opensaas:bulk-status:'
+const HANDOFF_MAX_AGE_MS = 10_000
+
 function storageKeyFor(listKey: string): string {
-  return `opensaas:bulk-status:${listKey}`
+  return `${KEY_PREFIX}${listKey}`
 }
 
-// Same-document change listeners per storage key (the `storage` event does not
-// fire for same-document `sessionStorage` writes).
-const listeners = new Map<string, Set<() => void>>()
-
-function readValue(storageKey: string): string | null {
+function takeHandoff(storageKey: string): string | null {
   try {
     const raw = window.sessionStorage.getItem(storageKey)
-    return raw && raw.length > 0 ? raw : null
+    window.sessionStorage.removeItem(storageKey)
+    if (!raw) return null
+    const parsed: unknown = JSON.parse(raw)
+    if (
+      typeof parsed === 'object' &&
+      parsed !== null &&
+      'text' in parsed &&
+      'at' in parsed &&
+      typeof parsed.text === 'string' &&
+      typeof parsed.at === 'number' &&
+      Date.now() - parsed.at <= HANDOFF_MAX_AGE_MS
+    ) {
+      return parsed.text
+    }
+    return null
   } catch {
     return null
   }
 }
 
-function writeValue(storageKey: string, value: string | null): void {
+export function clearAllBulkStatuses(): void {
   try {
-    if (value === null) window.sessionStorage.removeItem(storageKey)
-    else window.sessionStorage.setItem(storageKey, value)
+    const keys: string[] = []
+    for (let i = 0; i < window.sessionStorage.length; i++) {
+      const key = window.sessionStorage.key(i)
+      if (key !== null && key.startsWith(KEY_PREFIX)) keys.push(key)
+    }
+    for (const key of keys) window.sessionStorage.removeItem(key)
   } catch {
-    // Storage may be unavailable (private mode/quota) — notify anyway.
+    // Storage unavailable: nothing was persisted.
   }
-  const set = listeners.get(storageKey)
-  if (set) for (const listener of set) listener()
 }
 
-/**
- * Manage the persisted bulk-action report for one list. The value is a plain
- * string, so `getSnapshot` is stable by value (no reference caching needed).
- */
 export function useBulkStatus(listKey: string): BulkStatus {
   const storageKey = storageKeyFor(listKey)
+  const [status, setLocal] = React.useState<string | null>(null)
 
-  const subscribe = React.useCallback(
-    (onChange: () => void) => {
-      let set = listeners.get(storageKey)
-      if (!set) {
-        set = new Set()
-        listeners.set(storageKey, set)
-      }
-      set.add(onChange)
-      const onStorage = (event: StorageEvent) => {
-        if (event.key === storageKey) onChange()
-      }
-      window.addEventListener('storage', onStorage)
-      return () => {
-        set?.delete(onChange)
-        window.removeEventListener('storage', onStorage)
+  React.useEffect(() => {
+    const handed = takeHandoff(storageKey)
+    // Reading sessionStorage must wait for the client to avoid a hydration mismatch.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (handed !== null) setLocal(handed)
+  }, [storageKey])
+
+  const setStatus = React.useCallback(
+    (value: string) => {
+      setLocal(value)
+      try {
+        window.sessionStorage.setItem(storageKey, JSON.stringify({ text: value, at: Date.now() }))
+      } catch {
+        // Storage unavailable: the report shows without surviving a remount.
       }
     },
     [storageKey],
   )
 
-  const getSnapshot = React.useCallback(() => readValue(storageKey), [storageKey])
-  const getServerSnapshot = React.useCallback(() => null, [])
-
-  const status = React.useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
-
-  const setStatus = React.useCallback(
-    (value: string) => writeValue(storageKey, value),
-    [storageKey],
-  )
-  const clearStatus = React.useCallback(() => writeValue(storageKey, null), [storageKey])
+  const clearStatus = React.useCallback(() => {
+    setLocal(null)
+    try {
+      window.sessionStorage.removeItem(storageKey)
+    } catch {
+      // Storage unavailable: nothing to remove.
+    }
+  }, [storageKey])
 
   return { status, setStatus, clearStatus }
 }

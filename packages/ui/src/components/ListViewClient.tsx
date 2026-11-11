@@ -186,9 +186,6 @@ export function ListViewClient({
   // they are not rendered.
   const canRunBulkActions = hasCustomBulkActions && !!serverAction
 
-  // The "N of M deleted" report must outlive the table refresh: `router.refresh()`
-  // remounts this client component (the async ListView re-suspends), so the
-  // report is persisted (sessionStorage) rather than held in React state that
   // the remount would discard.
   const { status: bulkStatus, setStatus: setBulkStatus, clearStatus } = useBulkStatus(listKey)
 
