@@ -560,6 +560,15 @@ describe('Field Types', () => {
         })
       })
 
+      test('an impossible date and a non-eq operator are not widened', () => {
+        expect(spec?.toCondition('eq', '2026-02-31')).toEqual({
+          releasedAt: { equals: new Date('2026-03-03T00:00:00.000Z') },
+        })
+        expect(spec?.toCondition('gt', '2026-08-04')).toEqual({
+          releasedAt: { gt: new Date('2026-08-04T00:00:00.000Z') },
+        })
+      })
+
       test('eq on an instant stays a single instant', () => {
         expect(spec?.toCondition('eq', '2026-08-04T05:30:00Z')).toEqual({
           releasedAt: { equals: new Date('2026-08-04T05:30:00Z') },

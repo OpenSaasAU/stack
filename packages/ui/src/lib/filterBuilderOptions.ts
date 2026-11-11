@@ -393,7 +393,8 @@ function plainDate(value: string): Date | null {
   return localDay(date) === value.trim() ? date : null
 }
 
-const DAY_ONLY = /^(?=.*\D)(?!.*:)[\w\s/,.-]+$/
+const DAY_ONLY =
+  /^(?:\d{1,2}[/.-]\d{1,2}[/.-]\d{4}|[A-Za-z]{3,9}\.? \d{1,2},? \d{4}|\d{1,2} [A-Za-z]{3,9}\.?,? \d{4})$/
 
 function typedDay(value: string): Date | null {
   const plain = plainDate(value)

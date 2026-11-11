@@ -875,7 +875,11 @@ export function timestamp<
         const typed = value.trim()
         const date = new Date(typed)
         if (Number.isNaN(date.getTime())) return null
-        if (operator === 'eq' && DATE_VALUE_MATCH.test(typed)) {
+        if (
+          operator === 'eq' &&
+          DATE_VALUE_MATCH.test(typed) &&
+          date.toISOString().startsWith(typed)
+        ) {
           const next = new Date(date.getTime() + 86_400_000)
           return { [fieldName]: { gte: date, lt: next } }
         }
