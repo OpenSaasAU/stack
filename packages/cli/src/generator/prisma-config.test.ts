@@ -133,6 +133,12 @@ describe('generatePrismaConfig', () => {
     )
   })
 
+  it('turns the Prisma agent-skills staleness check off', () => {
+    expect(generatePrismaConfig(contract(), './prisma/contract.ts', './prisma')).toContain(
+      'skills: { check: false },',
+    )
+  })
+
   it('matches the full snapshot', () => {
     expect(
       generatePrismaConfig(

@@ -12,6 +12,7 @@
     "clean": "rm -rf .turbo  .next .opensaas",
     "start": "next start",
     "generate": "opensaas generate",
+    "lint": "tsc --noEmit",
     "db:update": "opensaas db update",
     "migrate": "prisma migration plan",
     "migrate:deploy": "prisma db migrate"

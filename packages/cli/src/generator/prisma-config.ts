@@ -99,6 +99,7 @@ export function generatePrismaConfig(
   }
   lines.push('    db: { connection: findDatabaseUrl() },')
   lines.push('  }),')
+  lines.push('  skills: { check: false },')
   lines.push('})')
   lines.push('')
 
