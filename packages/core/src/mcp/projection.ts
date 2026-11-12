@@ -299,6 +299,10 @@ export async function generateFieldsProjectionSchema(
  * keeps nothing to project a row down with afterwards.
  */
 export interface ResolvedFieldsProjection {
+  /** The scalar and virtual fields the projection selects, for a read that cannot compose a `select`. */
+  readonly selected: readonly string[]
+  /** The relation fields the projection selects. */
+  readonly relationNames: readonly string[]
   /** Compose the caller's projection onto the read they asked it of. */
   apply(query: SecuredQuery): SecuredQuery
   /**
@@ -573,6 +577,8 @@ export async function resolveFieldsProjection(
   }
 
   return {
+    selected: [...selection],
+    relationNames: relations.map((relation) => relation.name),
     apply(query) {
       let composed = query.select(...selection)
       for (const relation of relations) {

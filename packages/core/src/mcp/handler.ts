@@ -704,6 +704,49 @@ function redactMcpError(
   )
 }
 
+async function querySingleton(
+  listKey: string,
+  listConfig: OpenSaasConfig['lists'][string],
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Tool arguments vary by operation
+  args: any,
+  config: OpenSaasConfig,
+  context: AccessContext,
+  id?: number | string,
+): Promise<Response> {
+  try {
+    const get: unknown = Reflect.get(context.db[listKey] ?? {}, 'get')
+    if (typeof get !== 'function') {
+      return createSuccessResponse({ items: [], count: 0 }, id)
+    }
+    let picked: readonly string[] | undefined
+    if (args.fields !== undefined) {
+      const projection = await resolveFieldsProjection(
+        args.fields,
+        listKey,
+        listConfig,
+        config,
+        context.session,
+        context,
+      )
+      if (projection.relationNames.length > 0) {
+        return createErrorResultResponse(
+          `"${listKey}" is a singleton; its relations cannot be selected through "fields".`,
+          id,
+        )
+      }
+      picked = projection.selected
+    }
+    const row: unknown = await get.call(context.db[listKey])
+    if (!isPlainObject(row)) return createSuccessResponse({ items: [], count: 0 }, id)
+    const item = picked
+      ? Object.fromEntries(Object.entries(row).filter(([key]) => picked.includes(key)))
+      : row
+    return createSuccessResponse({ items: [item], count: 1 }, id)
+  } catch (error) {
+    return redactMcpError(error, listKey, 'Query', id)
+  }
+}
+
 async function handleCrudTool(
   toolKey: string,
   operation: string,
@@ -757,6 +800,10 @@ async function handleCrudTool(
         }
         if (typeof args.skip === 'number' && args.skip < 0) {
           return createErrorResultResponse(`"${listKey}.skip" must not be negative.`, id)
+        }
+
+        if (listConfig.isSingleton) {
+          return await querySingleton(listKey, listConfig, args, config, context, id)
         }
 
         let query: SecuredQuery = context.db[listKey]
