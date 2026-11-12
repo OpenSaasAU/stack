@@ -31,10 +31,25 @@ describe('the prebuilt stylesheet', () => {
     expect(stylesheet).toContain(asSelector(className))
   })
 
-  it.each(['min-h-screen', 'h-screen', 'max-h-96', 'gap-8', 'mt-8'])(
-    'keeps %s for apps that use it with no Tailwind of their own',
+  it.each([
+    'contents',
+    'flex-row',
+    'gap-8',
+    'h-screen',
+    'max-h-96',
+    'min-h-screen',
+    'mt-8',
+    'pointer-events-none',
+    'pt-2',
+    'shadow',
+  ])('keeps %s for apps that use it with no Tailwind of their own', (className) => {
+    expect(stylesheet).toContain(asSelector(className))
+  })
+
+  it.each(['bg-white', 'border-gray-200', 'invisible'])(
+    'takes nothing from Markdown, such as %s',
     (className) => {
-      expect(stylesheet).toContain(asSelector(className))
+      expect(stylesheet).not.toContain(asSelector(className))
     },
   )
 
