@@ -256,3 +256,32 @@ describe('Hook Pipeline — resolvedData threading', () => {
     expect(inputData).toEqual({ title: 'x' })
   })
 })
+
+describe('Hook Pipeline — multi-column fields', () => {
+  const listConfig = {
+    fields: {
+      price: {
+        type: 'money',
+        getColumnNames: () => ['amt', 'cur'],
+        splitColumns: (_key: string, value: unknown) => {
+          const v = value as { amt: number; cur: string }
+          return { amt: v.amt, cur: v.cur }
+        },
+      },
+    },
+  } as unknown as ListConfig<any> // eslint-disable-line @typescript-eslint/no-explicit-any
+
+  it('keeps the logical key in resolvedData and returns the physical columns as splitData', async () => {
+    const { resolvedData, splitData } = await hookPipeline.run({
+      operation: 'create',
+      listName: 'Pay',
+      listConfig,
+      inputData: { price: { amt: 5, cur: 'AUD' } },
+      item: undefined,
+      context: makeContext(),
+    })
+
+    expect(resolvedData).toEqual({ price: { amt: 5, cur: 'AUD' } })
+    expect(splitData).toEqual({ amt: 5, cur: 'AUD' })
+  })
+})

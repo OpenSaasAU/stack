@@ -493,7 +493,7 @@ async function runWriteInTransaction(
 
   // ── Phases 2–4: transform + validate span (Hook Pipeline glossary, CONTEXT.md) ──
   // THROWS `ValidationError` on any validation failure (never silent).
-  const { resolvedData, defaultedFields } = await hookPipeline.run({
+  const { resolvedData, splitData, defaultedFields } = await hookPipeline.run({
     operation: writeOp,
     listName,
     listConfig,
@@ -505,10 +505,10 @@ async function runWriteInTransaction(
   // The same payload-shape refusal, over what the hooks produced: a
   // `resolveInput` that assembles a relation payload writes it into
   // `resolvedData`, which the pre-transaction check could not see.
-  refuseNestedRelationInput(listName, listConfig, config, resolvedData)
+  refuseNestedRelationInput(listName, listConfig, config, splitData)
 
   // ── Phase 5: filter writable fields (field-level access, skip if sudo) ──────
-  const data = await filterWritableFields(resolvedData, listConfig.fields, writeOp, {
+  const data = await filterWritableFields(splitData, listConfig.fields, writeOp, {
     session: context.session,
     item: originalItem,
     context: { ...context, _isSudo: context._isSudo },
