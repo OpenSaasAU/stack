@@ -111,6 +111,7 @@ describe.skipIf(escape.kind !== 'postgres')(
               return
             } catch (error) {
               attempts.push(error)
+              contended = false
               if (!isSerializationFailure(error)) throw error
             }
           }
@@ -141,6 +142,14 @@ describe.skipIf(escape.kind !== 'postgres')(
 
         expect(attempts.length).toBeGreaterThanOrEqual(1)
         expect(attempts.every(isSerializationFailure)).toBe(true)
+        const [loser] = attempts
+        expect(loser).toBeInstanceOf(Error)
+        expect(JSON.stringify(loser instanceof Error ? loser.cause : undefined)).toContain('40P01')
+        const names = await database
+          .context(null)
+          .db.Row.where({ id: { equals: bId } })
+          .first()
+        expect(['b1', 'b2']).toContain(names?.name)
       },
       BOOT,
     )
