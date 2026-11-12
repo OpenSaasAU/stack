@@ -57,6 +57,7 @@ import {
   isRowActionAvailable,
   RELATIONSHIP_OPTIONS_MAX_TAKE,
   resolvePresetViews,
+  withholdFilterFields,
 } from '@opensaas/stack-core/internal'
 
 /**
@@ -460,7 +461,9 @@ export async function ListView({
   )
   const presetViews = resolvePresetViews(listConfig, listKey, context, preset)
   const activePreset = await presetViews.active
-  const activeSearch = activePreset ? activePreset.search : search
+  const activeSearch = activePreset
+    ? withholdFilterFields(activePreset.search, unreadableFields)
+    : search
   const sortCandidates = [sort, activePreset?.sort, initialSort]
 
   const filterSpecs = await collectFilterSpecs(listConfig, listKey, config, {

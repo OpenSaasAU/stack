@@ -3,8 +3,9 @@ import type { Session, AccessContext } from '../access/types.js'
 import { checkAccess } from '../access/engine.js'
 import { classifyRowIndependentRead, isFieldReadableForPredicate } from '../access/field-access.js'
 import { parseFilterQuery } from './parse.js'
+import { serializeFilterQuery } from './serialize.js'
 import { buildFilterWhere } from './map.js'
-import type { FilterCondition, FilterFieldSuggestion, FilterSpec } from './types.js'
+import type { FilterCondition, FilterFieldSuggestion, FilterSpec, FilterTerm } from './types.js'
 
 /**
  * The session/context a field's `read` access is evaluated against — the same
@@ -180,4 +181,23 @@ export async function isFieldFilterableById(
   if (!(await canQueryList(listConfig, args))) return false
   if (!(await isFieldReadableForPredicate(field.access, args))) return false
   return field.getFilterSpec?.(fieldName, listKey, config)?.toIdCondition !== undefined
+}
+
+/**
+ * A filter query with every token naming one of `fields` removed, a group
+ * dropping only its own such alternatives and vanishing when none is left.
+ * Neither the field name nor its value survives in the result.
+ */
+export function withholdFilterFields(query: string, fields: ReadonlySet<string>): string {
+  if (fields.size === 0) return query
+  const terms: FilterTerm[] = []
+  for (const term of parseFilterQuery(query).terms) {
+    if (term.kind === 'token') {
+      if (term.field === null || !fields.has(term.field)) terms.push(term)
+      continue
+    }
+    const tokens = term.tokens.filter((token) => token.field === null || !fields.has(token.field))
+    if (tokens.length > 0) terms.push({ ...term, tokens })
+  }
+  return serializeFilterQuery({ terms })
 }
