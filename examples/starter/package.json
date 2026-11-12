@@ -13,7 +13,7 @@
     "start": "next start",
     "generate": "opensaas generate",
     "db:update": "opensaas db update",
-    "migrate": "prisma migration plan",
+    "migrate": "opensaas db plan",
     "migrate:deploy": "prisma db migrate"
   },
   "dependencies": {
