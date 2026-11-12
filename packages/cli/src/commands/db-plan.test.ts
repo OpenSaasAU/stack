@@ -36,6 +36,19 @@ describe('resolveMigrationHead', () => {
     expect(resolveMigrationHead(cwd)).toBe('c')
   })
 
+  it('refuses a graph with no head', () => {
+    writePackage('1_a', 'a', 'b')
+    writePackage('2_b', 'b', 'a')
+    expect(() => resolveMigrationHead(cwd)).toThrow(/no head/)
+  })
+
+  it('names a malformed manifest', () => {
+    const dir = path.join(cwd, 'migrations', 'app', '1_bad')
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, 'migration.json'), '{')
+    expect(() => resolveMigrationHead(cwd)).toThrow(/1_bad/)
+  })
+
   it('refuses when the graph has several heads', () => {
     writePackage('1_init', 'empty', 'a')
     writePackage('2_x', 'a', 'b')
@@ -59,6 +72,19 @@ describe('buildPlanArgs', () => {
 
   it('plans the baseline with no packages', () => {
     expect(buildPlanArgs(cwd, ['--name', 'init'])).toEqual(['migration', 'plan', '--name', 'init'])
+  })
+
+  it('keeps a --from=<hash> and ignores one after --', () => {
+    writePackage('1_init', 'empty', 'a')
+    expect(buildPlanArgs(cwd, ['--from=z'])).toEqual(['migration', 'plan', '--from=z'])
+    expect(buildPlanArgs(cwd, ['--', '--from'])).toEqual([
+      'migration',
+      'plan',
+      '--from',
+      'a',
+      '--',
+      '--from',
+    ])
   })
 
   it('keeps a caller-supplied --from', () => {

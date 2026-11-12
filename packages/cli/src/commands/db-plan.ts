@@ -26,11 +26,21 @@ function readEdges(appDir: string): Edge[] {
     if (!entry.isDirectory()) continue
     const file = path.join(appDir, entry.name, 'migration.json')
     if (!fs.existsSync(file)) continue
-    const manifest: unknown = JSON.parse(fs.readFileSync(file, 'utf-8'))
-    if (typeof manifest !== 'object' || manifest === null) continue
-    const from = 'from' in manifest ? manifest.from : undefined
-    const to = 'to' in manifest ? manifest.to : undefined
-    if (typeof to !== 'string') continue
+    let manifest: unknown
+    try {
+      manifest = JSON.parse(fs.readFileSync(file, 'utf-8'))
+    } catch (error) {
+      throw new Error(`Could not read ${file}: ${error instanceof Error ? error.message : error}`)
+    }
+    const from =
+      typeof manifest === 'object' && manifest !== null && 'from' in manifest
+        ? manifest.from
+        : undefined
+    const to =
+      typeof manifest === 'object' && manifest !== null && 'to' in manifest
+        ? manifest.to
+        : undefined
+    if (typeof to !== 'string') throw new Error(`${file} has no string "to" hash.`)
     edges.push({ from: typeof from === 'string' ? from : '', to })
   }
   return edges
@@ -48,12 +58,19 @@ export function resolveMigrationHead(cwd: string): string | null {
   const origins = new Set(edges.map((edge) => edge.from))
   const heads = [...new Set(edges.map((edge) => edge.to))].filter((to) => !origins.has(to))
   if (heads.length > 1) throw new MultipleMigrationHeadsError(heads)
-  return heads[0] ?? null
+  const head = heads[0]
+  if (head === undefined)
+    throw new Error(
+      'The app migration graph has no head (its packages form a cycle). Pass --from <hash> to choose an origin.',
+    )
+  return head
 }
 
 /** The `prisma migration plan` arguments for the given forwarded arguments. */
 export function buildPlanArgs(cwd: string, forwarded: readonly string[]): string[] {
-  const named = forwarded.some((arg) => arg === '--from' || arg.startsWith('--from='))
+  const separator = forwarded.indexOf('--')
+  const flags = separator === -1 ? forwarded : forwarded.slice(0, separator)
+  const named = flags.some((arg) => arg === '--from' || arg.startsWith('--from='))
   const head = named ? null : resolveMigrationHead(cwd)
   return ['migration', 'plan', ...(head === null ? [] : ['--from', head]), ...forwarded]
 }
@@ -63,16 +80,12 @@ export function buildPlanArgs(cwd: string, forwarded: readonly string[]): string
  * migration graph, so the committed `db` ref never decides the origin.
  */
 export async function dbPlanCommand(forwarded: readonly string[] = []): Promise<void> {
+  const cwd = process.cwd()
   try {
-    const run = await runPrismaCli(
-      process.cwd(),
-      buildPlanArgs(process.cwd(), forwarded),
-      'interactive',
-    )
+    const run = await runPrismaCli(cwd, buildPlanArgs(cwd, forwarded), 'interactive')
     if (run.exitCode !== 0) process.exitCode = run.exitCode ?? 1
   } catch (error) {
-    if (!(error instanceof MultipleMigrationHeadsError)) throw error
-    console.error(chalk.red(error.message))
+    console.error(chalk.red(error instanceof Error ? error.message : String(error)))
     process.exitCode = 1
   }
 }
