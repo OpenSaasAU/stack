@@ -1,6 +1,6 @@
 import type { AccessContext, OrmRow, Session } from '../access/types.js'
 import type { FieldConfig, ListConfig, OpenSaasConfig, RelationshipField } from '../config/types.js'
-import { checkAccess, getRelatedListConfig } from '../access/engine.js'
+import { getRelatedListConfig } from '../access/engine.js'
 import { classifyRowIndependentRead } from '../access/field-access.js'
 import { getListDependencies } from '../access/declared-dependencies.js'
 import { decideAdvertisement } from './advertise.js'
@@ -9,7 +9,8 @@ import type { SecuredQuery } from '../secured/read.js'
 import { RELATION_QUANTIFIERS, SCALAR_OPERATORS } from '../secured/operators.js'
 import { orderByArgument, whereArgument } from './arguments.js'
 import { MCP_NESTED_TAKE_DEFAULT, MCP_NESTED_TAKE_MAX } from './constants.js'
-import { assertWhereReachable, queryReachableLists } from './where-reachability.js'
+import { assertOrderByReachable, assertWhereReachable } from './where-reachability.js'
+import { mcpReadableList, readableLists } from './reachability.js'
 import { coerceWhereIds, foreignKeyVisibility, idBoundaryRefusal } from './where-id-boundary.js'
 
 /** A scalar/virtual field in a `fields` projection is selected by naming it `true` — this advertises that, not the field's own value shape (`fieldToJsonSchema`, used for `create`/`update`, is a different schema entirely). */
@@ -101,11 +102,7 @@ async function relatedListIfVisible(
 ): Promise<{ listName: string; listConfig: ListConfig<any> } | null> {
   const related = getRelatedListConfig(fieldConfig.ref, config)
   if (!related) return null
-  if (related.listConfig.mcp?.enabled === false) return null
-
-  const queryAccess = related.listConfig.access?.operation?.query
-  const result = await checkAccess(queryAccess, { session, context })
-  if (result === false) return null
+  if (!(await mcpReadableList(config, related.listName, context))) return null
 
   return related
 }
@@ -477,7 +474,7 @@ export async function resolveFieldsProjection(
         entry.where as Record<string, unknown>,
         config,
         related.listName,
-        await queryReachableLists(config, context),
+        await readableLists(config, context),
       )
       const coercedWhere = coerceWhereIds(
         entry.where as Record<string, unknown>,
@@ -489,6 +486,14 @@ export async function resolveFieldsProjection(
         throw new McpProjectionRefusedError(idBoundaryRefusal('query records'))
       }
       entry.where = coercedWhere
+    }
+    if (entry.orderBy !== undefined) {
+      assertOrderByReachable(
+        entry.orderBy,
+        config,
+        related.listName,
+        await readableLists(config, context),
+      )
     }
     if (
       entry.orderBy !== undefined &&

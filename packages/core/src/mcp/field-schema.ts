@@ -2,6 +2,7 @@ import type { FieldConfig, OpenSaasConfig, RelationshipField } from '../config/t
 import type { AccessContext, Session } from '../access/types.js'
 import { classifyRowIndependentWrite } from '../access/field-access.js'
 import { decideAdvertisement } from './advertise.js'
+import { mcpListReachable } from './reachability.js'
 import { isRelationshipField, shouldHaveForeignKey } from '../fields/index.js'
 import { listIdJsonSchema } from '../contract/id-boundary.js'
 
@@ -227,6 +228,16 @@ export async function generateFieldSchemas(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Validation property varies by field type
         !!(fieldConfig.validation as any)?.isRequired) ||
         fieldConfig.db?.isNullable === false)
+
+    if (
+      isRelationshipField(fieldConfig) &&
+      !(await mcpListReachable(config, fieldConfig.ref.split('.')[0]!, context, {
+        requireReadTool: false,
+      }))
+    ) {
+      if (isRequired) deniedRequiredField ??= fieldName
+      continue
+    }
 
     const classification = await decideAdvertisement<'allow' | 'deny' | 'row-dependent'>(
       `${listKey}.${fieldName}`,
