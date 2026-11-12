@@ -20,4 +20,5 @@ export default definePrismaConfig({
     extensions: [pgvector],
     db: { connection: findDatabaseUrl() },
   }),
+  skills: { check: false },
 })
