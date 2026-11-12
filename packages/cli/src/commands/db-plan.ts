@@ -3,20 +3,24 @@ import * as path from 'path'
 import chalk from 'chalk'
 import { runPrismaCli } from '../generator/prisma-cli.js'
 
-/** Thrown when the app migration graph has more than one head. */
+interface Edge {
+  dir: string
+  from: string
+  to: string
+  createdAt: number | null
+}
+
+/** Thrown when two migration packages leave the same state for different ones. */
 export class MultipleMigrationHeadsError extends Error {
-  constructor(readonly heads: readonly string[]) {
+  constructor(readonly candidates: readonly Edge[]) {
     super(
-      `The app migration graph has ${heads.length} heads: ${heads.join(', ')}. ` +
-        'Merge or remove the divergent migration packages, or pass --from <hash> to choose one.',
+      'The app migration graph forks: ' +
+        candidates.map((edge) => `${edge.dir} (${edge.from} -> ${edge.to})`).join(', ') +
+        '. Merge or remove the divergent migration packages, or pass --from <hash> ' +
+        `to choose an origin, e.g. --from ${candidates[0]?.to ?? '<hash>'}.`,
     )
     this.name = 'MultipleMigrationHeadsError'
   }
-}
-
-interface Edge {
-  from: string
-  to: string
 }
 
 function readEdges(appDir: string): Edge[] {
@@ -32,38 +36,75 @@ function readEdges(appDir: string): Edge[] {
     } catch (error) {
       throw new Error(`Could not read ${file}: ${error instanceof Error ? error.message : error}`)
     }
-    const from =
-      typeof manifest === 'object' && manifest !== null && 'from' in manifest
-        ? manifest.from
+    const field = (key: string): unknown =>
+      typeof manifest === 'object' && manifest !== null && key in manifest
+        ? Object.getOwnPropertyDescriptor(manifest, key)?.value
         : undefined
-    const to =
-      typeof manifest === 'object' && manifest !== null && 'to' in manifest
-        ? manifest.to
-        : undefined
+    const from = field('from')
+    const to = field('to')
+    const created = field('createdAt')
     if (typeof to !== 'string') throw new Error(`${file} has no string "to" hash.`)
-    edges.push({ from: typeof from === 'string' ? from : '', to })
+    const parsed = typeof created === 'string' ? Date.parse(created) : NaN
+    edges.push({
+      dir: entry.name,
+      from: typeof from === 'string' ? from : '',
+      to,
+      createdAt: Number.isNaN(parsed) ? null : parsed,
+    })
   }
-  return edges
+  return edges.sort((a, b) => (a.dir < b.dir ? -1 : a.dir > b.dir ? 1 : 0))
+}
+
+function headByTimestamp(edges: readonly Edge[]): string {
+  const ordered = [...edges].sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0))
+  const last = ordered[ordered.length - 1]!
+  const forks = ordered.filter(
+    (edge, index) =>
+      edge !== last &&
+      edge.from === last.from &&
+      edge.to !== last.to &&
+      !ordered.slice(index + 1).some((later) => later.from === edge.to),
+  )
+  if (forks.length > 0) throw new MultipleMigrationHeadsError([...forks, last])
+  return last.to
+}
+
+function headByChain(edges: readonly Edge[]): string {
+  const targets = new Set(edges.map((edge) => edge.to))
+  const roots = [...new Set(edges.map((edge) => edge.from))].filter((from) => !targets.has(from))
+  const root = roots[0]
+  if (root === undefined || roots.length > 1) {
+    const latest = edges[edges.length - 1]!
+    throw new Error(
+      `The app migration graph has no single origin (${edges.length} packages, no usable createdAt). ` +
+        `Pass --from <hash> to choose an origin, e.g. --from ${latest.to}.`,
+    )
+  }
+  const used = new Set<Edge>()
+  let current = root
+  for (;;) {
+    const next = edges.filter((edge) => edge.from === current && !used.has(edge))
+    if (next.length === 0) return current
+    const distinct = new Set(next.map((edge) => edge.to))
+    if (distinct.size > 1) throw new MultipleMigrationHeadsError(next)
+    used.add(next[0]!)
+    current = next[0]!.to
+  }
 }
 
 /**
- * The hash no migration package leaves from, or `null` when the app space has
- * no package yet.
+ * The state the most recently planned migration package leaves, or `null` when
+ * the app space has no package yet. Packages are ordered by their manifest's
+ * `createdAt`; without one on every package the chain is walked from the baseline.
  *
- * @throws {MultipleMigrationHeadsError} when more than one hash qualifies.
+ * @throws {MultipleMigrationHeadsError} when two packages fork the graph.
  */
 export function resolveMigrationHead(cwd: string): string | null {
   const edges = readEdges(path.join(cwd, 'migrations', 'app'))
   if (edges.length === 0) return null
-  const origins = new Set(edges.map((edge) => edge.from))
-  const heads = [...new Set(edges.map((edge) => edge.to))].filter((to) => !origins.has(to))
-  if (heads.length > 1) throw new MultipleMigrationHeadsError(heads)
-  const head = heads[0]
-  if (head === undefined)
-    throw new Error(
-      'The app migration graph has no head (its packages form a cycle). Pass --from <hash> to choose an origin.',
-    )
-  return head
+  return edges.every((edge) => edge.createdAt !== null)
+    ? headByTimestamp(edges)
+    : headByChain(edges)
 }
 
 /** The `prisma migration plan` arguments for the given forwarded arguments. */
