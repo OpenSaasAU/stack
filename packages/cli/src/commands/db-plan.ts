@@ -61,7 +61,6 @@ function headByTimestamp(edges: readonly Edge[]): string {
   const forks = ordered.filter(
     (edge, index) =>
       edge !== last &&
-      edge.from === last.from &&
       edge.to !== last.to &&
       !ordered.slice(index + 1).some((later) => later.from === edge.to),
   )
@@ -117,8 +116,8 @@ export function buildPlanArgs(cwd: string, forwarded: readonly string[]): string
 }
 
 /**
- * `opensaas db plan` — plans a migration package from the head of the app
- * migration graph, so the committed `db` ref never decides the origin.
+ * `opensaas db plan` — plans a migration package from the state the latest
+ * migration package leaves, so the committed `db` ref never decides the origin.
  */
 export async function dbPlanCommand(forwarded: readonly string[] = []): Promise<void> {
   const cwd = process.cwd()

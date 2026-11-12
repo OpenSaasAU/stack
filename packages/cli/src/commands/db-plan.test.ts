@@ -82,6 +82,13 @@ describe('resolveMigrationHead', () => {
     expect(buildPlanArgs(cwd, ['--from', 'b'])).toEqual(['migration', 'plan', '--from', 'b'])
   })
 
+  it('refuses a dead-end branch that is not at the latest package', () => {
+    writePackage('1_a', 'a', 'b', '2026-07-20T09:00:00Z')
+    writePackage('2_b', 'a', 'c', '2026-07-20T10:00:00Z')
+    writePackage('3_c', 'c', 'd', '2026-07-20T11:00:00Z')
+    expect(() => resolveMigrationHead(cwd)).toThrow(/1_a.*3_c/)
+  })
+
   it('refuses a fork when walking the chain without timestamps', () => {
     writePackage('1_init', 'empty', 'a')
     writePackage('2_x', 'a', 'b')
