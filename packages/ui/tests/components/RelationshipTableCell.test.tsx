@@ -148,4 +148,77 @@ describe('RelationshipTableCell (inline cell edit, #737)', () => {
     const trigger = screen.getByRole('button', { name: 'Draft' })
     expect(trigger.querySelector('[data-slot="cell-select"]')).not.toBeNull()
   })
+
+  describe('invalid or partial input is never committed (#2213)', () => {
+    it.each([
+      ['decimal', '1.25', '9.'],
+      ['bigInt', '5', '9x'],
+      ['json', '{"a":1}', '{"a":'],
+    ])('%s: Enter on %s with %s does not write and stays editing', async (type, start, typed) => {
+      const serverAction = vi.fn(async () => ({ updated: true }))
+      render(
+        <RelationshipTableCell
+          {...props({ column: 'f', field: { type }, value: start, serverAction })}
+        />,
+      )
+      const user = userEvent.setup()
+      await user.click(screen.getByRole('button'))
+      const input = screen.getByRole('textbox')
+      await user.clear(input)
+      await user.type(input, typed.replace(/[{[]/g, '$&$&') + '{Enter}')
+
+      expect(serverAction).not.toHaveBeenCalled()
+      expect(
+        document.querySelector('[data-slot="relationship-table-cell-editor"]'),
+      ).toBeInTheDocument()
+      expect(screen.getByRole('textbox')).toHaveFocus()
+    })
+
+    it('reverts visibly on blur with invalid input', async () => {
+      const serverAction = vi.fn(async () => ({ updated: true }))
+      render(
+        <>
+          <RelationshipTableCell
+            {...props({ column: 'f', field: { type: 'decimal' }, value: '1.25', serverAction })}
+          />
+          <button>other</button>
+        </>,
+      )
+      const user = userEvent.setup()
+      await user.click(screen.getByRole('button', { name: '1.25' }))
+      const input = screen.getByRole('textbox')
+      await user.clear(input)
+      await user.type(input, 'abc')
+      await user.click(screen.getByRole('button', { name: 'other' }))
+
+      expect(serverAction).not.toHaveBeenCalled()
+      expect(screen.getByRole('alert')).toBeInTheDocument()
+      expect(screen.getByText('1.25')).toBeInTheDocument()
+    })
+
+    it('commits a select pick made with Enter', async () => {
+      const serverAction = vi.fn(async () => ({ updated: true }))
+      render(
+        <RelationshipTableCell
+          {...props({
+            column: 'status',
+            value: 'draft',
+            field: {
+              type: 'select',
+              options: [
+                { label: 'Draft', value: 'draft' },
+                { label: 'Published', value: 'published' },
+              ],
+            },
+            serverAction,
+          })}
+        />,
+      )
+      const user = userEvent.setup()
+      await user.click(screen.getByRole('button'))
+      await user.click(screen.getByRole('combobox'))
+      await user.keyboard('{ArrowDown}{Enter}')
+      expect(serverAction).toHaveBeenCalledWith(expect.objectContaining({ value: 'published' }))
+    })
+  })
 })
