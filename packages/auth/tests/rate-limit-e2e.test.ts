@@ -1,6 +1,6 @@
 import { describe, it, expect, afterAll } from 'vitest'
 import { processGlobalKey } from '@opensaas/stack-core/internal'
-import { createAuth } from '../src/server/index.js'
+import { createAuth, postAuthEndpoint } from '../src/server/index.js'
 import { generateProject, toolchainPresent, type GeneratedProject } from './generated-project.js'
 
 /**
@@ -69,6 +69,30 @@ describe.skipIf(!prerequisitesPresent)(
         // First `max` (3) requests succeed, everything past it is rejected.
         expect(statuses.slice(0, 3)).toEqual([200, 200, 200])
         expect(statuses.slice(3)).toEqual([429, 429])
+      } finally {
+        await project.close()
+      }
+    }, 120_000)
+
+    it('rate limits sign-in submitted through postAuthEndpoint', async () => {
+      const project = await setupProject(60, 3)
+      try {
+        const auth = createAuth(project.config, project.context)
+        const headers = new Headers({ 'x-forwarded-for': '192.0.2.30' })
+        const results = []
+        for (let i = 0; i < 5; i++) {
+          results.push(
+            await postAuthEndpoint(auth, {
+              path: '/sign-in/email',
+              body: { email: 'nobody@example.com', password: `wrong${i}` },
+              headers,
+            }),
+          )
+        }
+        const last = results[4]
+        expect(last?.success).toBe(false)
+        expect(last?.success === false && last.error).toMatch(/too many/i)
+        expect(results[0]?.success === false && results[0].error).not.toMatch(/too many/i)
       } finally {
         await project.close()
       }

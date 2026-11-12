@@ -403,7 +403,7 @@ The same options object is available standalone via `buildBetterAuthOptions()` â
 
 ### `rateLimit`
 
-Controls rate limiting for authentication endpoints:
+Controls rate limiting for authentication endpoints. The scaffolded sign-in, sign-up and password-reset actions submit through `auth.handler` via `postAuthEndpoint` from `@opensaas/stack-auth/server`, so the limiter applies to them; a hand-written action calling `auth.api.*` directly bypasses it (better-auth's limiter runs only in the handler):
 
 ```typescript
 authPlugin({

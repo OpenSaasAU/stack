@@ -772,3 +772,9 @@ async function resolveSessionFillIn(auth: object): Promise<SessionFillIn | null>
 }
 
 export type { BetterAuthOptions }
+export { postAuthEndpoint } from './post-auth-endpoint.js'
+export type {
+  AuthHandlerTarget,
+  PostAuthEndpointInput,
+  PostAuthEndpointResult,
+} from './post-auth-endpoint.js'
