@@ -24,6 +24,10 @@ async function canQueryList(
   return (await checkAccess(listConfig.access?.operation?.query, args)) !== false
 }
 
+function hasFilterSpec(field: { getFilterSpec?: unknown; isFilterable?: boolean }): boolean {
+  return typeof field.getFilterSpec === 'function' && field.isFilterable !== false
+}
+
 /**
  * Resolve every field's {@link FilterSpec} for a list by delegating to each
  * field's optional `getFilterSpec` method. A field without the method (or one
@@ -58,8 +62,8 @@ export async function collectFilterSpecs(
 ): Promise<Record<string, FilterSpec>> {
   const specs: Record<string, FilterSpec> = {}
   if (!(await canQueryList(listConfig, args))) return specs
-  const filterableFields = Object.entries(listConfig.fields).filter(
-    ([, field]) => typeof field.getFilterSpec === 'function' && field.isFilterable !== false,
+  const filterableFields = Object.entries(listConfig.fields).filter(([, field]) =>
+    hasFilterSpec(field),
   )
   // Each field's read-access check is independent of every other's — run
   // them concurrently rather than serially, since a `read` rule that does
@@ -172,8 +176,8 @@ export async function isFieldFilterableById(
 ): Promise<boolean> {
   if (!Object.hasOwn(listConfig.fields, fieldName)) return false
   const field = listConfig.fields[fieldName]
-  if (typeof field.getFilterSpec !== 'function' || field.isFilterable === false) return false
+  if (!hasFilterSpec(field)) return false
   if (!(await canQueryList(listConfig, args))) return false
   if (!(await isFieldReadableForPredicate(field.access, args))) return false
-  return field.getFilterSpec(fieldName, listKey, config)?.toIdCondition !== undefined
+  return field.getFilterSpec?.(fieldName, listKey, config)?.toIdCondition !== undefined
 }

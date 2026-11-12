@@ -4,7 +4,7 @@ import type { AccessContext, Session } from '../access/types.js'
 import { calendarDay, integer, relationship, select, text, timestamp } from '../fields/index.js'
 import { withOrigin } from '../origin.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
-import { buildListFilterWhere, collectFilterSuggestions } from './collect.js'
+import { buildListFilterWhere, collectFilterSuggestions, isFieldFilterableById } from './collect.js'
 
 const BOOT = 120_000
 
@@ -529,6 +529,21 @@ describe('a field with isFilterable: false', () => {
       })
       expect(suggestions.map((s) => s.field)).not.toContain('apiToken')
       expect(suggestions.map((s) => s.field)).toContain('slug')
+    },
+    BOOT,
+  )
+
+  test(
+    'cannot be filtered by id',
+    async () => {
+      const context = database.context(ada)
+      const args = { session: context.session, context: context as unknown as AccessContext }
+      expect(await isFieldFilterableById(config.lists.Post, 'Post', 'author', config, args)).toBe(
+        true,
+      )
+      expect(await isFieldFilterableById(config.lists.Post, 'Post', 'apiToken', config, args)).toBe(
+        false,
+      )
     },
     BOOT,
   )
