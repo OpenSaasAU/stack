@@ -1,5 +1,6 @@
 @import 'tailwindcss';
 @source not '../../tests';
+@source not '../../**/*.md';
 /* Apps with no Tailwind of their own use these (sign-in pages, for one), and nothing in `src` generates them. */
 @source inline('contents flex-row gap-8 h-screen max-h-96 min-h-screen mt-8 pointer-events-none pt-2 shadow');
 
