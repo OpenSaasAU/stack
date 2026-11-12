@@ -39,10 +39,30 @@ describe('postAuthEndpoint', () => {
 
   it('hands Set-Cookie values to setCookie', async () => {
     const auth = target(
-      () => new Response('{}', { headers: { 'set-cookie': 'sid=abc; Path=/; HttpOnly' } }),
+      () =>
+        new Response('{}', {
+          headers: { 'set-cookie': 'sid=abc; Path=/; HttpOnly; Max-Age=60; SameSite=Lax' },
+        }),
     )
     const setCookie = vi.fn()
     await postAuthEndpoint(auth, { path: '/x', body: {}, headers: new Headers(), setCookie })
-    expect(setCookie).toHaveBeenCalledWith('sid', 'abc', expect.objectContaining({ path: '/' }))
+    expect(setCookie).toHaveBeenCalledWith(
+      'sid',
+      'abc',
+      expect.objectContaining({ path: '/', httpOnly: true, maxAge: 60, sameSite: 'lax' }),
+    )
+  })
+
+  it('returns a failure instead of throwing when the handler throws', async () => {
+    const auth: AuthHandlerTarget = {
+      handler: async () => {
+        throw new Error('boom')
+      },
+      options: { baseURL: 'http://app.test' },
+    }
+    expect(await postAuthEndpoint(auth, { path: '/x', body: {}, headers: new Headers() })).toEqual({
+      success: false,
+      error: 'boom',
+    })
   })
 })

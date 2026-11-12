@@ -11,7 +11,18 @@ export interface PostAuthEndpointInput {
   path: string
   body: Record<string, unknown>
   headers: Headers
-  setCookie?: (name: string, value: string, options: Record<string, unknown>) => void
+  setCookie?: (name: string, value: string, options: PostAuthCookieOptions) => void
+}
+
+export interface PostAuthCookieOptions {
+  path?: string
+  domain?: string
+  maxAge?: number
+  expires?: Date
+  secure?: boolean
+  httpOnly?: boolean
+  partitioned?: boolean
+  sameSite?: 'strict' | 'lax' | 'none'
 }
 
 function originFor(auth: AuthHandlerTarget, headers: Headers): string {
@@ -42,6 +53,20 @@ export async function postAuthEndpoint(
   auth: AuthHandlerTarget,
   input: PostAuthEndpointInput,
 ): Promise<PostAuthEndpointResult> {
+  try {
+    return await dispatch(auth, input)
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error && err.message ? err.message : 'Request failed',
+    }
+  }
+}
+
+async function dispatch(
+  auth: AuthHandlerTarget,
+  input: PostAuthEndpointInput,
+): Promise<PostAuthEndpointResult> {
   const basePath = typeof auth.options.basePath === 'string' ? auth.options.basePath : '/api/auth'
   const origin = originFor(auth, input.headers)
   const headers = new Headers(input.headers)
@@ -62,8 +87,16 @@ export async function postAuthEndpoint(
   const header = response.headers.get('set-cookie')
   if (header && input.setCookie) {
     for (const [name, attributes] of parseSetCookieHeader(header)) {
-      const { value, ...options } = attributes
-      input.setCookie(name, value, options)
+      input.setCookie(name, attributes.value, {
+        path: attributes.path,
+        domain: attributes.domain,
+        maxAge: attributes['max-age'],
+        expires: attributes.expires,
+        secure: attributes.secure,
+        httpOnly: attributes.httponly,
+        partitioned: attributes.partitioned,
+        sameSite: attributes.samesite,
+      })
     }
   }
   return { success: true }
