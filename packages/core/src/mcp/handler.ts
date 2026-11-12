@@ -738,9 +738,8 @@ async function querySingleton(
     }
     const row: unknown = await get.call(context.db[listKey])
     if (!isPlainObject(row)) return createSuccessResponse({ items: [], count: 0 }, id)
-    const names = picked
-    const item = names
-      ? Object.fromEntries(Object.entries(row).filter(([key]) => names.includes(key)))
+    const item = picked
+      ? Object.fromEntries(Object.entries(row).filter(([key]) => picked.includes(key)))
       : row
     return createSuccessResponse({ items: [item], count: 1 }, id)
   } catch (error) {

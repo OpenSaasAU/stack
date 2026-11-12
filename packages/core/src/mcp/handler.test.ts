@@ -481,8 +481,7 @@ describe('the MCP surface', () => {
           undefined,
           async () => ({ userId: 'someone-else', scopes: ['read'] }),
         )
-        const leaked = body?.error === undefined ? payload(body).items : []
-        expect(leaked).toEqual([])
+        expect(body?.error).toBeDefined()
       },
       BOOT,
     )
