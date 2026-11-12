@@ -425,7 +425,7 @@ Planning a migration needs a database to plan against, and a direct
 (non-pooled) connection, which `DIRECT_DATABASE_URL` supplies:
 
 ```bash
-DIRECT_DATABASE_URL=... npx prisma migration plan
+DIRECT_DATABASE_URL=... pnpm migrate
 ```
 
 Commit the resulting `migrations/` directory. The release step applies it:

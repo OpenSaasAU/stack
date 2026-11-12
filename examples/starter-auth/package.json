@@ -14,7 +14,7 @@
     "generate": "opensaas generate",
     "lint": "tsc --noEmit",
     "db:update": "opensaas db update",
-    "migrate": "prisma migration plan",
+    "migrate": "opensaas db plan",
     "migrate:deploy": "prisma db migrate"
   },
   "dependencies": {

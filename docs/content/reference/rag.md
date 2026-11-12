@@ -319,9 +319,9 @@ names it and no SQL is yours to run. The declaration is a generator emission
 your tables. Locally that is `pnpm db:update` with `pnpm dev` up in another
 terminal; [Migrations and the dev loop](/docs/how-to/migrate) covers why the
 command needs that loop and what `--plan` asks for. In a deployment there is
-no loop, so it is `prisma migration plan` once, committed, then
+no loop, so it is `opensaas db plan` once, committed, then
 `prisma db migrate`. There is no `opensaas db migrate` — `opensaas db` carries
-only `update`.
+`update` and `plan`.
 
 What the deployment owns is provisioning:
 

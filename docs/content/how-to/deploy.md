@@ -287,11 +287,13 @@ pnpm generate
 pnpm migrate
 ```
 
-`pnpm migrate` runs `prisma migration plan`, which writes a migration package into the `migrations/` directory at your project root. Commit that whole directory to Git. It is your schema history, and it holds more than your app's own space: `pnpm generate` seeds an **Extension contract space** into it for every extension pack your config declares, and the production release step replays all of them together.
+`pnpm migrate` runs `opensaas db plan`, which wraps `prisma migration plan` and writes a migration package into the `migrations/` directory at your project root. Commit that whole directory to Git. It is your schema history, and it holds more than your app's own space: `pnpm generate` seeds an **Extension contract space** into it for every extension pack your config declares, and the production release step replays all of them together.
 
 > **Local dev vs production.** `pnpm dev` reconciles the Dev database with your config directly, and `opensaas db update` hands that loop your consent for a change it is waiting on. That path has **no migration history** and can drop data on a schema change, so it is **not** a route to production — there is no `opensaas db migrate`, and `opensaas migrate` is an unrelated project-analysis assistant. Production always migrates from the committed `migrations/` directory with the Prisma CLI.
 
-> **Refs stay put.** Once `migrations/app` holds a migration package, the dev loop never moves the committed refs (`migrations/app/refs/db.json`), so `pnpm migrate` keeps planning from your migration history. Before the first package exists the loop does write the `db` ref, which is what the first `pnpm migrate` plans its baseline from.
+> **Where a plan starts.** `opensaas db plan` plans from the head of the `migrations/app` migration graph (the target no package leaves from) and passes it as `--from`, so each change builds on the previous one and `refs/db.json` is never read. With no packages yet it plans the baseline. `--name`, `--rename`, `--delete` and other arguments are forwarded. If the graph has more than one head, it refuses and names them; pass `--from <hash>` to choose one. The dev loop still restores the `db` ref for its own reconcile.
+>
+> `examples/starter-auth` ships no authored migration, so `pnpm migrate:deploy` fails there until you run `pnpm migrate`.
 
 ## Step 5: Deploy to Vercel
 
@@ -492,7 +494,7 @@ pnpm migrate:deploy
 
 ### Authoring Migrations in CI / Agent Environments
 
-Applying migrations is what `prisma db migrate` already does non-interactively. _Planning_ a new one needs a database to plan against — `prisma migration plan` resolves its origin through the `db` ref in the committed `migrations/` directory and the connection `prisma.config.ts` gives it — so point `DIRECT_DATABASE_URL` at a disposable Postgres (a CI service container, Docker, or a throwaway Neon branch) and run:
+Applying migrations is what `prisma db migrate` already does non-interactively. _Planning_ a new one needs a database to plan against — `opensaas db plan` resolves its origin from the head of the committed migration graph and uses the connection `prisma.config.ts` gives it — so point `DIRECT_DATABASE_URL` at a disposable Postgres (a CI service container, Docker, or a throwaway Neon branch) and run:
 
 ```bash
 pnpm generate
