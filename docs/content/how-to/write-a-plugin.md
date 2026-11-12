@@ -181,7 +181,8 @@ takes the hook's own `context` and writes through that, because a hook's
 `context.db` is bound to the write's transaction:
 
 ```typescript
-import type { AccessContext, Plugin } from '@opensaas/stack-core/extend'
+import type { AccessContext } from '@opensaas/stack-core'
+import type { Plugin } from '@opensaas/stack-core/extend'
 
 const auditPlugin: Plugin = {
   name: 'audit',
