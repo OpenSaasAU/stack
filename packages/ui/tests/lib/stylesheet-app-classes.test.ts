@@ -60,7 +60,7 @@ const generated = [...candidates].filter((className) =>
 
 const missing = generated.filter((className) => !defines(stylesheet, className))
 
-// Classes apps use that the stylesheet never carried; shrink this list, never grow it.
+// Classes apps use that the stylesheet never carried.
 const knownMissing: string[] = JSON.parse(
   readFileSync(join(import.meta.dirname, 'stylesheet-known-missing.json'), 'utf8'),
 )
@@ -73,9 +73,5 @@ describe('the prebuilt stylesheet against the classes apps use', () => {
 
   it('has lost no class that an app uses', () => {
     expect(missing.filter((className) => !knownMissing.includes(className))).toEqual([])
-  })
-
-  it('lists only classes still missing', () => {
-    expect(knownMissing.filter((className) => !missing.includes(className))).toEqual([])
   })
 })

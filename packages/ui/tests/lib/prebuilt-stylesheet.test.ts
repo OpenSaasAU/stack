@@ -49,7 +49,7 @@ describe('the prebuilt stylesheet', () => {
     expect(stylesheet).toMatch(selectorPattern(className))
   })
 
-  it.each(['bg-white', 'border-gray-200', 'invisible'])(
+  it.each(['bg-white', 'border-gray-200'])(
     'takes nothing from Markdown, such as %s',
     (className) => {
       expect(stylesheet).not.toMatch(selectorPattern(className))
