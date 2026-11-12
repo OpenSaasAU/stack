@@ -526,17 +526,40 @@ jobs:
       - name: Setup project
         uses: ./.github/actions/setup
 
-      - name: Build create-opensaas-app
-        run: turbo run build --filter=create-opensaas-app
+      - name: Build packages
+        run: >
+          turbo run build
+          --filter=@opensaas/stack-core
+          --filter=@opensaas/stack-auth
+          --filter=@opensaas/stack-ui
+          --filter=@opensaas/stack-cli
+          --filter=create-opensaas-app
 
-      - name: Scaffold a with-auth project and resolve its dependency tree with npm
+      - name: Scaffold a with-auth project over local tarballs and resolve its dependency tree with npm
         run: |
           set -euo pipefail
+          TARBALLS="$(mktemp -d)"
+          for pkg in core auth ui cli; do
+            (cd "packages/$pkg" && pnpm pack --pack-destination "$TARBALLS" > /dev/null)
+          done
           WORKDIR="$(mktemp -d)"
           cd "$WORKDIR"
           node "$GITHUB_WORKSPACE/packages/create-opensaas-app/dist/index.js" \
             myapp --with-auth --no-ai --no-install
           cd myapp
+          node -e '
+            const fs = require("fs")
+            const dir = process.argv[1]
+            const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"))
+            for (const field of ["dependencies", "devDependencies"]) {
+              for (const name of Object.keys(pkg[field] ?? {})) {
+                const match = name.match(/^@opensaas\/stack-(.*)$/)
+                const tarball = match && fs.readdirSync(dir).find((f) => f.startsWith("opensaas-stack-" + match[1] + "-"))
+                if (tarball) pkg[field][name] = "file:" + dir + "/" + tarball
+              }
+            }
+            fs.writeFileSync("package.json", JSON.stringify(pkg, null, 2))
+          ' "$TARBALLS"
           npm install --package-lock-only --ignore-scripts --no-audit --no-fund
 
   # Narrow smoke test for #1219: proves `opensaas dev`'s app-child spawn
