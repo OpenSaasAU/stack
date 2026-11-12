@@ -367,7 +367,7 @@ describe('the code the feature wizard emits', () => {
 
       expect(actions?.content).toContain('export async function signOutAction(): Promise<void>')
       expect(actions?.content).toContain(
-        "auth.api.signOut({ headers: await headers() })\n  redirect('/sign-in')",
+        "signOutAndConfirm(auth, await headers())\n  redirect(logoutUrl ?? '/sign-in')",
       )
       expect(actions?.content).toContain("import { redirect } from 'next/navigation'")
       expect(implementation.nextSteps.join('\n')).toContain('onSignOut={signOutAction}')

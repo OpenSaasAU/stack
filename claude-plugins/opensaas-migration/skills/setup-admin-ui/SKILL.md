@@ -149,10 +149,11 @@ Replace `{SEGMENT_NAME}` with the last segment of the admin path (e.g. `admin`) 
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
+import { signOutAndConfirm } from '@opensaas/stack-auth/server'
 
 export async function signOutAction(): Promise<void> {
-  await auth.api.signOut({ headers: await headers() })
-  redirect('/sign-in')
+  const logoutUrl = await signOutAndConfirm(auth, await headers())
+  redirect(logoutUrl ?? '/sign-in')
 }
 ```
 
