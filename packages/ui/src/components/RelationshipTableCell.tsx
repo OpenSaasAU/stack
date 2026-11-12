@@ -9,6 +9,11 @@ import { FieldRenderer } from './fields/FieldRenderer.js'
 import { getFieldComponent } from './fields/registry.js'
 import type { SerializableFieldConfig } from '../lib/serializeFieldConfig.js'
 import type { ServerActionInput } from '../server/types.js'
+import {
+  FieldValidityContext,
+  type FieldFocusTarget,
+  type FieldValidityChannel,
+} from '../lib/fieldValidity.js'
 
 export interface RelationshipTableCellProps {
   rowId: string
@@ -118,6 +123,24 @@ export function RelationshipTableCell({
   const [fieldError, setFieldError] = React.useState<string | undefined>(undefined)
 
   const editorRef = React.useRef<HTMLDivElement>(null)
+  const draftRef = React.useRef<unknown>(value)
+  const invalidFieldsRef = React.useRef(
+    new Map<string, { focusTarget: FieldFocusTarget; onRefused: () => void }>(),
+  )
+  const validityChannel = React.useMemo<FieldValidityChannel>(
+    () => ({
+      markInvalid: (fieldName, focusTarget, onRefused) => {
+        const entry = { focusTarget, onRefused }
+        invalidFieldsRef.current.set(fieldName, entry)
+        return () => {
+          if (invalidFieldsRef.current.get(fieldName) === entry) {
+            invalidFieldsRef.current.delete(fieldName)
+          }
+        }
+      },
+    }),
+    [],
+  )
   // Guards a stray blur firing after Escape/commit already settled the edit.
   const settledRef = React.useRef(false)
 
@@ -166,6 +189,7 @@ export function RelationshipTableCell({
 
   const startEdit = () => {
     settledRef.current = false
+    draftRef.current = displayValue
     setDraft(displayValue)
     setError(undefined)
     setFieldError(undefined)
@@ -174,13 +198,32 @@ export function RelationshipTableCell({
 
   const cancel = () => {
     settledRef.current = true
+    draftRef.current = displayValue
     setDraft(displayValue)
     setIsEditing(false)
   }
 
-  const commit = async () => {
+  const commit = async (source: 'enter' | 'blur') => {
     if (settledRef.current) return
+
+    const [firstInvalid] = invalidFieldsRef.current.values()
+    if (firstInvalid) {
+      if (source === 'enter') {
+        firstInvalid.onRefused()
+        firstInvalid.focusTarget.current?.focus()
+        return
+      }
+      settledRef.current = true
+      setError(`${label} has input that can't be saved; the previous value was kept`)
+      setFieldError(undefined)
+      draftRef.current = displayValue
+      setDraft(displayValue)
+      setIsEditing(false)
+      return
+    }
+
     settledRef.current = true
+    const draft = draftRef.current
 
     // No change → just leave edit mode without a round-trip.
     if (draft === displayValue) {
@@ -214,11 +257,13 @@ export function RelationshipTableCell({
         // never leak "denied vs absent" — the reason is the generic message.
         setError(outcome.error ?? 'Access denied or update failed')
         setFieldError(outcome.fieldError)
+        draftRef.current = displayValue
         setDraft(displayValue)
         setIsEditing(false)
       }
     } catch {
       setError('Update failed')
+      draftRef.current = displayValue
       setDraft(displayValue)
       setIsEditing(false)
     } finally {
@@ -236,7 +281,7 @@ export function RelationshipTableCell({
           if (event.key === 'Enter') {
             event.preventDefault()
             event.stopPropagation()
-            void commit()
+            void commit('enter')
           } else if (event.key === 'Escape') {
             event.preventDefault()
             event.stopPropagation()
@@ -249,19 +294,24 @@ export function RelationshipTableCell({
           // moved into an overlay it opened (see isInOverlay above).
           if (editorRef.current && next instanceof Node && editorRef.current.contains(next)) return
           if (isInOverlay(next)) return
-          void commit()
+          void commit('blur')
         }}
       >
-        <FieldRenderer
-          fieldName={column}
-          fieldConfig={field}
-          value={draft}
-          onChange={(next) => setDraft(next)}
-          mode="edit"
-          disabled={pending}
-          error={fieldError}
-          basePath={basePath}
-        />
+        <FieldValidityContext.Provider value={validityChannel}>
+          <FieldRenderer
+            fieldName={column}
+            fieldConfig={field}
+            value={draft}
+            onChange={(next) => {
+              draftRef.current = next
+              setDraft(next)
+            }}
+            mode="edit"
+            disabled={pending}
+            error={fieldError}
+            basePath={basePath}
+          />
+        </FieldValidityContext.Provider>
       </div>
     )
   }
