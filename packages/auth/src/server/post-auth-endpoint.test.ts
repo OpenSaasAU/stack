@@ -2,7 +2,11 @@ import { describe, it, expect, vi } from 'vitest'
 import { postAuthEndpoint, type AuthHandlerTarget } from './post-auth-endpoint.js'
 
 function target(respond: (request: Request) => Response): AuthHandlerTarget {
-  return { handler: async (request) => respond(request), options: { baseURL: 'http://app.test' } }
+  return {
+    handler: async (request) => respond(request),
+    options: {},
+    $context: Promise.resolve({ baseURL: 'http://app.test' }),
+  }
 }
 
 describe('postAuthEndpoint', () => {
@@ -58,11 +62,41 @@ describe('postAuthEndpoint', () => {
       handler: async () => {
         throw new Error('boom')
       },
-      options: { baseURL: 'http://app.test' },
+      options: {},
+      $context: Promise.resolve({ baseURL: 'http://app.test' }),
     }
     expect(await postAuthEndpoint(auth, { path: '/x', body: {}, headers: new Headers() })).toEqual({
       success: false,
       error: 'boom',
     })
+  })
+
+  it('never takes the host from request headers', async () => {
+    const handler = vi.fn(async (_request: Request) => new Response('{}'))
+    const auth: AuthHandlerTarget = {
+      handler,
+      options: {},
+      $context: Promise.resolve({ baseURL: 'http://app.test' }),
+    }
+    await postAuthEndpoint(auth, {
+      path: '/request-password-reset',
+      body: {},
+      headers: new Headers({ 'x-forwarded-host': 'evil.example.test', host: 'evil.example.test' }),
+    })
+    const request: Request = handler.mock.calls[0][0]
+    expect(request.url).toBe('http://app.test/api/auth/request-password-reset')
+    expect(request.headers.get('origin')).toBe('http://app.test')
+  })
+
+  it('fails without calling the handler when no base URL is configured', async () => {
+    const handler = vi.fn(async (_request: Request) => new Response('{}'))
+    const auth: AuthHandlerTarget = { handler, options: {}, $context: Promise.resolve({}) }
+    const result = await postAuthEndpoint(auth, {
+      path: '/x',
+      body: {},
+      headers: new Headers({ 'x-forwarded-host': 'evil.example.test' }),
+    })
+    expect(result).toEqual({ success: false, error: expect.stringContaining('BETTER_AUTH_URL') })
+    expect(handler).not.toHaveBeenCalled()
   })
 })

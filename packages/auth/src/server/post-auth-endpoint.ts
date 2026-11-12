@@ -2,7 +2,8 @@ import { parseSetCookieHeader } from 'better-auth/cookies'
 
 export interface AuthHandlerTarget {
   handler: (request: Request) => Promise<Response>
-  options: { baseURL?: unknown; basePath?: unknown }
+  options: { basePath?: unknown }
+  $context: Promise<{ baseURL?: unknown }>
 }
 
 export type PostAuthEndpointResult = { success: true } | { success: false; error: string }
@@ -25,14 +26,10 @@ export interface PostAuthCookieOptions {
   sameSite?: 'strict' | 'lax' | 'none'
 }
 
-function originFor(auth: AuthHandlerTarget, headers: Headers): string {
-  if (typeof auth.options.baseURL === 'string' && auth.options.baseURL.length > 0) {
-    return new URL(auth.options.baseURL).origin
-  }
-  const host = headers.get('x-forwarded-host') ?? headers.get('host') ?? 'localhost:3000'
-  const proto =
-    headers.get('x-forwarded-proto') ?? (host.startsWith('localhost') ? 'http' : 'https')
-  return `${proto}://${host}`
+async function originFor(auth: AuthHandlerTarget): Promise<string | null> {
+  const { baseURL } = await auth.$context
+  if (typeof baseURL !== 'string' || baseURL.length === 0) return null
+  return new URL(baseURL).origin
 }
 
 async function errorFrom(response: Response, fallback: string): Promise<string> {
@@ -68,7 +65,13 @@ async function dispatch(
   input: PostAuthEndpointInput,
 ): Promise<PostAuthEndpointResult> {
   const basePath = typeof auth.options.basePath === 'string' ? auth.options.basePath : '/api/auth'
-  const origin = originFor(auth, input.headers)
+  const origin = await originFor(auth)
+  if (origin === null) {
+    return {
+      success: false,
+      error: 'Auth base URL is not configured. Set BETTER_AUTH_URL.',
+    }
+  }
   const headers = new Headers(input.headers)
   headers.set('content-type', 'application/json')
   headers.set('origin', origin)
