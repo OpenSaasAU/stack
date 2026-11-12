@@ -72,7 +72,8 @@ export function TiptapField({
       immediatelyRender: false,
       onUpdate: ({ editor }) => {
         if (!isEditable || !onChange) return
-        const json = editor.getJSON()
+        // Null-prototype attrs reach server actions as "$T"; keep this clone
+        const json: JSONContent = JSON.parse(JSON.stringify(editor.getJSON()))
         lastEmitted.current = json
         onChange(json)
       },
