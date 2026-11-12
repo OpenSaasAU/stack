@@ -12,6 +12,7 @@ import {
   collectFilterSpecs,
   collectFilterSuggestions,
   collectUnreadableFields,
+  withholdFilterFields,
   type FilterAccessArgs,
 } from './collect.js'
 import type { FilterOperator, FilterSpec, FilterToken, FilterValue } from './types.js'
@@ -1772,5 +1773,18 @@ describe('buildFilterWhere lowers OR groups', () => {
         { name: { contains: 'b' } },
       ],
     })
+  })
+})
+
+describe('withholdFilterFields', () => {
+  it('drops tokens and group alternatives naming a withheld field, name and value both', () => {
+    const out = withholdFilterFields('secret:PLUTONIUM name:Ada', new Set(['secret']))
+    expect(out).not.toContain('secret')
+    expect(out).not.toContain('PLUTONIUM')
+    expect(out).toContain('name:Ada')
+  })
+
+  it('returns the query untouched when nothing is withheld', () => {
+    expect(withholdFilterFields('name:Ada', new Set())).toBe('name:Ada')
   })
 })

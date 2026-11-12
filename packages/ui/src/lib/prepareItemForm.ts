@@ -5,6 +5,7 @@ import {
   OpenSaasConfig,
 } from '@opensaas/stack-core'
 import type { ListConfig } from '@opensaas/stack-core'
+import { collectUnreadableFields } from '@opensaas/stack-core/internal'
 import {
   markToManyEdgeWrites,
   markUnwritableRelationships,
@@ -135,7 +136,23 @@ export async function prepareItemForm(
     item: operation === 'update' ? accessItem : undefined,
   })
 
+  const unreadable = await collectUnreadableFields(listConfig, {
+    session: context.session,
+    context,
+  })
+  for (const name of unreadable) {
+    const serialized = serializableFields[name]
+    if (!serialized) continue
+    if (serialized.readOnly) {
+      delete serializableFields[name]
+    } else if (operation === 'update' && serialized.validation?.isRequired) {
+      serialized.validation = { ...serialized.validation, isRequired: false }
+    }
+    delete relationshipData[name]
+  }
+
   const formData = { ...itemData }
+  for (const name of unreadable) delete formData[name]
   for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
     const fieldConfigAny = fieldConfig as {
       type: string

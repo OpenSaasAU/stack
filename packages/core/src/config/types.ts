@@ -2799,7 +2799,9 @@ export interface RowAction<TTypeInfo extends TypeInfo = TypeInfo> {
  * A Preset view declared in `ui.listView.presets`, shown as a tab above the
  * list view's Filter builder and opened by `?preset=<key>`.
  *
- * Only `key` and `label` cross to the client. `search` and `hasAccess` run on
+ * Only `key`, `label` and the active preset's `search` cross to the client, and
+ * that `search` has every token naming a field the session can never read
+ * removed first. `search` and `hasAccess` run on
  * the server for each request, so a shared `?preset=` link resolves against
  * the recipient's own session. The resolved `search` runs through the same
  * filter engine and secured context as a typed `?search=`, so a preset can
