@@ -1,5 +1,5 @@
 import type { OpenSaasConfig } from '../config/types.js'
-import { isRelationshipField } from '../fields/index.js'
+import { isRelationshipField, shouldHaveForeignKey } from '../fields/index.js'
 import { RELATION_QUANTIFIERS } from '../secured/operators.js'
 import { unqueryableKey } from '../secured/vocabulary.js'
 
@@ -15,7 +15,13 @@ function relationTarget(config: OpenSaasConfig, listKey: string, key: string): s
 
   if (key.endsWith('Id')) {
     const owner = config.lists[listKey]?.fields[key.slice(0, -2)]
-    if (isRelationshipField(owner) && !owner.many) return owner.ref.split('.')[0]
+    if (
+      isRelationshipField(owner) &&
+      !owner.many &&
+      shouldHaveForeignKey(listKey, key.slice(0, -2), owner, config)
+    ) {
+      return owner.ref.split('.')[0]
+    }
   }
 
   for (const [sourceKey, sourceConfig] of Object.entries(config.lists)) {

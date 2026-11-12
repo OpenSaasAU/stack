@@ -3192,7 +3192,7 @@ describe('the MCP surface', () => {
     }
 
     test(
-      'is absent from the fields schema and the write schemas',
+      'is absent from the fields schema, and from the write schemas when mcp.enabled is false',
       async () => {
         const tools = await listTools()
         const query = tools.find((t) => t.name === 'list_post_query')
@@ -3206,7 +3206,7 @@ describe('the MCP surface', () => {
           const data = (tool?.inputSchema.properties as Record<string, { properties: object }>).data
             .properties as Record<string, unknown>
           expect(data.draftRef).toBeUndefined()
-          expect(data.unreadRef).toBeUndefined()
+          expect(data.unreadRef).toBeDefined()
         }
       },
       BOOT,
