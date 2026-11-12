@@ -43,6 +43,17 @@ export function replaceWorkspaceVersions(
   return result
 }
 
+/**
+ * Resolve better-auth's optional `prisma` peer (capped below Prisma 8) to the
+ * version the project installs, so `npm install` does not fail with ERESOLVE.
+ */
+export function applyPeerOverrides(pkg: PackageJsonLike): PackageJsonLike {
+  const prisma = pkg.devDependencies?.prisma ?? pkg.dependencies?.prisma
+  if (!prisma || !pkg.dependencies?.['better-auth']) return pkg
+  const existing = typeof pkg.overrides === 'object' && pkg.overrides !== null ? pkg.overrides : {}
+  return { ...pkg, overrides: { ...existing, 'better-auth': { prisma } } }
+}
+
 /** Replace the first Markdown H1 with the project name, leaving the rest. */
 export function rewriteReadmeHeading(readme: string, projectName: string): string {
   return readme.replace(/^# .+$/m, `# ${projectName}`)

@@ -526,6 +526,30 @@ jobs:
   # answers under `opensaas dev` with no command named. Service containers
   # don't run on Windows runners, so this starts the runner image's own
   # PostgreSQL service (ADR-0063's Database escape) instead of a container.
+  scaffold-npm-install:
+    name: Scaffold with-auth resolves under npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup project
+        uses: ./.github/actions/setup
+
+      - name: Build create-opensaas-app
+        run: turbo run build --filter=create-opensaas-app
+
+      - name: Scaffold a with-auth project and resolve its dependency tree with npm
+        run: |
+          set -euo pipefail
+          WORKDIR="$(mktemp -d)"
+          cd "$WORKDIR"
+          node "$GITHUB_WORKSPACE/packages/create-opensaas-app/dist/index.js" \
+            myapp --with-auth --no-ai --no-install
+          cd myapp
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+
   windows-dev-loop:
     runs-on: windows-latest
     timeout-minutes: 20
