@@ -153,3 +153,17 @@ rebind path that hadn't been ported to the ADR-0012 mechanism yet.
   sudo-immune constraints stay enforced exactly as before; this record only
   changes WHICH client/transaction a hook's derived context targets, not what
   access control it skips.
+
+## Consequence: plugin services are not transactional
+
+Because runtimes are not re-executed on a rebind, a service built by
+`plugin.runtime` closes over the base context and stays there for the life of
+the request. Called from a hook, its writes do not join the hook's transaction,
+so they survive a rollback, and a write to the row being written waits on that
+row's lock, which ADR-0078 made a hang rather than a deadlock Postgres reports.
+
+Rebinding services to the transaction was rejected: a runtime can hold state or
+open connections, so re-running it per write is not safe (ADR-0010, ADR-0012).
+The supported pattern is a service method that takes the caller's `context` as
+an argument and uses `context.db`, so a hook passes its own transaction-bound
+context.

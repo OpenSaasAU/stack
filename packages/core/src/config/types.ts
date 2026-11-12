@@ -3846,6 +3846,12 @@ export type Plugin = {
    * fields) in a downstream app; passing it as a plain second argument avoids
    * that recursion entirely.
    *
+   * A service closes over the base context, so its writes do not join a
+   * hook's transaction, and a write to the row being written waits on that
+   * row's lock forever. A method a hook calls should take the hook's own
+   * `context` as an argument and use `context.db`, which is bound to the
+   * write's transaction (ADR-0066).
+   *
    * It is a `StackContext`, not the `AccessContext` of the first argument:
    * the two differ, and the difference bites. `StackContext` omits
    * `ormHandle`, `_isSudo`'s internal companions and `_config`, so a core
