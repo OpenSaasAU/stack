@@ -59,7 +59,7 @@ export async function collectFilterSpecs(
   const specs: Record<string, FilterSpec> = {}
   if (!(await canQueryList(listConfig, args))) return specs
   const filterableFields = Object.entries(listConfig.fields).filter(
-    ([, field]) => typeof field.getFilterSpec === 'function',
+    ([, field]) => typeof field.getFilterSpec === 'function' && field.isFilterable !== false,
   )
   // Each field's read-access check is independent of every other's — run
   // them concurrently rather than serially, since a `read` rule that does
@@ -172,7 +172,7 @@ export async function isFieldFilterableById(
 ): Promise<boolean> {
   if (!Object.hasOwn(listConfig.fields, fieldName)) return false
   const field = listConfig.fields[fieldName]
-  if (typeof field.getFilterSpec !== 'function') return false
+  if (typeof field.getFilterSpec !== 'function' || field.isFilterable === false) return false
   if (!(await canQueryList(listConfig, args))) return false
   if (!(await isFieldReadableForPredicate(field.access, args))) return false
   return field.getFilterSpec(fieldName, listKey, config)?.toIdCondition !== undefined

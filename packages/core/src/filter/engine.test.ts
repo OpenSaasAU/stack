@@ -4,7 +4,7 @@ import type { AccessContext, Session } from '../access/types.js'
 import { calendarDay, integer, relationship, select, text, timestamp } from '../fields/index.js'
 import { withOrigin } from '../origin.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
-import { buildListFilterWhere } from './collect.js'
+import { buildListFilterWhere, collectFilterSuggestions } from './collect.js'
 
 const BOOT = 120_000
 
@@ -34,6 +34,7 @@ const config: OpenSaasConfig = {
           ],
         }),
         secret: text({ access: { read: () => false } }),
+        apiToken: text({ isFilterable: false }),
       },
       access: { operation: { query: () => true } },
     },
@@ -501,6 +502,33 @@ describe('OR groups over the secured surface (ADR-0083)', () => {
       expect(
         titles(await filtered('Post', `(ledger:#${String(ledger.id)} OR category:news)`)),
       ).toEqual(['On Looms'])
+    },
+    BOOT,
+  )
+})
+
+describe('a field with isFilterable: false', () => {
+  test(
+    'is skipped by a bare-word search and by field:value, which degrade to free text',
+    async () => {
+      expect((await filtered('Post', 'Engines')).map((row) => row.title)).toEqual(['On Engines'])
+      expect((await filtered('Post', 'apiToken:Engines')).map((row) => row.title)).toEqual([
+        'On Engines',
+      ])
+    },
+    BOOT,
+  )
+
+  test(
+    'is absent from the filter suggestions',
+    async () => {
+      const context = database.context(ada)
+      const suggestions = await collectFilterSuggestions(config.lists.Post, 'Post', config, {
+        session: context.session,
+        context: context as unknown as AccessContext,
+      })
+      expect(suggestions.map((s) => s.field)).not.toContain('apiToken')
+      expect(suggestions.map((s) => s.field)).toContain('slug')
     },
     BOOT,
   )
