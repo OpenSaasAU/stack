@@ -57,6 +57,13 @@ function schemaConfig(): OpenSaasConfig {
     db: { provider: 'postgresql', timestamps: true },
     mcp: { enabled: true, basePath: '/api/mcp' },
     lists: {
+      Settings: {
+        isSingleton: true,
+        fields: { siteName: text(), secretKey: text({ access: { read: () => false } }) },
+        access: {
+          operation: { query: ({ session }) => session?.userId === 'user-123', create: () => true },
+        },
+      },
       User: {
         fields: { name: text(), email: text() },
         access: { operation: { query: () => true, create: () => true } },
@@ -436,6 +443,50 @@ describe('the MCP surface', () => {
   async function callTool(name: string, args: Record<string, unknown>, config?: OpenSaasConfig) {
     return rpc('tools/call', { name, arguments: args }, config)
   }
+
+  describe('a singleton list', () => {
+    const payload = (body: Record<string, unknown> | null) =>
+      JSON.parse(
+        ((body?.result as { content: { text: string }[] }).content[0] as { text: string }).text,
+      ) as { items: Record<string, unknown>[]; count: number }
+
+    test(
+      'list_settings_query returns the singleton row, honouring field access',
+      async () => {
+        const { body } = await callTool('list_settings_query', {})
+        const result = payload(body)
+        expect(result.count).toBe(1)
+        expect(result.items).toHaveLength(1)
+        expect(result.items[0]).not.toHaveProperty('secretKey')
+      },
+      BOOT,
+    )
+
+    test(
+      'list_settings_query honours fields',
+      async () => {
+        const { body } = await callTool('list_settings_query', { fields: { siteName: true } })
+        const result = payload(body)
+        expect(Object.keys(result.items[0] ?? {}).sort()).toEqual(['id', 'siteName'])
+      },
+      BOOT,
+    )
+
+    test(
+      'a session denied query gets the empty value',
+      async () => {
+        const { body } = await rpc(
+          'tools/call',
+          { name: 'list_settings_query', arguments: {} },
+          undefined,
+          async () => ({ userId: 'someone-else', scopes: ['read'] }),
+        )
+        const leaked = body?.error === undefined ? payload(body).items : []
+        expect(leaked).toEqual([])
+      },
+      BOOT,
+    )
+  })
 
   describe('the handlers themselves', () => {
     test('all three verbs are handled', () => {
