@@ -1,9 +1,12 @@
 import { parseSetCookieHeader } from 'better-auth/cookies'
 
+export interface AuthContextShape {
+  baseURL?: unknown
+}
+
 export interface AuthHandlerTarget {
   handler: (request: Request) => Promise<Response>
-  options: { basePath?: unknown }
-  $context: Promise<{ baseURL?: unknown }>
+  $context: Promise<AuthContextShape> | (() => Promise<AuthContextShape>)
 }
 
 export type PostAuthEndpointResult = { success: true } | { success: false; error: string }
@@ -26,10 +29,11 @@ export interface PostAuthCookieOptions {
   sameSite?: 'strict' | 'lax' | 'none'
 }
 
-async function originFor(auth: AuthHandlerTarget): Promise<string | null> {
-  const { baseURL } = await auth.$context
+async function resolveBaseURL(auth: AuthHandlerTarget): Promise<URL | null> {
+  const context = await (typeof auth.$context === 'function' ? auth.$context() : auth.$context)
+  const { baseURL } = context
   if (typeof baseURL !== 'string' || baseURL.length === 0) return null
-  return new URL(baseURL).origin
+  return new URL(baseURL)
 }
 
 async function errorFrom(response: Response, fallback: string): Promise<string> {
@@ -64,21 +68,23 @@ async function dispatch(
   auth: AuthHandlerTarget,
   input: PostAuthEndpointInput,
 ): Promise<PostAuthEndpointResult> {
-  const basePath = typeof auth.options.basePath === 'string' ? auth.options.basePath : '/api/auth'
-  const origin = await originFor(auth)
-  if (origin === null) {
+  const base = await resolveBaseURL(auth)
+  if (base === null) {
     return {
       success: false,
       error: 'Auth base URL is not configured. Set BETTER_AUTH_URL.',
     }
   }
   const headers = new Headers(input.headers)
+  for (const name of ['host', 'x-forwarded-host', 'x-forwarded-proto', 'forwarded']) {
+    headers.delete(name)
+  }
   headers.set('content-type', 'application/json')
-  headers.set('origin', origin)
+  headers.set('origin', base.origin)
   headers.delete('content-length')
 
   const response = await auth.handler(
-    new Request(`${origin}${basePath}${input.path}`, {
+    new Request(`${base.href.replace(/\/$/, '')}${input.path}`, {
       method: 'POST',
       headers,
       body: JSON.stringify(input.body),

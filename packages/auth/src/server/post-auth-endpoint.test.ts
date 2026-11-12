@@ -4,8 +4,7 @@ import { postAuthEndpoint, type AuthHandlerTarget } from './post-auth-endpoint.j
 function target(respond: (request: Request) => Response): AuthHandlerTarget {
   return {
     handler: async (request) => respond(request),
-    options: {},
-    $context: Promise.resolve({ baseURL: 'http://app.test' }),
+    $context: Promise.resolve({ baseURL: 'http://app.test/api/auth' }),
   }
 }
 
@@ -62,8 +61,7 @@ describe('postAuthEndpoint', () => {
       handler: async () => {
         throw new Error('boom')
       },
-      options: {},
-      $context: Promise.resolve({ baseURL: 'http://app.test' }),
+      $context: Promise.resolve({ baseURL: 'http://app.test/api/auth' }),
     }
     expect(await postAuthEndpoint(auth, { path: '/x', body: {}, headers: new Headers() })).toEqual({
       success: false,
@@ -75,8 +73,7 @@ describe('postAuthEndpoint', () => {
     const handler = vi.fn(async (_request: Request) => new Response('{}'))
     const auth: AuthHandlerTarget = {
       handler,
-      options: {},
-      $context: Promise.resolve({ baseURL: 'http://app.test' }),
+      $context: Promise.resolve({ baseURL: 'http://app.test/api/auth' }),
     }
     await postAuthEndpoint(auth, {
       path: '/request-password-reset',
@@ -90,7 +87,7 @@ describe('postAuthEndpoint', () => {
 
   it('fails without calling the handler when no base URL is configured', async () => {
     const handler = vi.fn(async (_request: Request) => new Response('{}'))
-    const auth: AuthHandlerTarget = { handler, options: {}, $context: Promise.resolve({}) }
+    const auth: AuthHandlerTarget = { handler, $context: Promise.resolve({}) }
     const result = await postAuthEndpoint(auth, {
       path: '/x',
       body: {},
@@ -98,5 +95,22 @@ describe('postAuthEndpoint', () => {
     })
     expect(result).toEqual({ success: false, error: expect.stringContaining('BETTER_AUTH_URL') })
     expect(handler).not.toHaveBeenCalled()
+  })
+
+  it('resolves the context through a lazy callable accessor like createAuth()', async () => {
+    const handler = vi.fn(async (_request: Request) => new Response('{}'))
+    const auth: AuthHandlerTarget = {
+      handler,
+      $context: async () => ({ baseURL: 'http://app.test/api/auth' }),
+    }
+    await postAuthEndpoint(auth, {
+      path: '/x',
+      body: {},
+      headers: new Headers({ host: 'evil.example.test', 'x-forwarded-proto': 'https' }),
+    })
+    const request: Request = handler.mock.calls[0][0]
+    expect(request.url).toBe('http://app.test/api/auth/x')
+    expect(request.headers.get('host')).toBeNull()
+    expect(request.headers.get('x-forwarded-proto')).toBeNull()
   })
 })
