@@ -1,12 +1,14 @@
 import { describe, it, expect, expectTypeOf } from 'vitest'
 import {
   checkFieldAccess,
+  checkRowRead,
   classifyRowIndependentCreateAccess,
   classifyRowIndependentRead,
   classifyRowIndependentWrite,
   filterWritableFields,
   isFieldReadableForPredicate,
 } from './field-access.js'
+import { NO_RULE_VIEWS, ruleRowOf } from './rule-item.js'
 import { InvalidFieldAccessResultError } from './errors.js'
 import { ValidationError } from '../hooks/index.js'
 import type { FieldAccess, FieldAccessControl } from './types.js'
@@ -1221,5 +1223,25 @@ describe('a rule that catches the poison on `item`', () => {
         { session: null, context: nonSudoContext() },
       ),
     ).resolves.toBe('deny')
+  })
+})
+
+describe('checkRowRead on a rule that structuredClones a nested value', () => {
+  const fieldConfigs = { meta: text(), notes: relationship({ ref: 'Note.ticket', many: true }) }
+  const rule: FieldAccess = {
+    read: ({ item }) => (structuredClone(item?.meta) as { public?: boolean })?.public === true,
+  }
+
+  it('denies instead of throwing', async () => {
+    const row = ruleRowOf(
+      { id: 't1', meta: { public: true }, notes: [] },
+      NO_RULE_VIEWS,
+      fieldConfigs,
+      undefined,
+      undefined,
+    )
+    await expect(
+      checkRowRead(rule, { session: null, context: nonSudoContext() }, row),
+    ).resolves.toBe(false)
   })
 })
