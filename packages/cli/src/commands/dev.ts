@@ -640,6 +640,10 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
       const refs = snapshotMigrationRefs(cwd)
       const bootModules = snapshotModules(watchedModules)
       const staged = await stage(say)
+      if (interrupted) {
+        process.exitCode = 1
+        return
+      }
       if (staged !== undefined) {
         const planned = await planDatabaseUpdate(cwd, staged.prismaConfig, { dryRun: true })
         restoreMigrationRefs(cwd, refs)
