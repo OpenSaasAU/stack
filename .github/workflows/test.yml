@@ -67,8 +67,8 @@ jobs:
       - name: Check documentation Prisma install pins
         run: |
           pnpm check:doc-prisma-pins
-          pnpm check:doc-node-version
           pnpm check:doc-prisma-pins --self-test
+          pnpm check:doc-node-version
 
       - name: Test documentation code rendering
         run: pnpm --filter opensaas-stack-docs test
