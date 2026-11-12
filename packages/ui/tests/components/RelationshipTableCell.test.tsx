@@ -151,9 +151,9 @@ describe('RelationshipTableCell (inline cell edit, #737)', () => {
 
   describe('invalid or partial input is never committed (#2213)', () => {
     it.each([
-      ['decimal', '1.25', '9.', 'Price'],
-      ['bigInt', '5', '9x', 'Big'],
-      ['json', '{"a":1}', '{"a":', 'Data'],
+      ['decimal', '1.25', '9.'],
+      ['bigInt', '5', '9x'],
+      ['json', '{"a":1}', '{"a":'],
     ])('%s: Enter on %s with %s does not write and stays editing', async (type, start, typed) => {
       const serverAction = vi.fn(async () => ({ updated: true }))
       render(
@@ -171,6 +171,7 @@ describe('RelationshipTableCell (inline cell edit, #737)', () => {
       expect(
         document.querySelector('[data-slot="relationship-table-cell-editor"]'),
       ).toBeInTheDocument()
+      expect(screen.getByRole('textbox')).toHaveFocus()
     })
 
     it('reverts visibly on blur with invalid input', async () => {

@@ -206,11 +206,11 @@ export function RelationshipTableCell({
   const commit = async (source: 'enter' | 'blur') => {
     if (settledRef.current) return
 
-    const [firstInvalid] = invalidFieldsRef.current.values()
-    if (firstInvalid) {
+    const invalid = [...invalidFieldsRef.current.values()]
+    if (invalid.length > 0) {
       if (source === 'enter') {
-        firstInvalid.onRefused()
-        firstInvalid.focusTarget.current?.focus()
+        for (const entry of invalid) entry.onRefused()
+        invalid[0]?.focusTarget.current?.focus()
         return
       }
       settledRef.current = true
