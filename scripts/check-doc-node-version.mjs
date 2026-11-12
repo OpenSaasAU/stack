@@ -30,7 +30,7 @@ function* markdownFiles(dir) {
 export function belowFloor(line) {
   const found = []
   for (const m of line.matchAll(/\bNode(?:\.js)?\s+v?(\d+)(?:\.(\d+))?(?:\.(\d+))?/gi)) {
-    const have = [m[1], m[2] ?? 0, m[3] ?? 0].map(Number)
+    const have = [m[1], m[2] ?? floorParts[1], m[3] ?? floorParts[2]].map(Number)
     for (let i = 0; i < 3; i++) {
       if (have[i] > floorParts[i]) break
       if (have[i] < floorParts[i]) {

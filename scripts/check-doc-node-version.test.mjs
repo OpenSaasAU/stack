@@ -11,3 +11,8 @@ test('accepts the floor and newer', () => {
   assert.equal(belowFloor('Node.js 22.18 or newer').length, 0)
   assert.equal(belowFloor('Node 24').length, 0)
 })
+
+test('a bare major at the floor major is not below it', () => {
+  assert.equal(belowFloor('Node 22+').length, 0)
+  assert.equal(belowFloor('Node 20+').length, 1)
+})
