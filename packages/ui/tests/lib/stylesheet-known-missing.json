@@ -4,6 +4,7 @@
   "bg-blue-100",
   "bg-blue-50",
   "bg-blue-600",
+  "bg-gradient-to-b",
   "bg-gray-100",
   "bg-gray-400",
   "bg-gray-50",
@@ -116,7 +117,9 @@
   "text-yellow-800",
   "to-gray-100",
   "to-white",
+  "tracking-wide",
   "transition-shadow",
+  "underline",
   "w-16",
   "whitespace-pre-wrap"
 ]

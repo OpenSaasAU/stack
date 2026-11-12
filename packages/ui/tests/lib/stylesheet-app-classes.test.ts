@@ -51,11 +51,14 @@ const compiler = await compile('@import "tailwindcss";', {
 const asSelector = (className: string) =>
   `.${className.replace(/[^\w-]/g, (character) => `\\${character}`)}`
 
+const defines = (css: string, className: string) =>
+  new RegExp(`${asSelector(className).replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')}(?![\\w-])`).test(css)
+
 const generated = [...candidates].filter((className) =>
-  compiler.build([className]).includes(asSelector(className)),
+  defines(compiler.build([className]), className),
 )
 
-const missing = generated.filter((className) => !stylesheet.includes(asSelector(className)))
+const missing = generated.filter((className) => !defines(stylesheet, className))
 
 // Classes apps use that the stylesheet never carried; shrink this list, never grow it.
 const knownMissing: string[] = JSON.parse(
