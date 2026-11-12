@@ -88,7 +88,7 @@ import {
 ```
 
 - `DatabaseError` — the base class; carries `fieldErrors`.
-- `SerializationFailure` — SQLSTATE 40001. Retrying is the caller's own loop; the stack ships no retry helper.
+- `SerializationFailure` — SQLSTATE 40001 or 40P01 (a deadlock victim). Retrying is the caller's own loop; the stack ships no retry helper.
 - `UniqueConstraintViolation` — carries `constraintName`, `list` and `fields`, resolved to OpenSaaS field names through the generated constraint map. A hand-made constraint that isn't in the map keeps a generic message and `fields: []`.
 
 Access _denial_ raises nothing at all — it is silent, returning `[]`, `null` or a

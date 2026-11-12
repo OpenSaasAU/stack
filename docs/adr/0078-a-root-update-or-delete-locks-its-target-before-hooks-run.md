@@ -48,7 +48,7 @@ What each side can do:
 - **The update's caller** takes `.forUpdate()` on the row before the update, in a `context.transaction`. That covers every row of the table above, `.forUpdate()` in the row's own update hook included, because the hook then re-takes a lock the transaction already holds and nothing upgrades. It holds whether or not the racer has already inserted.
 - **The racer's side:** every path that inserts or repoints a child takes `.forUpdate()` on the parent first.
 - **A hook cannot fix its own case alone.** The engine lock is taken before any hook runs, and a hook cannot make every caller lock first: the admin UI and MCP call `update` directly. One of the two fixes above has to hold on every path.
-- **Either way, a caller can retry.** The loser rolls back whole. Until #2158 lands it reaches the caller as a generic `DatabaseError` with `deadlock detected` on `cause`, so `isSerializationFailure` does not match it and a retry loop has to inspect the `cause`; #2158 is what gives it a retryable classification.
+- **Either way, a caller can retry.** The loser rolls back whole and reaches the caller as `SerializationFailure` (SQLSTATE `40P01` is classified with `40001`, #2158), so `isSerializationFailure` drives the retry loop.
 
 ## Consequences
 

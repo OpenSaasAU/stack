@@ -6,8 +6,8 @@
 /** SQLSTATE a driver reports for a unique-constraint or primary-key violation. */
 const UNIQUE_VIOLATION_SQLSTATE = '23505'
 
-/** SQLSTATE a driver reports for a serialization failure. */
-const SERIALIZATION_FAILURE_SQLSTATE = '40001'
+/** SQLSTATEs a driver reports for a serialization failure (`40001`) and a deadlock victim (`40P01`). */
+const RETRYABLE_SQLSTATES: ReadonlySet<string> = new Set(['40001', '40P01'])
 
 /**
  * The part of a driver's query error this module reads. Prisma 8's
@@ -59,7 +59,8 @@ export class DatabaseError extends Error {
 
 /**
  * A transaction that could not be serialised against a concurrent one
- * (SQLSTATE `40001`).
+ * (SQLSTATE `40001`), or was chosen as a deadlock victim (`40P01`). Either way
+ * it rolled back whole and is safe to retry.
  *
  * Retrying is the caller's decision and the caller's loop: the stack ships no
  * retry helper, and a loop that catches broadly rather than on
@@ -177,7 +178,7 @@ export function classifyDriverError(error: unknown): DatabaseError | undefined {
 
   const sqlState = asString(driver.sqlState)
 
-  if (sqlState === SERIALIZATION_FAILURE_SQLSTATE) {
+  if (sqlState !== undefined && RETRYABLE_SQLSTATES.has(sqlState)) {
     return new SerializationFailure(SERIALIZATION_FAILURE_MESSAGE, { cause: error })
   }
 

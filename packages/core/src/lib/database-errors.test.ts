@@ -54,6 +54,14 @@ describe('classifyDriverError', () => {
     expect(isUniqueConstraintViolation(classified)).toBe(false)
   })
 
+  it('maps SQLSTATE 40P01 to SerializationFailure', () => {
+    const classified = classifyDriverError(
+      driverQueryError('deadlock detected', { sqlState: '40P01' }),
+    )
+
+    expect(isSerializationFailure(classified)).toBe(true)
+  })
+
   it('maps SQLSTATE 23505 to a unique violation carrying the constraint name', () => {
     const classified = classifyDriverError(
       driverQueryError('duplicate key', { sqlState: '23505', constraint: 'Author_email_key' }),

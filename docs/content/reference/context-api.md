@@ -574,12 +574,12 @@ below are importable yet.
 
 On `main`, the stack owns its error classes, all exported from `@opensaas/stack-core`. A secured write normalises the driver's failure into one of them; there are no database error codes to switch on.
 
-| Class                                                 | Carries                             |
-| ----------------------------------------------------- | ----------------------------------- |
-| `ValidationError`                                     | `errors`, `fieldErrors`             |
-| `DatabaseError`                                       | `fieldErrors`                       |
-| `SerializationFailure` (extends `DatabaseError`)      | SQLSTATE 40001, surfaced as a class |
-| `UniqueConstraintViolation` (extends `DatabaseError`) | `constraintName`, `list`, `fields`  |
+| Class                                                 | Carries                            |
+| ----------------------------------------------------- | ---------------------------------- |
+| `ValidationError`                                     | `errors`, `fieldErrors`            |
+| `DatabaseError`                                       | `fieldErrors`                      |
+| `SerializationFailure` (extends `DatabaseError`)      | SQLSTATE 40001 or 40P01 (deadlock) |
+| `UniqueConstraintViolation` (extends `DatabaseError`) | `constraintName`, `list`, `fields` |
 
 Two predicates narrow without an `instanceof` chain: `isSerializationFailure(error)` and `isUniqueConstraintViolation(error)`.
 
@@ -604,7 +604,7 @@ export async function register(context: Context, email: string) {
 }
 ```
 
-Retrying a `SerializationFailure` is **the caller's own loop** — the stack ships no retry helper, because the right number of attempts and the right backoff are properties of the operation, not of the engine.
+A `SerializationFailure` covers a serialization conflict (`40001`) and a deadlock victim (`40P01`); both roll the transaction back whole. Retrying it is **the caller's own loop** — the stack ships no retry helper, because the right number of attempts and the right backoff are properties of the operation, not of the engine.
 
 A secured write resolves the constraint name to OpenSaaS field names through the generated constraint map. A hand-made constraint the generator did not emit is not in that map, so it keeps a generic message and an empty `fields` — see [`db.indexes`](/docs/reference/config-api).
 
