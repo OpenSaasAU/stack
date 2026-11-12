@@ -25,6 +25,7 @@
     "check:prisma-error-codes": "node scripts/check-prisma-error-codes.mjs",
     "check:doc-ts-blocks": "node scripts/check-doc-typescript-blocks.mjs",
     "check:doc-import-specifiers": "node scripts/check-doc-import-specifiers.mjs",
+    "check:doc-node-version": "node scripts/check-doc-node-version.mjs",
     "check:doc-prisma-pins": "node scripts/check-doc-prisma-pins.mjs",
     "check:client-side-effect-imports": "node scripts/check-client-side-effect-imports.mjs",
     "release": "node scripts/security-audit.mjs --report-only && pnpm check:published-ranges && pnpm build && changeset publish",

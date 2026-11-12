@@ -11,7 +11,7 @@ A config-first stack for building admin-heavy applications with Next.js App Rout
 
 ## Quick Start (3 steps)
 
-You need Node.js 18+ and `pnpm` (`npm install -g pnpm`).
+You need Node.js 22.18 or newer and `pnpm` (`npm install -g pnpm`).
 
 ```bash
 # 1. Scaffold — installs deps and generates the schema
