@@ -1784,6 +1784,16 @@ describe('withholdFilterFields', () => {
     expect(out).toContain('name:Ada')
   })
 
+  it('handles negated tokens, groups and a group emptied entirely', () => {
+    const out = withholdFilterFields(
+      '-secret:x (secret:a OR name:Bob) (secret:b OR secret:c) name:Ada',
+      new Set(['secret']),
+    )
+    expect(out).not.toContain('secret')
+    expect(out).toContain('name:Bob')
+    expect(out).toContain('name:Ada')
+  })
+
   it('returns the query untouched when nothing is withheld', () => {
     expect(withholdFilterFields('name:Ada', new Set())).toBe('name:Ada')
   })
