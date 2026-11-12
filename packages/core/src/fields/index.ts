@@ -723,6 +723,10 @@ export function checkbox<
   }
 }
 
+export function isZonelessNativeType(nativeType: string | undefined): boolean {
+  return nativeType !== undefined && /^timestamp\s*(\(|$)/i.test(nativeType.trim())
+}
+
 /**
  * Timestamp (DateTime) field
  */
@@ -736,8 +740,12 @@ export function timestamp<
   return {
     type: 'timestamp',
     ...options,
-    getZodSchema: () => {
-      return z.union([z.date(), z.iso.datetime()]).optional().nullable()
+    getZodSchema() {
+      const zoneless = isZonelessNativeType(this.db?.nativeType)
+      return z
+        .union([z.date(), z.iso.datetime(zoneless ? { local: true } : undefined)])
+        .optional()
+        .nullable()
     },
     getContractField: (fieldName: string) => {
       const defaultValue = options?.defaultValue

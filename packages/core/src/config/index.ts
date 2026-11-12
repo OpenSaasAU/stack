@@ -8,6 +8,7 @@ import type {
 import { executePlugins, getPluginData } from './plugin-engine.js'
 import { assertUniqueMcpToolNames } from './mcp-tool-names.js'
 import { assertValidHookOnlyFields } from './hook-only-fields.js'
+import { isZonelessNativeType } from '../fields/index.js'
 import type { AccessControl } from '../access/types.js'
 
 function normalizeListAccess<T>(
@@ -37,12 +38,39 @@ function normalizeListAccess<T>(
  * returns a `Promise` when plugins are present, since plugin execution is
  * async.
  */
+function applyZonelessTimestampDefault(userConfig: OpenSaasConfig): OpenSaasConfig {
+  const nativeType = userConfig.db.defaults?.timestamp?.nativeType
+  if (!isZonelessNativeType(nativeType)) return userConfig
+  const lists = Object.fromEntries(
+    Object.entries(userConfig.lists).map(([key, listConfig]) => [
+      key,
+      {
+        ...listConfig,
+        fields: Object.fromEntries(
+          Object.entries(listConfig.fields).map(([name, field]) => [
+            name,
+            field.type === 'timestamp' && field.db?.nativeType === undefined
+              ? { ...field, db: { ...field.db, nativeType } }
+              : field,
+          ]),
+        ),
+      },
+    ]),
+  )
+  return { ...userConfig, lists }
+}
+
 export function config(userConfig: OpenSaasConfig): OpenSaasConfig | Promise<OpenSaasConfig> {
   if (!userConfig.plugins || userConfig.plugins.length === 0) {
-    return assertValidHookOnlyFields(assertUniqueMcpToolNames(userConfig))
+    return assertValidHookOnlyFields(
+      assertUniqueMcpToolNames(applyZonelessTimestampDefault(userConfig)),
+    )
   }
 
-  return executePlugins(userConfig).then(assertUniqueMcpToolNames).then(assertValidHookOnlyFields)
+  return executePlugins(userConfig)
+    .then(applyZonelessTimestampDefault)
+    .then(assertUniqueMcpToolNames)
+    .then(assertValidHookOnlyFields)
 }
 
 export { getPluginData }

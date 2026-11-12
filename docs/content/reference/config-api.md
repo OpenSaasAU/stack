@@ -272,7 +272,9 @@ db: {
 }
 ```
 
-`defaults.timestamp.nativeType` takes `Timestamp` or `Timestamptz`, with an optional precision, and applies to every `timestamp()` field and both auto-timestamps, `createdAt` and `updatedAt`. A field's own `db.nativeType` wins. `Timestamp` columns are timezone-naive.
+`defaults.timestamp.nativeType` takes `Timestamp` or `Timestamptz`, with an optional precision, and applies to every `timestamp()` field and both auto-timestamps, `createdAt` and `updatedAt`. A field's own `db.nativeType` wins. `Timestamp` columns are timezone-naive: a read returns the zoneless ISO string (no `Z`), and that same string is accepted on write-back.
+
+A `Timestamp` column needs a UTC database session. Otherwise `createdAt` and `updatedAt` disagree by the session's UTC offset, and `new Date(row.at)` parses the zoneless string as process-local time.
 
 Adopting a database whose `updatedAt` columns carry a `now()` default drops that default, because `updatedAt` is application-side ([ADR-0048](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0048-the-deleted-psl-constructs-become-config-defaults-not-ddl.md)). A raw `INSERT` that omits the `NOT NULL` column then fails instead of taking `now()`. On a `Timestamp` column the ORM writes `updatedAt` in UTC while `createdAt`'s `now()` default uses the session's timezone, so the two differ on a non-UTC session.
 
