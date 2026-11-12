@@ -104,7 +104,7 @@ In a deployment there is no loop, so the same committed space is applied as a
 migration instead: `opensaas db plan` once against a database you are
 willing to open a planning connection to, commit the result, then
 `prisma db migrate`. There is no `opensaas db migrate` — `opensaas db` carries
-only `update`.
+`update` and `plan`.
 
 ### The privilege it needs
 
