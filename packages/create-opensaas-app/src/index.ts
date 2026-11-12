@@ -10,7 +10,7 @@ import { validateProjectName } from './lib/project-name.js'
 import { generateAuthEnv, generateEnvFiles } from './lib/env.js'
 import { restoreGitignore } from './lib/templates.js'
 import { randomBytes } from 'node:crypto'
-import { applyProjectName, rewriteReadmeHeading } from './lib/package-json.js'
+import { applyPeerOverrides, applyProjectName, rewriteReadmeHeading } from './lib/package-json.js'
 import { removedDbFlagMessage, missingNonInteractiveFlags } from './lib/args.js'
 import { planSetupSteps, formatStepFailure, nextStepCommands, type SetupStep } from './lib/setup.js'
 import { renderPnpmWorkspace } from './lib/pnpm-workspace.js'
@@ -154,9 +154,14 @@ async function createProject(options: TemplateOptions) {
 
     const pkgPath = path.join(targetDir, 'package.json')
     const pkg = await fs.readJSON(pkgPath)
-    await fs.writeJSON(pkgPath, applyProjectName(pkg, projectName), { spaces: 2 })
+    await fs.writeJSON(pkgPath, applyPeerOverrides(applyProjectName(pkg, projectName)), {
+      spaces: 2,
+    })
 
-    await fs.writeFile(path.join(targetDir, 'pnpm-workspace.yaml'), renderPnpmWorkspace())
+    await fs.writeFile(
+      path.join(targetDir, 'pnpm-workspace.yaml'),
+      renderPnpmWorkspace({ withAuth }),
+    )
 
     const readmePath = path.join(targetDir, 'README.md')
     if (await fs.pathExists(readmePath)) {
