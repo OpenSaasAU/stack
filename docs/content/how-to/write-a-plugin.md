@@ -173,6 +173,24 @@ runtime: (context, sudo) => ({
 The return value lands on `context.plugins.<pluginName>`, so an app calls
 `context.plugins.audit.getAuditTrail(…)`.
 
+**A service is not transactional.** It closes over the context the runtime was
+built with, so a write it makes does not join the transaction of a hook that
+calls it: the write persists when the hook's write rolls back, and a write to
+the row being written waits on that row's lock and hangs. A method a hook calls
+takes the hook's own `context` and writes through that, because a hook's
+`context.db` is bound to the write's transaction:
+
+```typescript
+runtime: () => ({
+  recordNote: (context: AccessContext, note: string) => context.db.Audit.create({ data: { note } }),
+})
+
+// in a hook
+beforeOperation: async ({ context }) => {
+  await context.plugins.audit.recordNote(context, 'saving')
+}
+```
+
 ## Real-World Example: Audit Plugin
 
 A complete audit logging plugin.
