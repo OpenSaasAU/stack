@@ -181,15 +181,23 @@ takes the hook's own `context` and writes through that, because a hook's
 `context.db` is bound to the write's transaction:
 
 ```typescript
-runtime: () => ({
-  recordNote: (context: AccessContext, note: string) => context.db.Audit.create({ data: { note } }),
-})
+import type { AccessContext, Plugin } from '@opensaas/stack-core/extend'
 
-// in a hook
-beforeOperation: async ({ context }) => {
-  await context.plugins.audit.recordNote(context, 'saving')
+const auditPlugin: Plugin = {
+  name: 'audit',
+  init: async () => {},
+  runtime: () => ({
+    recordNote: (context: AccessContext, note: string) =>
+      context.db.Audit.create({ data: { note } }),
+  }),
 }
 ```
+
+`context.plugins` is a `Record<string, unknown>`; the generated
+`.opensaas/plugin-types.ts` types it for the app when the plugin declares
+`runtimeServiceTypes`. A hook then calls
+`context.plugins.audit.recordNote(context, 'saving')`, passing the context it
+was handed.
 
 ## Real-World Example: Audit Plugin
 

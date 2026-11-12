@@ -8,24 +8,42 @@ import type { StackContext } from '../types/context.js'
 import { getContext } from './index.js'
 
 const BOOT = 120_000
+const HANG_CUTOFF = 15_000
 const OPEN = { query: () => true, create: () => true, update: () => true, delete: () => true }
 
 interface AuditService {
   note: (context: AccessContext, note: string) => Promise<unknown>
   touch: (context: AccessContext, id: string) => Promise<unknown>
+  leak: (note: string) => Promise<unknown>
+}
+
+function isAuditService(value: unknown): value is AuditService {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'note' in value &&
+    typeof value.note === 'function' &&
+    'touch' in value &&
+    typeof value.touch === 'function' &&
+    'leak' in value &&
+    typeof value.leak === 'function'
+  )
 }
 
 const auditPlugin: Plugin = {
   name: 'svc',
   init: async () => {},
-  runtime: (): AuditService => ({
+  runtime: (base): AuditService => ({
+    leak: (note) => base.db.Audit.create({ data: { note } }),
     note: (context, note) => context.db.Audit.create({ data: { note } }),
     touch: (context, id) => context.db.Doc.update({ where: { id }, data: { title: 'touched' } }),
   }),
 }
 
 function serviceOf(context: AccessContext): AuditService {
-  return context.plugins.svc as AuditService
+  const service = context.plugins.svc
+  if (!isAuditService(service)) throw new Error('svc plugin service is missing')
+  return service
 }
 
 async function build(
@@ -92,8 +110,10 @@ describe('plugin services called from a hook', () => {
       const seeded = await harness.context.db.Doc.create({ data: { title: 'a' } })
       if (seeded === null) throw new Error('seed denied')
 
+      let afterHookRuns = 0
       const cfg = await build({
         afterOperation: async (args) => {
+          afterHookRuns += 1
           if (args.operation === 'update' && args.item.title === 'b') {
             await serviceOf(args.context).touch(args.context, args.item.id)
           }
@@ -107,7 +127,29 @@ describe('plugin services called from a hook', () => {
 
       const [row] = await harness.context.db.Doc.all()
       expect(row.title).toBe('touched')
+      expect(afterHookRuns).toBe(2)
     },
-    BOOT,
+    HANG_CUTOFF,
+  )
+
+  test(
+    'a service writing through its own closed-over context does not join the hook transaction',
+    async () => {
+      const cfg = await build({
+        beforeOperation: async (args) => {
+          if (args.operation === 'create') await serviceOf(args.context).leak('x')
+        },
+        afterOperation: async () => {
+          throw new Error('boom')
+        },
+      })
+
+      await expect(
+        contextAt(cfg, { userId: 'u1' }).db.Doc.create({ data: { title: 'a' } }),
+      ).rejects.not.toThrow('boom')
+
+      expect(await harness.context.db.Doc.all()).toEqual([])
+    },
+    HANG_CUTOFF,
   )
 })
