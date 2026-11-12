@@ -31,13 +31,6 @@ function normalizeListAccess<T>(
   return access
 }
 
-/**
- * Define an OpenSaas config, executing `plugins` if present.
- *
- * Returns synchronously when there are no plugins (backward compatible);
- * returns a `Promise` when plugins are present, since plugin execution is
- * async.
- */
 function applyZonelessTimestampDefault(userConfig: OpenSaasConfig): OpenSaasConfig {
   const nativeType = userConfig.db.defaults?.timestamp?.nativeType
   if (!isZonelessNativeType(nativeType)) return userConfig
@@ -60,6 +53,13 @@ function applyZonelessTimestampDefault(userConfig: OpenSaasConfig): OpenSaasConf
   return { ...userConfig, lists }
 }
 
+/**
+ * Define an OpenSaas config, executing `plugins` if present.
+ *
+ * Returns synchronously when there are no plugins (backward compatible);
+ * returns a `Promise` when plugins are present, since plugin execution is
+ * async.
+ */
 export function config(userConfig: OpenSaasConfig): OpenSaasConfig | Promise<OpenSaasConfig> {
   if (!userConfig.plugins || userConfig.plugins.length === 0) {
     return assertValidHookOnlyFields(
