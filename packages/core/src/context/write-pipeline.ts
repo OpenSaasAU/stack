@@ -504,7 +504,7 @@ async function runWriteInTransaction(
 
   // The same payload-shape refusal, over what the hooks produced: a
   // `resolveInput` that assembles a relation payload writes it into
-  // `resolvedData`, which the pre-transaction check could not see.
+  // the resolved data, which the pre-transaction check could not see.
   refuseNestedRelationInput(listName, listConfig, config, splitData)
 
   // ── Phase 5: filter writable fields (field-level access, skip if sudo) ──────

@@ -29,7 +29,9 @@ export interface HookPipelineArgs {
 }
 
 export interface HookPipelineResult {
+  /** The logical payload every hook sees; multi-column fields keep their logical key. */
   resolvedData: Record<string, unknown>
+  /** `resolvedData` with each multi-column field replaced by its physical columns; what is persisted. */
   splitData: Record<string, unknown>
   /**
    * Every field key `applyCreateDefaults` filled on this run (empty for

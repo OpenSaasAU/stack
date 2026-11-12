@@ -327,6 +327,28 @@ const storedConfig: OpenSaasConfig = {
       fields: { avatar: storedMultiColumn(undefined, true) },
       access: { operation: OPEN },
     },
+    Hooked: {
+      fields: {
+        avatar: {
+          ...storedMultiColumn(),
+          hooks: {
+            beforeOperation: async (args) => {
+              if ('resolvedData' in args) {
+                hookedEvents.push({ phase: 'field.before', keys: Object.keys(args.resolvedData) })
+              }
+            },
+          },
+        },
+      },
+      hooks: {
+        beforeOperation: async (args) => {
+          if ('resolvedData' in args) {
+            hookedEvents.push({ phase: 'list.before', keys: Object.keys(args.resolvedData) })
+          }
+        },
+      },
+      access: { operation: OPEN },
+    },
     // A list shaped like one a plugin writes into: a column denied to
     // application code, beside a field the list's own resolveInput derives
     // from other input, unguarded — the pattern the root CLAUDE.md documents.
@@ -368,6 +390,8 @@ const storedConfig: OpenSaasConfig = {
     },
   },
 }
+
+const hookedEvents: { phase: string; keys: string[] }[] = []
 
 /** One entry per list-level `afterOperation` the `Owned` list fires. */
 const ownedAfterOperations: string[] = []
@@ -1146,4 +1170,48 @@ describe('multi-column write split respects field-level write access', () => {
     )
     expect(result).toEqual({ m_url: 'https://x/y.jpg', m_size: 99 })
   })
+})
+
+describe('multi-column field-level beforeOperation (#2161)', () => {
+  const BOOT = 120_000
+  let database: TestDatabase
+
+  beforeAll(async () => {
+    database = await createTestDatabase(storedConfig)
+  }, BOOT)
+
+  afterAll(async () => {
+    await database?.close()
+  })
+
+  beforeEach(async () => {
+    await database.truncate()
+    hookedEvents.length = 0
+  })
+
+  it(
+    'fires once on create and update when the logical key is supplied, with the logical resolvedData',
+    async () => {
+      const db = database.context(null).db
+      const row = await db.Hooked.create({ data: { avatar: media } })
+      expect(hookedEvents).toEqual([
+        { phase: 'field.before', keys: ['avatar'] },
+        { phase: 'list.before', keys: ['avatar'] },
+      ])
+
+      hookedEvents.length = 0
+      await db.Hooked.update({ where: { id: row?.id ?? '' }, data: { avatar: media } })
+      expect(hookedEvents.map((e) => e.phase)).toEqual(['field.before', 'list.before'])
+    },
+    BOOT,
+  )
+
+  it(
+    'does not fire when the logical key is not supplied',
+    async () => {
+      await database.context(null).db.Hooked.create({ data: {} })
+      expect(hookedEvents.map((e) => e.phase)).toEqual(['list.before'])
+    },
+    BOOT,
+  )
 })
