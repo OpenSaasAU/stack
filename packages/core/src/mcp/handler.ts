@@ -21,7 +21,8 @@ import { listIdJsonSchema, parseListId } from '../contract/id-boundary.js'
 import { RELATION_QUANTIFIERS, SCALAR_OPERATORS } from '../secured/operators.js'
 import type { SecuredQuery } from '../secured/read.js'
 import { orderByArgument, whereArgument } from './arguments.js'
-import { assertWhereReachable, queryReachableLists } from './where-reachability.js'
+import { assertOrderByReachable, assertWhereReachable } from './where-reachability.js'
+import { mcpListReachable, readableLists } from './reachability.js'
 import { coerceWhereIds, foreignKeyVisibility, idBoundaryRefusal } from './where-id-boundary.js'
 import {
   McpProjectionRefusedError,
@@ -341,25 +342,6 @@ function enabledToolsFor(config: OpenSaasConfig, listConfig: ListConfig<any>) {
   }
 }
 
-async function listReachableOverMcp(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- List config generics vary per list
-  listConfig: ListConfig<any>,
-  context: AccessContext,
-): Promise<boolean> {
-  if (listConfig.mcp?.enabled === false) return false
-  return decideAdvertisement(
-    'list query access',
-    async () => {
-      const accessResult = await checkAccess(listConfig.access?.operation?.query, {
-        session: context.session,
-        context,
-      })
-      return accessResult !== false
-    },
-    false,
-  )
-}
-
 async function handleToolsList(
   config: OpenSaasConfig,
   context: AccessContext,
@@ -372,7 +354,7 @@ async function handleToolsList(
     // The tool name stays camelCase: it is the identifier an assistant has
     // already bound to, and renaming it would break every registered client.
     const toolKey = pascalToCamel(listKey)
-    if (!(await listReachableOverMcp(listConfig, context))) continue
+    if (!(await mcpListReachable(config, listKey, context, { requireReadTool: false }))) continue
 
     const enabledTools = enabledToolsFor(config, listConfig)
     const permitted = (operation: CrudOperation): boolean =>
@@ -712,7 +694,7 @@ async function handleCrudTool(
   try {
     if (
       !enabledToolsFor(config, listConfig)[operation as 'query' | 'create' | 'update' | 'delete'] ||
-      !(await listReachableOverMcp(listConfig, context))
+      !(await mcpListReachable(config, listKey, context, { requireReadTool: false }))
     ) {
       return createErrorResponse(`Unknown tool: list_${toolKey}_${operation}`, id)
     }
@@ -748,12 +730,7 @@ async function handleCrudTool(
         let projection: ResolvedFieldsProjection | undefined
         try {
           if (isPlainObject(args.where)) {
-            assertWhereReachable(
-              args.where,
-              config,
-              listKey,
-              await queryReachableLists(config, context),
-            )
+            assertWhereReachable(args.where, config, listKey, await readableLists(config, context))
             const coercedWhere = coerceWhereIds(
               args.where,
               config,
@@ -768,6 +745,12 @@ async function handleCrudTool(
             query = query.where(whereArgument(args.where, listKey))
           }
           if (args.orderBy !== undefined) {
+            assertOrderByReachable(
+              args.orderBy,
+              config,
+              listKey,
+              await readableLists(config, context),
+            )
             query = query.orderBy(orderByArgument(args.orderBy, listKey))
           }
           if (args.fields !== undefined) {
@@ -906,9 +889,12 @@ async function handleCustomTool(
   let customTool: McpCustomTool | undefined
   let owningList: ListConfig<any> | undefined // eslint-disable-line @typescript-eslint/no-explicit-any -- List config generics vary per list
   try {
-    for (const listConfig of Object.values(config.lists)) {
+    for (const [ownerKey, listConfig] of Object.entries(config.lists)) {
       const found = listConfig.mcp?.customTools?.find((t) => t.name === toolName)
-      if (found && (await listReachableOverMcp(listConfig, context))) {
+      if (
+        found &&
+        (await mcpListReachable(config, ownerKey, context, { requireReadTool: false }))
+      ) {
         customTool = found
         owningList = listConfig
         break

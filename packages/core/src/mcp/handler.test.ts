@@ -3182,4 +3182,68 @@ describe('the MCP surface', () => {
       BOOT,
     )
   })
+
+  describe('a relation into a list MCP does not expose', () => {
+    const refusal = async (name: string, args: Record<string, unknown>) => {
+      const { body } = await callTool(name, args)
+      const result = body?.result as { isError?: boolean; content: { text: string }[] }
+      expect(result.isError).toBe(true)
+      return result.content[0].text
+    }
+
+    test(
+      'is absent from the fields schema and the write schemas',
+      async () => {
+        const tools = await listTools()
+        const query = tools.find((t) => t.name === 'list_post_query')
+        const fields = (query?.inputSchema.properties as Record<string, { properties: object }>)
+          .fields.properties as Record<string, unknown>
+        expect(fields.unreadRef).toBeUndefined()
+        expect(fields.draftRef).toBeUndefined()
+
+        for (const op of ['create', 'update']) {
+          const tool = tools.find((t) => t.name === `list_post_${op}`)
+          const data = (tool?.inputSchema.properties as Record<string, { properties: object }>).data
+            .properties as Record<string, unknown>
+          expect(data.draftRef).toBeUndefined()
+          expect(data.unreadRef).toBeUndefined()
+        }
+      },
+      BOOT,
+    )
+
+    test(
+      'a fields selection through a read-off list is refused as an unknown field',
+      async () => {
+        const text = await refusal('list_post_query', {
+          fields: { unreadRef: { fields: { code: true } } },
+        })
+        expect(text).toContain('unreadRef')
+      },
+      BOOT,
+    )
+
+    test(
+      'connect into an mcp.enabled false list is refused as an unknown field',
+      async () => {
+        const text = await refusal('list_post_create', {
+          data: { title: 't', draftRef: { connect: { id: 'x' } } },
+        })
+        expect(text).toContain('has no field "draftRef"')
+      },
+      BOOT,
+    )
+
+    test.each([
+      ['where', { where: { draftRefId: { equals: 'x' } } }],
+      ['orderBy', { orderBy: { draftRefId: 'asc' } }],
+    ])(
+      'its foreign-key column is refused in %s',
+      async (_label, args) => {
+        const text = await refusal('list_post_query', args)
+        expect(text).toContain('"draftRefId" is not a queryable field of this list')
+      },
+      BOOT,
+    )
+  })
 })
