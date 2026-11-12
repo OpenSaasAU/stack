@@ -633,38 +633,86 @@ export async function devCommand(options: DevCommandOptions = {}): Promise<void>
     // Read before generating, so an edit landing during startup leaves bytes
     // the watcher will not recognise as already reconciled.
     reconciledSource = fs.readFileSync(configPath, 'utf-8')
-    let bootGeneration: GenerationResult
-    try {
-      bootGeneration = await generateCommand({ showNextSteps: false, ownedByLoop: true })
-    } catch (error) {
-      if (!(error instanceof GenerationFailedError)) throw error
-      process.exitCode = 1
-      return
+
+    let parkedAtBoot = false
+    if (!process.stdin.isTTY) {
+      const say = (message: string): void => console.log(chalk.gray(message))
+      const refs = snapshotMigrationRefs(cwd)
+      const bootModules = snapshotModules(watchedModules)
+      const staged = await stage(say)
+      if (staged !== undefined) {
+        const planned = await planDatabaseUpdate(cwd, staged.prismaConfig, { dryRun: true })
+        restoreMigrationRefs(cwd, refs)
+        if (planned.ok && planned.plan.destructive) {
+          const id = planId(planned.plan)
+          console.log(chalk.yellow('\nThis change would destroy data, so it was not applied:\n'))
+          for (const line of describePlan(planned.plan)) console.log(chalk.yellow(line))
+          console.log(chalk.yellow(`\nPlan id: ${id}`))
+          const hasPromotedBundle =
+            fs.existsSync(staged.livePaths.contractJson) &&
+            fs.existsSync(path.join(staged.livePaths.opensaasDir, 'context.ts'))
+          if (!hasPromotedBundle) {
+            fs.rmSync(stagingDir, { recursive: true, force: true })
+            console.error(
+              chalk.red(
+                '\nThere is no previously generated bundle to serve, so the app was not started. ' +
+                  'Revert the config change, or delete `.opensaas/dev-db` to start from an empty database.\n',
+              ),
+            )
+            process.exitCode = 1
+            return
+          }
+          parkedAtBoot = true
+          parkedPlanId = id
+          watchedModules = staged.resolvedModules
+          reconciledModules = modulesGeneratedFrom(staged, bootModules)
+          fs.rmSync(stagingDir, { recursive: true, force: true })
+          console.log(
+            chalk.yellow(
+              `\nThe app starts on the previous schema. ${parkedRoute(id)}` +
+                '`--yes` does not consent to data loss.\n',
+            ),
+          )
+        } else {
+          fs.rmSync(stagingDir, { recursive: true, force: true })
+        }
+      }
     }
 
-    // Read as soon as generation names them, same reasoning as reconciledSource
-    // above: `reconcile()` below is interactive and can sit at a destructive
-    // plan's consent prompt indefinitely, and an edit to a watched module made
-    // while it waits must not be mistaken for one already reconciled.
-    watchedModules = bootGeneration.resolvedModules
-    reconciledModules = snapshotModules(watchedModules)
+    if (!parkedAtBoot) {
+      let bootGeneration: GenerationResult
+      try {
+        bootGeneration = await generateCommand({ showNextSteps: false, ownedByLoop: true })
+      } catch (error) {
+        if (!(error instanceof GenerationFailedError)) throw error
+        process.exitCode = 1
+        return
+      }
 
-    if (
-      database === undefined &&
-      !sessionConsent &&
-      !(await consentToStartupPlan(cwd, bootGeneration))
-    ) {
-      process.exitCode = 1
-      return
-    }
-    if (interrupted) {
-      process.exitCode = 1
-      return
-    }
+      // Read as soon as generation names them, same reasoning as reconciledSource
+      // above: `reconcile()` below is interactive and can sit at a destructive
+      // plan's consent prompt indefinitely, and an edit to a watched module made
+      // while it waits must not be mistaken for one already reconciled.
+      watchedModules = bootGeneration.resolvedModules
+      reconciledModules = snapshotModules(watchedModules)
 
-    if (!(await reconcile(cwd)) || interrupted) {
-      process.exitCode = 1
-      return
+      if (
+        database === undefined &&
+        !sessionConsent &&
+        !(await consentToStartupPlan(cwd, bootGeneration))
+      ) {
+        process.exitCode = 1
+        return
+      }
+      if (interrupted) {
+        process.exitCode = 1
+        return
+      }
+
+      if (!(await reconcile(cwd)) || interrupted) {
+        process.exitCode = 1
+        return
+      }
     }
 
     // Armed only now: `queue` serialises reconciles against each other, not

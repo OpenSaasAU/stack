@@ -165,13 +165,27 @@ describe('opensaas dev', () => {
     expect(run.exitCode, run.output).toBe(0)
   }, 300_000)
 
-  test('a destructive plan on boot stops at the consent point and never starts the app', async () => {
-    const projectDir = createProject('destructive-boot', MARKER_PROBE)
+  test('a destructive plan at a non-interactive boot parks, serves the previous bundle, and the named remedy applies it', async () => {
+    const remedyProbe = `import { spawnSync } from 'node:child_process'
+import { existsSync, writeFileSync } from 'node:fs'
+
+if (existsSync('remedy-attempted')) {
+  console.log('SECOND_RUN')
+  process.exit(0)
+}
+console.log('APP_STARTED')
+const cli = ${JSON.stringify(cliEntry)}
+const bare = spawnSync(process.execPath, [cli, 'db', 'update'], { encoding: 'utf-8' })
+const id = /--plan ([0-9a-f]+)/.exec(bare.stdout + bare.stderr)?.[1]
+console.log('PLAN_ID', id)
+writeFileSync('remedy-attempted', 'yes')
+if (id !== undefined) spawnSync(process.execPath, [cli, 'db', 'update', '--plan', id], { stdio: 'inherit' })
+`
+    const projectDir = createProject('destructive-boot', remedyProbe)
 
     const first = await runDevLoop(projectDir)
-    expect(first.output, first.output).toContain('APP_STARTED')
     expect(first.exitCode, first.output).toBe(0)
-    fs.rmSync(path.join(projectDir, 'app-started'))
+    fs.rmSync(path.join(projectDir, 'remedy-attempted'), { force: true })
 
     const configPath = path.join(projectDir, 'opensaas.config.ts')
     fs.writeFileSync(
@@ -182,15 +196,41 @@ describe('opensaas dev', () => {
       'utf-8',
     )
 
+    const second = await runDevLoop(projectDir, {}, ['--yes'])
+
+    expect(second.output, second.output).toContain('Drop column')
+    expect(second.output, second.output).toContain('pnpm db:update --plan')
+    expect(second.output, second.output).not.toContain('opensaas dev --yes` (or')
+    expect(second.output, second.output).toContain('APP_STARTED')
+    expect(second.output, second.output).toContain('SECOND_RUN')
+    expect(second.exitCode, second.output).toBe(0)
+    expect(fs.readFileSync(path.join(projectDir, 'prisma', 'contract.json'), 'utf-8')).toContain(
+      '"body"',
+    )
+  }, 300_000)
+
+  test('a destructive plan at a non-interactive first boot has no bundle to serve and exits non-zero', async () => {
+    const projectDir = createProject('destructive-first-boot', MARKER_PROBE)
+    const dataDir = path.join(projectDir, '.opensaas')
+    const first = await runDevLoop(projectDir)
+    expect(first.exitCode, first.output).toBe(0)
+
+    const configPath = path.join(projectDir, 'opensaas.config.ts')
+    fs.writeFileSync(
+      configPath,
+      fs
+        .readFileSync(configPath, 'utf-8')
+        .replace('title: text({ validation: { isRequired: true } }),', 'body: text(),'),
+      'utf-8',
+    )
+    fs.rmSync(path.join(dataDir, 'context.ts'), { force: true })
+    fs.rmSync(path.join(projectDir, 'app-started'), { force: true })
+
     const second = await runDevLoop(projectDir)
 
-    // Prisma's consent gate, reached with the loop's stdio: interactive it is
-    // the prompt, and with no terminal to ask it is this refusal. Either way
-    // the loop goes no further.
-    expect(second.output, second.output).toContain('Drop column')
-    expect(second.output, second.output).toContain('CONSENT_REQUIRED')
+    expect(second.output, second.output).toContain('no previously generated bundle')
+    expect(second.output, second.output).toContain('.opensaas/dev-db')
     expect(second.output, second.output).not.toContain('APP_STARTED')
-    expect(fs.existsSync(path.join(projectDir, 'app-started'))).toBe(false)
     expect(second.exitCode, second.output).not.toBe(0)
   }, 300_000)
 
