@@ -3,7 +3,7 @@ import type { AccessContext, Session } from '../access/types.js'
 import { classifyRowIndependentWrite } from '../access/field-access.js'
 import { decideAdvertisement } from './advertise.js'
 import { mcpListReachable } from './reachability.js'
-import { isRelationshipField, shouldHaveForeignKey } from '../fields/index.js'
+import { isRelationshipField, isZonelessNativeType, shouldHaveForeignKey } from '../fields/index.js'
 import { listIdJsonSchema } from '../contract/id-boundary.js'
 
 /** JSON Schema for one field's own value, as the `create`/`update` `data` schema advertises it. */
@@ -36,7 +36,13 @@ export function fieldToJsonSchema(
       break
     case 'timestamp':
       baseSchema.type = 'string'
-      baseSchema.format = 'date-time'
+      if (
+        !isZonelessNativeType(
+          fieldConfig.db?.nativeType ?? config.db.defaults?.timestamp?.nativeType,
+        )
+      ) {
+        baseSchema.format = 'date-time'
+      }
       break
     case 'select':
       baseSchema.type = 'string'

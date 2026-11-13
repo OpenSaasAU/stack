@@ -18,6 +18,10 @@ _Avoid_: column access, property access
 A field-level rule the session alone can decide — one that never reaches into the row (`item`) or, for a write, the payload (`inputData`). Told apart from a row-dependent rule by evaluating it once with those arguments poisoned, so the rule itself is interpreted in exactly one place and each consumer only chooses what to do with the answer: a predicate names it and is refused, an include leaves the relation out, a published vocabulary omits the field (ADR-0031, ADR-0044, ADR-0053). A rule that touches the row is never decided ahead of it.
 _Avoid_: static rule, session-only rule, constant rule
 
+**Session vocabulary**:
+What a session may be told about a list ahead of any request: for each field, whether it can be read and written, and for the list, which operations are open to it at all. Each answer is one of allow, deny or row-dependent, resolved from Row-independent rules, and each consumer chooses what to do with it — the admin withholds a denied field from the client, MCP omits it from what it advertises. It is disclosure only: Field Visibility and the Access Filter still decide every read and write, so a vocabulary that is wrong can mislead a caller but never widen what it gets.
+_Avoid_: permissions, capabilities, field mask, published schema
+
 **Predicate-time read check**:
 A field-level `read` rule evaluated BEFORE the query runs, against a key named in a caller's `where`/`orderBy`, rather than against an already-fetched row — the check that stops a field's withheld value or relative order from being recovered by probing a query that returns no rows containing it (e.g. `count()`). There is no row yet at this point, so a rule that depends on one (dereferences `item`) cannot be answered and resolves to a denial rather than being skipped (ADR-0031).
 _Avoid_: filter access check, where validation
