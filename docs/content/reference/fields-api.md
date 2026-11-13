@@ -522,7 +522,7 @@ Postgres `numeric` carrying the declared precision and scale.
 **Generated contract module:**
 
 ```typescript
-price: field.column(numericColumn(10, 2))
+price: field.column(numericStringColumn(10, 2))
 ```
 
 #### TypeScript Type

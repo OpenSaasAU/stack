@@ -6,7 +6,7 @@ import {
   float4Column,
   int2Column,
   jsonColumn,
-  numericColumn,
+  numericStringColumn,
   timeStringColumn,
   timestampStringColumn,
   timestamptzStringColumn,
@@ -146,7 +146,7 @@ function pgColumn(
       const precision = firstNumber(type.args, 0)
       return precision === undefined
         ? field.column(t.Decimal())
-        : field.column(numericColumn(precision, firstNumber(type.args, 1)))
+        : field.column(numericStringColumn(precision, firstNumber(type.args, 1)))
     }
     case 'float':
       return field.column(t.Float())

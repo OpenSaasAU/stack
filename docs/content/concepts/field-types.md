@@ -154,7 +154,7 @@ fields: {
 A Postgres `numeric` column carrying the declared precision and scale. In the generated contract module that is:
 
 ```typescript
-price: field.column(numericColumn(10, 2))
+price: field.column(numericStringColumn(10, 2))
 ```
 
 **TypeScript type:**

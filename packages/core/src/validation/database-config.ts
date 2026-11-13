@@ -91,7 +91,7 @@ const RESERVED_IMPORT_NAMES = [
   'float4Column',
   'int2Column',
   'jsonColumn',
-  'numericColumn',
+  'numericStringColumn',
   'timeStringColumn',
   'timestampStringColumn',
   'timestamptzStringColumn',
