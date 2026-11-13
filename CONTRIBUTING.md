@@ -9,7 +9,7 @@ Thanks for working on OpenSaas Stack itself. This guide covers the **monorepo** 
 
 ## Prerequisites
 
-- Node.js 18+
+- Node.js 22.18 or newer
 - pnpm (`npm install -g pnpm`)
 
 ## Setup

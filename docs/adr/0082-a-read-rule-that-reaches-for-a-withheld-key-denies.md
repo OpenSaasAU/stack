@@ -63,7 +63,7 @@ A related row is different. A relation delivered whole carries no relations of i
 ## Known limits
 
 - A class instance other than `Date` — a `Decimal`, a `Buffer` — is handed over as it stands, so a mutable one can be written through.
-- `structuredClone(item)` throws, as it does for any `Proxy`, and that propagates.
+- `structuredClone` of `item` or of a value nested in it throws `DataCloneError`, as it does for any `Proxy`, and that denies the rule rather than failing the read or write.
 - `util.inspect` and `console.log` read the target without touching a trap, so nothing is recorded. A rule that decides on their output escapes the guard: `!util.inspect(item).includes('public: false')` grants on a bare read, because the target carries no rows to find.
 - A rule that keeps `item` and reads it after settling is not observed.
 - A to-many narrowed by the related list's Access Filter is delivered as what the session can see, and cannot be told from the whole relation. That is the to-many form of the scoped to-one above, and it stays session-relative (ADR-0051).

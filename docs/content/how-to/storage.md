@@ -5,7 +5,7 @@ This guide walks you through setting up file and image uploads in your Stack app
 ## Prerequisites
 
 - An Stack project (see [Quick Start](/docs/tutorials/quick-start))
-- Node.js 18+ installed
+- Node.js 22.18 or newer installed
 - Basic understanding of Next.js App Router
 
 ## Installation
@@ -50,8 +50,6 @@ export async function register() {
 ```
 
 Import this file's side effects in your upload route if you prefer a local import, or rely on `instrumentation.ts` to ensure it always runs first. The examples below use `instrumentation.ts`.
-
-> **Next.js version note:** `instrumentation.ts` is supported natively in Next.js 15+. For Next.js 13/14, add `experimental: { instrumentationHook: true }` to your `next.config.ts`.
 
 > **Local storage:** `'local'` is built in and needs no registration step. Skip ahead to the [Local Storage Setup](#local-storage-setup) section.
 
@@ -280,7 +278,7 @@ export async function register() {
 }
 ```
 
-If you don't have an `instrumentation.ts` yet, create it at your project root and ensure `experimental.instrumentationHook` is enabled in `next.config.ts` (Next.js 13/14) or simply rely on Next.js 15+'s built-in support.
+If you don't have an `instrumentation.ts` yet, create it at your project root.
 
 ### 7. Add Upload Route
 

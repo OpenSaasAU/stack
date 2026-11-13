@@ -1,8 +1,9 @@
 'use server'
 
-import { headers } from 'next/headers'
+import { cookies, headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
+import { postAuthEndpoint, signOutAndConfirm } from '@opensaas/stack-auth/server'
 import type {
   AuthActionResult,
   SignInInput,
@@ -22,42 +23,35 @@ function errorMessage(err: unknown, fallback: string): string {
   return err instanceof Error && err.message ? err.message : fallback
 }
 
+async function postToAuth(path: string, body: Record<string, unknown>): Promise<AuthActionResult> {
+  const cookieStore = await cookies()
+  return postAuthEndpoint(auth, {
+    path,
+    body,
+    headers: await headers(),
+    setCookie: (name, value, options) => cookieStore.set(name, value, options),
+  })
+}
+
 export async function signInAction(input: SignInInput): Promise<AuthActionResult> {
-  try {
-    await auth.api.signInEmail({
-      body: { email: input.email, password: input.password },
-      headers: await headers(),
-    })
-    return { success: true }
-  } catch (err) {
-    return { success: false, error: errorMessage(err, 'Sign in failed') }
-  }
+  return postToAuth('/sign-in/email', { email: input.email, password: input.password })
 }
 
 export async function signUpAction(input: SignUpInput): Promise<AuthActionResult> {
-  try {
-    await auth.api.signUpEmail({
-      body: { name: input.name, email: input.email, password: input.password },
-      headers: await headers(),
-    })
-    return { success: true }
-  } catch (err) {
-    return { success: false, error: errorMessage(err, 'Sign up failed') }
-  }
+  return postToAuth('/sign-up/email', {
+    name: input.name,
+    email: input.email,
+    password: input.password,
+  })
 }
 
 export async function requestPasswordResetAction(
   input: RequestPasswordResetInput,
 ): Promise<AuthActionResult> {
-  try {
-    await auth.api.requestPasswordReset({
-      body: { email: input.email, redirectTo: '/reset-password' },
-      headers: await headers(),
-    })
-    return { success: true }
-  } catch (err) {
-    return { success: false, error: errorMessage(err, 'Failed to send reset email') }
-  }
+  return postToAuth('/request-password-reset', {
+    email: input.email,
+    redirectTo: '/reset-password',
+  })
 }
 
 export async function resetPasswordAction(input: ResetPasswordInput): Promise<AuthActionResult> {
@@ -73,6 +67,6 @@ export async function resetPasswordAction(input: ResetPasswordInput): Promise<Au
 }
 
 export async function signOutAction(): Promise<void> {
-  await auth.api.signOut({ headers: await headers() })
-  redirect('/sign-in')
+  const logoutUrl = await signOutAndConfirm(auth, await headers())
+  redirect(logoutUrl ?? '/sign-in')
 }

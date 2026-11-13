@@ -421,10 +421,6 @@ export function ListViewClient({
   // they are not rendered.
   const canRunBulkActions = hasCustomBulkActions && !!serverAction
 
-  // The "N of M deleted" report must outlive the table refresh: `router.refresh()`
-  // remounts this client component (the async ListView re-suspends), so the
-  // report is persisted (sessionStorage) rather than held in React state that
-  // the remount would discard.
   const { status: bulkStatus, setStatus: setBulkStatus, clearStatus } = useBulkStatus(listKey)
 
   const pageIds = items.map((item) => String(item.id))
@@ -584,7 +580,7 @@ export function ListViewClient({
     const { deleted, total } = parseBulkDeleteResult(result, ids.length)
 
     // Set before navigating so it isn't lost on the remount navigation triggers.
-    setBulkStatus(`${deleted} of ${total} deleted`)
+    setBulkStatus(`${deleted} of ${total} deleted`, { handoff: true })
     selection.clear()
 
     refreshFromFirstPage()
@@ -599,7 +595,10 @@ export function ListViewClient({
     const label = bulkActions.find((a) => a.key === key)?.label ?? 'Action'
 
     const result = await serverAction({ listKey, action: 'bulkAction', key, ids })
-    setBulkStatus(parseActionResult(result, 'bulkAction', label, { fallback: `${label} complete` }))
+    setBulkStatus(
+      parseActionResult(result, 'bulkAction', label, { fallback: `${label} complete` }),
+      { handoff: true },
+    )
     selection.clear()
 
     refreshFromFirstPage()
@@ -623,12 +622,14 @@ export function ListViewClient({
     try {
       result = await serverAction({ listKey, action: 'bulkDelete', ids: [id] })
     } catch {
-      setBulkStatus(`Delete “${name}”: ${OUTCOME_UNKNOWN}`)
+      setBulkStatus(`Delete “${name}”: ${OUTCOME_UNKNOWN}`, { handoff: true })
       router.refresh()
       return
     }
     const { deleted } = parseBulkDeleteResult(result, 1)
-    setBulkStatus(deleted === 1 ? `“${name}” deleted` : `“${name}” not deleted`)
+    setBulkStatus(deleted === 1 ? `“${name}” deleted` : `“${name}” not deleted`, {
+      handoff: true,
+    })
     if (deleted === 1 && selection.isSelected(id)) selection.toggle(id)
     if (deleted === 1 && items.length === 1 && page > 1) refreshFromFirstPage()
     else router.refresh()
@@ -644,9 +645,10 @@ export function ListViewClient({
           fallback: `${label}: this action was not run`,
           errorPrefix: `${label}: `,
         }),
+        { handoff: true },
       )
     } catch {
-      setBulkStatus(`${label}: ${OUTCOME_UNKNOWN}`)
+      setBulkStatus(`${label}: ${OUTCOME_UNKNOWN}`, { handoff: true })
     } finally {
       router.refresh()
     }

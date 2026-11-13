@@ -3,8 +3,9 @@ import type { Session, AccessContext } from '../access/types.js'
 import { checkAccess } from '../access/engine.js'
 import { classifyRowIndependentRead, isFieldReadableForPredicate } from '../access/field-access.js'
 import { parseFilterQuery } from './parse.js'
+import { serializeFilterQuery } from './serialize.js'
 import { buildFilterWhere } from './map.js'
-import type { FilterCondition, FilterFieldSuggestion, FilterSpec } from './types.js'
+import type { FilterCondition, FilterFieldSuggestion, FilterSpec, FilterTerm } from './types.js'
 
 /**
  * The session/context a field's `read` access is evaluated against — the same
@@ -22,6 +23,10 @@ async function canQueryList(
 ): Promise<boolean> {
   if (args.context._isSudo === true) return true
   return (await checkAccess(listConfig.access?.operation?.query, args)) !== false
+}
+
+function hasFilterSpec(field: { getFilterSpec?: unknown; isFilterable?: boolean }): boolean {
+  return typeof field.getFilterSpec === 'function' && field.isFilterable !== false
 }
 
 /**
@@ -58,8 +63,8 @@ export async function collectFilterSpecs(
 ): Promise<Record<string, FilterSpec>> {
   const specs: Record<string, FilterSpec> = {}
   if (!(await canQueryList(listConfig, args))) return specs
-  const filterableFields = Object.entries(listConfig.fields).filter(
-    ([, field]) => typeof field.getFilterSpec === 'function',
+  const filterableFields = Object.entries(listConfig.fields).filter(([, field]) =>
+    hasFilterSpec(field),
   )
   // Each field's read-access check is independent of every other's — run
   // them concurrently rather than serially, since a `read` rule that does
@@ -172,8 +177,27 @@ export async function isFieldFilterableById(
 ): Promise<boolean> {
   if (!Object.hasOwn(listConfig.fields, fieldName)) return false
   const field = listConfig.fields[fieldName]
-  if (typeof field.getFilterSpec !== 'function') return false
+  if (!hasFilterSpec(field)) return false
   if (!(await canQueryList(listConfig, args))) return false
   if (!(await isFieldReadableForPredicate(field.access, args))) return false
-  return field.getFilterSpec(fieldName, listKey, config)?.toIdCondition !== undefined
+  return field.getFilterSpec?.(fieldName, listKey, config)?.toIdCondition !== undefined
+}
+
+/**
+ * A filter query with every token naming one of `fields` removed, a group
+ * dropping only its own such alternatives and vanishing when none is left.
+ * Neither the field name nor its value survives in the result.
+ */
+export function withholdFilterFields(query: string, fields: ReadonlySet<string>): string {
+  if (fields.size === 0) return query
+  const terms: FilterTerm[] = []
+  for (const term of parseFilterQuery(query).terms) {
+    if (term.kind === 'token') {
+      if (term.field === null || !fields.has(term.field)) terms.push(term)
+      continue
+    }
+    const tokens = term.tokens.filter((token) => token.field === null || !fields.has(token.field))
+    if (tokens.length > 0) terms.push({ ...term, tokens })
+  }
+  return serializeFilterQuery({ terms })
 }

@@ -638,7 +638,11 @@ export type BaseFieldConfig<
    * @param fieldName - The name of the field (for error messages)
    * @param operation - Whether this is a create or update operation
    */
-  getZodSchema?: (fieldName: string, operation: 'create' | 'update') => z.ZodTypeAny
+  getZodSchema?: (
+    fieldName: string,
+    operation: 'create' | 'update',
+    defaults?: ValidationDefaults,
+  ) => z.ZodTypeAny
   /**
    * Declare this field's filtering capability — its {@link FilterSpec} — for the
    * admin UI's Filter builder (ADR-0017). Optional and additive: a field that
@@ -1445,6 +1449,11 @@ export type VirtualField<
  * Specific field types (TextField, IntegerField, etc.) are used by field builders
  * but at the config level we treat all fields uniformly
  */
+/** Config-wide column defaults a field's validator reads when the field sets none of its own. */
+export interface ValidationDefaults {
+  timestampNativeType?: string
+}
+
 export type FieldConfig = BaseFieldConfig<TypeInfo>
 
 type WithTypeInfo<
@@ -2799,7 +2808,9 @@ export interface RowAction<TTypeInfo extends TypeInfo = TypeInfo> {
  * A Preset view declared in `ui.listView.presets`, shown as a tab above the
  * list view's Filter builder and opened by `?preset=<key>`.
  *
- * Only `key` and `label` cross to the client. `search` and `hasAccess` run on
+ * Only `key`, `label` and the active preset's `search` cross to the client, and
+ * that `search` has every token naming a field the session can never read
+ * removed first. `search` and `hasAccess` run on
  * the server for each request, so a shared `?preset=` link resolves against
  * the recipient's own session. The resolved `search` runs through the same
  * filter engine and secured context as a typed `?search=`, so a preset can
@@ -3845,6 +3856,12 @@ export type Plugin = {
    * of unrelated generated Prisma types elsewhere (nullable JSON `CreateInput`
    * fields) in a downstream app; passing it as a plain second argument avoids
    * that recursion entirely.
+   *
+   * A service closes over the base context, so its writes do not join a
+   * hook's transaction, and a write to the row being written waits on that
+   * row's lock forever. A method a hook calls should take the hook's own
+   * `context` as an argument and use `context.db`, which is bound to the
+   * write's transaction (ADR-0066).
    *
    * It is a `StackContext`, not the `AccessContext` of the first argument:
    * the two differ, and the difference bites. `StackContext` omits

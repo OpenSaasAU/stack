@@ -1,4 +1,4 @@
-import type { ListConfig } from '../config/types.js'
+import type { ListConfig, ValidationDefaults } from '../config/types.js'
 import type { AccessContext } from '../access/types.js'
 import {
   executeResolveInput,
@@ -26,10 +26,14 @@ export interface HookPipelineArgs {
   inputData: Record<string, unknown>
   item: Record<string, unknown> | undefined
   context: AccessContext
+  defaults?: ValidationDefaults
 }
 
 export interface HookPipelineResult {
+  /** The logical payload every hook sees; multi-column fields keep their logical key. */
   resolvedData: Record<string, unknown>
+  /** `resolvedData` with each multi-column field replaced by its physical columns; what is persisted. */
+  splitData: Record<string, unknown>
   /**
    * Every field key `applyCreateDefaults` filled on this run (empty for
    * `update`, since that function only runs on create) — see its own doc
@@ -44,7 +48,7 @@ export interface HookPipeline {
 }
 
 async function runHookPipeline(args: HookPipelineArgs): Promise<HookPipelineResult> {
-  const { operation, listName, listConfig, inputData, item, context } = args
+  const { operation, listName, listConfig, inputData, item, context, defaults } = args
 
   let resolvedData = await executeResolveInput(
     listConfig.hooks,
@@ -118,7 +122,7 @@ async function runHookPipeline(args: HookPipelineArgs): Promise<HookPipelineResu
 
   // Unlike an access-denied `context.db` operation, a validation failure
   // throws rather than returning null/[] — validation is never silent.
-  const validation = validateFieldRules(resolvedData, listConfig.fields, operation)
+  const validation = validateFieldRules(resolvedData, listConfig.fields, operation, defaults)
   if (validation.errors.length > 0) {
     throw new ValidationError(validation.errors, validation.fieldErrors)
   }
@@ -126,7 +130,7 @@ async function runHookPipeline(args: HookPipelineArgs): Promise<HookPipelineResu
   // Runs only once the logical value has passed validation above (#789) — a
   // multi-column field validated after splitting could see an unrecognised
   // value silently become null/undefined columns instead of throwing.
-  resolvedData = await splitMultiColumnFields(
+  const splitData = await splitMultiColumnFields(
     inputData,
     resolvedData,
     listConfig.fields,
@@ -135,7 +139,7 @@ async function runHookPipeline(args: HookPipelineArgs): Promise<HookPipelineResu
     item,
   )
 
-  return { resolvedData, defaultedFields }
+  return { resolvedData, splitData, defaultedFields }
 }
 
 export const hookPipeline: HookPipeline = {

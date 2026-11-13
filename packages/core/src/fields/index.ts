@@ -835,6 +835,10 @@ export function checkbox<
   }
 }
 
+export function isZonelessNativeType(nativeType: string | undefined): boolean {
+  return nativeType !== undefined && /^timestamp\s*(\(|$)/i.test(nativeType.trim())
+}
+
 /**
  * Timestamp (DateTime) field
  */
@@ -855,8 +859,14 @@ export function timestamp<
   return {
     type: 'timestamp',
     ...options,
-    getZodSchema: () => {
-      return z.union([z.date(), z.iso.datetime()]).optional().nullable()
+    getZodSchema: (_fieldName, _operation, defaults) => {
+      const zoneless = isZonelessNativeType(
+        options?.db?.nativeType ?? defaults?.timestampNativeType,
+      )
+      return z
+        .union([z.date(), z.iso.datetime(zoneless ? { local: true } : undefined)])
+        .optional()
+        .nullable()
     },
     getContractField: (fieldName: string) => {
       return scalarColumn(fieldName, {
@@ -868,12 +878,21 @@ export function timestamp<
         default: hasDefaultNow ? { kind: 'now' } : undefined,
       })
     },
-    // An unparseable date degrades to free text.
+    // An unparseable date degrades to free text. `eq` on a date-only value matches that whole UTC day.
     getFilterSpec: (fieldName: string): FilterSpec => ({
       operators: COMPARISON_OPERATORS,
       toCondition: (operator, value) => {
-        const date = new Date(value.trim())
+        const typed = value.trim()
+        const date = new Date(typed)
         if (Number.isNaN(date.getTime())) return null
+        if (
+          operator === 'eq' &&
+          DATE_VALUE_MATCH.test(typed) &&
+          date.toISOString().startsWith(typed)
+        ) {
+          const next = new Date(date.getTime() + 86_400_000)
+          return { [fieldName]: { gte: date, lt: next } }
+        }
         return { [fieldName]: { [prismaComparisonKey(operator)]: date } }
       },
       empty: emptyWhenNullable(fieldName, nullable),

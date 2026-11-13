@@ -205,8 +205,9 @@ export async function checkFieldAccess(
  * relation the row does not carry, or writes through the row, denies whatever
  * it returned, so `item.logs.length` on a withheld relation is a denial rather
  * than a `TypeError`. Only a `TypeError` is taken for that: it is what
- * dereferencing the `undefined` it was handed raises, and anything else the
- * rule threw is its own failure and propagates (ADR-0082).
+ * dereferencing the `undefined` it was handed raises. A `DataCloneError` from
+ * cloning a guarded value denies too, and anything else the rule threw is its
+ * own failure and propagates (ADR-0082).
  *
  * Synchronous where there is nothing to evaluate, because this runs for every
  * field on every row.
@@ -223,6 +224,10 @@ export function checkRowRead(
   return evaluateRowRead(fieldAccess, args, row)
 }
 
+function isDataCloneError(err: unknown): boolean {
+  return err instanceof Error && err.name === 'DataCloneError'
+}
+
 async function evaluateRowRead(
   fieldAccess: FieldAccess,
   args: {
@@ -237,6 +242,7 @@ async function evaluateRowRead(
     return readable && !tripped()
   } catch (err) {
     if (err instanceof TypeError && tripped()) return false
+    if (isDataCloneError(err)) return false
     throw err
   }
 }

@@ -242,3 +242,31 @@ describe('typeDescriptorToTypeString', () => {
     expect(out).toBe("import('x\\')\\u000aglobalThis.PWNED = true //').Decimal")
   })
 })
+
+describe('validateDatabaseConfig surface refusals (#2319)', () => {
+  const base = (over: Record<string, unknown>) =>
+    ({
+      db: { provider: 'postgresql' },
+      lists: { Post: { fields: { title: text() } } },
+      ...over,
+    }) as unknown as OpenSaasConfig
+
+  it('refuses a provider other than postgresql', () => {
+    const refusals = validateDatabaseConfig(base({ db: { provider: 'sqlite' } }))
+    expect(refusals.map((r) => r.reason)).toContain('unsupported-provider')
+  })
+
+  it('refuses a stray db.url', () => {
+    const refusals = validateDatabaseConfig(base({ db: { provider: 'postgresql', url: 'x' } }))
+    expect(refusals.some((r) => r.entry === 'db.url')).toBe(true)
+  })
+
+  it('refuses a lower-case list key', () => {
+    const refusals = validateDatabaseConfig(
+      base({ lists: { post: { fields: { title: text() } } } }),
+    )
+    expect(
+      refusals.some((r) => r.reason === 'invalid-list-key' && r.message.includes('"Post"')),
+    ).toBe(true)
+  })
+})

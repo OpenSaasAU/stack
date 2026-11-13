@@ -177,7 +177,10 @@ describe('devCommand', () => {
     )
   }
 
+  const originalIsTTY = process.stdin.isTTY
+
   beforeEach(() => {
+    process.stdin.isTTY = true
     vi.clearAllMocks()
     spawned.length = 0
     watcherHandlers.clear()
@@ -215,6 +218,7 @@ describe('devCommand', () => {
       if (!loopSettled) child.emit('exit', 0, null)
       await pendingLoop.catch(() => {})
     }
+    process.stdin.isTTY = originalIsTTY
     process.chdir(originalCwd)
     process.exit = originalExit
     process.exitCode = 0
@@ -651,9 +655,7 @@ describe('devCommand', () => {
       write()
       watcherHandlers.get('change')?.()
       await until(() =>
-        said
-          .slice(before)
-          .some((line) => /promoted|Plan id:|keeps serving the contract/.test(line)),
+        said.slice(before).some((line) => /promoted|Plan id:|last good contract/.test(line)),
       )
       await new Promise((resolve) => setTimeout(resolve, 50))
     }

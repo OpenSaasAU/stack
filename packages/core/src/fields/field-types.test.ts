@@ -548,6 +548,34 @@ describe('Field Types', () => {
   })
 
   describe('timestamp field', () => {
+    describe('getFilterSpec', () => {
+      const spec = timestamp().getFilterSpec?.('releasedAt', 'Release', {} as never)
+
+      test('eq on a date-only value matches the whole UTC day', () => {
+        expect(spec?.toCondition('eq', '2026-08-04')).toEqual({
+          releasedAt: {
+            gte: new Date('2026-08-04T00:00:00.000Z'),
+            lt: new Date('2026-08-05T00:00:00.000Z'),
+          },
+        })
+      })
+
+      test('an impossible date and a non-eq operator are not widened', () => {
+        expect(spec?.toCondition('eq', '2026-02-31')).toEqual({
+          releasedAt: { equals: new Date('2026-03-03T00:00:00.000Z') },
+        })
+        expect(spec?.toCondition('gt', '2026-08-04')).toEqual({
+          releasedAt: { gt: new Date('2026-08-04T00:00:00.000Z') },
+        })
+      })
+
+      test('eq on an instant stays a single instant', () => {
+        expect(spec?.toCondition('eq', '2026-08-04T05:30:00Z')).toEqual({
+          releasedAt: { equals: new Date('2026-08-04T05:30:00Z') },
+        })
+      })
+    })
+
     describe('getZodSchema', () => {
       test('accepts Date objects and ISO datetime strings', () => {
         const field = timestamp()
@@ -557,6 +585,22 @@ describe('Field Types', () => {
         expect(schema.safeParse('2024-01-01T00:00:00Z').success).toBe(true)
         expect(schema.safeParse(undefined).success).toBe(true)
         expect(schema.safeParse('invalid').success).toBe(false)
+      })
+
+      test('a zoneless column accepts the zoneless form it reads back', () => {
+        const schema = schemaOf(timestamp({ db: { nativeType: 'Timestamp(3)' } }), 'at', 'update')
+        expect(schema.safeParse('2024-06-10T02:30:00.123').success).toBe(true)
+        expect(schema.safeParse('invalid').success).toBe(false)
+      })
+
+      test('a timestamptz column still refuses the zoneless form', () => {
+        expect(
+          schemaOf(timestamp(), 'at', 'update').safeParse('2024-06-10T02:30:00.123').success,
+        ).toBe(false)
+        const tz = timestamp({ db: { nativeType: 'Timestamptz' } })
+        expect(schemaOf(tz, 'at', 'update').safeParse('2024-06-10T02:30:00.123').success).toBe(
+          false,
+        )
       })
     })
 

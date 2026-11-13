@@ -51,7 +51,6 @@ does for you on every start and on every edit to `opensaas.config.ts`.
 Visit:
 
 - **Admin UI**: [http://localhost:3000/admin](http://localhost:3000/admin)
-- **Home**: [http://localhost:3000](http://localhost:3000)
 
 ## Project Structure
 

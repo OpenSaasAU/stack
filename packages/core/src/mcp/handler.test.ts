@@ -57,6 +57,13 @@ function schemaConfig(): OpenSaasConfig {
     db: { provider: 'postgresql', timestamps: true },
     mcp: { enabled: true, basePath: '/api/mcp' },
     lists: {
+      Settings: {
+        isSingleton: true,
+        fields: { siteName: text(), secretKey: text({ access: { read: () => false } }) },
+        access: {
+          operation: { query: ({ session }) => session?.userId === 'user-123', create: () => true },
+        },
+      },
       User: {
         fields: { name: text(), email: text() },
         access: { operation: { query: () => true, create: () => true } },
@@ -437,6 +444,49 @@ describe('the MCP surface', () => {
     return rpc('tools/call', { name, arguments: args }, config)
   }
 
+  describe('a singleton list', () => {
+    const payload = (body: Record<string, unknown> | null) =>
+      JSON.parse(
+        ((body?.result as { content: { text: string }[] }).content[0] as { text: string }).text,
+      ) as { items: Record<string, unknown>[]; count: number }
+
+    test(
+      'list_settings_query returns the singleton row, honouring field access',
+      async () => {
+        const { body } = await callTool('list_settings_query', {})
+        const result = payload(body)
+        expect(result.count).toBe(1)
+        expect(result.items).toHaveLength(1)
+        expect(result.items[0]).not.toHaveProperty('secretKey')
+      },
+      BOOT,
+    )
+
+    test(
+      'list_settings_query honours fields',
+      async () => {
+        const { body } = await callTool('list_settings_query', { fields: { siteName: true } })
+        const result = payload(body)
+        expect(Object.keys(result.items[0] ?? {}).sort()).toEqual(['id', 'siteName'])
+      },
+      BOOT,
+    )
+
+    test(
+      'a session denied query gets the empty value',
+      async () => {
+        const { body } = await rpc(
+          'tools/call',
+          { name: 'list_settings_query', arguments: {} },
+          undefined,
+          async () => ({ userId: 'someone-else', scopes: ['read'] }),
+        )
+        expect(body?.error).toBeDefined()
+      },
+      BOOT,
+    )
+  })
+
   describe('the handlers themselves', () => {
     test('all three verbs are handled', () => {
       const handlers = handlersFor()
@@ -444,6 +494,58 @@ describe('the MCP surface', () => {
         expect(typeof handlers[verb]).toBe('function')
       }
     })
+
+    test.each(['GET', 'DELETE'] as const)(
+      '%s answers 405 with Allow: POST',
+      async (verb) => {
+        const response = await handlersFor()[verb](
+          new Request('http://localhost/api/mcp', { method: verb }),
+        )
+
+        expect(response.status).toBe(405)
+        expect(response.headers.get('Allow')).toBe('POST')
+      },
+      BOOT,
+    )
+
+    test(
+      'an unauthenticated GET keeps its 401 challenge',
+      async () => {
+        const response = await handlersFor(undefined, async () => null).GET(
+          new Request('http://localhost/api/mcp', { method: 'GET' }),
+        )
+
+        expect(response.status).toBe(401)
+      },
+      BOOT,
+    )
+
+    test.each([
+      ['{bad json', -32700, 'Parse error'],
+      ['', -32700, 'Parse error'],
+      ['null', -32600, 'Invalid Request'],
+      ['42', -32600, 'Invalid Request'],
+      ['[]', -32600, 'Invalid Request'],
+    ])(
+      'the body %j is a 400 JSON-RPC error',
+      async (raw, code, message) => {
+        const response = await handlersFor().POST(
+          new Request('http://localhost/api/mcp', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: raw === '' ? undefined : raw,
+          }),
+        )
+
+        expect(response.status).toBe(400)
+        expect(await response.json()).toEqual({
+          jsonrpc: '2.0',
+          id: null,
+          error: { code, message },
+        })
+      },
+      BOOT,
+    )
 
     test(
       'a config with MCP disabled answers 404 on every verb',
@@ -3178,6 +3280,70 @@ describe('the MCP surface', () => {
       async (_label, key, where) => {
         const text = await refusedText(where)
         expect(text).toContain(`"${key}" is not a queryable field of this list`)
+      },
+      BOOT,
+    )
+  })
+
+  describe('a relation into a list MCP does not expose', () => {
+    const refusal = async (name: string, args: Record<string, unknown>) => {
+      const { body } = await callTool(name, args)
+      const result = body?.result as { isError?: boolean; content: { text: string }[] }
+      expect(result.isError).toBe(true)
+      return result.content[0].text
+    }
+
+    test(
+      'is absent from the fields schema, and from the write schemas when mcp.enabled is false',
+      async () => {
+        const tools = await listTools()
+        const query = tools.find((t) => t.name === 'list_post_query')
+        const fields = (query?.inputSchema.properties as Record<string, { properties: object }>)
+          .fields.properties as Record<string, unknown>
+        expect(fields.unreadRef).toBeUndefined()
+        expect(fields.draftRef).toBeUndefined()
+
+        for (const op of ['create', 'update']) {
+          const tool = tools.find((t) => t.name === `list_post_${op}`)
+          const data = (tool?.inputSchema.properties as Record<string, { properties: object }>).data
+            .properties as Record<string, unknown>
+          expect(data.draftRef).toBeUndefined()
+          expect(data.unreadRef).toBeDefined()
+        }
+      },
+      BOOT,
+    )
+
+    test(
+      'a fields selection through a read-off list is refused as an unknown field',
+      async () => {
+        const text = await refusal('list_post_query', {
+          fields: { unreadRef: { fields: { code: true } } },
+        })
+        expect(text).toContain('unreadRef')
+      },
+      BOOT,
+    )
+
+    test(
+      'connect into an mcp.enabled false list is refused as an unknown field',
+      async () => {
+        const text = await refusal('list_post_create', {
+          data: { title: 't', draftRef: { connect: { id: 'x' } } },
+        })
+        expect(text).toContain('has no field "draftRef"')
+      },
+      BOOT,
+    )
+
+    test.each([
+      ['where', { where: { draftRefId: { equals: 'x' } } }],
+      ['orderBy', { orderBy: { draftRefId: 'asc' } }],
+    ])(
+      'its foreign-key column is refused in %s',
+      async (_label, args) => {
+        const text = await refusal('list_post_query', args)
+        expect(text).toContain('"draftRefId" is not a queryable field of this list')
       },
       BOOT,
     )

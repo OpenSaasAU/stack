@@ -65,3 +65,12 @@ The registry key (`'client'`, namespaced by `processGlobalKey` to `@opensaas/sta
 ## Amendment: the slot identifies the contract (#1648)
 
 The published value is now a holder carrying the contract's `storageHash` beside the client. `getClient()` adopts a holder whose hash matches the `contract.json` it imported and otherwise builds a new client from the current contract, publishes it, and closes the old client without waiting on it. An additive promote under `opensaas dev` therefore serves the promoted contract without an app restart (ADR-0072 unchanged). Two live bundles over different contracts no longer silently share a pool; they replace one another's client. The "Known limits" paragraph above describes the behaviour before this amendment and no longer holds for that shape.
+
+## Amendment: what may cross between a bundle and the process-wide client (#2240)
+
+The client is built by whichever bundle touched the database first, so every other bundle holds a different module instance of `@prisma/orm-postgres`. A value built with a bundle's own copy of Prisma's runtime exports — a `ParamRef` from `param()`, an AST node — fails the client's `instanceof` checks and is refused (`RUNTIME.RAW_SQL_UNSUPPORTED_INTERPOLATION`). The row lock hit this on every root `update` and `delete`.
+
+- **May cross:** plain JS values (strings, numbers, booleans, `Uint8Array`), type-only imports, and objects the client itself handed out (`client.raw`, `client.contract`).
+- **May not cross:** instances of classes imported at runtime from Prisma (`ParamRef`, expression/AST nodes) built in the bundle's copy.
+- The lock statement binds keys as plain values with the column's cast written into the statement text.
+- Not yet verified: `packages/auth/src/adapter` builds `param(...)` values (`index.ts`, `where.ts`) and hands them to the shared client; it needs the same treatment if it reproduces.

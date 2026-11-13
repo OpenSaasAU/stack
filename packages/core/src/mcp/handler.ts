@@ -21,7 +21,8 @@ import { listIdJsonSchema, parseListId } from '../contract/id-boundary.js'
 import { RELATION_QUANTIFIERS, SCALAR_OPERATORS } from '../secured/operators.js'
 import type { SecuredQuery } from '../secured/read.js'
 import { orderByArgument, whereArgument } from './arguments.js'
-import { assertWhereReachable, queryReachableLists } from './where-reachability.js'
+import { assertOrderByReachable, assertWhereReachable } from './where-reachability.js'
+import { mcpListReachable, readableLists } from './reachability.js'
 import { coerceWhereIds, foreignKeyVisibility, idBoundaryRefusal } from './where-id-boundary.js'
 import {
   McpProjectionRefusedError,
@@ -216,14 +217,22 @@ export function createMcpHandlers(options: {
       })
     }
 
+    if (req.method !== 'POST') {
+      return new Response(null, { status: 405, headers: { Allow: 'POST' } })
+    }
+
+    let parsed: unknown
     try {
-      const body = (await req.json()) as {
-        jsonrpc?: string
-        id?: number | string
-        method: string
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- MCP protocol params are dynamic and depend on tool being called
-        params?: any
-      }
+      parsed = await req.json()
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) throw error
+      return jsonRpcError(-32700, 'Parse error')
+    }
+
+    if (!isRpcEnvelope(parsed)) return jsonRpcError(-32600, 'Invalid Request')
+
+    try {
+      const body = parsed
 
       if (body.method === 'initialize') {
         return handleInitialize(body.params, body.id)
@@ -274,6 +283,31 @@ export function createMcpHandlers(options: {
     POST: handler,
     DELETE: handler,
   }
+}
+
+function jsonRpcError(code: number, message: string): Response {
+  return new Response(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code, message } }), {
+    status: 400,
+    headers: { 'Content-Type': 'application/json' },
+  })
+}
+
+type RpcEnvelope = {
+  jsonrpc?: string
+  id?: number | string
+  method: string
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- MCP protocol params are dynamic and depend on tool being called
+  params?: any
+}
+
+function isRpcEnvelope(value: unknown): value is RpcEnvelope {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    'method' in value &&
+    typeof value.method === 'string'
+  )
 }
 
 /**
@@ -341,25 +375,6 @@ function enabledToolsFor(config: OpenSaasConfig, listConfig: ListConfig<any>) {
   }
 }
 
-async function listReachableOverMcp(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- List config generics vary per list
-  listConfig: ListConfig<any>,
-  context: AccessContext,
-): Promise<boolean> {
-  if (listConfig.mcp?.enabled === false) return false
-  return decideAdvertisement(
-    'list query access',
-    async () => {
-      const accessResult = await checkAccess(listConfig.access?.operation?.query, {
-        session: context.session,
-        context,
-      })
-      return accessResult !== false
-    },
-    false,
-  )
-}
-
 async function handleToolsList(
   config: OpenSaasConfig,
   context: AccessContext,
@@ -372,7 +387,7 @@ async function handleToolsList(
     // The tool name stays camelCase: it is the identifier an assistant has
     // already bound to, and renaming it would break every registered client.
     const toolKey = pascalToCamel(listKey)
-    if (!(await listReachableOverMcp(listConfig, context))) continue
+    if (!(await mcpListReachable(config, listKey, context, { requireReadTool: false }))) continue
 
     const enabledTools = enabledToolsFor(config, listConfig)
     const permitted = (operation: CrudOperation): boolean =>
@@ -689,6 +704,49 @@ function redactMcpError(
   )
 }
 
+async function querySingleton(
+  listKey: string,
+  listConfig: OpenSaasConfig['lists'][string],
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Tool arguments vary by operation
+  args: any,
+  config: OpenSaasConfig,
+  context: AccessContext,
+  id?: number | string,
+): Promise<Response> {
+  try {
+    const get: unknown = Reflect.get(context.db[listKey] ?? {}, 'get')
+    if (typeof get !== 'function') {
+      return createSuccessResponse({ items: [], count: 0 }, id)
+    }
+    let picked: readonly string[] | undefined
+    if (args.fields !== undefined) {
+      const projection = await resolveFieldsProjection(
+        args.fields,
+        listKey,
+        listConfig,
+        config,
+        context.session,
+        context,
+      )
+      if (projection.relationNames.length > 0) {
+        return createErrorResultResponse(
+          `"${listKey}" is a singleton; its relations cannot be selected through "fields".`,
+          id,
+        )
+      }
+      picked = projection.selected
+    }
+    const row: unknown = await get.call(context.db[listKey])
+    if (!isPlainObject(row)) return createSuccessResponse({ items: [], count: 0 }, id)
+    const item = picked
+      ? Object.fromEntries(Object.entries(row).filter(([key]) => picked.includes(key)))
+      : row
+    return createSuccessResponse({ items: [item], count: 1 }, id)
+  } catch (error) {
+    return redactMcpError(error, listKey, 'Query', id)
+  }
+}
+
 async function handleCrudTool(
   toolKey: string,
   operation: string,
@@ -712,7 +770,7 @@ async function handleCrudTool(
   try {
     if (
       !enabledToolsFor(config, listConfig)[operation as 'query' | 'create' | 'update' | 'delete'] ||
-      !(await listReachableOverMcp(listConfig, context))
+      !(await mcpListReachable(config, listKey, context, { requireReadTool: false }))
     ) {
       return createErrorResponse(`Unknown tool: list_${toolKey}_${operation}`, id)
     }
@@ -744,16 +802,15 @@ async function handleCrudTool(
           return createErrorResultResponse(`"${listKey}.skip" must not be negative.`, id)
         }
 
+        if (listConfig.isSingleton) {
+          return await querySingleton(listKey, listConfig, args, config, context, id)
+        }
+
         let query: SecuredQuery = context.db[listKey]
         let projection: ResolvedFieldsProjection | undefined
         try {
           if (isPlainObject(args.where)) {
-            assertWhereReachable(
-              args.where,
-              config,
-              listKey,
-              await queryReachableLists(config, context),
-            )
+            assertWhereReachable(args.where, config, listKey, await readableLists(config, context))
             const coercedWhere = coerceWhereIds(
               args.where,
               config,
@@ -768,6 +825,12 @@ async function handleCrudTool(
             query = query.where(whereArgument(args.where, listKey))
           }
           if (args.orderBy !== undefined) {
+            assertOrderByReachable(
+              args.orderBy,
+              config,
+              listKey,
+              await readableLists(config, context),
+            )
             query = query.orderBy(orderByArgument(args.orderBy, listKey))
           }
           if (args.fields !== undefined) {
@@ -906,9 +969,12 @@ async function handleCustomTool(
   let customTool: McpCustomTool | undefined
   let owningList: ListConfig<any> | undefined // eslint-disable-line @typescript-eslint/no-explicit-any -- List config generics vary per list
   try {
-    for (const listConfig of Object.values(config.lists)) {
+    for (const [ownerKey, listConfig] of Object.entries(config.lists)) {
       const found = listConfig.mcp?.customTools?.find((t) => t.name === toolName)
-      if (found && (await listReachableOverMcp(listConfig, context))) {
+      if (
+        found &&
+        (await mcpListReachable(config, ownerKey, context, { requireReadTool: false }))
+      ) {
         customTool = found
         owningList = listConfig
         break
