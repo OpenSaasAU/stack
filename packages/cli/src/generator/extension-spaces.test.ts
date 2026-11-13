@@ -11,11 +11,13 @@ import {
   OrphanExtensionSpaceError,
 } from './extension-spaces.js'
 
-const PGVECTOR_HASH = '698fc52f21eb891517203ef4b229823d17c49c3f802e2374be292a9b6a560c97'
+const PGVECTOR_HASH = 'e4ab7d4329212a72d8e440fd7bf95a03e5c861e1d304dce1025b0fcaa1910d15'
 const PGVECTOR_PACKAGES = [
   '20260601T0000_install_vector_extension',
   '20261029T1342_declare_vector_extension',
   '20261029T1342_create_vector_extension',
+  '20261106T1035_find_vector_on_search_path',
+  '20261106T1401_install_vector_on_search_path',
 ]
 
 // The scratch projects live inside the package so node resolution walks up to

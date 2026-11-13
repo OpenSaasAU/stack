@@ -20,7 +20,7 @@ const COLUMN_TYPE_HELPERS = [
   'float4Column',
   'int2Column',
   'jsonColumn',
-  'numericColumn',
+  'numericStringColumn',
   'timeStringColumn',
   'timestampStringColumn',
   'timestamptzStringColumn',
@@ -134,7 +134,10 @@ function pgColumnExpression(model: string, column: ContractColumn): Rendered {
         return { expression: 'field.column(type.Decimal())', helpers: [] }
       const scale = numberArg(type.args, 1)
       const args = scale === undefined ? `${precision}` : `${precision}, ${scale}`
-      return { expression: `field.column(numericColumn(${args}))`, helpers: ['numericColumn'] }
+      return {
+        expression: `field.column(numericStringColumn(${args}))`,
+        helpers: ['numericStringColumn'],
+      }
     }
     case 'float':
       return { expression: 'field.column(type.Float())', helpers: [] }
