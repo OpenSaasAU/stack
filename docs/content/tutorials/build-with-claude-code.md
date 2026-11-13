@@ -8,7 +8,7 @@ This is the workflow Stack is designed for: **you describe, the agent builds, th
 
 ## Prerequisites
 
-- Node.js 18+ and pnpm (`npm install -g pnpm`)
+- Node.js 22.18 or newer and pnpm (`npm install -g pnpm`)
 - [Claude Code](https://claude.com/claude-code) installed (`npm install -g @anthropic-ai/claude-code`)
 - No Stack knowledge required — that's what the tutorial is for
 
