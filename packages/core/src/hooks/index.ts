@@ -1,6 +1,6 @@
 import type { Hooks } from '../config/types.js'
 import type { AccessContext } from '../access/types.js'
-import type { FieldConfig } from '../config/types.js'
+import type { FieldConfig, ValidationDefaults } from '../config/types.js'
 import { validateWithZod } from '../validation/schema.js'
 import { checkFieldAccess, writeRuleRow } from '../access/field-access.js'
 
@@ -729,8 +729,9 @@ export function validateFieldRules(
   data: Record<string, unknown>,
   fieldConfigs: Record<string, FieldConfig>,
   operation: 'create' | 'update' = 'create',
+  defaults?: ValidationDefaults,
 ): { errors: string[]; fieldErrors: Record<string, string> } {
-  const result = validateWithZod(data, fieldConfigs, operation)
+  const result = validateWithZod(data, fieldConfigs, operation, defaults)
 
   if (result.success) {
     return { errors: [], fieldErrors: {} }

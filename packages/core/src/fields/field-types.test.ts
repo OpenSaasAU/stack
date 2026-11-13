@@ -586,6 +586,22 @@ describe('Field Types', () => {
         expect(schema.safeParse(undefined).success).toBe(true)
         expect(schema.safeParse('invalid').success).toBe(false)
       })
+
+      test('a zoneless column accepts the zoneless form it reads back', () => {
+        const schema = schemaOf(timestamp({ db: { nativeType: 'Timestamp(3)' } }), 'at', 'update')
+        expect(schema.safeParse('2024-06-10T02:30:00.123').success).toBe(true)
+        expect(schema.safeParse('invalid').success).toBe(false)
+      })
+
+      test('a timestamptz column still refuses the zoneless form', () => {
+        expect(
+          schemaOf(timestamp(), 'at', 'update').safeParse('2024-06-10T02:30:00.123').success,
+        ).toBe(false)
+        const tz = timestamp({ db: { nativeType: 'Timestamptz' } })
+        expect(schemaOf(tz, 'at', 'update').safeParse('2024-06-10T02:30:00.123').success).toBe(
+          false,
+        )
+      })
     })
 
     describe('the contract column', () => {

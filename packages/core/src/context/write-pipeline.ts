@@ -500,6 +500,7 @@ async function runWriteInTransaction(
     inputData: input,
     item: originalItem,
     context,
+    defaults: { timestampNativeType: config.db.defaults?.timestamp?.nativeType },
   })
 
   // The same payload-shape refusal, over what the hooks produced: a
