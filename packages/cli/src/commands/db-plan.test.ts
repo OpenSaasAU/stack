@@ -6,10 +6,10 @@ import { buildPlanArgs, MultipleMigrationHeadsError, resolveMigrationHead } from
 
 let cwd: string
 
-function writePackage(name: string, from: string, to: string): void {
+function writePackage(name: string, from: string, to: string, createdAt?: string): void {
   const dir = path.join(cwd, 'migrations', 'app', name)
   fs.mkdirSync(dir, { recursive: true })
-  fs.writeFileSync(path.join(dir, 'migration.json'), JSON.stringify({ from, to }))
+  fs.writeFileSync(path.join(dir, 'migration.json'), JSON.stringify({ from, to, createdAt }))
 }
 
 beforeEach(() => {
@@ -36,10 +36,26 @@ describe('resolveMigrationHead', () => {
     expect(resolveMigrationHead(cwd)).toBe('c')
   })
 
-  it('refuses a graph with no head', () => {
+  it('plans from the latest package after add, remove, add (a cycle)', () => {
+    writePackage('0720_init', 'empty', 'a', '2026-07-20T09:00:00Z')
+    writePackage('0720_add_archived', 'a', 'b', '2026-07-20T09:05:10Z')
+    writePackage('0720_drop_star', 'b', 'a', '2026-07-20T09:05:30Z')
+    expect(resolveMigrationHead(cwd)).toBe('a')
+    writePackage('0721_add_again', 'a', 'b', '2026-07-21T09:00:00Z')
+    expect(resolveMigrationHead(cwd)).toBe('b')
+  })
+
+  it('walks the chain from the baseline when a manifest has no createdAt', () => {
+    writePackage('1_init', 'empty', 'a')
+    writePackage('2_add', 'a', 'b')
+    writePackage('3_drop', 'b', 'a')
+    expect(resolveMigrationHead(cwd)).toBe('a')
+  })
+
+  it('names the --from that works when no origin can be found', () => {
     writePackage('1_a', 'a', 'b')
     writePackage('2_b', 'b', 'a')
-    expect(() => resolveMigrationHead(cwd)).toThrow(/no head/)
+    expect(() => resolveMigrationHead(cwd)).toThrow(/--from a/)
   })
 
   it('names a malformed manifest', () => {
@@ -49,11 +65,35 @@ describe('resolveMigrationHead', () => {
     expect(() => resolveMigrationHead(cwd)).toThrow(/1_bad/)
   })
 
-  it('refuses when the graph has several heads', () => {
+  it('refuses a fork, naming directories and a working --from', () => {
+    writePackage('1_init', 'empty', 'a', '2026-07-20T09:00:00Z')
+    writePackage('2_x', 'a', 'b', '2026-07-20T10:00:00Z')
+    writePackage('2_y', 'a', 'c', '2026-07-20T11:00:00Z')
+    const error = (() => {
+      try {
+        resolveMigrationHead(cwd)
+      } catch (e) {
+        return e
+      }
+    })()
+    expect(error).toBeInstanceOf(MultipleMigrationHeadsError)
+    expect(String(error)).toMatch(/2_x.*2_y/)
+    expect(String(error)).toMatch(/--from b/)
+    expect(buildPlanArgs(cwd, ['--from', 'b'])).toEqual(['migration', 'plan', '--from', 'b'])
+  })
+
+  it('refuses a dead-end branch that is not at the latest package', () => {
+    writePackage('1_a', 'a', 'b', '2026-07-20T09:00:00Z')
+    writePackage('2_b', 'a', 'c', '2026-07-20T10:00:00Z')
+    writePackage('3_c', 'c', 'd', '2026-07-20T11:00:00Z')
+    expect(() => resolveMigrationHead(cwd)).toThrow(/1_a.*3_c/)
+  })
+
+  it('refuses a fork when walking the chain without timestamps', () => {
     writePackage('1_init', 'empty', 'a')
     writePackage('2_x', 'a', 'b')
     writePackage('2_y', 'a', 'c')
-    expect(() => resolveMigrationHead(cwd)).toThrow(MultipleMigrationHeadsError)
+    expect(() => resolveMigrationHead(cwd)).toThrow(/2_x.*2_y/)
   })
 })
 
