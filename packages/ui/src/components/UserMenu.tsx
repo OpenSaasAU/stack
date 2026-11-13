@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from 'react'
 import { unstable_rethrow } from 'next/navigation.js'
 import { Button } from '../primitives/button.js'
 import { ThemeToggle } from './ThemeToggle.js'
+import { clearAllBulkStatuses } from '../lib/useBulkStatus.js'
 
 export interface UserMenuProps {
   userName?: string
@@ -53,6 +54,7 @@ export function UserMenu({ userName, userEmail, onSignOut }: UserMenuProps) {
             onClick={() =>
               startSignOut(async () => {
                 setSignOutFailed(false)
+                clearAllBulkStatuses()
                 try {
                   await onSignOut()
                 } catch (error) {

@@ -2195,6 +2195,27 @@ The opt-in that makes a field reachable by `nearest()`: it describes the field's
 
 Optional and additive: the field's filtering capability for the admin UI's filter builder. A field that omits it is simply not filterable and is never suggested — `password`, `json` and `virtual` all omit it. The returned `toCondition` mapper must stay pure; its output is ANDed with the access filter.
 
+`suggestions.valueSource` says what the Filter builder may offer as values: `none`, an `enum` of config options, or a `relationship` label search. The optional `suggestions.valueFormat` states the shape a typed value must take, as a regular expression source and a description read after the field's name (`{ pattern: '^-?\\d+$', description: 'takes a whole number' }`), so the builder explains a value that does not fit rather than applying it, and shows a token whose value does not match as free text. Build the `RegExp` once from the declared `pattern` and test it inside `toCondition`, so the hint and the engine cannot disagree; a check the pattern cannot express, such as a day the month does not have, stays in `toCondition`, and the builder leaves it to the server. Omit `valueFormat` when no pattern can state what `toCondition` accepts. `valueFormat.operators` gives particular operators their own `{ pattern, description }`. The built-in integer, decimal, big integer, calendar day and to-many relationship fields declare one; a timestamp takes anything `Date` parses, so it declares none. A to-many relationship takes `0` with `eq` and `gt`, and `1` with `gte` (`orders:0` is none, `orders:>0` and `orders:>=1` are any).
+
+A field gets negation and "any of" with no code of its own: the engine composes `NOT` and `OR` around `toCondition`, so `-field:value` is `NOT` of the field's condition and `field:a,b` ORs it once per value. The optional `empty` member states what "no value" means for the field, as a condition matching exactly the rows that have none. Set it only on a field that can be empty: it is what makes `field:!` (is empty) and `-field:!` (is not empty) understood and offered, and the engine ORs it into every negated token on the field, so "is not" keeps the rows with no value that SQL's `NOT` would drop. A field without it takes neither, and `field:!` degrades to free text. Suggestions carry it to the client as `canBeEmpty: true`.
+
+The optional `negation` member says when `NOT` of the field's condition already behaves on its own. `'includesEmpty'` says `NOT` already matches the rows with no value, as a relationship's `NOT some` does, so the engine ORs no `empty` into a negated token. `'redundant'` says negation only restates one of the field's own operators, as on a to-many presence count where `-orders:0` is `orders:>0`, so the Filter builder does not offer "is not". Suggestions carry it to the client as `negation`.
+
+```typescript
+getFilterSpec: (fieldName) => ({
+  operators: ['eq'],
+  toCondition: (operator, value) => (operator === 'eq' ? { [fieldName]: { equals: value } } : null),
+  empty: { [fieldName]: { equals: null } },
+  suggestions: { valueSource: { kind: 'none' } },
+})
+```
+
+The built-in fields set `empty` where their column can hold no value: a nullable column is `{ equals: null }`; an optional text field is also empty when it holds `''`; a to-one relationship is empty when it has no related record the session can see (`{ none: {} }`), unless it owns a foreign key declared `db: { isNullable: false }`. A required field, a checkbox that is not nullable, a timestamp defaulting to now, a select with a default, and a to-many relationship (whose `field:0` already means none) set none.
+
+The optional `toIdCondition(id)` matches a related record by its id, written `field:#id`. Return a condition that lowers through the relation, never the foreign key column (`{ author: { some: { id: { equals: id } } } }`), so the related list's `query` access applies inside the predicate and a record the session cannot read matches nothing. Parse the id with `parseListId(config, relatedListKey, id)` and return `null` when it fails, so an id the related list cannot hold degrades to free text. The engine composes it per value like `toCondition`, so `-field:#id` excludes that record and `field:#a,#b` matches either. A field without it reads `#id` as an ordinary `eq` value. The built-in to-one relationship declares it, which is what makes the Filter builder offer record lookup and a to-many count on the other list link to it.
+
+A field whose `operators` include both `gte` and `lte` takes a range (`field:a..b`) with nothing more to declare: the engine calls `toCondition('gte', a)` and `toCondition('lte', b)` and ANDs the two, and the range degrades to free text when either returns `null`. A negated range, `-field:a..b`, is `NOT` of that AND, composed like any other negation, so it keeps the rows with no value when the field states `empty` and does not set `negation`. On any other field, `field:a..b` is `toCondition('eq', 'a..b')`, the literal it always was. The optional `suggestions.datePicker` adds date inputs and presets to the Filter builder: `'day'` writes plain `YYYY-MM-DD` dates, and `'instant'` writes ISO instants carrying the browser's offset, with the end day inclusive. The built-in calendar day declares `'day'` and the timestamp `'instant'`.
+
 ---
 
 ## Creating Custom Field Types

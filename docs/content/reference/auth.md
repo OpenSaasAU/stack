@@ -403,7 +403,7 @@ The same options object is available standalone via `buildBetterAuthOptions()` â
 
 ### `rateLimit`
 
-Controls rate limiting for authentication endpoints:
+Controls rate limiting for authentication endpoints. The scaffolded sign-in, sign-up and password-reset actions submit through `auth.handler` via `postAuthEndpoint` from `@opensaas/stack-auth/server`, so the limiter applies to them; a hand-written action calling `auth.api.*` directly bypasses it (better-auth's limiter runs only in the handler):
 
 ```typescript
 authPlugin({
@@ -859,6 +859,7 @@ still succeeds and the cookie is still cleared while the row stays valid.
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
+import { signOutAndConfirm } from '@opensaas/stack-auth/server'
 import type {
   AuthActionResult,
   SignInInput,
@@ -884,8 +885,8 @@ export async function signInAction(input: SignInInput): Promise<AuthActionResult
 }
 
 export async function signOutAction(): Promise<void> {
-  await auth.api.signOut({ headers: await headers() })
-  redirect('/sign-in')
+  const logoutUrl = await signOutAndConfirm(auth, await headers())
+  redirect(logoutUrl ?? '/sign-in')
 }
 
 export async function signUpAction(input: SignUpInput): Promise<AuthActionResult> {

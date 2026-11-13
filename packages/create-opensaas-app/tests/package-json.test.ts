@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  applyPeerOverrides,
   applyProjectName,
   replaceWorkspaceVersions,
   rewriteReadmeHeading,
@@ -61,5 +62,34 @@ describe('rewriteReadmeHeading', () => {
     expect(result).toContain('# my-app')
     expect(result).toContain('# Not a title')
     expect(result.indexOf('# my-app')).toBe(0)
+  })
+})
+
+describe('applyPeerOverrides', () => {
+  it("resolves better-auth's prisma peer to the installed prisma version", () => {
+    const pkg = {
+      dependencies: { 'better-auth': '^1.7.10' },
+      devDependencies: { prisma: '8.0.0-rc.30' },
+    }
+    expect(applyPeerOverrides(pkg).overrides).toEqual({
+      'better-auth': { prisma: '8.0.0-rc.30' },
+    })
+  })
+
+  it('leaves a template without better-auth untouched', () => {
+    const pkg = { devDependencies: { prisma: '8.0.0-rc.30' } }
+    expect(applyPeerOverrides(pkg)).toEqual(pkg)
+  })
+
+  it('preserves existing overrides', () => {
+    const pkg = {
+      dependencies: { 'better-auth': '^1.7.10' },
+      devDependencies: { prisma: '8.0.0-rc.30' },
+      overrides: { foo: '1.0.0' },
+    }
+    expect(applyPeerOverrides(pkg).overrides).toEqual({
+      foo: '1.0.0',
+      'better-auth': { prisma: '8.0.0-rc.30' },
+    })
   })
 })

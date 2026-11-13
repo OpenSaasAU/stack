@@ -10,6 +10,7 @@ export { ListViewClient } from './components/ListViewClient.js'
 export { FilterBuilder } from './components/FilterBuilder.js'
 export { RowSelectionBar } from './components/RowSelectionBar.js'
 export { BulkActions } from './components/BulkActions.js'
+export { RowActions } from './components/RowActions.js'
 export { ItemForm } from './components/ItemForm.js'
 export { ItemFormClient } from './components/ItemFormClient.js'
 export { RelationshipTable } from './components/RelationshipTable.js'
@@ -91,13 +92,18 @@ export type { NavigationProps, NavLinkProps } from './components/Navigation.js'
 export type { UserMenuProps } from './components/UserMenu.js'
 export type { ThemeToggleProps } from './components/ThemeToggle.js'
 export type { ListViewProps } from './components/ListView.js'
-export type { ListViewClientProps } from './components/ListViewClient.js'
-export type { FilterBuilderProps, FilterBuilderClassNames } from './components/FilterBuilder.js'
+export type { ListViewClientProps, FilterRemoval } from './components/ListViewClient.js'
+export type {
+  FilterBuilderProps,
+  FilterBuilderClassNames,
+  FilterBuilderHandle,
+} from './components/FilterBuilder.js'
 export type {
   RowSelectionBarProps,
   RowSelectionBarClassNames,
 } from './components/RowSelectionBar.js'
 export type { BulkActionsProps, SerializedBulkAction } from './components/BulkActions.js'
+export type { RowActionsProps, SerializedRowAction } from './components/RowActions.js'
 export type { ItemFormProps } from './components/ItemForm.js'
 export type { ItemFormClientProps } from './components/ItemFormClient.js'
 export type { RelationshipTableProps } from './components/RelationshipTable.js'
@@ -173,12 +179,10 @@ export {
 } from './lib/useRowSelection.js'
 export type { RowSelection } from './lib/useRowSelection.js'
 
-// Filter builder state helpers (UI state <-> `?search=` query round-trip)
-export { queryToState, stateToQuery } from './lib/filterBuilderState.js'
-export type { FilterRow, FilterBuilderState } from './lib/filterBuilderState.js'
-
 // Theme utilities
 export { compileTheme, presetThemes } from './lib/theme.js'
+
+export { type ListDensity, DENSITY_STORAGE_KEY } from './lib/density.js'
 
 // Color-scheme (dark mode) utilities
 export {

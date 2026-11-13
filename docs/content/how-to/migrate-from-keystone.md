@@ -30,7 +30,7 @@ This page consolidates the full Keystone migration story. The general, multi-sou
 4. **Assets & auth** — adopt existing image/file columns and an existing Better Auth install in place.
 5. **Coexistence** — optionally relocate generated output so the new stack can run side-by-side with Keystone during the cut-over.
 
-You can drive this with the migration CLI and the `opensaas-migration` Claude Code plugin (see [Tooling](#tooling-cli-agent-plugin) at the end), or do it by hand following the sections below.
+You can drive this with the migration CLI and the `opensaas-migration` Claude Code plugin (see [Tooling](#tooling-cli--agent-plugin) at the end), or do it by hand following the sections below.
 
 ---
 
@@ -367,7 +367,7 @@ The cases migrators trip on are documented as worked, before/after recipes in th
 - **Recipe 3 — gql.tada typed documents → a composed read.** Replace the typed document with a read narrowed by `.select()`; `VariablesOf` has no equivalent (use function params).
 - **Recipe 4 — fragment → `.select()` / `.include()` + null-on-access-denied.** A fragment's scalars map onto `.select()` and its relations onto `.include()`; denied nested single relations come back `null`, denied to-many records are dropped from the array. Keep your Keystone null-guards (`post.author?.name`).
 
-Install the plugin and run the skill (see [Tooling](#tooling-cli-agent-plugin)); it searches the project for `context.graphql` / `context.query` and rewrites each call site.
+Install the plugin and run the skill (see [Tooling](#tooling-cli--agent-plugin)); it searches the project for `context.graphql` / `context.query` and rewrites each call site.
 
 ---
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import './lib/node-guard.js'
 import fs from 'fs-extra'
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -10,9 +11,10 @@ import { validateProjectName } from './lib/project-name.js'
 import { generateAuthEnv, generateEnvFiles } from './lib/env.js'
 import { restoreGitignore } from './lib/templates.js'
 import { randomBytes } from 'node:crypto'
-import { applyProjectName, rewriteReadmeHeading } from './lib/package-json.js'
+import { applyPeerOverrides, applyProjectName, rewriteReadmeHeading } from './lib/package-json.js'
 import { removedDbFlagMessage, missingNonInteractiveFlags } from './lib/args.js'
 import { planSetupSteps, formatStepFailure, nextStepCommands, type SetupStep } from './lib/setup.js'
+import { renderPnpmWorkspace } from './lib/pnpm-workspace.js'
 import { removeAiTooling } from './lib/ai-tooling.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -153,7 +155,14 @@ async function createProject(options: TemplateOptions) {
 
     const pkgPath = path.join(targetDir, 'package.json')
     const pkg = await fs.readJSON(pkgPath)
-    await fs.writeJSON(pkgPath, applyProjectName(pkg, projectName), { spaces: 2 })
+    await fs.writeJSON(pkgPath, applyPeerOverrides(applyProjectName(pkg, projectName)), {
+      spaces: 2,
+    })
+
+    await fs.writeFile(
+      path.join(targetDir, 'pnpm-workspace.yaml'),
+      renderPnpmWorkspace({ withAuth }),
+    )
 
     const readmePath = path.join(targetDir, 'README.md')
     if (await fs.pathExists(readmePath)) {
@@ -243,7 +252,13 @@ async function runSetup(targetDir: string, projectName: string): Promise<boolean
   for (const step of planSetupSteps()) {
     console.log(chalk.cyan(`\n▶ ${step.title}...`))
     const ok = await runStep(step, targetDir)
-    if (!ok) {
+    if (
+      !ok &&
+      step.tolerateFailure &&
+      (await fs.pathExists(path.join(targetDir, 'node_modules')))
+    ) {
+      console.log(chalk.yellow(`\n⚠️  "${step.title}" exited with errors; continuing.`))
+    } else if (!ok) {
       console.log(chalk.yellow(`\n⚠️  ${formatStepFailure(step, projectName)}\n`))
       return false
     }

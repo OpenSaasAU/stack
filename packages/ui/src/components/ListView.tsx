@@ -3,31 +3,62 @@ import { unstable_rethrow } from 'next/navigation.js'
 import { AlertTriangle, Plus } from 'lucide-react'
 import { ListViewClient } from './ListViewClient.js'
 import type { SerializedBulkAction } from './BulkActions.js'
+import type { SerializedRowAction } from './RowActions.js'
 import { formatListName } from '../lib/utils.js'
 import { serializeFieldConfigs } from '../lib/serializeFieldConfig.js'
-import { isDefaultColumnField, withStructuralTimestampDefaults } from '../lib/defaultColumns.js'
+import { computeDefaultColumns, withStructuralTimestampDefaults } from '../lib/defaultColumns.js'
 import { resolveListUi } from '../lib/resolveListUi.js'
+import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '../lib/pageSize.js'
 import { jsonSafeClone } from '../lib/jsonSafeClone.js'
 import { applyClientValueTransforms } from '../lib/clientValueTransforms.js'
 import { EmptyState } from './EmptyState.js'
 import { PageHeader } from './PageHeader.js'
 import { Button } from '../primitives/button.js'
 import type { ServerActionInput } from '../server/types.js'
+import { isRelationshipField, shouldHaveForeignKey } from '@opensaas/stack-core/fields'
 import {
   type AccessContext,
   type AccessControl,
   type AnyStackContext,
   type BulkAction,
+  type FieldConfig,
+  type RowAction,
   engineContextOf,
-  buildListFilterWhere,
-  collectFilterSuggestions,
+  buildFilterWhere,
+  collectFilterSpecs,
+  filterSuggestionsOf,
+  filterValueRecordId,
   getItemLabel,
   getLabelFieldName,
   getUrlKey,
+  isFieldFilterableById,
+  isRelationshipLabelReadable,
   isToManyRelationshipField,
   OpenSaasConfig,
+  parseListId,
 } from '@opensaas/stack-core'
-import type { SecuredQuery } from '@opensaas/stack-core'
+import type { FilterSpec, FilterToken, SecuredQuery } from '@opensaas/stack-core'
+import type { CountFilterLink, FilterRemoval } from './ListViewClient.js'
+import {
+  chipsOf,
+  entriesQuery,
+  entriesTerms,
+  hydrateEntries,
+  isFieldCondition,
+  removableTerms,
+  type FilterEntry,
+  type FilterFields,
+  type RecordOf,
+  type ResolvedFilterRecord,
+} from '../lib/filterBuilderOptions.js'
+import {
+  collectUnreadableFields,
+  filterByHasAccess,
+  isRowActionAvailable,
+  RELATIONSHIP_OPTIONS_MAX_TAKE,
+  resolvePresetViews,
+  withholdFilterFields,
+} from '@opensaas/stack-core/internal'
 
 /**
  * Whether the list's delete access is NOT statically false (issue #733).
@@ -44,41 +75,54 @@ function canDeleteList(deleteAccess: AccessControl | boolean | undefined): boole
   return true
 }
 
-/**
- * Resolve the custom Bulk actions (issue #736) an admin may see, into the
- * serialisable metadata the client selection bar renders. Each action's
- * server-side `hasAccess` gate (if any) is evaluated HERE against the live
- * session/context — a denied action is dropped, so its button is never offered
- * (user story 14). Only `key`/`label`/`variant`/`destructive` cross the
- * boundary; `handler`/`hasAccess` stay on the server. The gate is also
- * re-checked on dispatch, so hiding a button is a UX affordance, not the
- * security boundary — the handler always runs through the secured context.
- */
-async function resolveVisibleBulkActions(
-  actions: BulkAction[] | undefined,
-  context: AccessContext,
+function serializeBulkAction(action: BulkAction): SerializedBulkAction {
+  return {
+    key: action.key,
+    label: action.label,
+    ...(action.variant ? { variant: action.variant } : {}),
+    ...(action.destructive ? { destructive: action.destructive } : {}),
+  }
+}
+
+function serializeRowAction(action: RowAction): SerializedRowAction {
+  return {
+    key: action.key,
+    label: action.label,
+    ...(action.icon ? { icon: action.icon } : {}),
+    ...(action.destructive ? { destructive: action.destructive } : {}),
+  }
+}
+
+async function availableRowActionKeys(
+  actions: RowAction[],
   listKey: string,
-): Promise<SerializedBulkAction[]> {
-  if (!actions || actions.length === 0) return []
-  const resolved = await Promise.all(
-    actions.map(async (action): Promise<SerializedBulkAction | null> => {
-      if (action.hasAccess) {
-        const allowed = await action.hasAccess({
-          session: context.session,
-          context,
-          listKey,
-        })
-        if (!allowed) return null
-      }
-      return {
-        key: action.key,
-        label: action.label,
-        ...(action.variant ? { variant: action.variant } : {}),
-        ...(action.destructive ? { destructive: action.destructive } : {}),
-      }
-    }),
-  )
-  return resolved.filter((a): a is SerializedBulkAction => a !== null)
+  read: SecuredQuery,
+  ids: Array<string | number>,
+  session: AccessContext['session'],
+): Promise<Record<string, string[]>> {
+  if (actions.length === 0 || ids.length === 0) return {}
+  let rows: Array<Record<string, unknown>> = ids.map((id) => ({ id }))
+  if (actions.some((action) => action.isAvailable)) {
+    try {
+      rows = await read.where({ id: { in: ids } }).all()
+    } catch (error) {
+      unstable_rethrow(error)
+      console.error('Row action availability could not be read:', error)
+      const unconditional = actions
+        .filter((action) => !action.isAvailable)
+        .map((action) => action.key)
+      if (unconditional.length === 0) return {}
+      return Object.fromEntries(ids.map((id) => [String(id), unconditional]))
+    }
+  }
+  const keysById: Record<string, string[]> = {}
+  for (const item of rows) {
+    const keys = actions
+      .filter((action) => isRowActionAvailable(action, listKey, item, session))
+      .map((action) => action.key)
+    if (keys.length > 0) keysById[String(item.id)] = keys
+  }
+  return keysById
 }
 
 /**
@@ -108,6 +152,196 @@ function readRelationshipCount(item: Record<string, unknown>, fieldName: string)
   return typeof value === 'number' ? value : null
 }
 
+function relatedListKeyOf(field: unknown): string | undefined {
+  if (typeof field !== 'object' || field === null) return undefined
+  if (!('type' in field) || field.type !== 'relationship') return undefined
+  if (!('ref' in field) || typeof field.ref !== 'string') return undefined
+  return field.ref.split('.')[0]
+}
+
+async function resolveRecordLabels(
+  tokens: readonly FilterToken[],
+  fields: FilterFields,
+  listConfig: OpenSaasConfig['lists'][string],
+  config: OpenSaasConfig,
+  context: AccessContext,
+): Promise<Record<string, ResolvedFilterRecord[]>> {
+  const idsByField = new Map<string, Set<string>>()
+  for (const token of tokens) {
+    const field = token.field
+    if (field === null || token.operator !== 'eq' || !fields.get(field)?.matchesById) continue
+    for (const value of token.values) {
+      const id = filterValueRecordId(value)
+      if (id !== null) idsByField.set(field, (idsByField.get(field) ?? new Set()).add(id))
+    }
+  }
+
+  const entries = await Promise.all(
+    [...idsByField].map(async ([field, ids]): Promise<[string, ResolvedFilterRecord[]]> => {
+      const relatedListKey = relatedListKeyOf(listConfig.fields[field])
+      const relatedListConfig =
+        relatedListKey && Object.hasOwn(config.lists, relatedListKey)
+          ? config.lists[relatedListKey]
+          : undefined
+      if (!relatedListKey || !relatedListConfig) return [field, []]
+      const parsed = [...ids].flatMap((id) => {
+        const result = parseListId(config, relatedListKey, id)
+        return result.ok ? [{ id, value: result.value }] : []
+      })
+      const looked = parsed.slice(0, RELATIONSHIP_OPTIONS_MAX_TAKE)
+      let rows: Array<Record<string, unknown>> = []
+      if (looked.length > 0) {
+        try {
+          const labelReadable = await isRelationshipLabelReadable(context, config, relatedListKey)
+          const labelField = getLabelFieldName(relatedListConfig)
+          const read = context.db[relatedListKey].where({
+            id: { in: looked.map(({ value }) => value) },
+          })
+          rows = await (labelReadable ? read.select('id', labelField) : read.select('id')).all()
+        } catch (error) {
+          unstable_rethrow(error)
+          console.error(`Filter labels for "${field}" could not be read:`, error)
+        }
+      }
+      return [
+        field,
+        parsed.map(({ id, value }) => {
+          const row = rows.find((candidate) => String(candidate.id) === String(value))
+          return { id, label: row ? getItemLabel(relatedListConfig, row) : null }
+        }),
+      ]
+    }),
+  )
+  return Object.fromEntries(entries.filter(([, records]) => records.length > 0))
+}
+
+const FILTER_REMOVAL_TERMS = 5
+
+function filteredFields(tokens: readonly FilterToken[], fields: FilterFields): string[] {
+  return [
+    ...new Set(
+      tokens
+        .filter((token) => isFieldCondition(token, fields))
+        .flatMap((token) => (token.field === null ? [] : [token.field])),
+    ),
+  ]
+}
+
+async function resolveFilterRemoval(
+  entries: FilterEntry[],
+  fields: FilterFields,
+  specs: Record<string, FilterSpec>,
+  recordOf: RecordOf,
+  list: SecuredQuery,
+  listKey: string,
+): Promise<FilterRemoval | null> {
+  const terms = removableTerms(entries, chipsOf(entries, fields, recordOf)).slice(
+    0,
+    FILTER_REMOVAL_TERMS,
+  )
+  if (terms.length === 0) return null
+  try {
+    const removals = await Promise.all(
+      terms.map(async ({ sentence, rest }) => {
+        const where = buildFilterWhere({ terms: entriesTerms(rest) }, specs)
+        const scoped = where ? list.where(where) : list
+        const { rows } = await scoped.aggregate((aggregate) => ({ rows: aggregate.count() }))
+        return { sentence, rest, rows }
+      }),
+    )
+    const best = removals.reduce<(typeof removals)[number] | null>(
+      (current, removal) => (removal.rows > (current?.rows ?? 0) ? removal : current),
+      null,
+    )
+    if (!best) return null
+    return {
+      search: entriesQuery(entries),
+      query: entriesQuery(best.rest),
+      sentence: best.sentence,
+      rows: best.rows,
+    }
+  } catch (error) {
+    unstable_rethrow(error)
+    console.error(`Filter removal counts for ${listKey} could not be read:`, error)
+    return null
+  }
+}
+
+async function isCountLinkable(
+  otherListKey: string,
+  otherField: string,
+  config: OpenSaasConfig,
+  context: AccessContext,
+): Promise<boolean> {
+  if (!Object.hasOwn(config.lists, otherListKey)) return false
+  const otherListConfig = config.lists[otherListKey]
+  if (otherListConfig.isSingleton) return false
+  try {
+    return await isFieldFilterableById(otherListConfig, otherListKey, otherField, config, {
+      session: context.session,
+      context,
+    })
+  } catch (error) {
+    unstable_rethrow(error)
+    console.error(`Count link to "${otherListKey}.${otherField}" could not be resolved:`, error)
+    return false
+  }
+}
+
+async function resolveCountLinks(
+  countedRelations: ReadonlySet<string>,
+  listConfig: OpenSaasConfig['lists'][string],
+  config: OpenSaasConfig,
+  context: AccessContext,
+): Promise<Record<string, CountFilterLink>> {
+  const checks = new Map<string, Promise<boolean>>()
+  const entries = await Promise.all(
+    [...countedRelations].map(async (fieldName): Promise<[string, CountFilterLink] | null> => {
+      const field = listConfig.fields[fieldName]
+      if (!('ref' in field) || typeof field.ref !== 'string') return null
+      const [otherListKey, otherField] = field.ref.split('.')
+      if (!otherField) return null
+      const key = JSON.stringify([otherListKey, otherField])
+      const check = checks.get(key) ?? isCountLinkable(otherListKey, otherField, config, context)
+      checks.set(key, check)
+      return (await check)
+        ? [fieldName, { urlKey: getUrlKey(otherListKey), field: otherField }]
+        : null
+    }),
+  )
+  return Object.fromEntries(entries.filter((entry) => entry !== null))
+}
+
+function readableFieldsOf<T>(
+  fields: Record<string, T>,
+  unreadable: ReadonlySet<string>,
+): Record<string, T> {
+  return Object.fromEntries(Object.entries(fields).filter(([name]) => !unreadable.has(name)))
+}
+
+function withheldKeysOf(
+  unreadable: ReadonlySet<string>,
+  listConfig: OpenSaasConfig['lists'][string],
+  listKey: string,
+  config: OpenSaasConfig,
+): Set<string> {
+  const keys = new Set(unreadable)
+  for (const name of unreadable) {
+    const field: FieldConfig | undefined = listConfig.fields[name]
+    if (!isRelationshipField(field)) continue
+    if (!Object.hasOwn(config.lists, field.ref.split('.')[0])) continue
+    if (shouldHaveForeignKey(listKey, name, field, config)) keys.add(`${name}Id`)
+  }
+  return keys
+}
+
+function withoutKeys(
+  item: Record<string, unknown>,
+  keys: ReadonlySet<string>,
+): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(item).filter(([key]) => !keys.has(key)))
+}
+
 /**
  * Default sort for the list table, mirroring Keystone's `ui.listView.initialSort`.
  * Plain serializable data so it can cross the server/client boundary.
@@ -123,6 +357,18 @@ export interface ListViewProps {
   listKey: string
   basePath?: string
   columns?: string[]
+  /**
+   * The columns the admin chose, from the `?columns=` URL param. Names this
+   * list does not display are ignored, and an empty selection falls back to
+   * `columns`. Resolved here so a to-many count is read for every column shown.
+   */
+  visibleColumns?: string[]
+  /**
+   * Whether this page reads `?columns=` and `?pageSize=` back into
+   * `visibleColumns` and `pageSize`. Offers the Columns menu and the
+   * rows-per-page control, which write those params. `AdminUI` sets it.
+   */
+  urlControls?: boolean
   page?: number
   pageSize?: number
   search?: string
@@ -137,6 +383,12 @@ export interface ListViewProps {
    */
   sort?: ListViewSort
   /**
+   * The Preset view key from the `?preset=` URL param. A key this session may
+   * open replaces `search` with the preset's resolved query and sorts by its
+   * `sort` unless `sort` is given; any other key is ignored.
+   */
+  preset?: string
+  /**
    * The generic server action (rebuilds the session context server-side).
    * Threaded to the client table for the built-in Bulk action Delete. When
    * omitted, no bulk delete is offered.
@@ -150,11 +402,14 @@ export async function ListView({
   listKey,
   basePath = '/admin',
   columns,
+  visibleColumns,
+  urlControls = false,
   page = 1,
-  pageSize: requestedPageSize = 50,
+  pageSize: requestedPageSize = DEFAULT_PAGE_SIZE,
   search,
   initialSort,
   sort,
+  preset,
   serverAction,
 }: ListViewProps) {
   const context = engineContextOf(appContext)
@@ -173,33 +428,73 @@ export async function ListView({
     )
   }
 
-  // Fold in the structural createdAt/updatedAt exclusion (issue #1018) before
-  // crossing the server/client boundary, so `ListViewClient`'s fallback (used
-  // when no explicit `columns` is configured) curates off the same declared
-  // `ui.listView.defaultColumn` flag as everything else — no timestamp-aware
-  // logic needed on the client.
-  const displayFields = withStructuralTimestampDefaults(listConfig.fields, listConfig, config.db)
-
-  // The columns `ListViewClient` will actually render, resolved the same way it
-  // resolves them. Naming a relation in the read suppresses the engine's
-  // declared-dependency widening for it (`resolveIncludes`), and a reduced
-  // relation is masked to `[]` for the rules and computed fields that read it —
-  // so a to-many is counted only where a column displays that count.
-  const displayedColumns = new Set(
-    columns ??
-      Object.keys(displayFields).filter((name) => isDefaultColumnField(displayFields[name])),
+  const unreadableFields = await collectUnreadableFields(listConfig, {
+    session: context.session,
+    context,
+  })
+  const readable = (name: string) => !unreadableFields.has(name)
+  const readableListFields = readableFieldsOf(listConfig.fields, unreadableFields)
+  const displayFields = readableFieldsOf(
+    withStructuralTimestampDefaults(listConfig.fields, listConfig, config.db),
+    unreadableFields,
   )
+  const withheldKeys = withheldKeysOf(unreadableFields, listConfig, listKey, config)
+  const availableColumns = [
+    ...new Set([
+      ...(columns ?? []).filter((name) => !Object.hasOwn(displayFields, name)),
+      ...Object.keys(displayFields),
+    ]),
+  ].filter(readable)
+  const chosenColumns = [...new Set(visibleColumns ?? [])].filter((name) =>
+    availableColumns.includes(name),
+  )
+  const readableDefaults = (columns ?? computeDefaultColumns(displayFields)).filter(readable)
+  const defaultColumns =
+    readableDefaults.length > 0
+      ? readableDefaults
+      : Object.keys(displayFields).filter(readable).slice(0, 1)
+  const baseColumns = chosenColumns.length > 0 ? chosenColumns : defaultColumns
+
+  const pageSize = Math.min(
+    Math.max(1, Math.floor(requestedPageSize) || DEFAULT_PAGE_SIZE),
+    MAX_PAGE_SIZE,
+  )
+  const presetViews = resolvePresetViews(listConfig, listKey, context, preset)
+  const activePreset = await presetViews.active
+  const activeSearch = activePreset
+    ? withholdFilterFields(activePreset.search, unreadableFields)
+    : search
+  const sortCandidates = [sort, activePreset?.sort, initialSort]
+
+  const filterSpecs = await collectFilterSpecs(listConfig, listKey, config, {
+    session: context.session,
+    context,
+  })
+  const filterSuggestions = filterSuggestionsOf(filterSpecs)
+  const filterFields: FilterFields = new Map(
+    filterSuggestions.map((suggestion) => [suggestion.field, suggestion]),
+  )
+  const searchEntries = activeSearch ? hydrateEntries(activeSearch) : []
+  const searchTokens = searchEntries.map((entry) => entry.token)
+  const autoColumns = filteredFields(searchTokens, filterFields).filter(
+    (name) => Object.hasOwn(displayFields, name) && !baseColumns.includes(name),
+  )
+  const displayedColumns = new Set([...baseColumns, ...autoColumns])
+  // Naming a relation in the read suppresses the engine's declared-dependency
+  // widening for it (`resolveIncludes`), and a reduced relation is masked to
+  // `[]` for the rules and computed fields that read it — so a to-many is
+  // counted only where a column displays that count.
   const countedRelations = new Set(
     Object.entries(listConfig.fields)
       .filter(([name, field]) => isToManyRelationshipField(field) && displayedColumns.has(name))
       .map(([name]) => name),
   )
 
-  const pageSize = Math.min(Math.max(1, Math.floor(requestedPageSize) || 50), 200)
   const currentPage = Number.isSafeInteger(page) && page >= 1 ? page : 1
   const skip = (currentPage - 1) * pageSize
   let items: Array<Record<string, unknown>> = []
   let total = 0
+  let countLinks: Record<string, CountFilterLink> = {}
   let activeSort: ListViewSort | undefined
   let sortableFields: Record<string, boolean> = {}
 
@@ -212,11 +507,9 @@ export async function ListView({
     const orderable =
       (await context._orderableKeys?.(listKey, [
         ...displayedColumns,
-        ...[sort, initialSort].flatMap((candidate) => (candidate ? [candidate.field] : [])),
+        ...sortCandidates.flatMap((candidate) => (candidate ? [candidate.field] : [])),
       ])) ?? new Set<string>()
-    activeSort = [sort, initialSort].find(
-      (candidate) => candidate && orderable.has(candidate.field),
-    )
+    activeSort = sortCandidates.find((candidate) => candidate && orderable.has(candidate.field))
     sortableFields = Object.fromEntries(
       [...displayedColumns].map((column) => [column, orderable.has(column)]),
     )
@@ -228,11 +521,8 @@ export async function ListView({
     // secured `context.db` below, which ANDs it with the access filter, so the
     // filter can only ever narrow (never widen) what this session may see.
     const parsedWhere =
-      search && search.trim()
-        ? await buildListFilterWhere(search, listConfig, listKey, config, {
-            session: context.session,
-            context,
-          })
+      searchEntries.length > 0
+        ? buildFilterWhere({ terms: entriesTerms(searchEntries) }, filterSpecs)
         : undefined
 
     // A to-one relationship fetches the related row (for its Item label); a
@@ -255,12 +545,14 @@ export async function ListView({
 
     // The total is the same scoped read, counted in the database — so it can
     // only ever equal the number of rows this session may page through.
-    const [rows, totals] = await Promise.all([
+    const [rows, totals, links] = await Promise.all([
       sorted.offset(skip).limit(pageSize).all(),
       scoped.aggregate((aggregate) => ({ total: aggregate.count() })),
+      resolveCountLinks(countedRelations, listConfig, config, context),
     ])
     items = rows
     total = totals.total
+    countLinks = links
   } catch (error) {
     unstable_rethrow(error)
     console.error(`Failed to fetch ${listKey}:`, error)
@@ -284,7 +576,7 @@ export async function ListView({
   }
 
   const relationshipRefs: Record<string, string> = {}
-  Object.entries(listConfig.fields).forEach(([fieldName, field]) => {
+  Object.entries(readableListFields).forEach(([fieldName, field]) => {
     if (
       'type' in field &&
       field.type === 'relationship' &&
@@ -298,7 +590,7 @@ export async function ListView({
   // Resolve each relationship value before crossing the server/client boundary
   // — ListConfig objects carry functions and can't be passed as props.
   const itemsWithResolvedLabels = items.map((item) => {
-    const resolved: Record<string, unknown> = { ...item }
+    const resolved = withoutKeys(item, withheldKeys)
     for (const [fieldName, ref] of Object.entries(relationshipRefs)) {
       const field = listConfig.fields[fieldName]
       if (isToManyRelationshipField(field)) {
@@ -320,32 +612,71 @@ export async function ListView({
   })
 
   const serializedItems = jsonSafeClone(
-    itemsWithResolvedLabels.map((item) => applyClientValueTransforms(listConfig.fields, item)),
+    itemsWithResolvedLabels.map((item) => applyClientValueTransforms(readableListFields, item)),
   )
 
-  // Collect each filterable field's serializable Filter spec metadata (fields,
-  // operators, enumerated values / relationship label search) to drive the
-  // Filter builder's pickers. It mirrors the same specs the server-side
-  // `buildListFilterWhere` above uses, so the builder can only produce queries
-  // the engine understands.
-  const filterSuggestions = await collectFilterSuggestions(listConfig, listKey, config, {
-    session: context.session,
+  const recordLabels = await resolveRecordLabels(
+    searchTokens,
+    filterFields,
+    listConfig,
+    config,
     context,
-  })
+  )
+  const filterRemoval =
+    total === 0 && searchTokens.length > 0 && filterSuggestions.length > 0
+      ? await resolveFilterRemoval(
+          searchEntries,
+          filterFields,
+          filterSpecs,
+          (field, id) => recordLabels[field]?.find((record) => record.id === id),
+          context.db[key],
+          listKey,
+        )
+      : null
 
   // When the list opts into avatars (issue #735), the label column renders with
   // an initials bubble ahead of the emphasized Item label. The label column is
   // resolved through the shared label seam (`getLabelFieldName`), so it can
   // never drift from the field the Item label is read off.
-  const avatarColumn = listConfig.ui?.avatar ? getLabelFieldName(listConfig) : undefined
+  const labelField = getLabelFieldName(listConfig)
+  const labelColumn = readable(labelField) ? labelField : undefined
+  const avatarColumn = listConfig.ui?.avatar ? labelColumn : undefined
 
-  const bulkActions = await resolveVisibleBulkActions(
-    listConfig.ui?.listView?.bulkActions,
-    context,
-    listKey,
+  const pageIds = items.flatMap((item) =>
+    typeof item.id === 'string' || typeof item.id === 'number' ? [item.id] : [],
   )
-
-  const { hideCreate, hideDelete } = await resolveListUi(listConfig, context)
+  const resolveRowActions = async (): Promise<{
+    visibleRowActions: RowAction[]
+    rowActionKeys: Record<string, string[]>
+  }> => {
+    if (!serverAction) return { visibleRowActions: [], rowActionKeys: {} }
+    const visible = await filterByHasAccess(
+      listConfig.ui?.listView?.rowActions,
+      context,
+      listKey,
+      'Row action',
+    )
+    const keys = await availableRowActionKeys(
+      visible,
+      listKey,
+      context.db[key],
+      pageIds,
+      context.session,
+    )
+    return { visibleRowActions: visible, rowActionKeys: keys }
+  }
+  const [
+    visibleBulkActions,
+    { visibleRowActions, rowActionKeys },
+    { hideCreate, hideDelete },
+    presetTabs,
+  ] = await Promise.all([
+    filterByHasAccess(listConfig.ui?.listView?.bulkActions, context, listKey, 'Bulk action'),
+    resolveRowActions(),
+    resolveListUi(listConfig, context),
+    presetViews.tabs,
+  ])
+  const bulkActions = visibleBulkActions.map(serializeBulkAction)
 
   return (
     <div className="p-4 md:p-8">
@@ -367,14 +698,15 @@ export async function ListView({
       <ListViewClient
         items={serializedItems || []}
         fieldTypes={Object.fromEntries(
-          Object.entries(displayFields).map(([key, field]) => [
-            key,
-            (field as { type: string }).type,
-          ]),
+          Object.entries(displayFields).map(([key, field]) => [key, field.type]),
         )}
         fields={serializeFieldConfigs(displayFields)}
         relationshipRefs={relationshipRefs}
-        columns={columns}
+        columns={baseColumns}
+        availableColumns={urlControls ? availableColumns : undefined}
+        pageSizeControl={urlControls}
+        defaultColumns={defaultColumns}
+        columnsChosen={chosenColumns.length > 0}
         sortableFields={sortableFields}
         initialSort={activeSort}
         listKey={listKey}
@@ -383,14 +715,22 @@ export async function ListView({
         page={currentPage}
         pageSize={pageSize}
         total={total || 0}
-        search={search}
+        search={activeSearch}
+        presets={presetTabs}
+        activePreset={activePreset?.key}
         filterSuggestions={filterSuggestions}
+        recordLabels={recordLabels}
+        countLinks={countLinks}
         serverAction={serverAction}
         canDelete={!hideDelete && canDeleteList(listConfig.access?.operation?.delete)}
         canCreate={!hideCreate}
         avatarColumn={avatarColumn}
-        labelColumn={getLabelFieldName(listConfig)}
+        labelColumn={labelColumn}
         bulkActions={bulkActions}
+        rowActions={visibleRowActions.map(serializeRowAction)}
+        rowActionKeys={rowActionKeys}
+        autoColumns={autoColumns}
+        filterRemoval={filterRemoval}
       />
     </div>
   )

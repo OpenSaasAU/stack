@@ -42,14 +42,7 @@ export async function updatePost(id: string, data: PostUpdateInput) {
 
   const post = await context.db.Post.update({
     where: { id },
-    data: {
-      title: data.title,
-      slug: data.slug,
-      content: data.content,
-      status: data.status || 'draft',
-      internalNotes: data.internalNotes,
-      publishedAt: data.publishedAt ?? undefined,
-    },
+    data,
   })
 
   if (!post) {

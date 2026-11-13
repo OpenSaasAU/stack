@@ -7,7 +7,7 @@ vi.mock('@opensaas/stack-core', async (importOriginal) => {
 })
 
 import { getRelationshipOptions } from '@opensaas/stack-core'
-import { bigInt, relationship, text } from '@opensaas/stack-core/fields'
+import { bigInt, relationship, select, text } from '@opensaas/stack-core/fields'
 import { createTestContext, type TestContext } from '@opensaas/stack-core/testing'
 import { prepareItemForm } from '../../src/lib/prepareItemForm.js'
 
@@ -54,6 +54,23 @@ function makeConfig(): OpenSaasConfig {
           tags: relationship({ ref: 'Tag.posts', many: true }),
         },
         access: { operation: { query: () => true, create: () => true } },
+      },
+      Doc: {
+        fields: {
+          title: text(),
+          secretNote: text({
+            access: { read: () => false, create: () => false, update: () => false },
+          }),
+          clearance: select({
+            options: [{ label: 'ClearanceCosmicLabel', value: 'a' }],
+            access: { read: () => false, create: () => false, update: () => false },
+          }),
+          writeOnly: text({
+            validation: { isRequired: true },
+            access: { read: () => false },
+          }),
+        },
+        access: { operation: { query: () => true, create: () => true, update: () => true } },
       },
       // A one-to-one: both ends are `many: false` and exactly one holds the
       // column. `Profile` sorts before `User`, so `Profile.user` owns it.
@@ -276,5 +293,38 @@ describe('prepareItemForm relationship writability', () => {
     expect(userFields.profile.readOnly).toBe(true)
     expect(userFields.profile.readOnlyReason).toEqual(expect.stringContaining('Not editable'))
     expect(profileFields.user.readOnly).toBeUndefined()
+  })
+})
+
+describe('prepareItemForm unreadable fields', () => {
+  const run = async (operation: 'create' | 'update') => {
+    const config = makeConfig()
+    const prepared = await prepareItemForm(
+      context,
+      config,
+      'Doc',
+      config.lists.Doc,
+      operation === 'update' ? { id: '1', title: 't', writeOnly: 'x' } : {},
+      operation,
+    )
+    return prepared
+  }
+
+  it.each(['create', 'update'] as const)(
+    'serialises no name or option label of an always-denied field on %s',
+    async (operation) => {
+      const { serializableFields, initialData } = await run(operation)
+      const wire = JSON.stringify({ serializableFields, initialData })
+      expect(wire).not.toContain('secretNote')
+      expect(wire).not.toContain('clearance')
+      expect(wire).not.toContain('ClearanceCosmicLabel')
+    },
+  )
+
+  it('keeps a write-only field on edit, empty and not required', async () => {
+    const { serializableFields, initialData } = await run('update')
+    expect(serializableFields.writeOnly).toBeDefined()
+    expect(serializableFields.writeOnly.validation?.isRequired).toBe(false)
+    expect(initialData).not.toHaveProperty('writeOnly')
   })
 })

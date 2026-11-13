@@ -21,8 +21,7 @@ import {
 import { resolveListUi } from '../lib/resolveListUi.js'
 import { compileTheme } from '../lib/theme.js'
 import { deriveCurrentPath } from '../lib/currentPath.js'
-
-const MAX_PAGE_SIZE = 200
+import { MAX_PAGE_SIZE } from '../lib/pageSize.js'
 
 export interface AdminUIProps {
   /** The app's context — what `getContext()` returned for this request. */
@@ -34,7 +33,7 @@ export interface AdminUIProps {
   // Server action can return any shape depending on the list item type
   serverAction: (input: ServerActionInput) => Promise<unknown>
   /**
-   * Ends the session: an app-owned server action calling `auth.api.signOut`, then
+   * Ends the session: an app-owned server action calling `signOutAndConfirm`, then
    * `redirect()` to the sign-in page. It crosses to a client component, so it must
    * be a server action rather than a plain function. Without it no Sign Out control
    * renders. Ignored when `navigation` is supplied: that chrome renders its own
@@ -157,6 +156,7 @@ export async function AdminUI({
     )
   } else {
     const search = typeof searchParams.search === 'string' ? searchParams.search : undefined
+    const preset = typeof searchParams.preset === 'string' ? searchParams.preset : undefined
     const page =
       typeof searchParams.page === 'string' && /^\d+$/.test(searchParams.page)
         ? Number(searchParams.page)
@@ -171,6 +171,15 @@ export async function AdminUI({
       pageSizeParam !== undefined && Number.isFinite(pageSizeParam) && pageSizeParam > 0
         ? Math.min(pageSizeParam, MAX_PAGE_SIZE)
         : undefined
+
+    const visibleColumns =
+      searchParams.columns === undefined
+        ? undefined
+        : [searchParams.columns]
+            .flat()
+            .flatMap((value) => value.split(','))
+            .map((name) => name.trim())
+            .filter((name) => name.length > 0)
 
     // Read list-view defaults (column selection/order + default sort) from the
     // list-level `ui.listView` config (mirrors Keystone). When absent, the
@@ -203,8 +212,11 @@ export async function AdminUI({
         page={page}
         pageSize={pageSize}
         columns={listView?.initialColumns}
+        visibleColumns={visibleColumns}
+        urlControls
         initialSort={listView?.initialSort}
         sort={urlSort}
+        preset={preset}
         serverAction={serverAction}
       />
     )

@@ -9,6 +9,7 @@ import { executePlugins, getPluginData } from './plugin-engine.js'
 import { assertUniqueMcpToolNames } from './mcp-tool-names.js'
 import { assertValidHookOnlyFields } from './hook-only-fields.js'
 import { isZonelessNativeType } from '../fields/index.js'
+import { assertUniquePresetKeys, assertUniqueRowActionKeys } from './list-view-keys.js'
 import type { AccessControl } from '../access/types.js'
 
 function normalizeListAccess<T>(
@@ -62,8 +63,12 @@ function applyZonelessTimestampDefault(userConfig: OpenSaasConfig): OpenSaasConf
  */
 export function config(userConfig: OpenSaasConfig): OpenSaasConfig | Promise<OpenSaasConfig> {
   if (!userConfig.plugins || userConfig.plugins.length === 0) {
-    return assertValidHookOnlyFields(
-      assertUniqueMcpToolNames(applyZonelessTimestampDefault(userConfig)),
+    return assertUniquePresetKeys(
+      assertUniqueRowActionKeys(
+        assertValidHookOnlyFields(
+          assertUniqueMcpToolNames(applyZonelessTimestampDefault(userConfig)),
+        ),
+      ),
     )
   }
 
@@ -71,6 +76,8 @@ export function config(userConfig: OpenSaasConfig): OpenSaasConfig | Promise<Ope
     .then(applyZonelessTimestampDefault)
     .then(assertUniqueMcpToolNames)
     .then(assertValidHookOnlyFields)
+    .then(assertUniqueRowActionKeys)
+    .then(assertUniquePresetKeys)
 }
 
 export { getPluginData }
@@ -194,6 +201,12 @@ export type {
   BulkActionContext,
   BulkActionResult,
   BulkActionVariant,
+  RowAction,
+  RowActionContext,
+  RowActionIcon,
+  RowActionId,
+  RowActionResult,
+  PresetView,
   ItemViewUIConfig,
   ListUIOption,
   RelationshipItemViewConfig,

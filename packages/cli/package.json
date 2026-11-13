@@ -61,7 +61,7 @@
     "@prisma/orm-toolchain": "8.0.0-rc.22",
     "chalk": "^6.0.0",
     "chokidar": "^6.0.0",
-    "commander": "^15.0.0",
+    "commander": "^15.1.0",
     "fs-extra": "^11.4.1",
     "glob": "^14.0.2",
     "jiti": "^2.7.0",
@@ -78,11 +78,11 @@
     "@opensaas/stack-tiptap": "workspace:*",
     "@prisma/orm-extension-pgvector": "8.0.0-rc.22",
     "@types/fs-extra": "^11.0.4",
-    "@types/node": "^26.6.3",
+    "@types/node": "^26.6.6",
     "@types/pg": "^8.23.1",
     "@types/prompts": "^2.4.9",
     "@typescript/native": "npm:typescript@^7.0.2",
-    "@vitest/coverage-v8": "5.0.5",
-    "vitest": "5.0.5"
+    "@vitest/coverage-v8": "5.1.0",
+    "vitest": "5.1.0"
   }
 }

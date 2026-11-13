@@ -419,3 +419,24 @@ describe('changedSince', () => {
     expect(fs.readdirSync(path.join(tempDir, '.opensaas'))).toEqual([])
   })
 })
+
+describe('formatReconcileFailure', () => {
+  it('drops progress envelopes and reduces an envelope to its text', async () => {
+    const { formatReconcileFailure } = await import('./staged-reconcile.js')
+    const output = [
+      JSON.stringify({ kind: 'step-started', name: 'plan' }),
+      JSON.stringify({
+        kind: 'diagnostic',
+        body: [{ text: 'Cannot add NOT NULL ' }, { text: 'over NULLs' }],
+      }),
+      'plain stderr line',
+      JSON.stringify({ kind: 'opaque', value: 1 }),
+    ].join('\n')
+
+    expect(formatReconcileFailure(output).split('\n')).toEqual([
+      'Cannot add NOT NULL over NULLs',
+      'plain stderr line',
+      JSON.stringify({ kind: 'opaque', value: 1 }),
+    ])
+  })
+})

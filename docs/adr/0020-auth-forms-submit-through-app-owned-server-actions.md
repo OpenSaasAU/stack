@@ -20,9 +20,9 @@ in as props, **one prop per concern** (`signInAction`, `signUpAction`,
 - **The package owns only the form components and the actions' contract types**
   (`SignInInput`, `SignUpInput`, `RequestPasswordResetInput`, `ResetPasswordInput`,
   and `AuthActionResult = { success: true } | { success: false; error: string }`).
-  It does **not** export shared action logic — better-auth's `auth.api.*` already is
-  that logic, and threading the app's auth instance through a package helper buys
-  friction, not safety. The `[body.field]` error-message cleanup stays internal to
+  It does **not** export shared action logic beyond `postAuthEndpoint` (see Amendment) —
+  better-auth's `auth.api.*` already is that logic, and threading the app's auth
+  instance through a package helper buys friction, not safety. The `[body.field]` error-message cleanup stays internal to
   the form.
 - **The app (and the `starter-auth` template / CLI generator) owns the action
   implementations** in `lib/actions/auth.ts`, calling `auth.api.*` directly.
@@ -58,3 +58,15 @@ in as props, **one prop per concern** (`signInAction`, `signUpAction`,
 - This ADR also folds in the previously-missing `reset-password` page and
   `ResetPasswordForm`, completing the forgot-password flow that until now dead-ended
   on a 404.
+
+## Amendment: sign-in, sign-up and password-reset go through `auth.handler`
+
+better-auth's rate limiter runs only in `auth.handler`, so actions calling `auth.api.*`
+were never throttled (#2152). `@opensaas/stack-auth/server` now exports
+`postAuthEndpoint(auth, { path, body, headers, setCookie })`, which POSTs a constructed
+`Request` to the handler, returns an `AuthActionResult`-shaped value (429 included) and
+passes `Set-Cookie` values to `setCookie` (Next's `cookies().set`). The templates'
+`signInAction`, `signUpAction` and `requestPasswordResetAction` use it. The earlier
+rejection of shared action logic was about friction; this is a safety reason. Forms
+still submit through server actions with no browser dependency on the REST route.
+Actions that keep calling `auth.api.*` directly are not rate limited.

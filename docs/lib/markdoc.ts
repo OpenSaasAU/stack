@@ -1,12 +1,37 @@
-import Markdoc from '@markdoc/markdoc'
+import Markdoc, { type Config, type Node } from '@markdoc/markdoc'
 import { codeToHtml } from 'shiki'
 import { renderPlainCode, resolveCodeLanguage } from './code-highlighting'
+
+export function slugifyHeading(text: string): string {
+  return text
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9 -]/g, '')
+    .replace(/ /g, '-')
+}
+
+function nodeText(node: Node): string {
+  if (typeof node.attributes.content === 'string') return node.attributes.content
+  return node.children.map(nodeText).join('')
+}
 
 /**
  * Markdoc configuration with custom nodes and tags
  */
 export const markdocConfig = {
   nodes: {
+    heading: {
+      ...Markdoc.nodes.heading,
+      transform(node: Node, config: Config) {
+        const attributes = node.transformAttributes(config)
+        const children = node.transformChildren(config)
+        return new Markdoc.Tag(
+          `h${node.attributes.level}`,
+          { ...attributes, id: attributes.id ?? (slugifyHeading(nodeText(node)) || undefined) },
+          children,
+        )
+      },
+    },
     fence: {
       render: 'CodeBlock',
       attributes: {
@@ -93,10 +118,7 @@ export function extractHeadings(content: string) {
   while ((match = headingRegex.exec(content)) !== null) {
     const level = match[1].length
     const text = match[2]
-    const id = text
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '')
+    const id = slugifyHeading(text)
 
     headings.push({ level, text, id })
   }

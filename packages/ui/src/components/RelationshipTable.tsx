@@ -18,6 +18,7 @@ import {
   isOperationPotentiallyAllowed,
   isFieldPotentiallyWritable,
 } from '../lib/operationAccess.js'
+import { collectUnreadableFields } from '@opensaas/stack-core/internal'
 import { prepareItemForm } from '../lib/prepareItemForm.js'
 import type { RelationshipTableSection } from '../lib/deriveItemView.js'
 import { resolveToManyEdgePlan } from '../lib/relationshipEdges.js'
@@ -365,6 +366,11 @@ export async function RelationshipTable({
   const context = engineContextOf(appContext)
   const relatedListConfig = config.lists[section.relatedListKey]
   const relatedUrlKey = getUrlKey(section.relatedListKey)
+  const unreadable = relatedListConfig
+    ? await collectUnreadableFields(relatedListConfig, { session: context.session, context })
+    : new Set<string>()
+  const shownColumns = section.columns.filter((column) => !unreadable.has(column))
+  const shownSumColumns = section.sumColumns.filter((column) => !unreadable.has(column))
 
   const removeMode = readOnly ? null : await resolveRemoveMode(section, relatedListConfig, context)
   const createForm = readOnly
@@ -379,7 +385,7 @@ export async function RelationshipTable({
   // its values can be label-resolved via that column's OWN target list (a
   // `Post.author` column resolves against User, not Post).
   const columnRelatedList = new Map<string, AnyListConfig | undefined>()
-  for (const column of section.columns) {
+  for (const column of shownColumns) {
     const columnField = relatedListConfig?.fields[column]
     if (columnField?.type === 'relationship' && 'ref' in columnField) {
       const targetKey =
@@ -391,13 +397,13 @@ export async function RelationshipTable({
   // Resolve relationship-column values to { id, label } and drop everything
   // outside the shown columns (keeping `id` for the row link).
   const shownFields: Record<string, FieldConfig> = {}
-  for (const column of section.columns) {
+  for (const column of shownColumns) {
     const field = relatedListConfig?.fields[column]
     if (field) shownFields[column] = field
   }
   const preparedRows = rows.map((row) => {
     const prepared: Record<string, unknown> = { id: row.id }
-    for (const column of section.columns) {
+    for (const column of shownColumns) {
       prepared[column] = columnRelatedList.has(column)
         ? toRelationshipCellValue(row[column], columnRelatedList.get(column))
         : row[column]
@@ -407,7 +413,7 @@ export async function RelationshipTable({
 
   // Sum only explicitly-configured numeric columns, over access-visible values.
   const sums: Record<string, number> = {}
-  for (const column of section.sumColumns) {
+  for (const column of shownSumColumns) {
     sums[column] = rows.reduce((total, row) => {
       const numeric = toNumber(
         relatedListConfig
@@ -419,7 +425,7 @@ export async function RelationshipTable({
   }
 
   const fields: Record<string, SerializableFieldConfig> = {}
-  for (const column of section.columns) {
+  for (const column of shownColumns) {
     fields[column] = columnFieldConfig(column, relatedListConfig)
   }
 
@@ -431,13 +437,13 @@ export async function RelationshipTable({
       title={formatFieldName(section.fieldName)}
       relatedUrlKey={relatedUrlKey}
       basePath={basePath}
-      columns={section.columns}
+      columns={shownColumns}
       fields={fields}
       rows={serializedRows}
       count={rows.length}
       total={total}
       unavailable={unavailable}
-      sumColumns={section.sumColumns}
+      sumColumns={shownSumColumns}
       sums={sums}
       removeMode={removeMode}
       relatedListKey={section.relatedListKey}
@@ -451,7 +457,7 @@ export async function RelationshipTable({
       createFields={createForm?.fields}
       createRelationshipData={createForm?.relationshipData}
       relatedListTitle={formatListName(section.relatedListKey)}
-      editableColumns={editableColumns}
+      editableColumns={editableColumns.filter((column) => !unreadable.has(column))}
     />
   )
 }

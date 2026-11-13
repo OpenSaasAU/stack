@@ -7,7 +7,7 @@ import { text, timestamp } from '@opensaas/stack-core/fields'
 import { createTestDatabase, type TestDatabase } from '@opensaas/stack-core/testing'
 import { AdminShell } from '../../src/components/AdminShell.js'
 import { AdminUI } from '../../src/components/AdminUI.js'
-import { ListView } from '../../src/components/ListView.js'
+import { ListView, type ListViewProps } from '../../src/components/ListView.js'
 import { ListViewClient, type ListViewClientProps } from '../../src/components/ListViewClient.js'
 
 // Mock Next.js navigation — client components call useRouter().
@@ -65,6 +65,10 @@ function routedContent(tree: React.ReactNode): React.ReactElement<Record<string,
   return boundary as React.ReactElement<Record<string, unknown>>
 }
 
+function isListView(element: React.ReactElement): element is React.ReactElement<ListViewProps> {
+  return element.type === ListView
+}
+
 describe('ListView sort resolution over the Test context', () => {
   const sortConfig: OpenSaasConfig = {
     db: { provider: 'postgresql', timestamps: true },
@@ -112,6 +116,23 @@ describe('ListView sort resolution over the Test context', () => {
   afterAll(async () => {
     await database?.close()
   })
+
+  it('offers the column picker and the size control on an AdminUI list page', async () => {
+    const content = routedContent(
+      await AdminUI({
+        context: database.context(null),
+        config: sortConfig,
+        params: ['post'],
+        basePath: '/admin',
+        serverAction: noopServerAction,
+      }),
+    )
+    if (!isListView(content)) throw new Error('AdminUI did not route to ListView')
+
+    const client = listViewClientProps(await ListView(content.props))
+    expect(client.availableColumns).toEqual(expect.arrayContaining(['title', 'sentAt']))
+    expect(client.pageSizeControl).toBe(true)
+  }, 120_000)
 
   it('orders by initialSort when no URL sort is given', async () => {
     expect(
@@ -206,5 +227,47 @@ describe('AdminUI ui.listView wiring', () => {
     // Absent config → current behaviour unchanged (no column override, no default sort).
     expect(content.props.columns).toBeUndefined()
     expect(content.props.initialSort).toBeUndefined()
+  })
+
+  it('passes the ?columns= selection to ListView as visibleColumns', async () => {
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql' },
+      lists: { Post: list({ fields: { title: text(), status: text() } }) },
+    }
+
+    const routed = async (searchParams: Record<string, string | string[]>) =>
+      routedContent(
+        await AdminUI({
+          context: makeContext(),
+          config,
+          params: ['post'],
+          searchParams,
+          basePath: '/admin',
+          serverAction: noopServerAction,
+        }),
+      ).props.visibleColumns
+
+    expect(await routed({ columns: 'status, title,,' })).toEqual(['status', 'title'])
+    expect(await routed({})).toBeUndefined()
+  })
+
+  it('reads a repeated ?columns= as one selection, in order', async () => {
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql' },
+      lists: { Post: list({ fields: { title: text(), status: text(), views: text() } }) },
+    }
+
+    const content = routedContent(
+      await AdminUI({
+        context: makeContext(),
+        config,
+        params: ['post'],
+        searchParams: { columns: ['status', 'title,views'] },
+        basePath: '/admin',
+        serverAction: noopServerAction,
+      }),
+    )
+
+    expect(content.props.visibleColumns).toEqual(['status', 'title', 'views'])
   })
 })

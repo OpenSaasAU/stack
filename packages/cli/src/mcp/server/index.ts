@@ -341,6 +341,10 @@ export async function startMCPServer() {
   const transport = new StdioServerTransport()
   await server.connect(transport)
 
+  process.stdin.on('end', () => {
+    void server.close().finally(() => process.exit(0))
+  })
+
   console.error('OpenSaaS Stack MCP server running on stdio')
 }
 

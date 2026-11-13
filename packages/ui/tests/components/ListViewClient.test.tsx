@@ -2,13 +2,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ListViewClient } from '../../src/components/ListViewClient.js'
-import { STICKY_ACTIONS_CELL } from '../../src/lib/tableClasses.js'
 
 // Mock Next.js navigation
 const mockPush = vi.fn()
 vi.mock('next/navigation.js', () => ({
   useRouter: () => ({
     push: mockPush,
+    refresh: vi.fn(),
   }),
   usePathname: () => '/admin/post',
 }))
@@ -40,25 +40,34 @@ describe('ListViewClient', () => {
   })
 
   describe('rendering', () => {
-    it('pins the row actions to the visible edge of a wide table', () => {
-      render(<ListViewClient {...defaultProps} />)
+    it('lays each row out as a labelled card below md, with no sticky actions column', () => {
+      render(<ListViewClient {...defaultProps} labelColumn="title" />)
 
-      expect(screen.getAllByRole('link', { name: 'Edit' })[0].closest('td')).toHaveClass(
-        ...STICKY_ACTIONS_CELL.split(' '),
-      )
-      expect(screen.getByRole('columnheader', { name: 'Actions' })).toHaveClass(
-        ...STICKY_ACTIONS_CELL.split(' '),
-      )
+      const actionsCell = screen.getAllByRole('button', { name: /^Actions for/ })[0].closest('td')
+      expect(actionsCell).not.toHaveClass('max-md:sticky')
+      expect(actionsCell).toHaveClass('max-md:absolute')
+      expect(screen.getByRole('columnheader', { name: 'Actions' })).toHaveClass('max-md:hidden')
+
+      const row = screen.getByRole('row', { name: /First Post/ })
+      expect(row).toHaveClass('max-md:grid')
+      const statusCell = within(row)
+        .getAllByRole('cell')
+        .find((cell) => cell.getAttribute('data-label') === 'Status')
+      expect(statusCell).toHaveClass('max-md:before:content-[attr(data-label)]')
+      expect(screen.getByText('First Post').closest('td')).toHaveClass('max-md:col-span-2')
     })
 
-    it('backs the pinned actions with the surface behind the table', () => {
-      render(<ListViewClient {...defaultProps} />)
+    it('puts the title first on a phone card when it is not the first column', () => {
+      render(<ListViewClient {...defaultProps} columns={['status', 'title']} labelColumn="title" />)
 
-      expect(screen.getAllByRole('link', { name: 'Edit' })[0].closest('td')).toHaveClass(
-        'max-md:before:bg-background',
-      )
-      expect(screen.getByRole('columnheader', { name: 'Actions' })).toHaveClass(
-        'max-md:before:bg-background',
+      expect(screen.getByText('First Post').closest('td')).toHaveClass('max-md:order-first')
+    })
+
+    it('lets the table container stop scrolling sideways below md', () => {
+      const { container } = render(<ListViewClient {...defaultProps} />)
+
+      expect(container.querySelector('[data-slot="list-view-table"]')).toHaveClass(
+        'max-md:*:overflow-visible',
       )
     })
 
@@ -81,8 +90,7 @@ describe('ListViewClient', () => {
     it('should render actions column', () => {
       render(<ListViewClient {...defaultProps} />)
 
-      const editLinks = screen.getAllByText('Edit')
-      expect(editLinks).toHaveLength(3)
+      expect(screen.getAllByRole('button', { name: /^Actions for/ })).toHaveLength(3)
     })
 
     it('should show a designed empty state when no items', () => {
@@ -99,7 +107,7 @@ describe('ListViewClient', () => {
 
       expect(screen.getByText('No matches found')).toBeInTheDocument()
       // Offers a way back out of the fruitless search.
-      expect(screen.getByRole('button', { name: /clear search/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Clear filters' })).toBeInTheDocument()
     })
 
     it('should right-align numeric column cells and headers', () => {
@@ -269,43 +277,32 @@ describe('ListViewClient', () => {
     })
   })
 
-  // The search UI is now the Filter builder (#731): a free-text box plus an
-  // Apply/Clear affordance that writes the `?search=` filter query. These tests
-  // pass no `filterSuggestions`, so only the free-text box is shown.
-  describe('search (Filter builder free-text)', () => {
-    it('should render search input', () => {
+  describe('search (Filter builder)', () => {
+    const filterBar = () => screen.getByRole('combobox', { name: 'Filter post' })
+
+    it('should render the filter bar', () => {
       render(<ListViewClient {...defaultProps} />)
 
-      expect(screen.getByLabelText('Search')).toBeInTheDocument()
+      expect(filterBar()).toBeInTheDocument()
     })
 
-    it('should update search input value', async () => {
+    it('should keep typed text without navigating', async () => {
       const user = userEvent.setup()
       render(<ListViewClient {...defaultProps} />)
 
-      const searchInput = screen.getByLabelText('Search')
-      await user.type(searchInput, 'test')
+      await user.type(filterBar(), 'test')
 
-      expect(searchInput).toHaveValue('test')
+      expect(filterBar()).toHaveValue('test')
+      expect(mockPush).not.toHaveBeenCalled()
     })
 
-    it('should navigate with search query when Apply clicked', async () => {
+    it('should navigate with the search query when a filter is committed', async () => {
       const user = userEvent.setup()
       render(<ListViewClient {...defaultProps} />)
 
-      await user.type(screen.getByLabelText('Search'), 'test')
-      await user.click(screen.getByRole('button', { name: 'Apply' }))
+      await user.type(filterBar(), 'test{Enter}')
 
       expect(mockPush).toHaveBeenCalledWith('/admin/post?search=test&page=1')
-    })
-
-    it('should show a Clear button when search has value', async () => {
-      const user = userEvent.setup()
-      render(<ListViewClient {...defaultProps} />)
-
-      await user.type(screen.getByLabelText('Search'), 'test')
-
-      expect(screen.getByRole('button', { name: 'Clear' })).toBeInTheDocument()
     })
 
     it('should clear search when Clear clicked (resets to page 1)', async () => {
@@ -332,20 +329,25 @@ describe('ListViewClient', () => {
       expect(mockPush).toHaveBeenCalledWith('/admin/post?sort=title%3Adesc&page=1')
     })
 
-    it('should reset to page 1 when new search submitted', async () => {
+    it('should reset to page 1 when a new filter is committed', async () => {
       const user = userEvent.setup()
       render(<ListViewClient {...defaultProps} page={3} />)
 
-      await user.type(screen.getByLabelText('Search'), 'test')
-      await user.click(screen.getByRole('button', { name: 'Apply' }))
+      await user.type(filterBar(), 'test{Enter}')
 
       expect(mockPush).toHaveBeenCalledWith('/admin/post?search=test&page=1')
     })
 
-    it('should preserve initial search value', () => {
+    it('should show the applied search as chips', () => {
       render(<ListViewClient {...defaultProps} search="existing" />)
 
-      expect(screen.getByLabelText('Search')).toHaveValue('existing')
+      expect(screen.getByRole('group', { name: 'Text contains existing' })).toBeInTheDocument()
+    })
+
+    it('should announce the result count', () => {
+      render(<ListViewClient {...defaultProps} total={7} search="existing" />)
+
+      expect(screen.getByText('7 results')).toHaveAttribute('aria-live', 'polite')
     })
   })
 
@@ -636,21 +638,36 @@ describe('ListViewClient', () => {
     })
   })
 
-  describe('edit links', () => {
-    it('should link to correct edit page', () => {
-      render(<ListViewClient {...defaultProps} />)
+  describe('row title links', () => {
+    it('links each row title to its item page', () => {
+      render(<ListViewClient {...defaultProps} labelColumn="title" />)
 
-      const editLinks = screen.getAllByRole('link', { name: 'Edit' })
-      expect(editLinks[0]).toHaveAttribute('href', '/admin/post/1')
-      expect(editLinks[1]).toHaveAttribute('href', '/admin/post/2')
-      expect(editLinks[2]).toHaveAttribute('href', '/admin/post/3')
+      expect(screen.getByRole('link', { name: 'First Post' })).toHaveAttribute(
+        'href',
+        '/admin/post/1',
+      )
+      expect(screen.getByRole('link', { name: 'Third Post' })).toHaveAttribute(
+        'href',
+        '/admin/post/3',
+      )
     })
 
-    it('should use custom basePath in edit links', () => {
-      render(<ListViewClient {...defaultProps} basePath="/custom" />)
+    it('uses a custom basePath', () => {
+      render(<ListViewClient {...defaultProps} labelColumn="title" basePath="/custom" />)
 
-      const editLinks = screen.getAllByRole('link', { name: 'Edit' })
-      expect(editLinks[0]).toHaveAttribute('href', '/custom/post/1')
+      expect(screen.getByRole('link', { name: 'First Post' })).toHaveAttribute(
+        'href',
+        '/custom/post/1',
+      )
+    })
+
+    it('falls back to the first column when the label column is not shown', () => {
+      render(<ListViewClient {...defaultProps} labelColumn="name" />)
+
+      expect(screen.getByRole('link', { name: 'Second Post' })).toHaveAttribute(
+        'href',
+        '/admin/post/2',
+      )
     })
   })
 })

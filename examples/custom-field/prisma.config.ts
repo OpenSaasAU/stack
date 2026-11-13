@@ -19,4 +19,5 @@ export default definePrismaConfig({
     extensions: [],
     db: { connection: findDatabaseUrl() },
   }),
+  skills: { check: false },
 })

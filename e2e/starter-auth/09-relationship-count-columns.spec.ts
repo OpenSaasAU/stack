@@ -118,13 +118,13 @@ test.describe('To-many relationship count columns', () => {
     await page.goto('/admin/user')
     await page.waitForLoadState('networkidle')
 
-    // Build `posts > 0` with the structured row: field Posts, operator greater
-    // than, value 0 — the one comparison the engine lowers to `some`.
-    await page.getByRole('button', { name: /add filter/i }).click()
-    await page.getByLabel('Filter field').selectOption('posts')
-    await page.getByLabel('Filter operator').selectOption('gt')
-    await page.getByLabel('Filter value').fill('0')
-    await page.getByRole('button', { name: 'Apply' }).click()
+    // Build `posts > 0` in the bar: field Posts, condition greater than, value
+    // 0 — the one comparison the engine lowers to `some`.
+    await page.getByRole('combobox', { name: 'Filter user' }).fill('posts')
+    await page.getByRole('option', { name: 'Posts', exact: true }).click()
+    await page.getByRole('button', { name: 'greater than' }).click()
+    await page.keyboard.type('0')
+    await page.keyboard.press('Enter')
 
     // The builder writes the engine's grammar (`posts:>0`) into ?search=.
     await page.waitForURL(/search=posts(%3A|:)(%3E|>)0/, { timeout: 10000 })

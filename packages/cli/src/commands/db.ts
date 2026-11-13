@@ -1,5 +1,6 @@
 import { Command } from 'commander'
 import chalk from 'chalk'
+import { dbPlanCommand } from './db-plan.js'
 import { DevLoopUnreachableError, NoDevLoopError, requestDatabaseUpdate } from '../dev/control.js'
 
 /** Options for {@link dbUpdateCommand}. */
@@ -44,6 +45,15 @@ export function createDbCommand(): Command {
     .option('--plan <id>', 'The id of the destructive plan the loop printed, to apply it')
     .action(async (options: { plan?: string }) => {
       await dbUpdateCommand({ plan: options.plan })
+    })
+
+  db.command('plan')
+    .description('Plan a migration package from the head of the migration graph')
+    .allowUnknownOption()
+    .allowExcessArguments()
+    .helpOption(false)
+    .action(async (_options: unknown, command: Command) => {
+      await dbPlanCommand(command.args)
     })
 
   return db

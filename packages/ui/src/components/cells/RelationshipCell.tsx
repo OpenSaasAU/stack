@@ -51,10 +51,22 @@ function EmptyDash() {
  * To-one renders the related row's Item label, linked to
  * its edit page when the field's `ref` resolves a URL.
  */
-export function RelationshipCell({ value, field, basePath = '/admin' }: CellComponentProps) {
+export function RelationshipCell({ value, field, basePath = '/admin', href }: CellComponentProps) {
   if (field.many === true) {
     const count = typeof value === 'number' ? value : Array.isArray(value) ? value.length : null
     if (count === null) return <EmptyDash />
+    if (href) {
+      return (
+        <Link
+          href={href}
+          data-slot="cell-relationship-count"
+          className="tabular-nums text-primary hover:underline"
+          onClick={(event) => event.stopPropagation()}
+        >
+          {count}
+        </Link>
+      )
+    }
     return (
       <span data-slot="cell-relationship-count" className="tabular-nums">
         {count}

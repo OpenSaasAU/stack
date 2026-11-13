@@ -24,7 +24,13 @@ import type {
 } from '../config/types.js'
 import { hashPassword, isHashedPassword, HashedPassword } from '../utils/password.js'
 import { getLabelFieldName } from '../config/label.js'
-import type { FilterOperator, FilterSpec } from '../filter/types.js'
+import { parseListId } from '../contract/id-boundary.js'
+import type {
+  FilterCondition,
+  FilterOperator,
+  FilterSpec,
+  FilterValueFormat,
+} from '../filter/types.js'
 
 function quoteStringLiteral(value: string): string {
   const escaped = value
@@ -39,6 +45,42 @@ function quoteStringLiteral(value: string): string {
 
 /** Operators shared by numeric/date fields' `getFilterSpec`. */
 const COMPARISON_OPERATORS: FilterOperator[] = ['eq', 'gt', 'gte', 'lt', 'lte']
+
+const WHOLE_NUMBER: FilterValueFormat = { pattern: '^-?\\d+$', description: 'takes a whole number' }
+const WHOLE_NUMBER_MATCH = new RegExp(WHOLE_NUMBER.pattern)
+
+const DECIMAL_VALUE: FilterValueFormat = {
+  pattern: '^-?\\d+(?:\\.\\d+)?$',
+  description: 'takes a number',
+}
+const DECIMAL_VALUE_MATCH = new RegExp(DECIMAL_VALUE.pattern)
+
+const DATE_VALUE: FilterValueFormat = {
+  pattern: '^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])$',
+  description: 'takes a date, like 2026-01-31',
+}
+const DATE_VALUE_MATCH = new RegExp(DATE_VALUE.pattern)
+
+const PRESENCE_COUNT: FilterValueFormat = {
+  pattern: '^0$',
+  description: 'takes 0: “is 0” finds none, “greater than 0” finds any',
+  operators: { gte: { pattern: '^1$', description: 'takes 1 with “at least”, which finds any' } },
+}
+
+function formatMatcher(format: FilterValueFormat) {
+  const base = new RegExp(format.pattern)
+  const byOperator = new Map<string, RegExp>()
+  for (const [operator, pattern] of Object.entries(format.operators ?? {})) {
+    if (pattern) byOperator.set(operator, new RegExp(pattern.pattern))
+  }
+  return (operator: FilterOperator, value: string) => (byOperator.get(operator) ?? base).test(value)
+}
+
+const PRESENCE_COUNT_MATCH = formatMatcher(PRESENCE_COUNT)
+
+function emptyWhenNullable(fieldName: string, nullable: boolean): FilterCondition | undefined {
+  return nullable ? { [fieldName]: { equals: null } } : undefined
+}
 
 function prismaComparisonKey(operator: FilterOperator): string {
   return operator === 'eq' ? 'equals' : operator
@@ -151,8 +193,33 @@ function fitsDecimal(value: unknown, precision: number, scale: number): boolean 
   const text = typeof value === 'number' ? value.toFixed(20).replace(/\.?0+$/, '') : value.trim()
   const parts = decimalParts(text)
   if (parts === null) return false
-  const integerDigits = parts[2].replace(/^0+/, '').length
-  return integerDigits <= precision - scale
+  const fraction = parts[3] ?? ''
+  let scaled = BigInt(`${parts[2] || '0'}${fraction.slice(0, scale).padEnd(scale, '0')}`)
+  if (fraction.length > scale && fraction.charCodeAt(scale) >= 53) scaled += 1n
+  return (scaled === 0n ? 1 : scaled.toString().length) <= precision
+}
+
+const INT32_MIN = -2147483648
+const INT32_MAX = 2147483647
+const INT64_MIN = -(2n ** 63n)
+const INT64_MAX = 2n ** 63n - 1n
+
+const hasNul = (root: unknown): boolean => {
+  const seen = new Set<object>()
+  const pending: unknown[] = [root]
+  while (pending.length > 0) {
+    const value = pending.pop()
+    if (typeof value === 'string') {
+      if (value.includes('\u0000')) return true
+    } else if (typeof value === 'object' && value !== null && !seen.has(value)) {
+      seen.add(value)
+      if (Array.isArray(value)) pending.push(...value)
+      else {
+        for (const [key, child] of Object.entries(value)) pending.push(key, child)
+      }
+    }
+  }
+  return false
 }
 
 function isCalendarDate(value: unknown): boolean {
@@ -160,6 +227,7 @@ function isCalendarDate(value: unknown): boolean {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
   if (match === null) return false
   const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])]
+  if (year < 1) return false
   const date = new Date(0)
   date.setUTCFullYear(year, month - 1, day)
   return (
@@ -255,6 +323,7 @@ export function text<
   TKey extends import('../config/types.js').FieldKeys<TTypeInfo['fields']> =
     import('../config/types.js').FieldKeys<TTypeInfo['fields']>,
 >(options?: Omit<TextField<TTypeInfo, TKey>, 'type' | 'nullable'>): TextField<TTypeInfo, TKey> {
+  const nullable = options?.db?.isNullable ?? !options?.validation?.isRequired
   const zodSchema = (fieldName: string, operation: 'create' | 'update') => {
     const validation = options?.validation
     const isRequired = validation?.isRequired
@@ -283,14 +352,13 @@ export function text<
           })
         : withMin
 
-    if (isRequired && operation === 'update') {
-      return withMax.optional()
-    }
-
-    return !isRequired ? withMax.optional().nullable() : withMax
+    const noNul = withMax.refine((value) => !value.includes('\u0000'), {
+      message: `${formatFieldName(fieldName)} must not contain NUL characters`,
+    })
+    if (isRequired && operation === 'update') return noNul.optional()
+    if (isRequired) return noNul
+    return nullable ? noNul.optional().nullable() : noNul.optional()
   }
-
-  const nullable = options?.db?.isNullable ?? !options?.validation?.isRequired
 
   return {
     type: 'text',
@@ -331,6 +399,11 @@ export function text<
       freeText: true,
       toCondition: (operator, value) =>
         operator === 'eq' ? { [fieldName]: { contains: value } } : null,
+      empty: nullable
+        ? { OR: [{ [fieldName]: { equals: null } }, { [fieldName]: { equals: '' } }] }
+        : options?.validation?.isRequired
+          ? undefined
+          : { [fieldName]: { equals: '' } },
       suggestions: { valueSource: { kind: 'none' } },
     }),
   }
@@ -350,9 +423,19 @@ export function integer<
     type: 'integer',
     ...options,
     getZodSchema: (fieldName: string, operation: 'create' | 'update') => {
-      const baseSchema = z.number({
-        message: `${formatFieldName(fieldName)} must be a number`,
-      })
+      const whole = z
+        .number({ message: `${formatFieldName(fieldName)} must be a number` })
+        .int({ message: `${formatFieldName(fieldName)} must be a whole number` })
+      const baseSchema =
+        options?.db?.nativeType === undefined
+          ? whole
+              .min(INT32_MIN, {
+                message: `${formatFieldName(fieldName)} is below the 32-bit range`,
+              })
+              .max(INT32_MAX, {
+                message: `${formatFieldName(fieldName)} is above the 32-bit range`,
+              })
+          : whole
 
       const withMin =
         options?.validation?.min !== undefined
@@ -370,7 +453,10 @@ export function integer<
 
       const isRequired = options?.validation?.isRequired
       if (isRequired && operation === 'update') return withMax.optional()
-      return !isRequired ? withMax.optional().nullable() : withMax
+      if (isRequired) return withMax
+      return (options?.db?.isNullable ?? !isRequired)
+        ? withMax.optional().nullable()
+        : withMax.optional()
     },
     getContractField: (fieldName: string, listKey: string) => {
       checkedDefault(
@@ -398,10 +484,14 @@ export function integer<
       operators: COMPARISON_OPERATORS,
       toCondition: (operator, value) => {
         const trimmed = value.trim()
-        if (!/^-?\d+$/.test(trimmed)) return null
+        if (!WHOLE_NUMBER_MATCH.test(trimmed)) return null
         return { [fieldName]: { [prismaComparisonKey(operator)]: Number(trimmed) } }
       },
-      suggestions: { valueSource: { kind: 'none' } },
+      empty: emptyWhenNullable(
+        fieldName,
+        options?.db?.isNullable ?? !options?.validation?.isRequired,
+      ),
+      suggestions: { valueSource: { kind: 'none' }, valueFormat: WHOLE_NUMBER },
     }),
   }
 }
@@ -482,7 +572,9 @@ export function decimal<
         },
       )
 
-      let schema = baseSchema
+      let schema = baseSchema.refine((val) => fitsDecimal(val, precision, scale), {
+        message: `${formatFieldName(fieldName)} must be a finite number with at most ${precision - scale} integer digits`,
+      })
 
       if (options?.validation?.min !== undefined) {
         const minValue = parseFloat(options.validation.min)
@@ -512,7 +604,10 @@ export function decimal<
 
       const isRequired = options?.validation?.isRequired
       if (isRequired && operation === 'update') return schema.optional()
-      return !isRequired ? schema.optional().nullable() : schema
+      if (isRequired) return schema
+      return (options?.db?.isNullable ?? !isRequired)
+        ? schema.optional().nullable()
+        : schema.optional()
     },
     getContractField: (fieldName: string, listKey: string) => {
       const size = checkedDecimalSize(
@@ -549,10 +644,14 @@ export function decimal<
       operators: COMPARISON_OPERATORS,
       toCondition: (operator, value) => {
         const trimmed = value.trim()
-        if (!/^-?\d+(\.\d+)?$/.test(trimmed)) return null
+        if (!DECIMAL_VALUE_MATCH.test(trimmed)) return null
         return { [fieldName]: { [prismaComparisonKey(operator)]: trimmed } }
       },
-      suggestions: { valueSource: { kind: 'none' } },
+      empty: emptyWhenNullable(
+        fieldName,
+        options?.db?.isNullable ?? !options?.validation?.isRequired,
+      ),
+      suggestions: { valueSource: { kind: 'none' }, valueFormat: DECIMAL_VALUE },
     }),
   }
 }
@@ -612,7 +711,9 @@ export function bigInt<
           return BigInt(trimmed)
         })
 
-      let schema = coerced
+      let schema = coerced.refine((val) => val >= INT64_MIN && val <= INT64_MAX, {
+        message: `${formatFieldName(fieldName)} is outside the 64-bit range`,
+      })
 
       if (validation?.min !== undefined) {
         const min = validation.min
@@ -629,7 +730,10 @@ export function bigInt<
       }
 
       if (isRequired && operation === 'update') return schema.optional()
-      return !isRequired ? schema.optional().nullable() : schema
+      if (isRequired) return schema
+      return (options?.db?.isNullable ?? !isRequired)
+        ? schema.optional().nullable()
+        : schema.optional()
     },
     getContractField: (fieldName: string, listKey: string) => {
       const defaultValue = options?.defaultValue
@@ -660,10 +764,14 @@ export function bigInt<
       operators: COMPARISON_OPERATORS,
       toCondition: (operator, value) => {
         const trimmed = value.trim()
-        if (!/^-?\d+$/.test(trimmed)) return null
+        if (!WHOLE_NUMBER_MATCH.test(trimmed)) return null
         return { [fieldName]: { [prismaComparisonKey(operator)]: BigInt(trimmed) } }
       },
-      suggestions: { valueSource: { kind: 'none' } },
+      empty: emptyWhenNullable(
+        fieldName,
+        options?.db?.isNullable ?? !options?.validation?.isRequired,
+      ),
+      suggestions: { valueSource: { kind: 'none' }, valueFormat: WHOLE_NUMBER },
     }),
   }
 }
@@ -682,8 +790,11 @@ export function checkbox<
     type: 'checkbox',
     ...options,
     defaultValue: options?.defaultValue ?? false,
-    getZodSchema: () => {
-      return z.boolean().optional().nullable()
+    getZodSchema: (fieldName: string) => {
+      const schema = z
+        .boolean({ message: `${formatFieldName(fieldName)} must be true or false` })
+        .optional()
+      return options?.db?.isNullable === true ? schema.nullable() : schema
     },
     getContractField: (fieldName: string, listKey: string) => {
       checkedDefault(
@@ -710,6 +821,7 @@ export function checkbox<
         if (normalized === 'false') return { [fieldName]: { equals: false } }
         return null
       },
+      empty: emptyWhenNullable(fieldName, options?.db?.isNullable === true),
       suggestions: {
         valueSource: {
           kind: 'enum',
@@ -737,6 +849,13 @@ export function timestamp<
 >(
   options?: Omit<TimestampField<TTypeInfo, TKey>, 'type' | 'nullable'>,
 ): TimestampField<TTypeInfo, TKey> {
+  const defaultValue = options?.defaultValue
+  const hasDefaultNow =
+    typeof defaultValue === 'object' &&
+    defaultValue !== null &&
+    'kind' in defaultValue &&
+    defaultValue.kind === 'now'
+  const nullable = options?.db?.isNullable ?? !hasDefaultNow
   return {
     type: 'timestamp',
     ...options,
@@ -748,30 +867,34 @@ export function timestamp<
         .nullable()
     },
     getContractField: (fieldName: string) => {
-      const defaultValue = options?.defaultValue
-      const hasDefaultNow =
-        typeof defaultValue === 'object' &&
-        defaultValue !== null &&
-        'kind' in defaultValue &&
-        defaultValue.kind === 'now'
       return scalarColumn(fieldName, {
         type: pgType('dateTime'),
-        nullable: options?.db?.isNullable ?? !hasDefaultNow,
+        nullable,
         nativeType: options?.db?.nativeType,
         map: options?.db?.map,
         isIndexed: options?.isIndexed,
         default: hasDefaultNow ? { kind: 'now' } : undefined,
       })
     },
-    // An unparseable date degrades to free text.
+    // An unparseable date degrades to free text. `eq` on a date-only value matches that whole UTC day.
     getFilterSpec: (fieldName: string): FilterSpec => ({
       operators: COMPARISON_OPERATORS,
       toCondition: (operator, value) => {
-        const date = new Date(value.trim())
+        const typed = value.trim()
+        const date = new Date(typed)
         if (Number.isNaN(date.getTime())) return null
+        if (
+          operator === 'eq' &&
+          DATE_VALUE_MATCH.test(typed) &&
+          date.toISOString().startsWith(typed)
+        ) {
+          const next = new Date(date.getTime() + 86_400_000)
+          return { [fieldName]: { gte: date, lt: next } }
+        }
         return { [fieldName]: { [prismaComparisonKey(operator)]: date } }
       },
-      suggestions: { valueSource: { kind: 'none' } },
+      empty: emptyWhenNullable(fieldName, nullable),
+      suggestions: { valueSource: { kind: 'none' }, datePicker: 'instant' },
     }),
   }
 }
@@ -861,13 +984,18 @@ export function calendarDay<
         .regex(/^\d{4}-\d{2}-\d{2}$/, {
           message: `${formatFieldName(fieldName)} must be in YYYY-MM-DD format`,
         })
+        .refine(isCalendarDate, {
+          message: `${formatFieldName(fieldName)} must be a real calendar date in YYYY-MM-DD format`,
+        })
 
       if (isRequired && operation === 'create') {
         return dateSchema
       } else if (isRequired && operation === 'update') {
         return dateSchema.optional()
       } else {
-        return dateSchema.optional().nullable()
+        return (options?.db?.isNullable ?? !isRequired)
+          ? dateSchema.optional().nullable()
+          : dateSchema.optional()
       }
     },
     getContractField: (fieldName: string, listKey: string) => {
@@ -890,18 +1018,21 @@ export function calendarDay<
     // Calendar days compare on the `YYYY-MM-DD` value itself — the column's
     // string codec passes it straight to the driver, so a Date built here
     // would hit the same local-timezone drift the write path had (#1437). A
-    // malformed value, including an out-of-range month/day the regex alone
-    // cannot catch (e.g. '2025-13-01'), degrades to free text instead of
+    // malformed value, including a day the month does not have (e.g.
+    // '2025-02-31'), degrades to free text instead of
     // reaching Postgres as an invalid date literal.
     getFilterSpec: (fieldName: string): FilterSpec => ({
       operators: COMPARISON_OPERATORS,
       toCondition: (operator, value) => {
         const trimmed = value.trim()
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return null
-        if (Number.isNaN(new Date(`${trimmed}T00:00:00.000Z`).getTime())) return null
+        if (!DATE_VALUE_MATCH.test(trimmed) || !isCalendarDate(trimmed)) return null
         return { [fieldName]: { [prismaComparisonKey(operator)]: trimmed } }
       },
-      suggestions: { valueSource: { kind: 'none' } },
+      empty: emptyWhenNullable(
+        fieldName,
+        options?.db?.isNullable ?? !options?.validation?.isRequired,
+      ),
+      suggestions: { valueSource: { kind: 'none' }, valueFormat: DATE_VALUE, datePicker: 'day' },
     }),
   }
 }
@@ -1128,7 +1259,7 @@ export function select<
       if (options.validation?.isRequired) {
         if (operation === 'update') schema = schema.optional()
       } else {
-        schema = schema.optional().nullable()
+        schema = nullable ? schema.optional().nullable() : schema.optional()
       }
 
       return schema
@@ -1171,6 +1302,7 @@ export function select<
         if (!match) return null
         return { [fieldName]: { equals: match.value } }
       },
+      empty: emptyWhenNullable(fieldName, nullable),
       suggestions: {
         valueSource: {
           kind: 'enum',
@@ -1461,7 +1593,8 @@ export function relationship<
   //  • to-one filters by the related Item's label — `author:"Ada Lovelace"`
   //    becomes a `some` over the target list's Label field. Prisma 8 has no
   //    to-one predicate form: every relation predicate is an EXISTS, and its
-  //    accessor is the same for both cardinalities.
+  //    accessor is the same for both cardinalities. `author:#id` matches the
+  //    related record by its id, through the same relation predicate.
   //  • to-many filters by PRESENCE. Prisma 8 cannot compare a relation count
   //    in a `where`, so `orders:0` is `none`, `orders:>0`/`orders:>=1` are
   //    `some`, and any other comparison degrades to free text.
@@ -1478,17 +1611,15 @@ export function relationship<
 
     if (field.many === true) {
       return {
-        operators: COMPARISON_OPERATORS,
+        operators: ['eq', 'gt', 'gte'],
         toCondition: (operator, value) => {
-          const trimmed = value.trim()
-          if (!/^-?\d+$/.test(trimmed)) return null
-          const count = Number(trimmed)
-          if (operator === 'eq' && count === 0) return { [_fieldName]: { none: {} } }
-          if (operator === 'gt' && count === 0) return { [_fieldName]: { some: {} } }
-          if (operator === 'gte' && count === 1) return { [_fieldName]: { some: {} } }
+          if (!PRESENCE_COUNT_MATCH(operator, value.trim())) return null
+          if (operator === 'eq') return { [_fieldName]: { none: {} } }
+          if (operator === 'gt' || operator === 'gte') return { [_fieldName]: { some: {} } }
           return null
         },
-        suggestions: { valueSource: { kind: 'none' } },
+        negation: 'redundant',
+        suggestions: { valueSource: { kind: 'none' }, valueFormat: PRESENCE_COUNT },
       }
     }
 
@@ -1502,12 +1633,21 @@ export function relationship<
     // integer, checkbox, select, etc.). None of these is filterable (#1359).
     if (labelFieldConfig?.type !== 'text' || labelFieldConfig.virtual === true) return undefined
 
+    const canBeEmpty =
+      !shouldHaveForeignKey(_listKey, _fieldName, field, config) || field.db?.isNullable !== false
+
     return {
       operators: ['eq'],
       toCondition: (operator, value) => {
         if (operator !== 'eq') return null
         return { [_fieldName]: { some: { [labelField]: { contains: value } } } }
       },
+      toIdCondition: (id) => {
+        const parsed = parseListId(config, targetList, id)
+        return parsed.ok ? { [_fieldName]: { some: { id: { equals: parsed.value } } } } : null
+      },
+      empty: canBeEmpty ? { [_fieldName]: { none: {} } } : undefined,
+      negation: 'includesEmpty',
       suggestions: { valueSource: { kind: 'relationship', listKey: targetList, many: false } },
     }
   }
@@ -1571,7 +1711,9 @@ export function json<
       const validation = options?.validation
       const isRequired = validation?.isRequired
 
-      const baseSchema = z.unknown()
+      const baseSchema = z.unknown().refine((value) => !hasNul(value), {
+        message: `${formatFieldName(fieldName)} must not contain NUL characters`,
+      })
 
       if (isRequired && operation === 'create') {
         // Required in create mode: a value must be provided and it must be

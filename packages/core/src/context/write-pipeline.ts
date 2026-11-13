@@ -43,6 +43,7 @@ import {
   snapshotCallerInput,
 } from './relationship-input.js'
 import { enumerateInvolvedLists, runWithTransactionBoundary } from './transaction-boundary.js'
+import { guardedRuleItem, NO_RULE_VIEWS, ruleRowOf } from '../access/rule-item.js'
 import { TransactionRegistry, TransactionRolledBackError } from '../access/transaction-registry.js'
 import { warnOnce } from '../lib/warn-once.js'
 import {
@@ -492,7 +493,7 @@ async function runWriteInTransaction(
 
   // ── Phases 2–4: transform + validate span (Hook Pipeline glossary, CONTEXT.md) ──
   // THROWS `ValidationError` on any validation failure (never silent).
-  const { resolvedData, defaultedFields } = await hookPipeline.run({
+  const { resolvedData, splitData, defaultedFields } = await hookPipeline.run({
     operation: writeOp,
     listName,
     listConfig,
@@ -503,11 +504,11 @@ async function runWriteInTransaction(
 
   // The same payload-shape refusal, over what the hooks produced: a
   // `resolveInput` that assembles a relation payload writes it into
-  // `resolvedData`, which the pre-transaction check could not see.
-  refuseNestedRelationInput(listName, listConfig, config, resolvedData)
+  // the resolved data, which the pre-transaction check could not see.
+  refuseNestedRelationInput(listName, listConfig, config, splitData)
 
   // ── Phase 5: filter writable fields (field-level access, skip if sudo) ──────
-  const data = await filterWritableFields(resolvedData, listConfig.fields, writeOp, {
+  const data = await filterWritableFields(splitData, listConfig.fields, writeOp, {
     session: context.session,
     item: originalItem,
     context: { ...context, _isSudo: context._isSudo },
@@ -837,11 +838,21 @@ function resolveExistingTarget(
       return { status: 'ok', originalItem: item, scope: [identity] }
     }
 
-    const accessResult = await checkAccess(listConfig.access?.operation?.[access], {
-      session: context.session,
-      item,
-      context,
-    })
+    const guard = guardedRuleItem(
+      ruleRowOf(item, NO_RULE_VIEWS, listConfig.fields, config, listName),
+    )
+    let accessResult: Awaited<ReturnType<typeof checkAccess>>
+    try {
+      accessResult = await checkAccess(listConfig.access?.operation?.[access], {
+        session: context.session,
+        item: guard.item,
+        context,
+      })
+    } catch (err) {
+      if (err instanceof TypeError && guard.tripped()) return { status: 'denied' }
+      throw err
+    }
+    if (guard.tripped()) return { status: 'denied' }
 
     if (accessResult === false) {
       return { status: 'denied' }
