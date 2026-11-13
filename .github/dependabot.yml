@@ -37,6 +37,22 @@ updates:
           - 'ai'
           - '@ai-sdk/*'
 
+      # @better-auth/* plugins depend on a matching @better-auth/core. Bumped
+      # individually they install a second core copy and the plugin types stop
+      # being assignable to better-auth's options.
+      better-auth:
+        patterns:
+          - 'better-auth'
+          - '@better-auth/*'
+
+      # @playwright/test pins the exact playwright-core version. Bumped apart
+      # from playwright, two copies install and every spec fails to load.
+      playwright:
+        patterns:
+          - 'playwright'
+          - 'playwright-core'
+          - '@playwright/*'
+
   - package-ecosystem: 'github-actions'
     directory: '/'
     schedule:
