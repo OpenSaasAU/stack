@@ -1,5 +1,61 @@
 # @opensaas/stack-cli
 
+## 0.44.0-alpha.6
+
+### Minor Changes
+
+- [#2201](https://github.com/OpenSaasAU/stack/pull/2201) [`0933b4b`](https://github.com/OpenSaasAU/stack/commit/0933b4bb6e19f56a2629623c3e5facb28fe8af73) Thanks [@dependabot](https://github.com/apps/dependabot)! - Upgrade to Prisma ORM 8.0.0-rc.22 and the `prisma` CLI to 8.0.0-rc.30
+
+  The stack's date and time columns are unchanged: `timestamp()` and `calendarDay()` keep reading and writing ISO strings, and `contract.json` is byte-identical. Prisma ORM now refuses to run from two installed copies, so every `@prisma/orm-*` package and the `prisma` CLI must move together:
+
+  ```json
+  {
+    "dependencies": { "@prisma/orm-postgres": "8.0.0-rc.22" },
+    "devDependencies": { "prisma": "8.0.0-rc.30" }
+  }
+  ```
+
+  Then run `pnpm generate` and commit what it writes. A project using `ragPlugin` or another pgvector declaration gets a new head for `migrations/pgvector/`: run `prisma db migrate` on each database to move the pack's marker.
+
+### Patch Changes
+
+- [#2393](https://github.com/OpenSaasAU/stack/pull/2393) [`bf9aac3`](https://github.com/OpenSaasAU/stack/commit/bf9aac34f50453ad250f09415f97eff031b4e928) Thanks [@borisno2](https://github.com/borisno2)! - Bump Prisma to 8.0.0-rc.23 (CLI 8.0.0-rc.33); decimal columns use the renamed `numericStringColumn` helper.
+
+- [#2352](https://github.com/OpenSaasAU/stack/pull/2352) [`0f3b958`](https://github.com/OpenSaasAU/stack/commit/0f3b958d5e93636e26a77781e1be9479865db2a4) Thanks [@borisno2](https://github.com/borisno2)! - Scaffolded sign-in, sign-up and password-reset actions now go through `auth.handler` via the new `postAuthEndpoint`, so rate limiting applies.
+
+- [#2340](https://github.com/OpenSaasAU/stack/pull/2340) [`146e649`](https://github.com/OpenSaasAU/stack/commit/146e649542ae9b773bc4892794ccfa12f9c852cc) Thanks [@borisno2](https://github.com/borisno2)! - A failed reconcile prints the CLI's own text instead of raw JSON event lines, and the boot reconcile notes that an `Advanced ref` line is Prisma's own. Scaffolds are ES modules (`"type": "module"`, `next.config.mjs`), so `pnpm dev -- tsx seed.ts` accepts top-level await.
+
+- [#2336](https://github.com/OpenSaasAU/stack/pull/2336) [`65cd50b`](https://github.com/OpenSaasAU/stack/commit/65cd50bcc5f889fa16d61c45ec07b36158716e97) Thanks [@borisno2](https://github.com/borisno2)! - `opensaas migrate --type` rejects unknown types, `db:update` says so when there is nothing to apply, the dev loop's config-error message no longer claims the app keeps serving, and the starter README drops the Home link that 404s.
+
+- [#2357](https://github.com/OpenSaasAU/stack/pull/2357) [`3aeaf65`](https://github.com/OpenSaasAU/stack/commit/3aeaf65fab5d30d5433d2a00b6dfa2cfbe6ee96f) Thanks [@borisno2](https://github.com/borisno2)! - Add `opensaas db plan`, which plans each migration from the head of the app migration graph instead of the `db` ref; the starters' `pnpm migrate` now runs it.
+
+- [#2376](https://github.com/OpenSaasAU/stack/pull/2376) [`29f3439`](https://github.com/OpenSaasAU/stack/commit/29f34394fa236d8dae4cbc35cfc3a1710cdeb0c1) Thanks [@borisno2](https://github.com/borisno2)! - `opensaas db plan` plans from the latest package's target, so adding then removing a field no longer leaves the migration graph without a head.
+
+- [#2379](https://github.com/OpenSaasAU/stack/pull/2379) [`2240a24`](https://github.com/OpenSaasAU/stack/commit/2240a24124538045583ea90cfbc54ae2acc5d9e2) Thanks [@borisno2](https://github.com/borisno2)! - `opensaas dev` booted without a TTY now parks a destructive plan, serves the previous bundle and names `pnpm db:update --plan <id>`; `--yes` never consents to data loss.
+
+- [#2142](https://github.com/OpenSaasAU/stack/pull/2142) [`bb87f3b`](https://github.com/OpenSaasAU/stack/commit/bb87f3bf253f31c9aee6b91338f54057ee923ffe) Thanks [@borisno2](https://github.com/borisno2)! - Fix the dev loop reading `accessWidening` instead of the `accessChanges` the Prisma CLI reports, so access changes now count as destructive and reach the plan id and `--allow`.
+
+- [#2196](https://github.com/OpenSaasAU/stack/pull/2196) [`80c9ac0`](https://github.com/OpenSaasAU/stack/commit/80c9ac0f721058b566dc93dea1caf97d39c1cc94) Thanks [@borisno2](https://github.com/borisno2)! - Fix `opensaas dev` freezing on stale config after a failed load; `db update --plan <id>` now refuses a plan the current config no longer wants.
+
+- [#2205](https://github.com/OpenSaasAU/stack/pull/2205) [`dec240b`](https://github.com/OpenSaasAU/stack/commit/dec240b2e1596cb7edfa4da21cb7c2e146d05ab4) Thanks [@borisno2](https://github.com/borisno2)! - Render the admin's Sign Out control only with an `onSignOut` handler, instead of a button that only redirected, warn the user if the handler rejects, and reload an admin page restored from the back-forward cache.
+  The feature generator now emits `signOutAction` and tells you to pass it as `onSignOut`.
+
+- [#2331](https://github.com/OpenSaasAU/stack/pull/2331) [`a4b951c`](https://github.com/OpenSaasAU/stack/commit/a4b951c348594d61023cd8fcdfcc4d19a3606893) Thanks [@borisno2](https://github.com/borisno2)! - `opensaas mcp start` no longer leaves the MCP server running as an orphan: it forwards SIGTERM/SIGINT/SIGHUP, the server exits when stdin closes, and the child runs under `process.execPath`.
+
+- [#2378](https://github.com/OpenSaasAU/stack/pull/2378) [`7d5f540`](https://github.com/OpenSaasAU/stack/commit/7d5f540d8837b298186c6837f559bf388ad8aead) Thanks [@borisno2](https://github.com/borisno2)! - `opensaas` and `create-opensaas-app` now exit 1 naming Node.js 22.18 when run on an older Node (fixes [#2318](https://github.com/OpenSaasAU/stack/issues/2318)).
+
+- [#2209](https://github.com/OpenSaasAU/stack/pull/2209) [`4a8b631`](https://github.com/OpenSaasAU/stack/commit/4a8b631e7dcfb3bf5e3eb118193722b2e31d842e) Thanks [@borisno2](https://github.com/borisno2)! - Fix `opensaas generate` failing with "gen is not defined" when a config uses the `cuid` id strategy and no list uses `uuid7`, `cuid2` or `updatedAt`
+
+- [#2358](https://github.com/OpenSaasAU/stack/pull/2358) [`e6ef9f8`](https://github.com/OpenSaasAU/stack/commit/e6ef9f8424a2712a866b9382c6999e241a7ca7a4) Thanks [@borisno2](https://github.com/borisno2)! - The generated `prisma.config.ts` sets `skills: { check: false }`, which silences Prisma's "agent skills are out of date" notice on every command. Starter scaffolds gain a `lint` script (`tsc --noEmit`).
+
+- [#2348](https://github.com/OpenSaasAU/stack/pull/2348) [`78e8fba`](https://github.com/OpenSaasAU/stack/commit/78e8fba88c2d40b3a5fa9ad5de4e05988e7ab496) Thanks [@borisno2](https://github.com/borisno2)! - Add `signOutAndConfirm(auth, headers)` to `@opensaas/stack-auth/server`. It throws when better-auth swallowed a failed session delete, and returns the identity provider's logout URL for the action to redirect to. The example and generated `signOutAction` use it: `redirect((await signOutAndConfirm(auth, await headers())) ?? '/sign-in')`.
+
+- [#2146](https://github.com/OpenSaasAU/stack/pull/2146) [`28650ed`](https://github.com/OpenSaasAU/stack/commit/28650ed4cd7a8e31343732b8ff15194be0afd0dd) Thanks [@borisno2](https://github.com/borisno2)! - `opensaas generate` now refuses to write live artifacts while an `opensaas dev` loop is running for the project, so a parked destructive change is no longer promoted over the loop's database.
+
+- [#2326](https://github.com/OpenSaasAU/stack/pull/2326) [`239591d`](https://github.com/OpenSaasAU/stack/commit/239591db67089c6681c9786e9c5af55b3cd08812) Thanks [@dependabot](https://github.com/apps/dependabot)! - Bump `@modelcontextprotocol/sdk` to ^1.32.2
+- Updated dependencies [[`bf9aac3`](https://github.com/OpenSaasAU/stack/commit/bf9aac34f50453ad250f09415f97eff031b4e928), [`eaeee36`](https://github.com/OpenSaasAU/stack/commit/eaeee363778e5717371720deec7c4518dfaa80e1), [`0933b4b`](https://github.com/OpenSaasAU/stack/commit/0933b4bb6e19f56a2629623c3e5facb28fe8af73), [`7e396ee`](https://github.com/OpenSaasAU/stack/commit/7e396ee4bfa750a71023644b2bfbc42ba4bfc185), [`98e7ab2`](https://github.com/OpenSaasAU/stack/commit/98e7ab274b009274d0b10e8cc2c3493490096930), [`e5ab353`](https://github.com/OpenSaasAU/stack/commit/e5ab353d7ec1d13c3cc73042deb8744ed95caeb2), [`357f9bb`](https://github.com/OpenSaasAU/stack/commit/357f9bbf16499fd1d7da1a02e5c9370d60ae661a), [`245ed13`](https://github.com/OpenSaasAU/stack/commit/245ed137dc768fafd83eb777bdc602af29ae0889), [`ddb9e8c`](https://github.com/OpenSaasAU/stack/commit/ddb9e8cdbf67e42467ec3fec98f22c037f2a5de2), [`3308acc`](https://github.com/OpenSaasAU/stack/commit/3308acc8871bf40f1603c4f00c9919a39596b66f), [`7f48687`](https://github.com/OpenSaasAU/stack/commit/7f4868750f71b779af228052e4deaa68505fe3a2), [`75ca96c`](https://github.com/OpenSaasAU/stack/commit/75ca96cbb3c18cb94fbb0e2d538287cb57436ad2), [`17c7ed8`](https://github.com/OpenSaasAU/stack/commit/17c7ed8276a2d2ea99cca471b39800f45e8bd4ba), [`0dd7eb4`](https://github.com/OpenSaasAU/stack/commit/0dd7eb4b4a9e5b3ec338b39f8ca83e135de36480), [`4a8b631`](https://github.com/OpenSaasAU/stack/commit/4a8b631e7dcfb3bf5e3eb118193722b2e31d842e), [`fa03c43`](https://github.com/OpenSaasAU/stack/commit/fa03c4313851a5f2caf016190843bb8a21f15f41), [`0433dd7`](https://github.com/OpenSaasAU/stack/commit/0433dd77232da5d658dcd04682b6bc2627ab7504), [`57e6e08`](https://github.com/OpenSaasAU/stack/commit/57e6e08c9785f24ccdba3a809cf1368a4aac9866), [`cb7e21d`](https://github.com/OpenSaasAU/stack/commit/cb7e21d153d26ee5edb9c4566c9f393891e3e62b), [`fb1a7a6`](https://github.com/OpenSaasAU/stack/commit/fb1a7a63429586f3ead4fbd9ab506e9aa9b50847), [`a854243`](https://github.com/OpenSaasAU/stack/commit/a85424322701f3db9682b0f54acdc51bee404912), [`b195e11`](https://github.com/OpenSaasAU/stack/commit/b195e1174f96323c1a8f7dc9429cc570a8fd7151), [`6269806`](https://github.com/OpenSaasAU/stack/commit/62698062fed9caf9640d2be03c3f25d4aba0e765), [`d348bba`](https://github.com/OpenSaasAU/stack/commit/d348bba8c21c466b1d0fa4645b12ca757be7c02f), [`af04b65`](https://github.com/OpenSaasAU/stack/commit/af04b65745d55e0e174c2b95b04f0577651f0861), [`369cbf4`](https://github.com/OpenSaasAU/stack/commit/369cbf426c944e91c867e1957969876e37a7bbe2), [`491c0dc`](https://github.com/OpenSaasAU/stack/commit/491c0dcb96e4bd3ee8d89a8174da27767a01657f), [`94ea1ee`](https://github.com/OpenSaasAU/stack/commit/94ea1ee342effcecb0b639ab0b2e1d686514b402), [`00ffa44`](https://github.com/OpenSaasAU/stack/commit/00ffa44bc8143783cb073ecb807f710028ae553d), [`3b25a56`](https://github.com/OpenSaasAU/stack/commit/3b25a567086b032cad28c50bd6eb1713d445c63d), [`93fd6c9`](https://github.com/OpenSaasAU/stack/commit/93fd6c9f4fe136b0a987ffdf436566de9f50b1ba), [`1ac5cfc`](https://github.com/OpenSaasAU/stack/commit/1ac5cfc3cabd17e3ebd0214e0d927521bdcfd0e6), [`9024abb`](https://github.com/OpenSaasAU/stack/commit/9024abb407260db26703fe5ad011bba54252be14), [`f9b3b4e`](https://github.com/OpenSaasAU/stack/commit/f9b3b4e562bd2716bce4678382e83b7854723d8b), [`4bf2987`](https://github.com/OpenSaasAU/stack/commit/4bf2987f8cf6ffcf3626a41c5953bbadfbc256c4), [`202f957`](https://github.com/OpenSaasAU/stack/commit/202f95732d7a639ef1e9a4b77c222720b3c0a158), [`ca51e67`](https://github.com/OpenSaasAU/stack/commit/ca51e67ed52a803cfeac60b2084c5409c7815f5a), [`2c93980`](https://github.com/OpenSaasAU/stack/commit/2c93980b42e65a235bb3731aee975ab1329bdfe2)]:
+  - @opensaas/stack-core@0.44.0-alpha.6
+
 ## 0.44.0-alpha.5
 
 ### Patch Changes

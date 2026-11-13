@@ -1,5 +1,36 @@
 # @opensaas/stack-auth
 
+## 0.44.0-alpha.6
+
+### Minor Changes
+
+- [#2201](https://github.com/OpenSaasAU/stack/pull/2201) [`0933b4b`](https://github.com/OpenSaasAU/stack/commit/0933b4bb6e19f56a2629623c3e5facb28fe8af73) Thanks [@dependabot](https://github.com/apps/dependabot)! - Upgrade to Prisma ORM 8.0.0-rc.22 and the `prisma` CLI to 8.0.0-rc.30
+
+  The stack's date and time columns are unchanged: `timestamp()` and `calendarDay()` keep reading and writing ISO strings, and `contract.json` is byte-identical. Prisma ORM now refuses to run from two installed copies, so every `@prisma/orm-*` package and the `prisma` CLI must move together:
+
+  ```json
+  {
+    "dependencies": { "@prisma/orm-postgres": "8.0.0-rc.22" },
+    "devDependencies": { "prisma": "8.0.0-rc.30" }
+  }
+  ```
+
+  Then run `pnpm generate` and commit what it writes. A project using `ragPlugin` or another pgvector declaration gets a new head for `migrations/pgvector/`: run `prisma db migrate` on each database to move the pack's marker.
+
+- [#2348](https://github.com/OpenSaasAU/stack/pull/2348) [`78e8fba`](https://github.com/OpenSaasAU/stack/commit/78e8fba88c2d40b3a5fa9ad5de4e05988e7ab496) Thanks [@borisno2](https://github.com/borisno2)! - Add `signOutAndConfirm(auth, headers)` to `@opensaas/stack-auth/server`. It throws when better-auth swallowed a failed session delete, and returns the identity provider's logout URL for the action to redirect to. The example and generated `signOutAction` use it: `redirect((await signOutAndConfirm(auth, await headers())) ?? '/sign-in')`.
+
+### Patch Changes
+
+- [#2381](https://github.com/OpenSaasAU/stack/pull/2381) [`8f30988`](https://github.com/OpenSaasAU/stack/commit/8f309883b9072c435bfd3e92bf2f0db51e116f8c) Thanks [@dependabot](https://github.com/apps/dependabot)! - Align better-auth dev dependencies on ^1.7.18 so a single `@better-auth/core` copy is installed alongside `@better-auth/mcp` 1.7.18
+
+- [#2393](https://github.com/OpenSaasAU/stack/pull/2393) [`bf9aac3`](https://github.com/OpenSaasAU/stack/commit/bf9aac34f50453ad250f09415f97eff031b4e928) Thanks [@borisno2](https://github.com/borisno2)! - Bump Prisma to 8.0.0-rc.23 (CLI 8.0.0-rc.33); decimal columns use the renamed `numericStringColumn` helper.
+
+- [#2352](https://github.com/OpenSaasAU/stack/pull/2352) [`0f3b958`](https://github.com/OpenSaasAU/stack/commit/0f3b958d5e93636e26a77781e1be9479865db2a4) Thanks [@borisno2](https://github.com/borisno2)! - Scaffolded sign-in, sign-up and password-reset actions now go through `auth.handler` via the new `postAuthEndpoint`, so rate limiting applies.
+
+- [#2144](https://github.com/OpenSaasAU/stack/pull/2144) [`8bbaeae`](https://github.com/OpenSaasAU/stack/commit/8bbaeaef7e544c69cb17756ca67813521e0ef490) Thanks [@borisno2](https://github.com/borisno2)! - Auth adapter `update` and `incrementOne` now throw `AuthWhereError` on an empty `where` instead of silently no-oping (completes [#1980](https://github.com/OpenSaasAU/stack/issues/1980)).
+
+- [#2377](https://github.com/OpenSaasAU/stack/pull/2377) [`fde51ab`](https://github.com/OpenSaasAU/stack/commit/fde51ab06d4dcca8ffbee4bcde104f28760f5c8f) Thanks [@borisno2](https://github.com/borisno2)! - `postAuthEndpoint` takes its origin from better-auth's resolved base URL instead of `X-Forwarded-Host`/`Host`, so a spoofed host can no longer redirect a password-reset link and sign-in works on non-canonical hosts. It fails with a clear error when `BETTER_AUTH_URL` is unset.
+
 ## 0.44.0-alpha.5
 
 No changes in this release.
