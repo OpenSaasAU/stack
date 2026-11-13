@@ -96,7 +96,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.14.0",
     "pg": "^8.23.1",
-    "playwright": "^1.64.1",
+    "playwright": "^1.65.0",
     "prettier": "^3.9.9",
     "semver": "^7.8.5",
     "turbo": "^2.11.5",
