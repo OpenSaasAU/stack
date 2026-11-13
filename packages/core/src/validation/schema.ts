@@ -1,9 +1,10 @@
 import { z } from 'zod'
-import type { FieldConfig } from '../config/types.js'
+import type { FieldConfig, ValidationDefaults } from '../config/types.js'
 
 export function generateZodSchema(
   fieldConfigs: Record<string, FieldConfig>,
   operation: 'create' | 'update' = 'create',
+  defaults?: ValidationDefaults,
 ): z.ZodObject {
   const shape: Record<string, z.ZodTypeAny> = {}
 
@@ -14,7 +15,7 @@ export function generateZodSchema(
     }
 
     if (fieldConfig.getZodSchema) {
-      shape[fieldName] = fieldConfig.getZodSchema(fieldName, operation)
+      shape[fieldName] = fieldConfig.getZodSchema(fieldName, operation, defaults)
     } else {
       // Fallback for custom field types without schema generators
       shape[fieldName] = z.any().optional()
@@ -28,8 +29,9 @@ export function validateWithZod(
   data: Record<string, unknown>,
   fieldConfigs: Record<string, FieldConfig>,
   operation: 'create' | 'update' = 'create',
+  defaults?: ValidationDefaults,
 ): { success: true } | { success: false; errors: Record<string, string> } {
-  const schema = generateZodSchema(fieldConfigs, operation)
+  const schema = generateZodSchema(fieldConfigs, operation, defaults)
 
   const result = schema.safeParse(data)
 

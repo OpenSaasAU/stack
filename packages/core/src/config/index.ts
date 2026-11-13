@@ -8,7 +8,6 @@ import type {
 import { executePlugins, getPluginData } from './plugin-engine.js'
 import { assertUniqueMcpToolNames } from './mcp-tool-names.js'
 import { assertValidHookOnlyFields } from './hook-only-fields.js'
-import { isZonelessNativeType } from '../fields/index.js'
 import { assertUniquePresetKeys, assertUniqueRowActionKeys } from './list-view-keys.js'
 import type { AccessControl } from '../access/types.js'
 
@@ -32,28 +31,6 @@ function normalizeListAccess<T>(
   return access
 }
 
-function applyZonelessTimestampDefault(userConfig: OpenSaasConfig): OpenSaasConfig {
-  const nativeType = userConfig.db.defaults?.timestamp?.nativeType
-  if (!isZonelessNativeType(nativeType)) return userConfig
-  const lists = Object.fromEntries(
-    Object.entries(userConfig.lists).map(([key, listConfig]) => [
-      key,
-      {
-        ...listConfig,
-        fields: Object.fromEntries(
-          Object.entries(listConfig.fields).map(([name, field]) => [
-            name,
-            field.type === 'timestamp' && field.db?.nativeType === undefined
-              ? { ...field, db: { ...field.db, nativeType } }
-              : field,
-          ]),
-        ),
-      },
-    ]),
-  )
-  return { ...userConfig, lists }
-}
-
 /**
  * Define an OpenSaas config, executing `plugins` if present.
  *
@@ -64,16 +41,11 @@ function applyZonelessTimestampDefault(userConfig: OpenSaasConfig): OpenSaasConf
 export function config(userConfig: OpenSaasConfig): OpenSaasConfig | Promise<OpenSaasConfig> {
   if (!userConfig.plugins || userConfig.plugins.length === 0) {
     return assertUniquePresetKeys(
-      assertUniqueRowActionKeys(
-        assertValidHookOnlyFields(
-          assertUniqueMcpToolNames(applyZonelessTimestampDefault(userConfig)),
-        ),
-      ),
+      assertUniqueRowActionKeys(assertValidHookOnlyFields(assertUniqueMcpToolNames(userConfig))),
     )
   }
 
   return executePlugins(userConfig)
-    .then(applyZonelessTimestampDefault)
     .then(assertUniqueMcpToolNames)
     .then(assertValidHookOnlyFields)
     .then(assertUniqueRowActionKeys)

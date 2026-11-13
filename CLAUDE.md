@@ -1229,7 +1229,7 @@ These are decisions, not defects. `specs/prisma-8/architecture-spec.md` section 
 - A `resolveOutput` hook reading an undeclared column breaks silently unless it is typed through `Lists.<List>.TypeInfo`, where it is a compile error
 - Every to-one read off an included row is a null check, `NOT NULL` column or not
 - A `read` rule that reaches for a relation the row does not carry denies, so a rule reading a relation grants only where the read delivers it whole. Enumerating such a row or writing through `item` denies too, and each rule evaluation pays for a `Proxy` (ADR-0082)
-- A zoneless `Timestamp` column needs a UTC database session: otherwise `createdAt` (database `now()`) and `updatedAt` (ORM) disagree by the offset, and `new Date(row.at)` parses the zoneless read value as process-local time
+- A zoneless `Timestamp` column needs a UTC database session: otherwise `createdAt` (database `now()`) and `updatedAt` (ORM) disagree by the offset, and `new Date(row.at)` on the zoneless read value parses it as process-local time whatever the session, so append `Z` first for a UTC value
 - A secured read holds its whole result; bounding a large read is the caller's job
 - A row lock is two round trips, and `.forUpdate().all()` binds a bounded key set
 - Every root `update` and `delete` takes a row lock on its target and resolves it a second time before hooks run, an extra round trip per write (ADR-0078)

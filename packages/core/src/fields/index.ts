@@ -859,8 +859,10 @@ export function timestamp<
   return {
     type: 'timestamp',
     ...options,
-    getZodSchema() {
-      const zoneless = isZonelessNativeType(this.db?.nativeType)
+    getZodSchema: (_fieldName, _operation, defaults) => {
+      const zoneless = isZonelessNativeType(
+        options?.db?.nativeType ?? defaults?.timestampNativeType,
+      )
       return z
         .union([z.date(), z.iso.datetime(zoneless ? { local: true } : undefined)])
         .optional()
