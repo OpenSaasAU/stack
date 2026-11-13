@@ -262,6 +262,7 @@ Everything was decided against a release candidate. These are the facts a non-RC
 Stated so the build's documentation says them rather than a user discovering them. Each is a decision, not a defect.
 
 - `updatedAt` is application-side: a write that bypasses the ORM (`psql`, `db update`, the Unsafe surface) leaves it stale, and `update({})` no longer moves it. (ADR-0048)
+- A zoneless `Timestamp` column needs a UTC database session: otherwise `createdAt` and `updatedAt` disagree by the offset, and `new Date(row.at)` on the zoneless read value parses it as process-local time whatever the session, so append `Z` first for a UTC value.
 - `needs: ['passwordHash']` is a real, greppable leak channel owned by whoever writes it; a declaration outranks a read denial. (ADR-0051)
 - A `resolveOutput` hook reading an undeclared column breaks silently unless typed through `Lists.<List>.TypeInfo`, where it is a compile error. A declared-only branch computes nothing. Two hops cost a privileged read. (ADR-0051, 0052)
 - Every to-one read off an included row is a null-check, `NOT NULL` column or not. (ADR-0058)

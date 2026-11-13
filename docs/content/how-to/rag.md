@@ -7,7 +7,7 @@ This guide covers everything you need to set up RAG (Retrieval-Augmented Generat
 Before adding RAG to your application, ensure you have:
 
 - **Stack** installed and configured
-- **Node.js 18+** and pnpm
+- **Node.js 22.18 or newer** and pnpm
 - **PostgreSQL with pgvector available** — embeddings are pgvector columns, so `postgresql` is the only datasource RAG runs on
 - **OpenAI API key** (for OpenAI embeddings) OR **Ollama** installed (for local embeddings)
 

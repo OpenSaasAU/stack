@@ -638,7 +638,11 @@ export type BaseFieldConfig<
    * @param fieldName - The name of the field (for error messages)
    * @param operation - Whether this is a create or update operation
    */
-  getZodSchema?: (fieldName: string, operation: 'create' | 'update') => z.ZodTypeAny
+  getZodSchema?: (
+    fieldName: string,
+    operation: 'create' | 'update',
+    defaults?: ValidationDefaults,
+  ) => z.ZodTypeAny
   /**
    * Declare this field's filtering capability — its {@link FilterSpec} — for the
    * admin UI's Filter builder (ADR-0017). Optional and additive: a field that
@@ -1445,6 +1449,11 @@ export type VirtualField<
  * Specific field types (TextField, IntegerField, etc.) are used by field builders
  * but at the config level we treat all fields uniformly
  */
+/** Config-wide column defaults a field's validator reads when the field sets none of its own. */
+export interface ValidationDefaults {
+  timestampNativeType?: string
+}
+
 export type FieldConfig = BaseFieldConfig<TypeInfo>
 
 type WithTypeInfo<

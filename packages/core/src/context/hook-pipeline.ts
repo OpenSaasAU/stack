@@ -1,4 +1,4 @@
-import type { ListConfig } from '../config/types.js'
+import type { ListConfig, ValidationDefaults } from '../config/types.js'
 import type { AccessContext } from '../access/types.js'
 import {
   executeResolveInput,
@@ -26,6 +26,7 @@ export interface HookPipelineArgs {
   inputData: Record<string, unknown>
   item: Record<string, unknown> | undefined
   context: AccessContext
+  defaults?: ValidationDefaults
 }
 
 export interface HookPipelineResult {
@@ -47,7 +48,7 @@ export interface HookPipeline {
 }
 
 async function runHookPipeline(args: HookPipelineArgs): Promise<HookPipelineResult> {
-  const { operation, listName, listConfig, inputData, item, context } = args
+  const { operation, listName, listConfig, inputData, item, context, defaults } = args
 
   let resolvedData = await executeResolveInput(
     listConfig.hooks,
@@ -121,7 +122,7 @@ async function runHookPipeline(args: HookPipelineArgs): Promise<HookPipelineResu
 
   // Unlike an access-denied `context.db` operation, a validation failure
   // throws rather than returning null/[] — validation is never silent.
-  const validation = validateFieldRules(resolvedData, listConfig.fields, operation)
+  const validation = validateFieldRules(resolvedData, listConfig.fields, operation, defaults)
   if (validation.errors.length > 0) {
     throw new ValidationError(validation.errors, validation.fieldErrors)
   }

@@ -68,6 +68,7 @@ jobs:
         run: |
           pnpm check:doc-prisma-pins
           pnpm check:doc-prisma-pins --self-test
+          pnpm check:doc-node-version
 
       - name: Test documentation code rendering
         run: pnpm --filter opensaas-stack-docs test
