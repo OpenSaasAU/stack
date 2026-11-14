@@ -29,18 +29,18 @@ export class SessionVocabularyUnavailableError extends Error {
 
 /**
  * The session's vocabulary for `listKey`, with its row-dependent answers
- * resolved against `item` when the caller holds one loaded row of the list.
+ * resolved for the row whose id is `itemId` when one is given.
  */
 export async function readSessionVocabulary(
   context: AnyStackContext,
   listKey: string,
-  item?: Readonly<Record<string, unknown>>,
+  itemId?: string | number,
 ): Promise<SessionVocabulary> {
   const engine = engineContextOf(context)
   const vocabulary =
-    item === undefined
+    itemId === undefined
       ? await engine._sessionVocabulary?.(listKey)
-      : await engine._sessionVocabularyForItem?.(listKey, item)
+      : await engine._sessionVocabularyForItem?.(listKey, itemId)
   if (!vocabulary) throw new SessionVocabularyUnavailableError(listKey)
   return vocabulary
 }
@@ -131,6 +131,15 @@ export function formValuesForSession(args: {
   return jsonSafeClone(applyClientValueTransforms(shown, values))
 }
 
+function updatedRowId(
+  purpose: FieldConfigPurpose,
+  item: Readonly<Record<string, unknown>> | undefined,
+): string | number | undefined {
+  if (purpose !== 'update' || item === undefined) return undefined
+  const id = item.id
+  return typeof id === 'string' || typeof id === 'number' ? id : undefined
+}
+
 function resolveList(context: AnyStackContext, listKey: string) {
   const engine = engineContextOf(context)
   const config = engine._config
@@ -149,7 +158,8 @@ function resolveList(context: AnyStackContext, listKey: string) {
  *
  * A rule that depends on the row keeps the field editable, and the write
  * itself still enforces it — unless `item` is given on an `'update'`: then each
- * such rule is answered for that row, and a field it denies there is marked
+ * such rule is answered for the row with `item`'s id, against that row as
+ * stored, as the update decides it, and a field it denies there is marked
  * `readOnly` like any other.
  *
  * Pass `'create'` to `ItemCreateForm`'s `fields`, `'update'` (with the record
@@ -166,9 +176,8 @@ export async function serializeFieldConfigs(
   item?: Readonly<Record<string, unknown>>,
 ): Promise<Record<string, SerializableFieldConfig>> {
   const { engine, config, fields } = resolveList(context, listKey)
-  const rowItem = purpose === 'update' ? item : undefined
   return serializeFieldsForSession({
-    vocabulary: await readSessionVocabulary(engine, listKey, rowItem),
+    vocabulary: await readSessionVocabulary(engine, listKey, updatedRowId(purpose, item)),
     config,
     listKey,
     fields,
@@ -193,11 +202,7 @@ export async function serializeItemForForm(
 ): Promise<Record<string, unknown>> {
   const { engine, fields } = resolveList(context, listKey)
   return formValuesForSession({
-    vocabulary: await readSessionVocabulary(
-      engine,
-      listKey,
-      purpose === 'update' ? item : undefined,
-    ),
+    vocabulary: await readSessionVocabulary(engine, listKey, updatedRowId(purpose, item)),
     fields,
     values: item,
     purpose,

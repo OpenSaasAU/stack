@@ -1301,7 +1301,7 @@ It reads the session's Session vocabulary for the list:
 
 - A field the session can never read is withheld. On a `'create'` or `'update'` form, a field it may write but never read stays, empty and not required.
 - A field the session can never write for `purpose` carries `readOnly: true`, and the form renders it as a value rather than a control. A rule that reads the row (`item?.ownerId === session.userId`) is row-dependent and keeps the field editable; the write itself still decides.
-- `item` is the stored record an `'update'` form edits. Pass it and each row-dependent rule is answered for that row, so a field the rule denies there carries `readOnly: true` too. It is ignored for `'create'` and `'display'`.
+- `item` is the stored record an `'update'` form edits. Pass it and each row-dependent rule is answered for the row with its `id`, against that row as stored, as the update decides it, so a field the rule denies there carries `readOnly: true` too. It is ignored for `'create'` and `'display'`.
 - `purpose` is `'create'`, `'update'` or `'display'` (the default). `'display'` withholds every never-readable field and marks read-only a field the session can write on neither operation.
 
 A `listKey` the context's config does not declare throws `SessionVocabularyUnavailableError`.

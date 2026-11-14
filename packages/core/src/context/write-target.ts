@@ -81,61 +81,104 @@ export function resolveExistingTarget(
     if (!item) {
       return { status: 'denied' }
     }
-
-    if (context._isSudo) {
-      return { status: 'ok', originalItem: item, scope: [identity] }
-    }
-
-    const guard = guardedRuleItem(
-      ruleRowOf(item, NO_RULE_VIEWS, listConfig.fields, config, listName),
+    return await resolveTargetOfRow(
+      { listName, listConfig, config, identity, item, access },
+      collection,
+      ops,
+      context,
     )
-    let accessResult: Awaited<ReturnType<typeof checkAccess>>
-    try {
-      accessResult = await checkAccess(listConfig.access?.operation?.[access], {
-        session: context.session,
-        item: guard.item,
-        context,
-      })
-    } catch (err) {
-      if (err instanceof TypeError && guard.tripped()) return { status: 'denied' }
-      throw err
-    }
-    if (guard.tripped()) return { status: 'denied' }
-
-    if (accessResult === false) {
-      return { status: 'denied' }
-    }
-
-    if (accessResult === true) {
-      return { status: 'ok', originalItem: item, scope: [identity] }
-    }
-
-    const filter = await accessFilterPlan(listName, listConfig, config, context, accessResult)
-    const scope: WriteScope = [identity, filter]
-    const scopedItem = await firstMatching(collection, scope, ops)
-    if (!scopedItem) {
-      return { status: 'denied' }
-    }
-
-    return { status: 'ok', originalItem: item, scope }
   }
 }
 
+async function resolveTargetOfRow(
+  target: {
+    listName: string
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+    listConfig: ListConfig<any>
+    config: OpenSaasConfig
+    identity: WherePlan
+    item: OrmRow
+    access: 'update' | 'delete'
+  },
+  collection: WriteCollection,
+  ops: WhereCombinators,
+  context: AccessContext,
+): Promise<TargetResolution> {
+  const { listName, listConfig, config, identity, item, access } = target
+  if (context._isSudo) {
+    return { status: 'ok', originalItem: item, scope: [identity] }
+  }
+
+  const guard = guardedRuleItem(ruleRowOf(item, NO_RULE_VIEWS, listConfig.fields, config, listName))
+  let accessResult: Awaited<ReturnType<typeof checkAccess>>
+  try {
+    accessResult = await checkAccess(listConfig.access?.operation?.[access], {
+      session: context.session,
+      item: guard.item,
+      context,
+    })
+  } catch (err) {
+    if (err instanceof TypeError && guard.tripped()) return { status: 'denied' }
+    throw err
+  }
+  if (guard.tripped()) return { status: 'denied' }
+
+  if (accessResult === false) {
+    return { status: 'denied' }
+  }
+
+  if (accessResult === true) {
+    return { status: 'ok', originalItem: item, scope: [identity] }
+  }
+
+  const filter = await accessFilterPlan(listName, listConfig, config, context, accessResult)
+  const scope: WriteScope = [identity, filter]
+  const scopedItem = await firstMatching(collection, scope, ops)
+  if (!scopedItem) {
+    return { status: 'denied' }
+  }
+
+  return { status: 'ok', originalItem: item, scope }
+}
+
 /**
- * Whether the engine would let `context` update or delete the row of
- * `listKey` whose id is `id`: the target resolution an update or a delete runs
- * first, without the write.
+ * The stored row of `listKey` whose id is `id`, as an update or a delete reads
+ * it before deciding its target: every column, no relation, no access applied.
+ */
+export async function readStoredRow(
+  context: AccessContext,
+  listKey: string,
+  id: string | number,
+): Promise<OrmRow | null> {
+  return await firstMatching(
+    writeCollection(context.ormHandle, listKey),
+    [identityPredicate(listKey, id)],
+    await whereCombinators(),
+  )
+}
+
+/**
+ * Whether the engine would let `context` update or delete `item`, a stored row
+ * of `listKey` read by {@link readStoredRow}: the target resolution an update
+ * or a delete runs first, without the write.
  */
 export async function writeTargetAllows(
   context: AccessContext,
   config: OpenSaasConfig,
   listKey: string,
+  item: OrmRow,
   id: string | number,
   operation: 'update' | 'delete',
 ): Promise<boolean> {
-  const listConfig = config.lists[listKey]
-  const resolve = resolveExistingTarget(listKey, listConfig, config, { id }, operation)
-  const resolution = await resolve(
+  const resolution = await resolveTargetOfRow(
+    {
+      listName: listKey,
+      listConfig: config.lists[listKey],
+      config,
+      identity: identityPredicate(listKey, id),
+      item,
+      access: operation,
+    },
     writeCollection(context.ormHandle, listKey),
     await whereCombinators(),
     context,

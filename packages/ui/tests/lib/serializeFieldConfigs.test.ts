@@ -96,6 +96,15 @@ afterAll(async () => {
   await database?.close()
 })
 
+async function seedDoc(data: Record<string, string>): Promise<Record<string, unknown>> {
+  const created = await database
+    .context(null)
+    .sudo()
+    .db.Doc.create({ data: { title: 'Plan', writeOnly: 'kept-server-side', ...data } })
+  if (created === null) throw new Error('Could not seed Doc')
+  return created
+}
+
 const sessions: ReadonlyArray<readonly [string, () => AnyStackContext]> = [
   ['anonymous', () => database.context(null)],
   ['author', () => database.context({ userId: 'author-1', role: 'author' })],
@@ -225,14 +234,18 @@ describe('serializeFieldConfigs', () => {
 
   it('answers a row-dependent update rule for the item an update form edits', async () => {
     const context = database.context({ userId: 'author-1', role: 'author' })
-    const mine = await serializeFieldConfigs(context, 'Doc', 'update', {
-      id: 'doc-1',
-      ownerKey: 'author-1',
-    })
-    const theirs = await serializeFieldConfigs(context, 'Doc', 'update', {
-      id: 'doc-2',
-      ownerKey: 'someone-else',
-    })
+    const mine = await serializeFieldConfigs(
+      context,
+      'Doc',
+      'update',
+      await seedDoc({ ownerKey: 'author-1' }),
+    )
+    const theirs = await serializeFieldConfigs(
+      context,
+      'Doc',
+      'update',
+      await seedDoc({ ownerKey: 'someone-else' }),
+    )
 
     expect(mine.ownerLocked.readOnly).toBeUndefined()
     expect(theirs.ownerLocked.readOnly).toBe(true)
@@ -242,7 +255,7 @@ describe('serializeFieldConfigs', () => {
 
   it('ignores an item outside an update form', async () => {
     const context = database.context({ userId: 'author-1', role: 'author' })
-    const theirs = { id: 'doc-2', ownerKey: 'someone-else' }
+    const theirs = await seedDoc({ ownerKey: 'someone-else' })
     for (const purpose of ['create', 'display'] as const) {
       const serialized = await serializeFieldConfigs(context, 'Doc', purpose, theirs)
       expect(serialized.ownerLocked.readOnly).toBeUndefined()
@@ -291,7 +304,8 @@ describe('serializeItemForForm', () => {
 
   it('applies value transforms and leaves out what the update form withholds', async () => {
     const context = database.context({ userId: 'author-1', role: 'author' })
-    const values = await serializeItemForForm(context, 'Doc', item)
+    const stored = await seedDoc({ secretNote: 'classified' })
+    const values = await serializeItemForForm(context, 'Doc', { ...item, id: stored.id })
     const fields = await serializeFieldConfigs(context, 'Doc', 'update')
 
     expect(values.title).toBe('Plan')
@@ -306,16 +320,16 @@ describe('serializeItemForForm', () => {
 
   it('drops a value whose read rule denies it on this row', async () => {
     const context = database.context({ userId: 'author-1', role: 'author' })
-    const values = await serializeItemForForm(context, 'Doc', {
-      ...item,
-      ownerKey: 'someone-else',
-      ownerRead: 'theirs',
-    })
-    const own = await serializeItemForForm(context, 'Doc', {
-      ...item,
-      ownerKey: 'author-1',
-      ownerRead: 'mine',
-    })
+    const values = await serializeItemForForm(
+      context,
+      'Doc',
+      await seedDoc({ ownerKey: 'someone-else', ownerRead: 'theirs' }),
+    )
+    const own = await serializeItemForForm(
+      context,
+      'Doc',
+      await seedDoc({ ownerKey: 'author-1', ownerRead: 'mine' }),
+    )
 
     expect(values).not.toHaveProperty('ownerRead')
     expect(own.ownerRead).toBe('mine')

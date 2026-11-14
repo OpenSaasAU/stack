@@ -2,20 +2,15 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { AccessContext, OpenSaasConfig } from '@opensaas/stack-core'
 import { relationship, text } from '@opensaas/stack-core/fields'
 import { createTestContext, type TestContext } from '@opensaas/stack-core/testing'
-import {
-  buildAccessItemData,
-  buildDetailsItemData,
-  composeItemViewRead,
-} from '../../src/components/ItemForm.js'
+import { buildDetailsItemData, composeItemViewRead } from '../../src/components/ItemForm.js'
 import { prepareItemForm } from '../../src/lib/prepareItemForm.js'
 import { deriveItemViewLayout } from '../../src/lib/deriveItemView.js'
 import { FIELD_WRITE_DENIED_REASON } from '../../src/lib/serializeFieldConfig.js'
 
 /**
- * The derived item-view layout builds its form from details data with every
- * Relationship-table section stripped out, but a details field's update rule
- * is answered against the real row, section relation included (#1402). Core
- * answers it; the admin evaluates no rule itself.
+ * The derived item-view layout's details form answers each row-dependent
+ * update rule as the update itself does: against the edited row as stored
+ * (#1402).
  */
 function makeConfig(): OpenSaasConfig {
   return {
@@ -25,11 +20,11 @@ function makeConfig(): OpenSaasConfig {
         fields: {
           title: text({
             access: {
-              // Locked once the post has comments — the case the review
-              // comment's example was modelled on.
-              update: ({ item }) => (item?.comments as unknown[] | undefined)?.length === 0,
+              update: ({ item }) => Array.isArray(item?.comments) && item.comments.length === 0,
             },
           }),
+          status: text(),
+          summary: text({ access: { update: ({ item }) => item?.status !== 'locked' } }),
           comments: relationship({ ref: 'Comment.post', many: true }),
         },
         access: { operation: { query: () => true, create: () => true, update: () => true } },
@@ -45,7 +40,7 @@ function makeConfig(): OpenSaasConfig {
   }
 }
 
-describe('the derived item-view layout checks field access against the real row (#1402)', () => {
+describe('the derived item-view layout answers field access as the update does (#1402)', () => {
   let harness: TestContext
 
   beforeAll(async () => {
@@ -56,12 +51,16 @@ describe('the derived item-view layout checks field access against the real row 
     await harness?.close()
   })
 
+  function contextOf(): AccessContext {
+    return harness.context as unknown as AccessContext
+  }
+
   async function prepareDetailsForm(postId: string) {
     const config = makeConfig()
-    const context = harness.context as unknown as AccessContext
+    const context = contextOf()
     const listConfig = config.lists.Post
     const layout = deriveItemViewLayout(config, 'Post')
-    expect(layout.sections).toHaveLength(1) // sanity: comments became a table section
+    expect(layout.sections).toHaveLength(1)
 
     const itemData = await composeItemViewRead(
       context.db.Post.where({ id: postId }),
@@ -74,42 +73,41 @@ describe('the derived item-view layout checks field access against the real row 
       .map((fieldName) => [fieldName, listConfig.fields[fieldName]] as const)
       .filter((entry): entry is [string, NonNullable<(typeof entry)[1]>] => !!entry[1])
     const detailsListConfig = { ...listConfig, fields: Object.fromEntries(detailsFieldEntries) }
-    const detailsItemData = buildDetailsItemData(itemData, layout)
 
     return prepareItemForm(
       context,
       config,
       'Post',
       detailsListConfig,
-      detailsItemData,
+      buildDetailsItemData(itemData, layout),
       'update',
-      buildAccessItemData(itemData, layout),
+      postId,
     )
   }
 
-  it('reads the real (bounded) relation, not an empty/missing one, for a details field access rule', async () => {
-    const context = harness.context as unknown as AccessContext
-    const post = await context.db.Post.create({ data: { title: 'No comments yet' } })
-    const postId = String(post?.id)
+  async function createPost(status: string): Promise<string> {
+    const post = await contextOf().db.Post.create({ data: { title: 't', status, summary: 's' } })
+    return String(post?.id)
+  }
 
-    const prepared = await prepareDetailsForm(postId)
+  it('marks a field read-only on a row its rule denies and editable on one it allows', async () => {
+    const open = await prepareDetailsForm(await createPost('open'))
+    const locked = await prepareDetailsForm(await createPost('locked'))
 
-    // `item.comments` really is `[]` here — the rule's own answer, not the
-    // fail-open fallback for a missing/throwing rule.
-    expect(prepared.serializableFields.title.readOnly).toBeUndefined()
+    expect(open.serializableFields.summary.readOnly).toBeUndefined()
+    expect(locked.serializableFields.summary.readOnly).toBe(true)
+    expect(locked.serializableFields.summary.readOnlyReason).toBe(FIELD_WRITE_DENIED_REASON)
   })
 
-  it('marks the field read-only once the real relation makes the rule deny', async () => {
-    const context = harness.context as unknown as AccessContext
-    const post = await context.db.Post.create({ data: { title: 'Has a comment' } })
-    const postId = String(post?.id)
-    await context.db.Comment.create({
-      data: { body: 'First', post: { connect: { id: postId } } },
-    })
+  it('marks a field read-only when its rule reads a relation the stored row does not carry, as the update rejects it', async () => {
+    const postId = await createPost('open')
 
     const prepared = await prepareDetailsForm(postId)
 
     expect(prepared.serializableFields.title.readOnly).toBe(true)
     expect(prepared.serializableFields.title.readOnlyReason).toBe(FIELD_WRITE_DENIED_REASON)
+    await expect(
+      contextOf().db.Post.update({ where: { id: postId }, data: { title: 'changed' } }),
+    ).rejects.toThrow(/title/)
   })
 })

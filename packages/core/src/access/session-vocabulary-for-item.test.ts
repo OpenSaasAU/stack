@@ -106,12 +106,18 @@ async function seed(listKey: 'Doc' | 'Guarded', data: Record<string, string>) {
   return row
 }
 
+function idOf(item: Record<string, unknown>): string | number {
+  const id = item.id
+  if (typeof id !== 'string' && typeof id !== 'number') throw new Error('No id')
+  return id
+}
+
 async function forItem(
   context: AnyStackContext,
   listKey: string,
   item: Record<string, unknown>,
 ): Promise<SessionVocabulary> {
-  const vocabulary = await engineContextOf(context)._sessionVocabularyForItem?.(listKey, item)
+  const vocabulary = await engineContextOf(context)._sessionVocabularyForItem?.(listKey, idOf(item))
   if (vocabulary === undefined || vocabulary === null) {
     throw new Error(`No vocabulary for "${listKey}"`)
   }
@@ -218,9 +224,23 @@ describe('the Session vocabulary resolved against one row', () => {
     expect(fieldOf(vocabulary, 'hookOnly').update).toBe('deny')
   })
 
+  test('a row that is not there denies every row-dependent answer', async () => {
+    const mine = await seed('Guarded', { ownerId: 'author-1', locked: 'no' })
+    const context = database.context(author)
+    await database
+      .context(null)
+      .sudo()
+      .db.Guarded.delete({ where: { id: idOf(mine) } })
+
+    const vocabulary = await forItem(context, 'Guarded', mine)
+
+    expect(vocabulary.operations).toMatchObject({ update: 'deny', delete: 'deny' })
+    expect(fieldOf(vocabulary, 'title').update).toBe('deny')
+  })
+
   test('an undeclared list resolves to null', async () => {
     const context = database.context(author)
 
-    expect(await engineContextOf(context)._sessionVocabularyForItem?.('Nope', {})).toBeNull()
+    expect(await engineContextOf(context)._sessionVocabularyForItem?.('Nope', 'missing')).toBeNull()
   })
 })

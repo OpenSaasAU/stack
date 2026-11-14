@@ -127,23 +127,6 @@ export function buildDetailsItemData(
 }
 
 /**
- * The row a details field's own update rule is answered against (#1402): the
- * item with each Relationship-table section reshaped from the `{ items, total }`
- * it was read as back to the bounded rows a plain read includes, so a rule
- * reading that relation off `item` sees it rather than a missing key.
- */
-export function buildAccessItemData(
-  itemData: Record<string, unknown>,
-  layout: ItemViewLayout,
-): Record<string, unknown> {
-  const accessItemData = { ...itemData }
-  for (const section of layout.sections) {
-    accessItemData[section.fieldName] = sectionRows(itemData[section.fieldName])
-  }
-  return accessItemData
-}
-
-/**
  * Edit-mode item view whose layout is DERIVED from the list shape (issue #734):
  * scalar/to-one fields (and picker-demoted relationships) in a details card
  * with the existing whole-form Save/Cancel, and each to-many relationship as a
@@ -228,7 +211,7 @@ async function ItemViewLayoutView({
     detailsListConfig,
     detailsItemData,
     'update',
-    buildAccessItemData(itemData, layout),
+    itemId,
   )
 
   const detailsCard = (
@@ -389,7 +372,7 @@ export async function ItemForm({
     listConfig,
     itemData,
     mode === 'create' ? 'create' : 'update',
-    mode === 'create' ? undefined : itemData,
+    mode === 'create' ? undefined : itemId,
   )
 
   return (

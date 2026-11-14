@@ -341,13 +341,14 @@ export interface AccessContext<DB = AccessControlledDB> {
   ) => Promise<import('./session-vocabulary.js').SessionVocabulary | null>
   /**
    * `_sessionVocabulary(listKey)` with its row-dependent answers resolved
-   * against `item`, one loaded row of the list, as the engine decides them for
-   * that row. Not kept: each call asks the row-dependent rules again.
+   * for the row whose id is `id`, against that row as stored, as an update
+   * decides them. Not kept: each call reads the row and asks the row-dependent
+   * rules again.
    * @internal
    */
   _sessionVocabularyForItem?: (
     listKey: string,
-    item: Readonly<Record<string, unknown>>,
+    id: string | number,
   ) => Promise<import('./session-vocabulary.js').SessionVocabulary | null>
 }
 
