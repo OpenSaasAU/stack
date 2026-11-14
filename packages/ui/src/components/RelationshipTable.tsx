@@ -15,11 +15,7 @@ import { formatFieldName, formatListName } from '../lib/utils.js'
 import { projectFieldConfig, type SerializableFieldConfig } from '../lib/serializeFieldConfig.js'
 import { jsonSafeClone } from '../lib/jsonSafeClone.js'
 import type { SessionVocabulary } from '@opensaas/stack-core/internal'
-import {
-  readSessionVocabulary,
-  SessionVocabularyUnavailableError,
-  withheldFieldNames,
-} from '../lib/sessionFieldConfigs.js'
+import { vocabularyOrDeny, withheldFieldNames } from '../lib/sessionFieldConfigs.js'
 import { prepareItemForm } from '../lib/prepareItemForm.js'
 import type { RelationshipTableSection } from '../lib/deriveItemView.js'
 import { resolveToManyEdgePlan } from '../lib/relationshipEdges.js'
@@ -61,18 +57,6 @@ export interface RelationshipTableProps {
   serverAction: (input: ServerActionInput) => Promise<unknown>
   /** Suppress every write affordance — set when the parent's item view is in `'read'` field mode. */
   readOnly?: boolean
-}
-
-async function vocabularyOrDeny(
-  context: AnyStackContext,
-  listKey: string,
-): Promise<SessionVocabulary | null> {
-  try {
-    return await readSessionVocabulary(context, listKey)
-  } catch (error) {
-    if (error instanceof SessionVocabularyUnavailableError) return null
-    throw error
-  }
 }
 
 /**

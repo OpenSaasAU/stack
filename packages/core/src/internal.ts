@@ -34,11 +34,6 @@ export { pascalToCamel, pascalToKebab, kebabToPascal, kebabToCamel } from './lib
 // Zod schema helpers used internally for validation
 export { validateWithZod, generateZodSchema } from './validation/schema.js'
 
-// Canonical field-level access evaluator, reused by @opensaas/stack-ui to decide
-// whether a Relationship-table cell may show an inline-edit affordance (#737).
-// This is the single field-access evaluator — the UI must not re-implement it.
-export { checkFieldAccess } from './access/index.js'
-
 export type {
   AccessAnswer,
   FieldVocabulary,

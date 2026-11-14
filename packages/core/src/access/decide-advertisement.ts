@@ -16,9 +16,11 @@ export interface AdvertisementPolicy {
  * as a throwing rule does — and every contained throw warns, or a denial would
  * have no diagnostic at all.
  *
- * A throw carrying a string `digest` is a framework's control flow — Next.js's
- * `redirect()`, `notFound()` and dynamic-usage bailouts — and is rethrown, so
- * the framework still acts on it.
+ * A framework's control flow is rethrown, so the framework still acts on it:
+ * a throw whose string `digest` starts with one of Next.js's control-flow
+ * prefixes (`redirect()`, `notFound()` and the other HTTP fallbacks, dynamic
+ * usage and client-rendering bailouts, a hanging prerender promise), and
+ * React's postpone. Any other `digest` is an ordinary throw.
  */
 export async function decideAdvertisement<T>(
   subject: string,
@@ -35,11 +37,21 @@ export async function decideAdvertisement<T>(
   }
 }
 
+const NEXT_CONTROL_FLOW_DIGEST_PREFIXES: readonly string[] = [
+  'NEXT_REDIRECT',
+  'NEXT_HTTP_ERROR_FALLBACK',
+  'NEXT_NOT_FOUND',
+  'DYNAMIC_SERVER_USAGE',
+  'BAILOUT_TO_CLIENT_SIDE_RENDERING',
+  'HANGING_PROMISE_REJECTION',
+]
+
+const REACT_POSTPONE = Symbol.for('react.postpone')
+
 function isControlFlow(thrown: unknown): boolean {
-  return (
-    typeof thrown === 'object' &&
-    thrown !== null &&
-    'digest' in thrown &&
-    typeof thrown.digest === 'string'
-  )
+  if (typeof thrown !== 'object' || thrown === null) return false
+  if ('$$typeof' in thrown && thrown.$$typeof === REACT_POSTPONE) return true
+  if (!('digest' in thrown) || typeof thrown.digest !== 'string') return false
+  const digest = thrown.digest
+  return NEXT_CONTROL_FLOW_DIGEST_PREFIXES.some((prefix) => digest.startsWith(prefix))
 }

@@ -29,7 +29,7 @@ import {
   calendarDay,
 } from '../fields/index.js'
 import type { OpenSaasConfig } from '../config/types.js'
-import type { AccessContext } from '../access/types.js'
+import type { AccessContext, StorageUtils } from '../access/types.js'
 import { withOwnSessionVocabulary } from '../access/session-vocabulary.js'
 
 const tokensOf = (written: string) => filterQueryTokens(parseFilterQuery(written))
@@ -37,18 +37,27 @@ const tokensOf = (written: string) => filterQueryTokens(parseFilterQuery(written
 // An anonymous session over a context that carries only what the Session
 // vocabulary needs, so a field with no `read` rule is filterable and every
 // rule is asked exactly as a real context asks it.
+const unusedStorage: StorageUtils = {
+  uploadFile: async () => undefined,
+  uploadImage: async () => undefined,
+  deleteFile: async () => undefined,
+  deleteImage: async () => undefined,
+}
+
+function anonymousContext(): AccessContext {
+  return {
+    _isSudo: false,
+    session: null,
+    db: {},
+    ormHandle: {},
+    storage: unusedStorage,
+    plugins: {},
+    _resolveOutputChain: [],
+  }
+}
+
 function argsFor(config: OpenSaasConfig): FilterAccessArgs {
-  const context = withOwnSessionVocabulary(
-    {
-      _isSudo: false,
-      session: null,
-      db: {},
-      ormHandle: undefined,
-      _resolveOutputChain: [],
-    } as unknown as AccessContext,
-    config,
-  )
-  return { context }
+  return { context: withOwnSessionVocabulary(anonymousContext(), config) }
 }
 
 const READABLE = { operation: { query: () => true } }
@@ -1072,7 +1081,7 @@ describe('core field Filter specs', () => {
 
   it('gives a context core did not build no specs, without throwing', async () => {
     const lightweight: FilterAccessArgs = {
-      context: { session: null, db: {} } as unknown as AccessContext,
+      context: anonymousContext(),
     }
     const listConfig = config.lists.Post
     expect(await collectFilterSpecs(listConfig, 'Post', config, lightweight)).toEqual({})

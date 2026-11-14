@@ -1,8 +1,10 @@
 import * as React from 'react'
+import { Lock } from 'lucide-react'
 import { resolveListUi } from '../lib/resolveListUi.js'
 import { ItemFormClient } from './ItemFormClient.js'
 import { formatListName } from '../lib/utils.js'
 import { PageHeader } from './PageHeader.js'
+import { EmptyState } from './EmptyState.js'
 import type { ServerActionInput } from '../server/types.js'
 import {
   type AnyStackContext,
@@ -12,7 +14,7 @@ import {
   ValidationError,
 } from '@opensaas/stack-core'
 import { prepareItemForm } from '../lib/prepareItemForm.js'
-import { isOperationPotentiallyAllowed } from '../lib/operationAccess.js'
+import { vocabularyOrDeny } from '../lib/sessionFieldConfigs.js'
 
 export interface SingletonViewProps {
   context: AnyStackContext
@@ -33,17 +35,14 @@ export interface SingletonViewProps {
  * reuses the same `ItemFormClient` + serialization path as `ItemForm` so the
  * existing field rendering, validation, and `serverAction` save flow apply.
  *
- * A `null` from `get()` is ambiguous at the boundary — it means EITHER an
- * `autoCreate: false` or filter-scoped singleton with no row yet, OR that
- * `query` access is denied (access-controlled reads return null/[] silently).
- * We disambiguate
- * using the list's operation-level access:
+ * What the session may do is read from its Session vocabulary, never from
+ * the access rules directly:
  *
- * - `query` denied  → friendly "no access" message (never an editable form).
- * - `query` allowed + `create` allowed → a create-on-first-save form
+ * - `query` denied  → a "no access" state, and `get()` is never called.
+ * - no record yet, `create` not denied → a create-on-first-save form
  *   (`ItemFormClient` in `mode="create"`); core assigns the singleton `id` and
  *   enforces the single-record constraint on create.
- * - `query` allowed + `create` denied → friendly "no record yet" message.
+ * - no record yet, `create` denied → a "no record yet" message.
  *
  * An update-denied singleton still renders the edit form (the happy path), but
  * the save fails gracefully: the server action's `update` access check returns
@@ -71,8 +70,22 @@ export async function SingletonView({
     )
   }
 
-  // Resolve the singleton record; see the docblock above for what a null
-  // `get()` means and how the branches below disambiguate it.
+  const vocabulary = await vocabularyOrDeny(appContext, listKey)
+  if (vocabulary === null || vocabulary.operations.query === 'deny') {
+    return (
+      <div className="max-w-4xl p-4 md:p-8">
+        <PageHeader title={formatListName(listKey)} />
+        <div data-slot="singleton-view-unavailable">
+          <EmptyState
+            icon={<Lock className="h-6 w-6" />}
+            title={`${formatListName(listKey)} can't be shown here.`}
+            description={`You don't have access to ${formatListName(listKey)}.`}
+          />
+        </div>
+      </div>
+    )
+  }
+
   let record: Record<string, unknown> | null = null
   try {
     const delegate = context.db[listKey]
@@ -93,34 +106,7 @@ export async function SingletonView({
   }
 
   if (!record) {
-    // Disambiguate via operation-level access (see docblock).
-    const accessArgs = { session: context.session, context }
-    const canQuery = await isOperationPotentiallyAllowed(
-      listConfig.access?.operation,
-      'query',
-      accessArgs,
-    )
-
-    if (!canQuery) {
-      return (
-        <div className="max-w-4xl p-4 md:p-8">
-          <PageHeader title={formatListName(listKey)} />
-          <div className="bg-muted/50 border border-border rounded-lg p-6">
-            <p className="text-muted-foreground">
-              You don&apos;t have access to {formatListName(listKey)}.
-            </p>
-          </div>
-        </div>
-      )
-    }
-
-    const canCreate = await isOperationPotentiallyAllowed(
-      listConfig.access?.operation,
-      'create',
-      accessArgs,
-    )
-
-    if (!canCreate) {
+    if (vocabulary.operations.create === 'deny') {
       return (
         <div className="max-w-4xl p-4 md:p-8">
           <PageHeader title={formatListName(listKey)} />

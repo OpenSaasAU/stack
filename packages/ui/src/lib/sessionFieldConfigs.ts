@@ -45,6 +45,22 @@ export async function readSessionVocabulary(
   return vocabulary
 }
 
+/**
+ * The session's vocabulary for `listKey`, or `null` when the context resolves
+ * none for it, which every caller treats as a deny.
+ */
+export async function vocabularyOrDeny(
+  context: AnyStackContext,
+  listKey: string,
+): Promise<SessionVocabulary | null> {
+  try {
+    return await readSessionVocabulary(context, listKey)
+  } catch (error) {
+    if (error instanceof SessionVocabularyUnavailableError) return null
+    throw error
+  }
+}
+
 function writeDenied(entry: FieldVocabulary | undefined, purpose: FieldConfigPurpose): boolean {
   if (purpose === 'display') return entry?.create === 'deny' && entry.update === 'deny'
   return entry?.[purpose] === 'deny'

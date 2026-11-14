@@ -19,7 +19,6 @@ import type { ServerActionInput } from '../server/types.js'
 import { isRelationshipField, shouldHaveForeignKey } from '@opensaas/stack-core/fields'
 import {
   type AccessContext,
-  type AccessControl,
   type AnyStackContext,
   type BulkAction,
   type FieldConfig,
@@ -59,21 +58,6 @@ import {
   withholdFilterFields,
   type SessionVocabulary,
 } from '@opensaas/stack-core/internal'
-
-/**
- * Whether the list's delete access is NOT statically false (issue #733).
- *
- * "Statically false" means we can prove no session can ever delete without
- * running a session-dependent function: delete access is absent (deny by
- * default) or the literal boolean `false`. A function — or `true` — can't be
- * evaluated up front, so Delete is offered and per-row Silent failure absorbs
- * any denials into the "N of M deleted" report.
- */
-function canDeleteList(deleteAccess: AccessControl | boolean | undefined): boolean {
-  if (deleteAccess === undefined) return false
-  if (typeof deleteAccess === 'boolean') return deleteAccess
-  return true
-}
 
 function serializeBulkAction(action: BulkAction): SerializedBulkAction {
   return {
@@ -723,13 +707,14 @@ export async function ListView({
     presetViews.tabs,
   ])
   const bulkActions = visibleBulkActions.map(serializeBulkAction)
+  const canCreate = !hideCreate && vocabulary.operations.create !== 'deny'
 
   return (
     <div className="p-4 md:p-8">
       <PageHeader
         title={title}
         description={`${total} ${total === 1 ? 'item' : 'items'}`}
-        actions={hideCreate ? undefined : <CreateLink title={title} href={`${listHref}/create`} />}
+        actions={canCreate ? <CreateLink title={title} href={`${listHref}/create`} /> : undefined}
       />
 
       <ListViewClient
@@ -759,8 +744,8 @@ export async function ListView({
         recordLabels={recordLabels}
         countLinks={countLinks}
         serverAction={serverAction}
-        canDelete={!hideDelete && canDeleteList(listConfig.access?.operation?.delete)}
-        canCreate={!hideCreate}
+        canDelete={!hideDelete && vocabulary.operations.delete !== 'deny'}
+        canCreate={canCreate}
         avatarColumn={avatarColumn}
         labelColumn={labelColumn}
         bulkActions={bulkActions}
