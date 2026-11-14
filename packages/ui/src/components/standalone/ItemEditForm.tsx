@@ -10,13 +10,16 @@ import { FieldValidityContext } from '../../lib/fieldValidity.js'
 import { cn } from '../../lib/utils.js'
 import type { ItemFormClassNames } from './form-classnames.js'
 
-export interface ItemEditFormProps<TData = Record<string, unknown>> {
+export interface ItemEditFormProps<
+  TData extends Record<string, unknown> = Record<string, unknown>,
+> {
   /**
    * The list's field configs from `serializeFieldConfigs(context, listKey, 'update')`
    * on `@opensaas/stack-ui/server`, which withholds what the session can never
    * read and marks what it can never write.
    */
   fields: Record<string, SerializableFieldConfig>
+  /** The record's values from `serializeItemForForm(context, listKey, item)` on the server. */
   initialData: TData
   onSubmit: (data: TData) => Promise<{ success: boolean; error?: string }>
   onCancel?: () => void
@@ -39,7 +42,7 @@ export interface ItemEditFormProps<TData = Record<string, unknown>> {
  * ```tsx
  * <ItemEditForm
  *   fields={fields} // await serializeFieldConfigs(context, 'Post', 'update') on the server
- *   initialData={post}
+ *   initialData={initialData} // await serializeItemForForm(context, 'Post', post) on the server
  *   onSubmit={async (data) => {
  *     const result = await updatePost(postId, data);
  *     return { success: !!result };
@@ -48,7 +51,7 @@ export interface ItemEditFormProps<TData = Record<string, unknown>> {
  * />
  * ```
  */
-export function ItemEditForm<TData = Record<string, unknown>>({
+export function ItemEditForm<TData extends Record<string, unknown> = Record<string, unknown>>({
   fields,
   initialData,
   onSubmit,
@@ -74,7 +77,7 @@ export function ItemEditForm<TData = Record<string, unknown>>({
     errorBannerRef,
   } = useItemForm({
     fields,
-    initialData: initialData as Record<string, unknown>,
+    initialData,
     mode: 'update',
     errorFallback: 'Failed to update item',
     onUnchanged: onUnchanged ?? onCancel,

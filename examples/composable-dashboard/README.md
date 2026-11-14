@@ -188,11 +188,13 @@ import { ItemEditForm, DeleteButton } from '@opensaas/stack-ui/standalone'
 
 // `fields` comes from the server page:
 //   await serializeFieldConfigs(context, 'Post', 'update')  // @opensaas/stack-ui/server
+// and `initialData` from:
+//   await serializeItemForForm(context, 'Post', post)        // @opensaas/stack-ui/server
 {
   editing ? (
     <ItemEditForm
       fields={fields}
-      initialData={post}
+      initialData={initialData}
       onSubmit={async (data) => {
         await fetch(`/api/posts/${post.id}`, { method: 'PATCH' })
         return { success: true }

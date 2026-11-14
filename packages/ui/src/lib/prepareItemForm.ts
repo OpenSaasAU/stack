@@ -6,9 +6,12 @@ import {
 } from '@opensaas/stack-core'
 import type { ListConfig } from '@opensaas/stack-core'
 import type { SerializableFieldConfig } from './serializeFieldConfig.js'
-import { readSessionVocabulary, serializeFieldsForSession } from './sessionFieldConfigs.js'
-import { jsonSafeClone } from './jsonSafeClone.js'
-import { applyClientValueTransforms } from './clientValueTransforms.js'
+import {
+  formValuesForSession,
+  readSessionVocabulary,
+  serializeFieldsForSession,
+  withheldFieldNames,
+} from './sessionFieldConfigs.js'
 
 /**
  * One record's id as the string the client form carries. An `int autoincrement`
@@ -81,7 +84,7 @@ export async function prepareItemForm(
   itemData: Record<string, unknown>,
   operation: 'create' | 'update',
 ): Promise<PreparedItemForm> {
-  const vocabulary = await readSessionVocabulary(context, listKey)
+  const vocabularyPromise = readSessionVocabulary(context, listKey)
   // Bounded/projected fetch — see getRelationshipOptions.
   const relationshipData: Record<string, Array<{ id: string; label: string }>> = {}
   const relationshipFields = Object.entries(listConfig.fields).filter(
@@ -97,8 +100,13 @@ export async function prepareItemForm(
       if (!config.lists[relatedListName]) return null
 
       try {
+        const [vocabulary, labelReadable] = await Promise.all([
+          vocabularyPromise,
+          isRelationshipLabelReadable(context, config, relatedListName),
+        ])
+        if (withheldFieldNames(vocabulary, [fieldName], operation).has(fieldName)) return null
         const options = await getRelationshipOptions(context, config, relatedListName, {
-          labelReadable: await isRelationshipLabelReadable(context, config, relatedListName),
+          labelReadable,
           selectedIds: extractSelectedIds(itemData[fieldName], fieldConfigAny.many),
         })
         return [fieldName, options] as const
@@ -113,7 +121,8 @@ export async function prepareItemForm(
     if (result) relationshipData[result[0]] = [...result[1]]
   }
 
-  const serializableFields = serializeFieldsForSession({
+  const vocabulary = await vocabularyPromise
+  const { fields: serializableFields } = serializeFieldsForSession({
     vocabulary,
     config,
     listKey,
@@ -122,13 +131,7 @@ export async function prepareItemForm(
     itemId: readId(itemData),
   })
 
-  const unreadable = Object.keys(listConfig.fields).filter(
-    (name) => vocabulary.fields.get(name)?.read === 'deny',
-  )
-  for (const name of unreadable) delete relationshipData[name]
-
   const formData = { ...itemData }
-  for (const name of unreadable) delete formData[name]
   for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
     const fieldConfigAny = fieldConfig as {
       type: string
@@ -145,7 +148,12 @@ export async function prepareItemForm(
     }
   }
 
-  const initialData = jsonSafeClone(applyClientValueTransforms(listConfig.fields, formData))
+  const initialData = formValuesForSession({
+    vocabulary,
+    fields: listConfig.fields,
+    values: formData,
+    purpose: operation,
+  })
 
   return { serializableFields, initialData, relationshipData }
 }

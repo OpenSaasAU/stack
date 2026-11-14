@@ -243,19 +243,21 @@ session was settled on the server, and no access rule runs in the browser.
 #### ItemEditForm
 
 Standalone form for editing existing items. Its `fields` come from
-`serializeFieldConfigs(context, listKey, 'update')`, and it takes `initialData`
-for the values the form opens with:
+`serializeFieldConfigs(context, listKey, 'update')`, and its `initialData` from
+`serializeItemForForm(context, listKey, post)`, both on the server.
+`serializeItemForForm` applies each field's `ui.valueForClientSerialization` and
+leaves out every field the session never sees:
 
 ```tsx
 'use client'
 
 import { ItemEditForm } from '@opensaas/stack-ui/standalone'
 
-export function EditPost({ post, fields }) {
+export function EditPost({ post, fields, initialData }) {
   return (
     <ItemEditForm
       fields={fields}
-      initialData={post}
+      initialData={initialData}
       onSubmit={async (data) => {
         const updated = await updatePost(post.id, data)
         return { success: !!updated }
@@ -559,14 +561,15 @@ export function CustomDashboard({ postFields }) {
 Toggle between view and edit modes:
 
 ```tsx
-export function PostDetailPage({ post, postFields }) {
+// postFields and postValues come from serializeFieldConfigs and serializeItemForForm
+export function PostDetailPage({ post, postFields, postValues }) {
   const [editing, setEditing] = useState(false)
 
   if (editing) {
     return (
       <ItemEditForm
         fields={postFields}
-        initialData={post}
+        initialData={postValues}
         onSubmit={async (data) => {
           const updated = await updatePost(post.id, data)
           if (!updated) return { success: false, error: 'Could not save your changes' }

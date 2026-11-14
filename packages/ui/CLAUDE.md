@@ -51,7 +51,8 @@ Composable CRUD components:
 ### Server (`/server`)
 
 - `serializeFieldConfigs(context, listKey, purpose?)` - A list's field configs for the session `context` carries, read from its Session vocabulary: a field the session can never read is withheld, and one it can never write for `purpose` (`'create'`, `'update'` or `'display'`, the default) is marked `readOnly`. A row-dependent rule keeps the field editable. There is no session-blind form. Throws `SessionVocabularyUnavailableError` for a list the config does not declare
-- `SerializableFieldConfig` - The client-safe field-config shape it returns
+- `serializeItemForForm(context, listKey, item, purpose?)` - One record as `ItemEditForm`'s `initialData`: applies each field's `ui.valueForClientSerialization`, leaves out every field `serializeFieldConfigs` withholds for `purpose` (default `'update'`), and drops values the session can never read. The form itself runs no transform
+- `SerializableFieldConfig` - The client-safe field-config shape `serializeFieldConfigs` returns
 - `ServerActionInput` - Props passed to the generic server action (re-exported from stack-core)
 - `ActionResult<T>` - Result shape returned by a server action
 
@@ -322,7 +323,7 @@ import { ItemEditForm } from '@opensaas/stack-ui/standalone'
 
 <ItemEditForm
   fields={fields} // serializeFieldConfigs(context, 'Post', 'update') on the server
-  initialData={post}
+  initialData={initialData} // serializeItemForForm(context, 'Post', post) on the server
   onSubmit={async (data) => {
     const updated = await updatePost(post.id, data)
     if (!updated) return { success: false, error: 'Could not save the post' }

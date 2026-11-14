@@ -100,8 +100,8 @@ import { TextField, SelectField, RelationshipField } from '@opensaas/stack-ui/fi
 // Standalone components - Composable CRUD components
 import { ItemCreateForm, ItemEditForm, ListTable } from '@opensaas/stack-ui/standalone'
 
-// Server utilities - the session-aware field-config serialiser and server-action types
-import { serializeFieldConfigs } from '@opensaas/stack-ui/server'
+// Server utilities - the session-aware form serialisers and server-action types
+import { serializeFieldConfigs, serializeItemForForm } from '@opensaas/stack-ui/server'
 import type { ServerActionInput } from '@opensaas/stack-ui/server'
 
 // Styles - Tailwind CSS
@@ -888,7 +888,7 @@ the row yourself, seed the form from it, and decide what the update does.
 // app/posts/[id]/page.tsx
 import { notFound } from 'next/navigation'
 import { ItemEditForm } from '@opensaas/stack-ui/standalone'
-import { serializeFieldConfigs } from '@opensaas/stack-ui/server'
+import { serializeFieldConfigs, serializeItemForForm } from '@opensaas/stack-ui/server'
 import { getContext } from '@/.opensaas/context'
 import type { PostUpdateInput } from '@/.opensaas/types'
 
@@ -900,6 +900,12 @@ export default async function EditPostPage({ params }: { params: Promise<{ id: s
   const post = await context.db.Post.where({ id }).first()
   if (!post) notFound()
 
+  const initialData = await serializeItemForForm(context, 'Post', {
+    title: post.title,
+    slug: post.slug,
+    content: post.content,
+  })
+
   async function updatePost(data: PostUpdateInput) {
     'use server'
     const context = await getContext()
@@ -909,11 +915,7 @@ export default async function EditPostPage({ params }: { params: Promise<{ id: s
   }
 
   return (
-    <ItemEditForm<PostUpdateInput>
-      fields={fields}
-      initialData={{ title: post.title, slug: post.slug, content: post.content }}
-      onSubmit={updatePost}
-    />
+    <ItemEditForm fields={fields} initialData={initialData} onSubmit={updatePost} />
   )
 }
 ```
@@ -925,7 +927,7 @@ may not read, so the `notFound()` branch covers both. The same is true of
 **Props:**
 
 - `fields` - The serialised field configs, from `serializeFieldConfigs(context, listKey, 'update')`
-- `initialData` - The values the form opens with. A field's `ui.valueForClientSerialization` does not run here; apply it on the server
+- `initialData` - The values the form opens with, from `serializeItemForForm(context, listKey, item)` on the server. The form does not run a field's `ui.valueForClientSerialization` itself
 - `onSubmit` - `(data) => Promise<{ success: boolean; error?: string }>`
 - `onCancel?` - Called when the cancel button is pressed
 - `relationshipData?` - Pre-fetched `{ id, label }` options per relationship field
@@ -1301,6 +1303,19 @@ It reads the session's Session vocabulary for the list:
 - `purpose` is `'create'`, `'update'` or `'display'` (the default). `'display'` withholds every never-readable field and marks read-only a field the session can write on neither operation.
 
 A `listKey` the context's config does not declare throws `SessionVocabularyUnavailableError`.
+
+### serializeItemForForm
+
+`serializeItemForForm(context, listKey, item, purpose?)` prepares one record as `ItemEditForm`'s `initialData`. It applies each field's `ui.valueForClientSerialization` (a `password()` field becomes `{ isSet }`), leaves out every field `serializeFieldConfigs(context, listKey, purpose)` withholds, and drops any value the session can never read. `purpose` defaults to `'update'`.
+
+```typescript
+import { serializeFieldConfigs, serializeItemForForm } from '@opensaas/stack-ui/server'
+
+const fields = await serializeFieldConfigs(context, 'Post', 'update')
+const initialData = await serializeItemForForm(context, 'Post', post)
+```
+
+It throws `SessionVocabularyUnavailableError` for a list the config does not declare.
 
 ## Styling
 

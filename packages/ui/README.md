@@ -151,13 +151,15 @@ import { ItemCreateForm } from '@opensaas/stack-ui/standalone'
 
 #### ItemEditForm
 
-Its `fields` come from `serializeFieldConfigs(context, 'Post', 'update')`.
+Its `fields` come from `serializeFieldConfigs(context, 'Post', 'update')`, and its
+`initialData` from `serializeItemForForm(context, 'Post', post)`, which applies each
+field's `ui.valueForClientSerialization` and leaves out what the session never sees.
 
 ```tsx
 import { ItemEditForm } from '@opensaas/stack-ui/standalone'
 ;<ItemEditForm
   fields={fields}
-  initialData={post}
+  initialData={initialData}
   onSubmit={async (data) => {
     const updated = await updatePost(post.id, data)
     return { success: !!updated }

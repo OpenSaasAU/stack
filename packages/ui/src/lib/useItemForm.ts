@@ -333,30 +333,6 @@ export function diffEdgeSelections(
 }
 
 /**
- * Apply each field's `valueForClientSerialization` transform to initial data,
- * so values read from the server are shaped for the client form inputs.
- *
- * Operates on the original (non-serialized) field configs because the transform
- * function is stripped during serialization.
- */
-export function transformInitialData<TData extends Record<string, unknown>>(
-  fields: Record<string, unknown>,
-  initialData: TData,
-): TData {
-  const transformed = { ...initialData }
-  for (const [fieldName, fieldConfig] of Object.entries(fields)) {
-    const ui = (fieldConfig as { ui?: Record<string, unknown> }).ui
-    const transformer = ui?.valueForClientSerialization
-    if (typeof transformer === 'function') {
-      transformed[fieldName as keyof TData] = (
-        transformer as (args: { value: unknown }) => unknown
-      )({ value: transformed[fieldName as keyof TData] }) as TData[keyof TData]
-    }
-  }
-  return transformed
-}
-
-/**
  * Drop system fields (id) from a field-config map,
  * returning the fields an item form should render, in declaration order.
  *
