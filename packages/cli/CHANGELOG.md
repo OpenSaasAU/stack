@@ -1,5 +1,12 @@
 # @opensaas/stack-cli
 
+## 0.44.0-alpha.7
+
+### Patch Changes
+
+- Updated dependencies [[`ad85f09`](https://github.com/OpenSaasAU/stack/commit/ad85f095916eae5500e6e6b7e77e1ccbff24fa36)]:
+  - @opensaas/stack-core@0.44.0-alpha.7
+
 ## 0.44.0-alpha.6
 
 ### Minor Changes
