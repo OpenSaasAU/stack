@@ -5,7 +5,7 @@ import { ListViewClient } from './ListViewClient.js'
 import type { SerializedBulkAction } from './BulkActions.js'
 import type { SerializedRowAction } from './RowActions.js'
 import { formatListName } from '../lib/utils.js'
-import { serializeFieldConfigs } from '../lib/serializeFieldConfig.js'
+import { projectFieldConfigs } from '../lib/serializeFieldConfig.js'
 import { computeDefaultColumns, withStructuralTimestampDefaults } from '../lib/defaultColumns.js'
 import { resolveListUi } from '../lib/resolveListUi.js'
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '../lib/pageSize.js'
@@ -700,7 +700,7 @@ export async function ListView({
         fieldTypes={Object.fromEntries(
           Object.entries(displayFields).map(([key, field]) => [key, field.type]),
         )}
-        fields={serializeFieldConfigs(displayFields)}
+        fields={projectFieldConfigs(displayFields)}
         relationshipRefs={relationshipRefs}
         columns={baseColumns}
         availableColumns={urlControls ? availableColumns : undefined}

@@ -124,16 +124,23 @@ Complete, reusable components for common admin tasks.
 
 #### ItemCreateForm
 
-`config`'s default export is a promise when plugins are present, so a server
-component awaits it before reading `lists`:
+The standalone forms take field configs already serialised for the session. A
+server component reads them with `serializeFieldConfigs` from
+`@opensaas/stack-ui/server`, which withholds every field the session can never
+read and marks read-only every field it can never write, and hands them to the
+client component that renders the form:
+
+```tsx
+import { serializeFieldConfigs } from '@opensaas/stack-ui/server'
+import { getContext } from '@/.opensaas/context'
+
+const fields = await serializeFieldConfigs(await getContext(session), 'Post', 'create')
+```
 
 ```tsx
 import { ItemCreateForm } from '@opensaas/stack-ui/standalone'
-import { config } from '@/.opensaas/context'
-
-const { lists } = await config
 ;<ItemCreateForm
-  fields={lists.Post.fields}
+  fields={fields}
   onSubmit={async (data) => {
     const post = await createPost(data)
     return { success: !!post }
@@ -144,13 +151,12 @@ const { lists } = await config
 
 #### ItemEditForm
 
+Its `fields` come from `serializeFieldConfigs(context, 'Post', 'update')`.
+
 ```tsx
 import { ItemEditForm } from '@opensaas/stack-ui/standalone'
-import { config } from '@/.opensaas/context'
-
-const { lists } = await config
 ;<ItemEditForm
-  fields={lists.Post.fields}
+  fields={fields}
   initialData={post}
   onSubmit={async (data) => {
     const updated = await updatePost(post.id, data)

@@ -146,10 +146,13 @@ import { CreatePostDialog } from "./components/CreatePostDialog"
 ```tsx
 import { Dialog, DialogContent } from '@opensaas/stack-ui/primitives'
 import { ItemCreateForm } from '@opensaas/stack-ui/standalone'
+
+// `fields` comes from the server page, already filtered for the session:
+//   await serializeFieldConfigs(context, 'Post', 'create')  // @opensaas/stack-ui/server
 ;<Dialog open={open} onOpenChange={setOpen}>
   <DialogContent>
     <ItemCreateForm
-      fields={config.lists.Post.fields}
+      fields={fields}
       onSubmit={async (data) => {
         await fetch('/api/posts', { method: 'POST', body: JSON.stringify(data) })
         return { success: true }
@@ -183,10 +186,12 @@ import { ListTable, SearchBar } from "@opensaas/stack-ui/standalone"
 ```tsx
 import { ItemEditForm, DeleteButton } from '@opensaas/stack-ui/standalone'
 
+// `fields` comes from the server page:
+//   await serializeFieldConfigs(context, 'Post', 'update')  // @opensaas/stack-ui/server
 {
   editing ? (
     <ItemEditForm
-      fields={config.lists.Post.fields}
+      fields={fields}
       initialData={post}
       onSubmit={async (data) => {
         await fetch(`/api/posts/${post.id}`, { method: 'PATCH' })

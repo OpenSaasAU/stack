@@ -5,14 +5,8 @@ import {
   OpenSaasConfig,
 } from '@opensaas/stack-core'
 import type { ListConfig } from '@opensaas/stack-core'
-import { collectUnreadableFields } from '@opensaas/stack-core/internal'
-import {
-  markToManyEdgeWrites,
-  markUnwritableRelationships,
-  serializeFieldConfigs,
-  type SerializableFieldConfig,
-} from './serializeFieldConfig.js'
-import { markWriteDeniedFields } from './operationAccess.js'
+import type { SerializableFieldConfig } from './serializeFieldConfig.js'
+import { readSessionVocabulary, serializeFieldsForSession } from './sessionFieldConfigs.js'
 import { jsonSafeClone } from './jsonSafeClone.js'
 import { applyClientValueTransforms } from './clientValueTransforms.js'
 
@@ -74,17 +68,9 @@ export function buildRelationshipInclude(
  * `SingletonView` (which resolves via the singleton `get()`), so the
  * relationship/serialization logic lives in exactly one place.
  *
- * `operation` selects which of a field's own CREATE/UPDATE access rules gates
- * it (issue #1402) — the caller already knows which write this form will
- * perform, so it is not inferred from `itemData`.
- *
- * `accessItem` is the row those field-access rules see, when it differs from
- * `itemData` — the derived item-view layout (`ItemViewLayoutView`) calls this
- * with `detailsItemData`, which has every Relationship-table section field
- * stripped out entirely (not merely absent-but-`undefined`) so it can render
- * the details card alone. A rule that reads such a field off `item` would
- * otherwise see it missing rather than the row's real value. Defaults to
- * `itemData`.
+ * `operation` is the write this form performs: a field the session's Session
+ * vocabulary denies for it is marked read-only, and a field it can never read
+ * is withheld unless the form may write it.
  */
 export async function prepareItemForm(
   context: AccessContext,
@@ -94,8 +80,8 @@ export async function prepareItemForm(
   listConfig: ListConfig<any>,
   itemData: Record<string, unknown>,
   operation: 'create' | 'update',
-  accessItem: Record<string, unknown> = itemData,
 ): Promise<PreparedItemForm> {
+  const vocabulary = await readSessionVocabulary(context, listKey)
   // Bounded/projected fetch — see getRelationshipOptions.
   const relationshipData: Record<string, Array<{ id: string; label: string }>> = {}
   const relationshipFields = Object.entries(listConfig.fields).filter(
@@ -127,29 +113,19 @@ export async function prepareItemForm(
     if (result) relationshipData[result[0]] = [...result[1]]
   }
 
-  const serializableFields = serializeFieldConfigs(listConfig.fields)
-  markUnwritableRelationships(serializableFields, listKey, listConfig.fields, config)
-  markToManyEdgeWrites(serializableFields, listKey, listConfig.fields, config, readId(itemData))
-  await markWriteDeniedFields(serializableFields, listConfig.fields, operation, {
-    session: context.session,
-    context,
-    item: operation === 'update' ? accessItem : undefined,
+  const serializableFields = serializeFieldsForSession({
+    vocabulary,
+    config,
+    listKey,
+    fields: listConfig.fields,
+    purpose: operation,
+    itemId: readId(itemData),
   })
 
-  const unreadable = await collectUnreadableFields(listConfig, {
-    session: context.session,
-    context,
-  })
-  for (const name of unreadable) {
-    const serialized = serializableFields[name]
-    if (!serialized) continue
-    if (serialized.readOnly) {
-      delete serializableFields[name]
-    } else if (operation === 'update' && serialized.validation?.isRequired) {
-      serialized.validation = { ...serialized.validation, isRequired: false }
-    }
-    delete relationshipData[name]
-  }
+  const unreadable = Object.keys(listConfig.fields).filter(
+    (name) => vocabulary.fields.get(name)?.read === 'deny',
+  )
+  for (const name of unreadable) delete relationshipData[name]
 
   const formData = { ...itemData }
   for (const name of unreadable) delete formData[name]

@@ -50,8 +50,8 @@ Composable CRUD components:
 
 ### Server (`/server`)
 
-Type-only re-exports for wiring the admin's server action (no runtime exports):
-
+- `serializeFieldConfigs(context, listKey, purpose?)` - A list's field configs for the session `context` carries, read from its Session vocabulary: a field the session can never read is withheld, and one it can never write for `purpose` (`'create'`, `'update'` or `'display'`, the default) is marked `readOnly`. A row-dependent rule keeps the field editable. There is no session-blind form. Throws `SessionVocabularyUnavailableError` for a list the config does not declare
+- `SerializableFieldConfig` - The client-safe field-config shape it returns
 - `ServerActionInput` - Props passed to the generic server action (re-exported from stack-core)
 - `ActionResult<T>` - Result shape returned by a server action
 
@@ -94,19 +94,23 @@ import { AdminUI } from '@opensaas/stack-ui'
 
 **Level 2: Standalone Components**
 
+The forms take field configs a server component serialised for the session; they take no `context` and no `listKey`.
+
 ```typescript
+import { serializeFieldConfigs } from '@opensaas/stack-ui/server'
 import { ItemCreateForm, ListTable } from '@opensaas/stack-ui/standalone'
 
+const fields = await serializeFieldConfigs(context, 'Post', 'create') // on the server
+
 <ItemCreateForm
-  listKey="Post"
-  context={context}
-  onSuccess={(item) => router.push(`/posts/${item.id}`)}
+  fields={fields}
+  onSubmit={async (data) => ({ success: !!(await createPost(data)) })}
 />
 
 <ListTable
-  listKey="Post"
-  context={context}
-  columns={['title', 'author', 'createdAt']}
+  items={posts}
+  fieldTypes={{ title: 'text', createdAt: 'timestamp' }}
+  columns={['title', 'createdAt']}
 />
 ```
 
@@ -291,28 +295,20 @@ fields: {
 ### Composable Dashboard
 
 ```typescript
-import { ItemCreateForm, ListTable } from '@opensaas/stack-ui/standalone'
-import { Card, Button } from '@opensaas/stack-ui/primitives'
+import { serializeFieldConfigs } from '@opensaas/stack-ui/server'
+import { Card } from '@opensaas/stack-ui/primitives'
+import { getContext } from '@/.opensaas/context'
+import { CreatePostDialog } from './CreatePostDialog' // a 'use client' wrapper around ItemCreateForm
 
-export default function CustomDashboard() {
+export default async function CustomDashboard() {
+  const context = await getContext(await getSession())
+  const fields = await serializeFieldConfigs(context, 'Post', 'create')
+
   return (
     <div className="grid gap-4">
       <Card>
-        <h2>Recent Posts</h2>
-        <ListTable
-          listKey="Post"
-          context={context}
-          columns={['title', 'status', 'createdAt']}
-        />
-      </Card>
-
-      <Card>
         <h2>Create Post</h2>
-        <ItemCreateForm
-          listKey="Post"
-          context={context}
-          onSuccess={(item) => router.push(`/posts/${item.id}`)}
-        />
+        <CreatePostDialog fields={fields} />
       </Card>
     </div>
   )
@@ -325,17 +321,14 @@ export default function CustomDashboard() {
 import { ItemEditForm } from '@opensaas/stack-ui/standalone'
 
 <ItemEditForm
-  listKey="Post"
-  itemId={postId}
-  context={context}
-  onSuccess={(item) => {
-    // Custom success handling
+  fields={fields} // serializeFieldConfigs(context, 'Post', 'update') on the server
+  initialData={post}
+  onSubmit={async (data) => {
+    const updated = await updatePost(post.id, data)
+    if (!updated) return { success: false, error: 'Could not save the post' }
     toast.success('Post updated!')
     router.push('/posts')
-  }}
-  onError={(error) => {
-    // Custom error handling
-    toast.error(error.message)
+    return { success: true }
   }}
 />
 ```

@@ -100,7 +100,8 @@ import { TextField, SelectField, RelationshipField } from '@opensaas/stack-ui/fi
 // Standalone components - Composable CRUD components
 import { ItemCreateForm, ItemEditForm, ListTable } from '@opensaas/stack-ui/standalone'
 
-// Server utilities - Type imports for server actions
+// Server utilities - the session-aware field-config serialiser and server-action types
+import { serializeFieldConfigs } from '@opensaas/stack-ui/server'
 import type { ServerActionInput } from '@opensaas/stack-ui/server'
 
 // Styles - Tailwind CSS
@@ -826,18 +827,23 @@ A standalone form for creating new items.
 
 The form renders the field configs you hand it and calls `onSubmit` with the
 collected values. It never touches the database itself — it holds no context, so
-the write stays on the server, where access control and hooks run. Below, the
-server component resolves the config, and the write is an inline server action;
-it works the same when the action lives in its own `'use server'` module.
+the write stays on the server, where access control and hooks run. Its field
+configs come from `serializeFieldConfigs(context, listKey, 'create')` on
+`@opensaas/stack-ui/server`, which reads the session's Session vocabulary: a
+field the session can never read is withheld and a field it can never write is
+marked read-only, so no access rule runs in the browser. Below, the write is an
+inline server action; it works the same when the action lives in its own
+`'use server'` module.
 
 ```typescript
 // app/posts/new/page.tsx
 import { ItemCreateForm } from '@opensaas/stack-ui/standalone'
-import { config, getContext } from '@/.opensaas/context'
+import { serializeFieldConfigs } from '@opensaas/stack-ui/server'
+import { getContext } from '@/.opensaas/context'
 import type { PostCreateInput } from '@/.opensaas/types'
 
 export default async function CreatePostPage() {
-  const resolvedConfig = await config
+  const fields = await serializeFieldConfigs(await getContext(), 'Post', 'create')
 
   async function createPost(data: PostCreateInput) {
     'use server'
@@ -849,9 +855,7 @@ export default async function CreatePostPage() {
 
   return (
     <ItemCreateForm<PostCreateInput>
-      fields={resolvedConfig.lists.Post.fields}
-      listKey="Post"
-      config={resolvedConfig}
+      fields={fields}
       onSubmit={createPost}
       submitLabel="Create Post"
     />
@@ -865,9 +869,8 @@ renders whatever `error` you return.
 
 **Props:**
 
-- `fields` - The field configs to render, keyed by field name (`config.lists.Post.fields`)
+- `fields` - The serialised field configs, from `serializeFieldConfigs(context, listKey, 'create')`
 - `onSubmit` - `(data) => Promise<{ success: boolean; error?: string }>`; returning `success: false` keeps the form open and shows `error`
-- `listKey?` and `config?` - Supply both to have the non-owning end of a one-to-one render read-only with an explanation, the way the admin item form does
 - `onCancel?` - Called when the cancel button is pressed; the button is hidden without it
 - `relationshipData?` - Pre-fetched `{ id, label }` options per relationship field
 - `submitLabel?`, `cancelLabel?` - Button text
@@ -885,13 +888,14 @@ the row yourself, seed the form from it, and decide what the update does.
 // app/posts/[id]/page.tsx
 import { notFound } from 'next/navigation'
 import { ItemEditForm } from '@opensaas/stack-ui/standalone'
-import { config, getContext } from '@/.opensaas/context'
+import { serializeFieldConfigs } from '@opensaas/stack-ui/server'
+import { getContext } from '@/.opensaas/context'
 import type { PostUpdateInput } from '@/.opensaas/types'
 
 export default async function EditPostPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const resolvedConfig = await config
   const context = await getContext()
+  const fields = await serializeFieldConfigs(context, 'Post', 'update')
 
   const post = await context.db.Post.where({ id }).first()
   if (!post) notFound()
@@ -906,9 +910,7 @@ export default async function EditPostPage({ params }: { params: Promise<{ id: s
 
   return (
     <ItemEditForm<PostUpdateInput>
-      fields={resolvedConfig.lists.Post.fields}
-      listKey="Post"
-      config={resolvedConfig}
+      fields={fields}
       initialData={{ title: post.title, slug: post.slug, content: post.content }}
       onSubmit={updatePost}
     />
@@ -922,10 +924,9 @@ may not read, so the `notFound()` branch covers both. The same is true of
 
 **Props:**
 
-- `fields` - The field configs to render, keyed by field name
-- `initialData` - The values the form opens with
+- `fields` - The serialised field configs, from `serializeFieldConfigs(context, listKey, 'update')`
+- `initialData` - The values the form opens with. A field's `ui.valueForClientSerialization` does not run here; apply it on the server
 - `onSubmit` - `(data) => Promise<{ success: boolean; error?: string }>`
-- `listKey?` and `config?` - As for `ItemCreateForm`, for the non-owning end of a one-to-one
 - `onCancel?` - Called when the cancel button is pressed
 - `relationshipData?` - Pre-fetched `{ id, label }` options per relationship field
 - `submitLabel?`, `cancelLabel?`, `basePath?` - Button text and the admin base path for links
@@ -1280,6 +1281,27 @@ async function serverAction(props: ServerActionInput) {
 
 There is no `getAdminContext` helper in this package. The host application is responsible for resolving the session and constructing the context using `getContext` from the generated `.opensaas/context` module.
 
+### serializeFieldConfigs
+
+`serializeFieldConfigs(context, listKey, purpose?)` returns a list's field configs in the client-safe shape the standalone forms take, resolved for the session `context` carries. It is the only way field configs leave the server: there is no form of it that skips the session.
+
+```typescript
+import { serializeFieldConfigs } from '@opensaas/stack-ui/server'
+import { getContext } from '@/.opensaas/context'
+
+const context = await getContext(session)
+const createFields = await serializeFieldConfigs(context, 'Post', 'create')
+const editFields = await serializeFieldConfigs(context, 'Post', 'update')
+```
+
+It reads the session's Session vocabulary for the list:
+
+- A field the session can never read is withheld. On a `'create'` or `'update'` form, a field it may write but never read stays, empty and not required.
+- A field the session can never write for `purpose` carries `readOnly: true`, and the form renders it as a value rather than a control. A rule that reads the row (`item?.ownerId === session.userId`) is row-dependent and keeps the field editable; the write itself still decides.
+- `purpose` is `'create'`, `'update'` or `'display'` (the default). `'display'` withholds every never-readable field and marks read-only a field the session can write on neither operation.
+
+A `listKey` the context's config does not declare throws `SessionVocabularyUnavailableError`.
+
 ## Styling
 
 The UI package includes Tailwind CSS v4 styles. Import them in your root layout:
@@ -1357,12 +1379,13 @@ and the writing; the components render what it hands them.
 // app/dashboard/page.tsx
 import { ListTable, ItemCreateForm } from '@opensaas/stack-ui/standalone'
 import { Card, CardHeader, CardContent } from '@opensaas/stack-ui/primitives'
-import { config, getContext } from '@/.opensaas/context'
+import { serializeFieldConfigs } from '@opensaas/stack-ui/server'
+import { getContext } from '@/.opensaas/context'
 import type { PostCreateInput } from '@/.opensaas/types'
 
 export default async function CustomDashboard() {
-  const resolvedConfig = await config
   const context = await getContext()
+  const fields = await serializeFieldConfigs(context, 'Post', 'create')
 
   const posts = await context.db.Post.orderBy({ createdAt: 'desc' }).limit(10).all()
 
@@ -1396,9 +1419,7 @@ export default async function CustomDashboard() {
         </CardHeader>
         <CardContent>
           <ItemCreateForm<PostCreateInput>
-            fields={resolvedConfig.lists.Post.fields}
-            listKey="Post"
-            config={resolvedConfig}
+            fields={fields}
             onSubmit={createPost}
           />
         </CardContent>

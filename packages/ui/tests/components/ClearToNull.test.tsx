@@ -10,7 +10,7 @@ import { ItemCreateForm } from '../../src/components/standalone/ItemCreateForm.j
 import { ItemEditForm } from '../../src/components/standalone/ItemEditForm.js'
 import { SelectField } from '../../src/components/fields/SelectField.js'
 import { TextField } from '../../src/components/fields/TextField.js'
-import { serializeFieldConfigs } from '../../src/lib/serializeFieldConfig.js'
+import { projectFieldConfigs } from '../../src/lib/serializeFieldConfig.js'
 
 const mockPush = vi.fn()
 const mockRefresh = vi.fn()
@@ -59,7 +59,7 @@ function renderEdit(initialData: Record<string, unknown> = stored) {
       listKey="Post"
       urlKey="post"
       mode="edit"
-      fields={serializeFieldConfigs(declared)}
+      fields={projectFieldConfigs(declared)}
       initialData={initialData}
       itemId="p1"
       basePath="/admin"
@@ -338,7 +338,7 @@ describe('emptying a field with a default on create', () => {
         listKey="Post"
         urlKey="post"
         mode="create"
-        fields={serializeFieldConfigs(fields)}
+        fields={projectFieldConfigs(fields)}
         basePath="/admin"
         serverAction={serverAction}
       />,
@@ -383,7 +383,7 @@ describe('emptying a field with a default on create', () => {
         listKey="Post"
         urlKey="post"
         mode="edit"
-        fields={serializeFieldConfigs({
+        fields={projectFieldConfigs({
           meta: json({ db: { isNullable: false }, defaultValue: { a: 1 } }),
         })}
         initialData={{ meta: { b: 2 } }}
@@ -423,7 +423,7 @@ describe('the create and standalone forms', () => {
         listKey="Post"
         urlKey="post"
         mode="create"
-        fields={serializeFieldConfigs(createFields)}
+        fields={projectFieldConfigs(createFields)}
         basePath="/admin"
         serverAction={serverAction}
       />,
@@ -453,7 +453,7 @@ describe('the create and standalone forms', () => {
   it('ItemCreateForm clears from configs a server component already serialised', async () => {
     const user = userEvent.setup()
     const onSubmit = vi.fn(async () => ({ success: true }))
-    render(<ItemCreateForm fields={serializeFieldConfigs(createFields)} onSubmit={onSubmit} />)
+    render(<ItemCreateForm fields={projectFieldConfigs(createFields)} onSubmit={onSubmit} />)
 
     await clearBoth(user, screen.getByLabelText)
     await user.click(screen.getByRole('button', { name: 'Create' }))
@@ -486,7 +486,7 @@ describe('the create and standalone forms', () => {
       <RelationshipCreateDrawer
         relatedListKey="Post"
         title="Post"
-        fields={serializeFieldConfigs(createFields)}
+        fields={projectFieldConfigs(createFields)}
         backReferenceField="author"
         parentId="u1"
         basePath="/admin"

@@ -1,31 +1,22 @@
 'use client'
 
 import * as React from 'react'
-import { useMemo } from 'react'
 import { FieldRenderer } from '../fields/FieldRenderer.js'
 import { LoadingSpinner } from '../LoadingSpinner.js'
 import { Button } from '../../primitives/button.js'
-import type { FieldConfig, OpenSaasConfig } from '@opensaas/stack-core'
-import {
-  markUnwritableRelationships,
-  serializeFieldConfigs,
-} from '../../lib/serializeFieldConfig.js'
-import { useItemForm, transformInitialData } from '../../lib/useItemForm.js'
+import type { SerializableFieldConfig } from '../../lib/serializeFieldConfig.js'
+import { useItemForm } from '../../lib/useItemForm.js'
 import { FieldValidityContext } from '../../lib/fieldValidity.js'
 import { cn } from '../../lib/utils.js'
 import type { ItemFormClassNames } from './form-classnames.js'
 
 export interface ItemEditFormProps<TData = Record<string, unknown>> {
-  fields: Record<string, FieldConfig>
   /**
-   * The list these `fields` belong to, and the config it lives in. Supply both
-   * to have the non-owning end of a one-to-one rendered read-only with an
-   * explanation, the way the admin item form does — it is not answerable from
-   * a field config alone (ADR-0064). Without them that field renders as a
-   * picker whose selection the engine refuses at save.
+   * The list's field configs from `serializeFieldConfigs(context, listKey, 'update')`
+   * on `@opensaas/stack-ui/server`, which withholds what the session can never
+   * read and marks what it can never write.
    */
-  listKey?: string
-  config?: OpenSaasConfig
+  fields: Record<string, SerializableFieldConfig>
   initialData: TData
   onSubmit: (data: TData) => Promise<{ success: boolean; error?: string }>
   onCancel?: () => void
@@ -47,7 +38,7 @@ export interface ItemEditFormProps<TData = Record<string, unknown>> {
  * @example
  * ```tsx
  * <ItemEditForm
- *   fields={config.lists.Post.fields}
+ *   fields={fields} // await serializeFieldConfigs(context, 'Post', 'update') on the server
  *   initialData={post}
  *   onSubmit={async (data) => {
  *     const result = await updatePost(postId, data);
@@ -59,8 +50,6 @@ export interface ItemEditFormProps<TData = Record<string, unknown>> {
  */
 export function ItemEditForm<TData = Record<string, unknown>>({
   fields,
-  listKey,
-  config,
   initialData,
   onSubmit,
   onCancel,
@@ -72,18 +61,6 @@ export function ItemEditForm<TData = Record<string, unknown>>({
   classNames,
   basePath = '/admin',
 }: ItemEditFormProps<TData>) {
-  const serializedFields = useMemo(() => {
-    const serialized = serializeFieldConfigs(fields)
-    if (listKey && config) markUnwritableRelationships(serialized, listKey, fields, config)
-    return serialized
-  }, [fields, listKey, config])
-
-  // Apply valueForClientSerialization transformations to initial data
-  const transformedInitialData = useMemo(
-    () => transformInitialData(fields, initialData as Record<string, unknown>),
-    [initialData, fields],
-  )
-
   const {
     formData,
     errors,
@@ -96,8 +73,8 @@ export function ItemEditForm<TData = Record<string, unknown>>({
     formRef,
     errorBannerRef,
   } = useItemForm({
-    fields: serializedFields,
-    initialData: transformedInitialData,
+    fields,
+    initialData: initialData as Record<string, unknown>,
     mode: 'update',
     errorFallback: 'Failed to update item',
     onUnchanged: onUnchanged ?? onCancel,

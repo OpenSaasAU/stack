@@ -5,8 +5,8 @@ import {
   FIELD_HOOK_ONLY_REASON,
   JUNCTION_EDGE_RELATIONSHIP_REASON,
   markUnwritableRelationships,
-  serializeFieldConfig,
-  serializeFieldConfigs,
+  projectFieldConfig,
+  projectFieldConfigs,
   UNWRITABLE_RELATIONSHIP_REASON,
 } from '../../src/lib/serializeFieldConfig.js'
 
@@ -32,9 +32,9 @@ function makeConfig(): OpenSaasConfig {
   } as unknown as OpenSaasConfig
 }
 
-describe('serializeFieldConfig nullability', () => {
+describe('projectFieldConfig nullability', () => {
   it('carries a nullable column and omits the key otherwise', () => {
-    const { optional, required, notNull } = serializeFieldConfigs({
+    const { optional, required, notNull } = projectFieldConfigs({
       optional: text(),
       required: text({ validation: { isRequired: true } }),
       notNull: json({ db: { isNullable: false } }),
@@ -46,26 +46,26 @@ describe('serializeFieldConfig nullability', () => {
   })
 
   it('survives a second pass, the standalone forms re-serialising a serialised config', () => {
-    const once = serializeFieldConfigs({ slug: text() })
+    const once = projectFieldConfigs({ slug: text() })
 
-    expect(serializeFieldConfigs(once).slug.nullable).toBe(true)
+    expect(projectFieldConfigs(once).slug.nullable).toBe(true)
   })
 
   it('marks a NOT NULL default for a create to fall back to, through a second pass', () => {
-    const once = serializeFieldConfigs({
+    const once = projectFieldConfigs({
       fallsBack: json({ db: { isNullable: false }, defaultValue: { a: 1 } }),
       nullableDefault: json({ defaultValue: { a: 1 } }),
       noDefault: json({ db: { isNullable: false } }),
     })
 
-    expect(serializeFieldConfigs(once).fallsBack.emptyTakesDefaultOnCreate).toBe(true)
+    expect(projectFieldConfigs(once).fallsBack.emptyTakesDefaultOnCreate).toBe(true)
     expect(once.nullableDefault).not.toHaveProperty('emptyTakesDefaultOnCreate')
     expect(once.noDefault).not.toHaveProperty('emptyTakesDefaultOnCreate')
   })
 })
 
 /**
- * The read-only marking `serializeFieldConfig` makes from the field alone.
+ * The read-only marking `projectFieldConfig` makes from the field alone.
  *
  * This is the only thing standing behind the STANDALONE forms when they are
  * given no config: they serialize their own field configs and never reach
@@ -73,9 +73,9 @@ describe('serializeFieldConfig nullability', () => {
  * than through a caller that runs `markUnwritableRelationships` over the
  * result and would keep passing without it.
  */
-describe('serializeFieldConfig relationship writability', () => {
+describe('projectFieldConfig relationship writability', () => {
   it('marks a to-many read-only', () => {
-    const { tags } = serializeFieldConfigs(
+    const { tags } = projectFieldConfigs(
       makeFields({ tags: { type: 'relationship', ref: 'Tag.posts', many: true } }),
     )
 
@@ -84,7 +84,7 @@ describe('serializeFieldConfig relationship writability', () => {
   })
 
   it('leaves a to-one unmarked — it may own the column, which the field cannot say', () => {
-    const { author } = serializeFieldConfigs(
+    const { author } = projectFieldConfigs(
       makeFields({ author: { type: 'relationship', ref: 'User.posts' } }),
     )
 
@@ -95,7 +95,7 @@ describe('serializeFieldConfig relationship writability', () => {
   it('leaves a non-relationship field unmarked', () => {
     const fields = makeFields({ title: { type: 'text' } })
 
-    expect(serializeFieldConfig(fields.title).readOnly).toBeUndefined()
+    expect(projectFieldConfig(fields.title).readOnly).toBeUndefined()
   })
 })
 
@@ -103,10 +103,10 @@ describe('markUnwritableRelationships', () => {
   it('marks the non-owning end of a one-to-one and leaves the owning end alone', () => {
     const config = makeConfig()
 
-    const userFields = serializeFieldConfigs(config.lists.User.fields)
+    const userFields = projectFieldConfigs(config.lists.User.fields)
     markUnwritableRelationships(userFields, 'User', config.lists.User.fields, config)
 
-    const profileFields = serializeFieldConfigs(config.lists.Profile.fields)
+    const profileFields = projectFieldConfigs(config.lists.Profile.fields)
     markUnwritableRelationships(profileFields, 'Profile', config.lists.Profile.fields, config)
 
     expect(userFields.profile.readOnly).toBe(true)
@@ -116,7 +116,7 @@ describe('markUnwritableRelationships', () => {
 
   it('leaves a field alone when its ref names a list the config does not declare', () => {
     const fields = makeFields({ ghost: { type: 'relationship', ref: 'Nowhere.here' } })
-    const serialized = serializeFieldConfigs(fields)
+    const serialized = projectFieldConfigs(fields)
 
     expect(() =>
       markUnwritableRelationships(serialized, 'User', fields, makeConfig()),
@@ -198,7 +198,7 @@ function junctionConfig(): OpenSaasConfig {
 describe('the reason a to-many is read-only names the control that can write it', () => {
   it('points an edge across a junction at its own table, still read-only', () => {
     const config = junctionConfig()
-    const fields = serializeFieldConfigs(config.lists.Post.fields)
+    const fields = projectFieldConfigs(config.lists.Post.fields)
     markUnwritableRelationships(fields, 'Post', config.lists.Post.fields, config)
 
     expect(fields.tags.readOnly).toBe(true)
@@ -207,7 +207,7 @@ describe('the reason a to-many is read-only names the control that can write it'
 
   it('leaves an ordinary to-many pointing at the other list', () => {
     const config = junctionConfig()
-    const fields = serializeFieldConfigs(config.lists.Author.fields)
+    const fields = projectFieldConfigs(config.lists.Author.fields)
     markUnwritableRelationships(fields, 'Author', config.lists.Author.fields, config)
 
     expect(fields.books.readOnly).toBe(true)
@@ -217,7 +217,7 @@ describe('the reason a to-many is read-only names the control that can write it'
   it('leaves an ordinary child row with two parents pointing at the other list', () => {
     const config = junctionConfig()
     for (const listKey of ['Article', 'Commenter']) {
-      const fields = serializeFieldConfigs(config.lists[listKey].fields)
+      const fields = projectFieldConfigs(config.lists[listKey].fields)
       markUnwritableRelationships(fields, listKey, config.lists[listKey].fields, config)
 
       expect(fields.comments.readOnly).toBe(true)
@@ -231,7 +231,7 @@ describe('the reason a to-many is read-only names the control that can write it'
     // name.
     const config = junctionConfig()
     config.lists.Post.fields.tags.ui = { itemView: { displayMode: 'picker' } }
-    const fields = serializeFieldConfigs(config.lists.Post.fields)
+    const fields = projectFieldConfigs(config.lists.Post.fields)
     markUnwritableRelationships(fields, 'Post', config.lists.Post.fields, config)
 
     expect(fields.tags.readOnly).toBe(true)
@@ -240,7 +240,7 @@ describe('the reason a to-many is read-only names the control that can write it'
 
   it('keeps the reason a cause other than the missing column gave the field', () => {
     const config = junctionConfig()
-    const fields = serializeFieldConfigs(config.lists.Post.fields)
+    const fields = projectFieldConfigs(config.lists.Post.fields)
     fields.tags.readOnlyReason = 'Locked by the workflow'
     markUnwritableRelationships(fields, 'Post', config.lists.Post.fields, config)
 
@@ -249,12 +249,12 @@ describe('the reason a to-many is read-only names the control that can write it'
   })
 })
 
-describe('serializeFieldConfig hook-only fields', () => {
+describe('projectFieldConfig hook-only fields', () => {
   it('marks a write: "hooks" field read-only with the system reason', () => {
     const [field] = Object.values(
       makeFields({ state: { type: 'select', access: { write: 'hooks' } } }),
     )
-    expect(serializeFieldConfig(field)).toMatchObject({
+    expect(projectFieldConfig(field)).toMatchObject({
       readOnly: true,
       readOnlyReason: FIELD_HOOK_ONLY_REASON,
     })
