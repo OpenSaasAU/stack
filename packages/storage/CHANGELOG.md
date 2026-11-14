@@ -1,5 +1,14 @@
 # @opensaas/stack-storage
 
+## 0.44.0-alpha.6
+
+### Patch Changes
+
+- [#2141](https://github.com/OpenSaasAU/stack/pull/2141) [`2f287d5`](https://github.com/OpenSaasAU/stack/commit/2f287d5624fdcf107dddf68d52843d3d43c49f6e) Thanks [@borisno2](https://github.com/borisno2)! - Refuse whitespace and control characters in stored file/image urls, closing `"/\t/host"` resolving to another host.
+
+- [#2198](https://github.com/OpenSaasAU/stack/pull/2198) [`1a6333f`](https://github.com/OpenSaasAU/stack/commit/1a6333f188b51d240048c7255fd28321d8a429f9) Thanks [@borisno2](https://github.com/borisno2)! - Fix stored XSS where a malformed declared type such as `text/html x` passed the active-content check; one strict parser now serves the check and the stored extension, and a malformed or browser-sniffed type (`unknown/unknown`, `application/unknown`, `*/*`) is stored as `application/octet-stream`.
+  `text/xsl` and the remaining WHATWG JavaScript essences are now refused by default, and `isActiveMimeType` returns `true` for a non-empty type that is not a usable essence.
+
 ## 0.44.0-alpha.5
 
 ### Patch Changes

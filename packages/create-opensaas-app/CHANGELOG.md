@@ -1,5 +1,92 @@
 # create-opensaas-app
 
+## 0.4.0-alpha.4
+
+### Patch Changes
+
+- [#2381](https://github.com/OpenSaasAU/stack/pull/2381) [`8f30988`](https://github.com/OpenSaasAU/stack/commit/8f309883b9072c435bfd3e92bf2f0db51e116f8c) Thanks [@dependabot](https://github.com/apps/dependabot)! - Align better-auth dev dependencies on ^1.7.18 so a single `@better-auth/core` copy is installed alongside `@better-auth/mcp` 1.7.18
+
+- [#2393](https://github.com/OpenSaasAU/stack/pull/2393) [`bf9aac3`](https://github.com/OpenSaasAU/stack/commit/bf9aac34f50453ad250f09415f97eff031b4e928) Thanks [@borisno2](https://github.com/borisno2)! - Bump Prisma to 8.0.0-rc.23 (CLI 8.0.0-rc.33); decimal columns use the renamed `numericStringColumn` helper.
+
+- [#2144](https://github.com/OpenSaasAU/stack/pull/2144) [`8bbaeae`](https://github.com/OpenSaasAU/stack/commit/8bbaeaef7e544c69cb17756ca67813521e0ef490) Thanks [@borisno2](https://github.com/borisno2)! - Refresh templates for the latest stack release.
+
+- [#2217](https://github.com/OpenSaasAU/stack/pull/2217) [`eaeee36`](https://github.com/OpenSaasAU/stack/commit/eaeee363778e5717371720deec7c4518dfaa80e1) Thanks [@borisno2](https://github.com/borisno2)! - Refresh templates for the latest stack release.
+
+- [#2201](https://github.com/OpenSaasAU/stack/pull/2201) [`0933b4b`](https://github.com/OpenSaasAU/stack/commit/0933b4bb6e19f56a2629623c3e5facb28fe8af73) Thanks [@dependabot](https://github.com/apps/dependabot)! - Scaffold projects on Prisma ORM 8.0.0-rc.22 and the `prisma` CLI 8.0.0-rc.30.
+
+- [#2196](https://github.com/OpenSaasAU/stack/pull/2196) [`80c9ac0`](https://github.com/OpenSaasAU/stack/commit/80c9ac0f721058b566dc93dea1caf97d39c1cc94) Thanks [@borisno2](https://github.com/borisno2)! - Refresh templates for the latest stack release.
+
+- [#2143](https://github.com/OpenSaasAU/stack/pull/2143) [`a854243`](https://github.com/OpenSaasAU/stack/commit/a85424322701f3db9682b0f54acdc51bee404912) Thanks [@borisno2](https://github.com/borisno2)! - Refresh templates for the latest stack release.
+
+- [#2141](https://github.com/OpenSaasAU/stack/pull/2141) [`2f287d5`](https://github.com/OpenSaasAU/stack/commit/2f287d5624fdcf107dddf68d52843d3d43c49f6e) Thanks [@borisno2](https://github.com/borisno2)! - Refresh templates for the latest stack release.
+
+- [#2270](https://github.com/OpenSaasAU/stack/pull/2270) [`e5ab353`](https://github.com/OpenSaasAU/stack/commit/e5ab353d7ec1d13c3cc73042deb8744ed95caeb2) Thanks [@borisno2](https://github.com/borisno2)! - Refresh templates for the latest stack release.
+
+- [#2218](https://github.com/OpenSaasAU/stack/pull/2218) [`357f9bb`](https://github.com/OpenSaasAU/stack/commit/357f9bbf16499fd1d7da1a02e5c9370d60ae661a) Thanks [@borisno2](https://github.com/borisno2)! - Refresh templates for the latest stack release.
+
+- [#2266](https://github.com/OpenSaasAU/stack/pull/2266) [`245ed13`](https://github.com/OpenSaasAU/stack/commit/245ed137dc768fafd83eb777bdc602af29ae0889) Thanks [@borisno2](https://github.com/borisno2)! - Refresh templates for the latest stack release.
+
+- [#2230](https://github.com/OpenSaasAU/stack/pull/2230) [`ad45bd0`](https://github.com/OpenSaasAU/stack/commit/ad45bd0bf8dcaf63f023344f9de7d376205be697) Thanks [@borisno2](https://github.com/borisno2)! - Refresh templates for the latest stack release.
+
+- [#2195](https://github.com/OpenSaasAU/stack/pull/2195) [`ddb9e8c`](https://github.com/OpenSaasAU/stack/commit/ddb9e8cdbf67e42467ec3fec98f22c037f2a5de2) Thanks [@borisno2](https://github.com/borisno2)! - Scaffold against the stack release with the root update lock fix.
+
+- [#2205](https://github.com/OpenSaasAU/stack/pull/2205) [`dec240b`](https://github.com/OpenSaasAU/stack/commit/dec240b2e1596cb7edfa4da21cb7c2e146d05ab4) Thanks [@borisno2](https://github.com/borisno2)! - The with-auth template wires a real sign-out into the admin UI.
+
+- [#2291](https://github.com/OpenSaasAU/stack/pull/2291) [`9776d3f`](https://github.com/OpenSaasAU/stack/commit/9776d3f45abc83db10ecacf0712657b8b0ad7c44) Thanks [@borisno2](https://github.com/borisno2)! - The admin list view no longer sends a field whose `read` rule denies the session for every row to the browser: its name, type, UI config, relationship ref, foreign key and label column are withheld.
+
+- [#2202](https://github.com/OpenSaasAU/stack/pull/2202) [`bd03766`](https://github.com/OpenSaasAU/stack/commit/bd03766d61aff8c72423bd9255f0b5b9d736ff50) Thanks [@dependabot](https://github.com/apps/dependabot)! - Refresh templates for the latest stack release.
+
+- [#2219](https://github.com/OpenSaasAU/stack/pull/2219) [`9a87cfa`](https://github.com/OpenSaasAU/stack/commit/9a87cfa75c464b1940908d20c0fe16c2a30ebf60) Thanks [@borisno2](https://github.com/borisno2)! - Refresh templates for the latest stack release.
+
+- [#2208](https://github.com/OpenSaasAU/stack/pull/2208) [`0dd7eb4`](https://github.com/OpenSaasAU/stack/commit/0dd7eb4b4a9e5b3ec338b39f8ca83e135de36480) Thanks [@borisno2](https://github.com/borisno2)! - Stamp the stack version carrying the `combine()` read-rule fix into new projects.
+
+- [#2378](https://github.com/OpenSaasAU/stack/pull/2378) [`7d5f540`](https://github.com/OpenSaasAU/stack/commit/7d5f540d8837b298186c6837f559bf388ad8aead) Thanks [@borisno2](https://github.com/borisno2)! - `opensaas` and `create-opensaas-app` now exit 1 naming Node.js 22.18 when run on an older Node (fixes [#2318](https://github.com/OpenSaasAU/stack/issues/2318)).
+
+- [#2209](https://github.com/OpenSaasAU/stack/pull/2209) [`4a8b631`](https://github.com/OpenSaasAU/stack/commit/4a8b631e7dcfb3bf5e3eb118193722b2e31d842e) Thanks [@borisno2](https://github.com/borisno2)! - Fix `opensaas generate` failing with "gen is not defined" when a config uses the `cuid` id strategy and no list uses `uuid7`, `cuid2` or `updatedAt`
+
+- [#2232](https://github.com/OpenSaasAU/stack/pull/2232) [`fa03c43`](https://github.com/OpenSaasAU/stack/commit/fa03c4313851a5f2caf016190843bb8a21f15f41) Thanks [@borisno2](https://github.com/borisno2)! - Templates pick up the read-rule fix for withheld relations.
+
+- [#2289](https://github.com/OpenSaasAU/stack/pull/2289) [`cb7e21d`](https://github.com/OpenSaasAU/stack/commit/cb7e21d153d26ee5edb9c4566c9f393891e3e62b) Thanks [@borisno2](https://github.com/borisno2)! - The admin list's column picker, `?columns=` and default columns omit a field whose `read` rule denies the session for every row, matching the MCP vocabulary.
+
+- [#2348](https://github.com/OpenSaasAU/stack/pull/2348) [`78e8fba`](https://github.com/OpenSaasAU/stack/commit/78e8fba88c2d40b3a5fa9ad5de4e05988e7ab496) Thanks [@borisno2](https://github.com/borisno2)! - Add `signOutAndConfirm(auth, headers)` to `@opensaas/stack-auth/server`. It throws when better-auth swallowed a failed session delete, and returns the identity provider's logout URL for the action to redirect to. The example and generated `signOutAction` use it: `redirect((await signOutAndConfirm(auth, await headers())) ?? '/sign-in')`.
+
+- [#2258](https://github.com/OpenSaasAU/stack/pull/2258) [`fb1a7a6`](https://github.com/OpenSaasAU/stack/commit/fb1a7a63429586f3ead4fbd9ab506e9aa9b50847) Thanks [@borisno2](https://github.com/borisno2)! - Refresh templates for the latest stack release.
+
+- [#2142](https://github.com/OpenSaasAU/stack/pull/2142) [`bb87f3b`](https://github.com/OpenSaasAU/stack/commit/bb87f3bf253f31c9aee6b91338f54057ee923ffe) Thanks [@borisno2](https://github.com/borisno2)! - Refresh templates for the latest stack release.
+
+- [#2362](https://github.com/OpenSaasAU/stack/pull/2362) [`40ad8ba`](https://github.com/OpenSaasAU/stack/commit/40ad8babdef2afd79e93100af63d979a0f6069ba) Thanks [@borisno2](https://github.com/borisno2)! - Fix `npm install` on the with-auth template: scaffold npm `overrides` for better-auth's `prisma` peer and pnpm `peerDependencyRules`.
+
+- [#2236](https://github.com/OpenSaasAU/stack/pull/2236) [`384e007`](https://github.com/OpenSaasAU/stack/commit/384e0074f26f05f50cd279fcc0bea81c4aa24c7e) Thanks [@borisno2](https://github.com/borisno2)! - Scaffolds write an allowed-builds `pnpm-workspace.yaml`, and ignored build scripts no longer abort setup on current pnpm.
+
+- [#2265](https://github.com/OpenSaasAU/stack/pull/2265) [`d348bba`](https://github.com/OpenSaasAU/stack/commit/d348bba8c21c466b1d0fa4645b12ca757be7c02f) Thanks [@borisno2](https://github.com/borisno2)! - Refresh templates for the latest stack release.
+
+- [#2212](https://github.com/OpenSaasAU/stack/pull/2212) [`bea32ad`](https://github.com/OpenSaasAU/stack/commit/bea32adade0c2aa73ab4a923692656929165d020) Thanks [@borisno2](https://github.com/borisno2)! - Refresh templates for the latest stack release.
+
+- [#2211](https://github.com/OpenSaasAU/stack/pull/2211) [`af04b65`](https://github.com/OpenSaasAU/stack/commit/af04b65745d55e0e174c2b95b04f0577651f0861) Thanks [@borisno2](https://github.com/borisno2)! - Fix admin lists emptying on a sort the column cannot take: sorting now follows the ORM's own `order` answer per column, and `orderBy` refuses a virtual or multi-column field as a `ValidationError`.
+  A failed list read now shows an error state rather than the first-run empty state.
+
+- [#2222](https://github.com/OpenSaasAU/stack/pull/2222) [`97a9e88`](https://github.com/OpenSaasAU/stack/commit/97a9e882a52733d3a8217fdf15b045a6a73220f8) Thanks [@borisno2](https://github.com/borisno2)! - Templates pick up the admin's keyboard and labelling fixes.
+
+- [#2231](https://github.com/OpenSaasAU/stack/pull/2231) [`5177197`](https://github.com/OpenSaasAU/stack/commit/517719783862d3e6034611c9c5889f47e3575546) Thanks [@borisno2](https://github.com/borisno2)! - Refresh templates for the latest stack release.
+
+- [#2277](https://github.com/OpenSaasAU/stack/pull/2277) [`94ea1ee`](https://github.com/OpenSaasAU/stack/commit/94ea1ee342effcecb0b639ab0b2e1d686514b402) Thanks [@borisno2](https://github.com/borisno2)! - Refresh templates for the latest stack release.
+
+- [#2198](https://github.com/OpenSaasAU/stack/pull/2198) [`1a6333f`](https://github.com/OpenSaasAU/stack/commit/1a6333f188b51d240048c7255fd28321d8a429f9) Thanks [@borisno2](https://github.com/borisno2)! - Refresh templates for the latest stack release.
+
+- [#2264](https://github.com/OpenSaasAU/stack/pull/2264) [`00ffa44`](https://github.com/OpenSaasAU/stack/commit/00ffa44bc8143783cb073ecb807f710028ae553d) Thanks [@borisno2](https://github.com/borisno2)! - Refresh templates for the new Filter builder bar.
+
+- [#2326](https://github.com/OpenSaasAU/stack/pull/2326) [`239591d`](https://github.com/OpenSaasAU/stack/commit/239591db67089c6681c9786e9c5af55b3cd08812) Thanks [@dependabot](https://github.com/apps/dependabot)! - Bump `@modelcontextprotocol/sdk` to ^1.32.2
+
+- [#2269](https://github.com/OpenSaasAU/stack/pull/2269) [`3b25a56`](https://github.com/OpenSaasAU/stack/commit/3b25a567086b032cad28c50bd6eb1713d445c63d) Thanks [@borisno2](https://github.com/borisno2)! - Refresh templates for the latest stack release.
+
+- [#2260](https://github.com/OpenSaasAU/stack/pull/2260) [`93fd6c9`](https://github.com/OpenSaasAU/stack/commit/93fd6c9f4fe136b0a987ffdf436566de9f50b1ba) Thanks [@borisno2](https://github.com/borisno2)! - Refresh templates for the latest stack release.
+
+- [#2259](https://github.com/OpenSaasAU/stack/pull/2259) [`f2af7cb`](https://github.com/OpenSaasAU/stack/commit/f2af7cb048f4c0000c44bbae209d4cc987037834) Thanks [@borisno2](https://github.com/borisno2)! - Refresh templates for the latest stack release.
+
+- [#2268](https://github.com/OpenSaasAU/stack/pull/2268) [`4bf2987`](https://github.com/OpenSaasAU/stack/commit/4bf2987f8cf6ffcf3626a41c5953bbadfbc256c4) Thanks [@borisno2](https://github.com/borisno2)! - Refresh templates for the latest stack release.
+
+- [#2267](https://github.com/OpenSaasAU/stack/pull/2267) [`202f957`](https://github.com/OpenSaasAU/stack/commit/202f95732d7a639ef1e9a4b77c222720b3c0a158) Thanks [@borisno2](https://github.com/borisno2)! - Refresh templates for the latest stack release.
+
 ## 0.4.0-alpha.3
 
 ### Patch Changes

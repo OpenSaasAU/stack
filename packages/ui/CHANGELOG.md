@@ -1,5 +1,470 @@
 # @opensaas/stack-ui
 
+## 0.44.0-alpha.6
+
+### Minor Changes
+
+- [#2201](https://github.com/OpenSaasAU/stack/pull/2201) [`0933b4b`](https://github.com/OpenSaasAU/stack/commit/0933b4bb6e19f56a2629623c3e5facb28fe8af73) Thanks [@dependabot](https://github.com/apps/dependabot)! - Upgrade to Prisma ORM 8.0.0-rc.22 and the `prisma` CLI to 8.0.0-rc.30
+
+  The stack's date and time columns are unchanged: `timestamp()` and `calendarDay()` keep reading and writing ISO strings, and `contract.json` is byte-identical. Prisma ORM now refuses to run from two installed copies, so every `@prisma/orm-*` package and the `prisma` CLI must move together:
+
+  ```json
+  {
+    "dependencies": { "@prisma/orm-postgres": "8.0.0-rc.22" },
+    "devDependencies": { "prisma": "8.0.0-rc.30" }
+  }
+  ```
+
+  Then run `pnpm generate` and commit what it writes. A project using `ragPlugin` or another pgvector declaration gets a new head for `migrations/pgvector/`: run `prisma db migrate` on each database to move the pack's marker.
+
+- [#2270](https://github.com/OpenSaasAU/stack/pull/2270) [`e5ab353`](https://github.com/OpenSaasAU/stack/commit/e5ab353d7ec1d13c3cc73042deb8744ed95caeb2) Thanks [@borisno2](https://github.com/borisno2)! - The list filter grammar and the Filter builder gain OR groups (ADR-0083)
+
+  `?search=` reads `(a OR b)` as an OR group: rows matching any of its tokens, ANDed with the rest of the query and, as always, with the access filter. Groups do not nest.
+
+  ```
+  (status:draft OR author:#0190a3c2-…) views:>100
+  (views:1..5 OR title:"Ada (Countess)")
+  ```
+
+  **What changes meaning.** Only a matched group: `(` directly before the first token, uppercase `OR` between tokens, and `)` directly after the last, with no member word holding an unquoted parenthesis of its own. Everything else keeps the meaning it had: `a OR b` without parentheses, a lowercase `(a or b)`, a quoted `"OR"`, `(a)`, `-(a OR b)`, unmatched parentheses, nested groups, and a group-like run with a parenthesised word inside, such as `(see OR note(1) later)`, are still free-text words. A URL that already held a matched `(a OR b)` used to search for three words, and now matches either side.
+
+  Each token in a group maps exactly as it would on its own, negation included. A token in a group that cannot map — an unknown field, one the session cannot read, a value the field rejects — stays in place as its free-text alternative and is never dropped; a negated one searches its literal word and is never negated.
+
+  Core: `FilterTerm` is now `FilterToken | FilterGroup` (`{ kind: 'group', tokens }`), and `filterTermTokens`, `filterQueryTokens` and `FILTER_GROUP_KEYWORD` are exported. Code that read `parseFilterQuery(q).terms` as tokens flattens them:
+
+  ```ts
+  import { filterQueryTokens, parseFilterQuery } from '@opensaas/stack-core'
+
+  for (const token of filterQueryTokens(parseFilterQuery(search))) {
+    // every token, inside groups too
+  }
+  ```
+
+  UI: chips are joined by **and** / **or** connector buttons. Clicking an **and** joins two chips into a group, drawn as one bordered unit; clicking an **or** splits it. Typing `or ` after a filter adds an alternative to it, which is exactly one filter. Typing `draft or priya` searches for those words by default, as the URL reads them, and offers the whole group as the next suggestion. Typing or pasting `(draft OR priya)` applies that group. A "between" chip whose ends cannot be written as `a..b` stays a `>=`/`<=` pair, and the builder refuses to put it in a group. The list view's zero-results "Remove … to see N rows" counts an OR group as one term and removes it whole, and a column funnel adds its filter outside any group. A group left with one member stops being a group, and the "a second `is` replaces the first" rule applies outside groups only. New `data-slot`s: `filter-builder-group`, `filter-builder-connector` and `filter-builder-alternative`, with matching `group` and `connector` entries in `FilterBuilderClassNames`.
+
+- [#2266](https://github.com/OpenSaasAU/stack/pull/2266) [`245ed13`](https://github.com/OpenSaasAU/stack/commit/245ed137dc768fafd83eb777bdc602af29ae0889) Thanks [@borisno2](https://github.com/borisno2)! - Look up a relationship record in the Filter builder and filter to exactly that record
+
+  Choosing a to-one relationship field in the admin list's Filter builder now lists the first page of its records and searches them as you type. Picking one writes `field:#id`: the chip shows the record's Item label while the URL carries its id. Picking under "does not contain" writes `-field:#id`, and a typed `field:#a,#b` matches either record; their chips show the labels too. Typing without picking still writes label text, shown as "contains". A `#id` the related list cannot hold is shown as the free text the list searches for. A to-many count Cell links to the other list filtered to that row, so an admin can go from an author to all their posts.
+
+  ```text
+  /admin/post?search=author:#0190a3c2-7b1e-7000-8000-000000000001
+  ```
+
+  `FilterSpec` gains an optional `toIdCondition(id)`, and `FilterFieldSuggestion` an optional `matchesById`. The built-in to-one relationship lowers `#id` through the relation, never the foreign key column, so the related list's `query` access applies and a record the session cannot read matches nothing. The id is parsed with `parseListId` for the related list's id strategy, and an id it cannot hold degrades to free text:
+
+  ```ts
+  getFilterSpec: (fieldName, listKey, config) => ({
+    // ...
+    toIdCondition: (id) => {
+      const parsed = parseListId(config, 'User', id)
+      return parsed.ok ? { [fieldName]: { some: { id: { equals: parsed.value } } } } : null
+    },
+  })
+  ```
+
+  Core exports `filterTokenRecordId(token)`, `filterValueRecordId(value)`, `recordIdFilterToken(field, id, negated?)` and `isFieldFilterableById(...)`, and the `relationshipOptions` server action answers `{ options, searched }`, where `searched` says whether `search` narrowed the options. `FilterBuilder` takes optional `listKey`, `serverAction` and `recordLabels` props, and the list view resolves the labels server-side through the secured context. Without a `serverAction`, a relationship field takes typed label text only. Cells receive an optional `href`.
+
+  Meaning change: on a field with `toIdCondition`, an unquoted value starting with `#` is now an id. A bookmarked `author:#abc` that used to mean "author's label contains #abc" now means the record with id `abc`, or free text when `abc` is not a valid id. Quote it (`author:"#abc"`) to keep the label search.
+
+- [#2232](https://github.com/OpenSaasAU/stack/pull/2232) [`fa03c43`](https://github.com/OpenSaasAU/stack/commit/fa03c4313851a5f2caf016190843bb8a21f15f41) Thanks [@borisno2](https://github.com/borisno2)! - An unknown relationship count no longer reads as zero: the list view renders no number for a relation a rule withholds, and the item page says the section can't be shown rather than "No related rows yet".
+
+  `RelationshipTableClient` takes an `unavailable` prop for that state.
+
+- [#2258](https://github.com/OpenSaasAU/stack/pull/2258) [`fb1a7a6`](https://github.com/OpenSaasAU/stack/commit/fb1a7a63429586f3ead4fbd9ab506e9aa9b50847) Thanks [@borisno2](https://github.com/borisno2)! - Core owns one structured filter query, with a parser and serialiser that are true inverses (ADR-0083)
+
+  Breaking: `FilterToken` drops `value` and `raw` for `kind`, `negated`, `values` and `quoted`, and `parseFilterQuery`, `serializeFilterQuery` and `buildFilterWhere` now take or return a `FilterQuery`. `@opensaas/stack-ui` removes `queryToState`, `stateToQuery`, `FilterRow` and `FilterBuilderState`.
+
+  Migrating from the removed UI helpers and the old token shape:
+
+  ```ts
+  // Before
+  import { queryToState, stateToQuery } from '@opensaas/stack-ui'
+  const state = queryToState(search)
+  const next = stateToQuery(state)
+  token.value
+
+  // After
+  import {
+    isFieldConditionToken,
+    parseFilterQuery,
+    serializeFilterQuery,
+  } from '@opensaas/stack-core'
+  const query = parseFilterQuery(search)
+  const rows = query.terms.filter((token) => isFieldConditionToken(token, operatorsFor))
+  const next = serializeFilterQuery(query)
+  token.values[0]
+  ```
+
+  `parseFilterQuery` returns a `FilterQuery`, an AND of terms, and `serializeFilterQuery` and `buildFilterWhere` take one. The grammar is today's: a parsed token is never negated and carries exactly one value, and a leading `-` or a `,` is part of the value. The parser never throws, and for every query it returns, `parseFilterQuery(serializeFilterQuery(query))` gives that query back, with `quoted` set where the serialiser had to quote. `isEmptyFilterToken` and `isFieldConditionToken` are exported so callers share the engine's rules for which tokens filter nothing and which map through a field.
+
+  ```ts
+  import { parseFilterQuery, serializeFilterQuery } from '@opensaas/stack-core'
+
+  const query = parseFilterQuery('title:"Ada \\"the Countess\\"" "status:draft"')
+  // query.terms[0]: { kind: 'token', field: 'title', operator: 'eq', negated: false,
+  //                   values: ['Ada "the Countess"'], quoted: true }
+  // query.terms[1]: { kind: 'token', field: null, ..., values: ['status:draft'], quoted: true }
+  serializeFilterQuery(query) // 'title:"Ada \\"the Countess\\"" "status:draft"'
+  ```
+
+  Two round-trip defects are fixed: an embedded quote is written as `\"` inside a quoted value, and a quoted `"status:draft"` stays a free-text word instead of coming back as a `status` filter.
+
+  Some existing `?search=` URLs now read differently:
+
+  - Inside a quoted value, `\"` is a literal quote and `\\` a literal backslash, so a quoted value containing either reads differently. A value the old serialiser wrote ending in a backslash, `name:"my dir\" beta`, no longer closes its quote.
+  - Every whitespace character, including a non-breaking space, separates tokens.
+
+  `serializeFilterQuery` now writes every term, so a token with an empty value is written as `field:` or `""` instead of being dropped. Remove empty tokens before serialising, with `isEmptyFilterToken`, when the result should not carry them. It also quotes a value containing a comma or any whitespace, and a free-text word starting with `-`, so `title:a,b` is written `title:"a,b"` with the same meaning.
+
+  `FilterBuilder` builds on core's parser and serialiser directly. Its props are unchanged. It keeps an unchanged query in the order it was written and never writes an empty row or empty token into the URL.
+
+- [#2265](https://github.com/OpenSaasAU/stack/pull/2265) [`d348bba`](https://github.com/OpenSaasAU/stack/commit/d348bba8c21c466b1d0fa4645b12ca757be7c02f) Thanks [@!](https://github.com/!)! - The list filter grammar gains "is not", "is any of" and "is empty" (ADR-0083)
+
+  `?search=` now reads a leading `-` as negation, a comma list as several values and `field:!` as "is empty":
+
+  ```
+  -category:product        # is not product, rows with no category included
+  status:draft,review      # is any of
+    -author:!      # is empty / is not empty
+  ```
+
+  The engine composes `NOT` and `OR` around each field's existing `toCondition`, so a third-party field gets negation and any-of with no changes. To offer "is empty", a Filter spec states what empty means with the new optional `empty` member:
+
+  ```ts
+  getFilterSpec: (fieldName) => ({
+    operators: ['eq'],
+    toCondition: (operator, value) =>
+      operator === 'eq' ? { [fieldName]: { equals: value } } : null,
+    empty: { [fieldName]: { equals: null } },
+    suggestions: { valueSource: { kind: 'none' } },
+  })
+  ```
+
+  Every core field that can be empty sets it, and `collectFilterSuggestions` reports it as `canBeEmpty: true`. A negated token is ORed with the field's `empty` condition, so "is not" keeps the rows with no value, unless the spec's new optional `negation` says `NOT` alone already does (`'includesEmpty'`, as on a to-one relationship) or only restates another condition (`'redundant'`, as on a to-many count, where the builder then offers no "is not"). A token that cannot map in any part is searched as one free-text word, the new `filterTokenFreeTextWord(token)`, which is also what its chip shows. A positive token searches its values with the field name dropped (`status:draft,bogus` searches `draft,bogus`); a negated one searches its whole literal and is never negated (`-secret:x` on a field the session cannot read searches `-secret:x`).
+
+  `FilterToken` now carries its quoting per value — `values: Array<{ text, quoted }>` replaces `values: string[]` and the token-level `quoted` — and its `operator` is a `FilterTokenOperator` (`FilterOperator | 'empty'`). `isFieldConditionToken` takes a lookup returning `{ operators, canBeEmpty }`, so a `FilterFieldSuggestion` can be passed straight in. The comparison prefixes are exported once as `FILTER_OPERATOR_PREFIXES` and `FILTER_COMPARISON_PREFIXES`.
+
+  The Filter builder offers "is not" / "does not contain", "is any of" (a multi-select list building one chip) and "is empty" / "is not empty" where the field can be empty, reads phrases such as `status is not draft`, `views != 3` and `author is empty`, and hydrates each shape from the URL as a chip. It adds the `filter-builder-option-check` slot, and an "is empty" chip renders no `filter-builder-chip-value` part.
+
+- [#2212](https://github.com/OpenSaasAU/stack/pull/2212) [`bea32ad`](https://github.com/OpenSaasAU/stack/commit/bea32adade0c2aa73ab4a923692656929165d020) Thanks [@borisno2](https://github.com/borisno2)! - Item forms refuse to submit while a field holds input it can't commit, and focus the first invalid field
+
+  JSON, decimal and bigInt fields holding text that doesn't parse, and a password that isn't confirmed, now stop the submit with nothing written. A third-party field can do the same with the new `useFieldValidity` hook, and shows its own error:
+
+  ```tsx
+  import { useRef, useState } from 'react'
+  import { FieldError, useFieldValidity } from '@opensaas/stack-ui/fields'
+
+  export function HexColorField({ name, value, onChange, mode = 'edit' }) {
+    const inputRef = useRef<HTMLInputElement>(null)
+    const [text, setText] = useState(value ?? '')
+    const isInvalid = text !== '' && !/^#[0-9a-f]{6}$/i.test(text)
+
+    useFieldValidity(name, mode === 'edit' && isInvalid, inputRef)
+
+    // render the input with ref={inputRef}, and <FieldError> while isInvalid
+  }
+  ```
+
+  The hook is optional, so existing fields need no change.
+
+- [#2222](https://github.com/OpenSaasAU/stack/pull/2222) [`97a9e88`](https://github.com/OpenSaasAU/stack/commit/97a9e882a52733d3a8217fdf15b045a6a73220f8) Thanks [@borisno2](https://github.com/borisno2)! - The admin now works by keyboard: relationship pickers are ARIA comboboxes, sort headers are buttons, every control is named, and a failed submit focuses the first error.
+
+  `FieldRenderer` passes each field an `id` that is unique to the form, so a create drawer and the form under it can share a field name. A built-in field's control no longer has `id` equal to `name`, so a host's `#title` selector or `<label htmlFor="title">` stops matching it. `name` is unchanged, so select with `[name="title"]`.
+
+  A custom field should use `id` for its control, and tie its error and help text with the new helpers from `@opensaas/stack-ui/fields`. After a failed submit the form focuses the control marked `aria-invalid`:
+
+  ```tsx
+  import {
+    FieldError,
+    FieldHelp,
+    FieldLabel,
+    FieldRoot,
+    describeField,
+    fieldErrorId,
+    fieldHelpId,
+  } from '@opensaas/stack-ui/fields'
+
+  export function ColorField({ name, id = name, label, value, onChange, error, helpText }) {
+    return (
+      <FieldRoot>
+        <FieldLabel htmlFor={id}>{label}</FieldLabel>
+        <input
+          id={id}
+          name={name}
+          value={value ?? ''}
+          onChange={(e) => onChange(e.target.value)}
+          {...describeField(id, { error, helpText })}
+        />
+        {helpText && <FieldHelp id={fieldHelpId(id)}>{helpText}</FieldHelp>}
+        {error && <FieldError id={fieldErrorId(id)}>{error}</FieldError>}
+      </FieldRoot>
+    )
+  }
+  ```
+
+  Also new: `fieldLabelId` and `fieldValueId` for a button control named by its label and shown value, `TableSortButton` from `@opensaas/stack-ui/primitives`, and `disabled` and `auxiliary` on `ComboboxItem`. `ComboboxEmpty` is now a status line to keep mounted beside `ComboboxList`, passing `null` when there is nothing to say.
+
+  File and image fields holding a file now show a Replace control, which carries the field's label and error. The Radix dialog, popover and select packages are pinned exactly so they share one focus and dismiss stack, which is what lets a picker or date popover work inside a drawer.
+
+- [#2264](https://github.com/OpenSaasAU/stack/pull/2264) [`00ffa44`](https://github.com/OpenSaasAU/stack/commit/00ffa44bc8143783cb073ecb807f710028ae553d) Thanks [@borisno2](https://github.com/borisno2)! - Replace the list view's Filter builder row form with a single filter bar
+
+  The Filter builder is now one bar where an admin types and suggestions build the
+  `?search=` query. Focusing it lists every filterable field; typing suggests
+  matching fields, config-enumerated values (`draft` offers "Status is Draft"),
+  plain phrases such as `views > 5000` or `status is draft`, and always a free-text
+  search. Choosing a field goes straight to its values, and Tab or a click switches
+  the condition. Each committed Filter token becomes a chip that can be edited by
+  clicking it, removed singly or cleared with the rest. Every commit applies at
+  once through `router.push` inside a transition, so the rows stay visible and Back
+  steps through changes; there is no Apply button, and partly typed text never
+  navigates. `/` focuses the bar, the arrows and Backspace select and remove chips,
+  and Esc cancels. The bar is a labelled combobox using `aria-activedescendant`.
+
+  `FilterBuilder` keeps its `suggestions`, `defaultValue` and `onApply` props, and
+  gains optional `label` and `resultCount`:
+
+  ```tsx
+  <FilterBuilder
+    suggestions={suggestions}
+    defaultValue={search}
+    onApply={(query) => router.push(`?search=${encodeURIComponent(query)}`)}
+    label="Filter posts"
+    resultCount={total}
+  />
+  ```
+
+  `filter-builder` stays the root `data-slot`. Removed slots: `filter-builder-conditions`,
+  `filter-builder-condition`, `filter-builder-field`, `filter-builder-operator`,
+  `filter-builder-value`, `filter-builder-remove`, `filter-builder-form`,
+  `filter-builder-search`, `filter-builder-search-clear`, `filter-builder-add` and
+  `filter-builder-apply`, with their `classNames` keys (`conditions`, `condition`,
+  `field`, `operator`, `value`, `remove`, `form`, `search`, `add`, `apply`). Added
+  slots: `filter-builder-bar`, `filter-builder-chip`, `filter-builder-chip-field`,
+  `filter-builder-chip-condition`, `filter-builder-chip-value`,
+  `filter-builder-chip-remove`, `filter-builder-draft`, `filter-builder-input`,
+  `filter-builder-progress`, `filter-builder-menu`, `filter-builder-menu-conditions`,
+  `filter-builder-menu-condition`, `filter-builder-option` and `filter-builder-hint`,
+  with `classNames` keys `bar`, `chip`, `chipRemove`, `draft`, `input`, `menu`,
+  `option` and `hint`. `filter-builder-clear` remains. `PopoverAnchor` is now
+  exported from the primitives.
+
+  A Filter spec can state the shape a typed value must take, so the builder
+  explains a value that does not fit instead of applying it as free text. The
+  built-in numeric, date and to-many relationship fields declare one:
+
+  ```ts
+  getFilterSpec: (fieldName) => ({
+    operators: ['eq', 'gt', 'gte', 'lt', 'lte'],
+    toCondition: (operator, value) => /* … */,
+    suggestions: {
+      valueSource: { kind: 'none' },
+      valueFormat: { pattern: '^-?\\d+$', description: 'takes a whole number' },
+    },
+  })
+  ```
+
+  `collectFilterSuggestions` passes it on as `FilterFieldSuggestion.valueFormat`,
+  and `FilterValueFormat` is exported from the root and `/extend` entry points.
+
+  Each built-in field's `toCondition` tests the same `RegExp` its `valueFormat`
+  declares, so the hint and the engine agree, and `valueFormat.operators` gives an
+  operator its own pattern (`FilterValuePattern`, exported beside
+  `FilterValueFormat`). A to-many relationship declares `eq` and `gt` with `0` and
+  `gte` with `1`. A calendar day naming a month or day that does not exist
+  (`2026-13-01`, `2026-02-31`) degrades to free text instead of reaching Postgres.
+  A timestamp still takes anything `Date` parses and declares no `valueFormat`.
+
+- [#2269](https://github.com/OpenSaasAU/stack/pull/2269) [`3b25a56`](https://github.com/OpenSaasAU/stack/commit/3b25a567086b032cad28c50bd6eb1713d445c63d) Thanks [@borisno2](https://github.com/borisno2)! - Filter from the table: header and value funnels, auto-shown filtered columns, and a zero-results empty state that names the filter to remove
+
+  - A filterable column header has a funnel ("Filter by Status") that opens the Filter builder with that field staged.
+  - A select value or a to-one relationship value has a funnel beside its Cell ("Filter to Status is Draft") that adds `status:draft` or `author:#<id>` to the current query. On an open Preset view it expands the preset first. The Cell registry and custom Cells are unchanged.
+  - A field the query filters on is shown as a column for that render even when `?columns=` hides it. It is never written to `?columns=`.
+  - When a query returns no rows, the list view counts the first five terms, each with one secured `context.db` count, and offers the removal that returns the most rows: "Remove “Status is Draft” to see 12 rows". **Clear filters** (previously **Clear search**) is always offered.
+
+  `FilterBuilder` takes a `ref` exposing `startFilter(field)`, `currentQuery()`, `addTokens(tokens)` and `applyQuery(query)`. The table's funnels and the removal button go through it, so a chip committed while its navigation is still pending is kept:
+
+  ```tsx
+  import { FilterBuilder, type FilterBuilderHandle } from '@opensaas/stack-ui/standalone'
+
+  const builder = React.useRef<FilterBuilderHandle>(null)
+
+  <FilterBuilder ref={builder} suggestions={suggestions} onApply={apply} />
+  <button onClick={() => builder.current?.startFilter('status')}>Filter by status</button>
+  ```
+
+  `ListViewClient` gains the `autoColumns` and `filterRemoval` props. `autoColumns` are shown after `columns` and never become the row's title column. New slots: `list-view-header-filter`, `list-view-value-filter`, `list-view-value-filter-button` and `list-view-empty-remove`.
+
+- [#2260](https://github.com/OpenSaasAU/stack/pull/2260) [`93fd6c9`](https://github.com/OpenSaasAU/stack/commit/93fd6c9f4fe136b0a987ffdf436566de9f50b1ba) Thanks [@borisno2](https://github.com/borisno2)! - Add Row actions to the admin list view
+
+  Each row now has a menu with the built-in Edit, Copy link and Delete (confirmed through `ConfirmDialog`), and the row title links to the item page. The previous per-row Edit link moves into that menu. A list declares its own actions under `ui.listView.rowActions`, each with a key unique within the list (`config()` throws on a duplicate):
+
+  ```ts
+  ui: {
+    listView: {
+      rowActions: [
+        {
+          key: 'publish',
+          label: 'Publish now',
+          icon: 'send',
+          hasAccess: ({ session }) => session !== null,
+          isAvailable: ({ item }) => item.status !== 'published',
+          handler: async ({ id, context }) => {
+            const post = await context.db.Post.update({ where: { id }, data: { status: 'published' } })
+            return { message: post ? 'Published' : 'Not published' }
+          },
+        },
+      ],
+    },
+  }
+  ```
+
+  `hasAccess` is resolved once per request and the synchronous `isAvailable` per row on the server, over a read in the same shape dispatch re-reads the row in; only the available keys reach the client, and handlers never do. Running one dispatches the new `serverAction` operation `{ action: 'rowAction', key, id }`, which re-checks `hasAccess` before touching the row (a refused session never takes a lock), then opens a transaction, takes a row lock on the row (`.forUpdate()`), re-reads it through the secured context and re-runs `isAvailable` before the handler runs. The list view and dispatch evaluate `isAvailable` through one helper: a throw, or a result that is not a boolean (a Promise from an async check), is logged and treated as unavailable in both. The handler runs inside that transaction with a transaction-bound `context`, so its writes commit atomically with the checks and a throw rolls them back; a concurrent dispatch of a one-shot action waits on the lock and then answers "not run". The lock is held while the handler runs, so keep slow external calls short or make them after it returns. The handler's `id` is the list's own id type (`RowActionContext<TypeInfo>['id']`, a `number` on an `int autoincrement` list). A missing, denied or no-longer-eligible row, or a `hasAccess` or `isAvailable` that throws, answers `{ rowAction: false, error: 'This action was not run' }` alike. Outcomes appear in the list's status line; a dispatch that fails in transit reports an unknown result and refreshes the list.
+
+  `@opensaas/stack-ui/primitives` gains a `DropdownMenu` primitive on the existing Radix dependency, with `dropdown-menu-*` slots. The list view adds the `row-actions-trigger` and `row-title-link` slots.
+
+- [#2259](https://github.com/OpenSaasAU/stack/pull/2259) [`f2af7cb`](https://github.com/OpenSaasAU/stack/commit/f2af7cb048f4c0000c44bbae209d4cc987037834) Thanks [@borisno2](https://github.com/borisno2)! - Refresh the admin list table: a column picker, density, page sizes, a toolbar sort control and cards on phones
+
+  - `?columns=title,status,views` sets the visible columns, in order. The toolbar's Columns menu writes it. `ListView` resolves it on the server (new `visibleColumns` prop, which `AdminUI` fills from the URL), so a to-many count in an added column is read and correct. Unknown names are ignored, a column `initialColumns` names is accepted even outside the list's fields, and Field Visibility still applies. A pick that lands back on the default set drops `?columns=`.
+  - Density is comfortable or compact, remembered in this browser under `opensaas-list-density` (`DENSITY_STORAGE_KEY`) like the theme choice, and rendered comfortable on the server. When this browser refuses to store a choice (private mode, quota, blocked site data), the density and theme choices still apply for the page.
+  - Rows per page offers 25, 50 and 100 once there are more than 25 rows, and shows a `?pageSize=` outside those as its own pressed option. The default stays 50 and the `?pageSize=` cap stays 200.
+  - A toolbar Sort menu sits beside header sorting. Sort stays single-column; relationship columns stay unsortable.
+  - Below `md`, rows render as labelled cards with no sideways scrolling. This replaces the sticky Actions column in the list view.
+  - New `DropdownMenu` primitive on `@radix-ui/react-dropdown-menu`, exported from `@opensaas/stack-ui/primitives`.
+
+  ```tsx
+  import {
+    DropdownMenu,
+    DropdownMenuTrigger,
+    DropdownMenuContent,
+    DropdownMenuCheckboxItem,
+  } from '@opensaas/stack-ui/primitives'
+
+  ;<DropdownMenu>
+    <DropdownMenuTrigger asChild>
+      <Button variant="outline">View</Button>
+    </DropdownMenuTrigger>
+    <DropdownMenuContent>
+      <DropdownMenuCheckboxItem checked={showDrafts} onCheckedChange={setShowDrafts}>
+        Show drafts
+      </DropdownMenuCheckboxItem>
+    </DropdownMenuContent>
+  </DropdownMenu>
+  ```
+
+  `ListView` gains `urlControls`, which `AdminUI` sets: it says the page reads `?columns=` and `?pageSize=` back, and without it `ListView` offers neither control. `ListViewClient` gains `availableColumns`, `defaultColumns`, `columnsChosen` and `pageSizeControl`; the Columns menu renders only when `availableColumns` is supplied, and the rows-per-page control only when `pageSizeControl` is set. New slots: `list-view-toolbar`, `list-view-sort`, `list-view-columns`, `list-view-density`, `list-view-table` (with `data-density`), `list-view-pagination`, `list-view-page-size`, and `dropdown-menu-*` on the primitive's rendered parts.
+
+- [#2281](https://github.com/OpenSaasAU/stack/pull/2281) [`c80b2d7`](https://github.com/OpenSaasAU/stack/commit/c80b2d7a0e7ac62146e2c495ac2fddd3637c2b4e) Thanks [@borisno2](https://github.com/borisno2)! - Typing a relationship field and text together in the Filter builder goes straight to the matching records
+
+  In the admin list's Filter builder, typing `author pri` into the empty bar now searches the Author field's records for "pri" and offers the matches first. Picking one writes `author:#<id>`, exactly as picking a record after choosing the field does. "Author contains pri" stays as the fallback, followed by the free-text search. The leading words name the field when they match a field's name or label, and the longest match wins. Nothing is looked up while the text could still be the start of a longer field's name (`author em` beside Author Email), and a wholly quoted search (`author "pri"`) searches the words inside the quotes. A field without a record lookup, a plain phrase such as `author is pri`, and a `field:value` token behave as before.
+
+  A to-one relationship field whose records can be picked now reads "is" and "is not" in its conditions instead of "contains" and "does not contain", matching the chip shown once a record is picked. Other relationship fields keep "contains" and "does not contain". Typed text that is not picked is still a contains match and its chip still reads "Author contains pri". The grammar and the URL are unchanged.
+
+  ```text
+  author pri          → Priya Nair, Priya Nair-Reed, Author contains pri, Search all text…
+  /admin/post?search=author:#0190a3c2-7b1e-7000-8000-000000000001
+  ```
+
+- [#2268](https://github.com/OpenSaasAU/stack/pull/2268) [`4bf2987`](https://github.com/OpenSaasAU/stack/commit/4bf2987f8cf6ffcf3626a41c5953bbadfbc256c4) Thanks [@borisno2](https://github.com/borisno2)! - Add Preset views to the admin list view
+
+  A list declares named starting points under `ui.listView.presets`. They show as tabs above the Filter builder, after an implicit "All" tab, with no counts. Each key must be non-empty and unique within the list (`config()` throws otherwise):
+
+  ```ts
+  import { quoteFilterValue } from '@opensaas/stack-core'
+
+  ui: {
+    listView: {
+      presets: [
+        {
+          key: 'my-drafts',
+          label: 'My drafts',
+          search: ({ session }) => `status:draft author:#${session?.userId ?? ''}`,
+          sort: { field: 'title', direction: 'asc' }, // optional
+          hasAccess: ({ session }) => typeof session?.userId === 'string', // optional
+        },
+        {
+          key: 'named-for-me',
+          label: 'Named for me',
+          search: ({ session }) => `title:${quoteFilterValue(session?.name ?? '')}`,
+        },
+      ],
+    },
+  }
+  ```
+
+  `search` is a `?search=` query or a function of the session, and is resolved on the server for every request. It runs through the same filter engine and secured context as a typed query, so a preset only narrows. `sort` goes through the same check as `?sort=`. Only each tab's `key` and `label` cross to the client.
+
+  `author:#<id>` matches exactly the session's own records. The new `quoteFilterValue(text)` export from `@opensaas/stack-core` quotes any other value built from data, so it always reads back as exactly one filter value.
+
+  `?preset=<key>` opens a preset, so a shared link resolves against the recipient's session. The first change to the filter, sort, columns or page size writes the preset out as `?search=` and `?sort=` and drops `?preset=`, leaving the rows on screen unchanged. An unknown key, or one whose `hasAccess` does not return `true`, shows the plain list. An open preset with no rows says so by its label rather than echoing its query.
+
+  `ListView` takes a new `preset` prop (`AdminUI` reads it from `?preset=`), and `ListViewClient` takes `presets` and `activePreset`. The tabs carry the `preset-tabs` and `preset-tab` slots.
+
+- [#2267](https://github.com/OpenSaasAU/stack/pull/2267) [`202f957`](https://github.com/OpenSaasAU/stack/commit/202f95732d7a639ef1e9a4b77c222720b3c0a158) Thanks [@borisno2](https://github.com/borisno2)! - Filter numbers and dates by range, with date presets that follow the admin's time zone
+
+  `field:a..b` is an inclusive range in one token. `parseFilterQuery` reads it as a token with `operator: 'range'` and the two bounds as its `values`, and `serializeFilterQuery` writes it back unchanged. Any field whose Filter spec accepts both `gte` and `lte` takes a range with nothing more to declare: the engine lowers each bound through the field's own `toCondition`, and a range with a bound the field does not take degrades to free text. On a field that takes no range, `field:a..b` keeps its old meaning, that field's `eq` on the literal `a..b`, so `title:wait...what` still means "title contains wait...what". `-field:a..b` excludes the range, composed like any other negation, so it keeps the rows with no value; a range that cannot map is searched as its literal and never negated. A list is never a range: `field:a..b,c` is "any of" the literal values.
+
+  ```
+  views:1000..5000
+  publishedAt:2026-11-02T00:00:00.000+11:00..2026-11-08T23:59:59.999+11:00
+  ```
+
+  In a URL, encode the `+` of an offset as `%2B`: `?search=publishedAt:2026-11-02T00:00:00.000%2B11:00..2026-11-08T23:59:59.999%2B11:00`.
+
+  `FilterTokenOperator` gains `'range'` (`FilterOperator | 'empty' | 'range'`), whose two `values` are the bounds, and core exports `supportsFilterRange`, `filterTokenOperators` and `effectiveFilterToken`. A Filter spec may state `suggestions.datePicker` (`'day'` or `'instant'`) to get date inputs and presets in the Filter builder; `calendarDay()` declares `'day'` and `timestamp()` declares `'instant'`:
+
+  ```ts
+  getFilterSpec: (fieldName) => ({
+    operators: ['gte', 'lte'],
+    toCondition: (operator, value) => {
+      const date = new Date(value)
+      return Number.isNaN(date.getTime()) ? null : { [fieldName]: { [operator]: date } }
+    },
+    suggestions: { valueSource: { kind: 'none' }, datePicker: 'instant' },
+  })
+  ```
+
+  The Filter builder offers a "between" condition beside "is not", "is any of" and "is empty", typed as `1000-5000`, `1000 to 5000` or `1000..5000`, or picked with date inputs. Date fields add presets (Today, Last 7 days, Last 30 days, This month, Last month, This year) that write absolute dates, shown on the chip. A timestamp is written as ISO instants in the browser's offset with the end day inclusive, whether its dates are picked, typed or pasted; a calendar day stays plain `YYYY-MM-DD`. On a field with date inputs, Tab moves into them and Alt+← → switches the condition. Pasted `>=` and `<=` tokens on one field read back as one chip while the URL keeps both tokens. `FilterBuilder` gains a `dates` slot (`filter-builder-dates`).
+
+### Patch Changes
+
+- [#2393](https://github.com/OpenSaasAU/stack/pull/2393) [`bf9aac3`](https://github.com/OpenSaasAU/stack/commit/bf9aac34f50453ad250f09415f97eff031b4e928) Thanks [@borisno2](https://github.com/borisno2)! - Bump Prisma to 8.0.0-rc.23 (CLI 8.0.0-rc.33); decimal columns use the renamed `numericStringColumn` helper.
+
+- [#2218](https://github.com/OpenSaasAU/stack/pull/2218) [`357f9bb`](https://github.com/OpenSaasAU/stack/commit/357f9bbf16499fd1d7da1a02e5c9370d60ae661a) Thanks [@borisno2](https://github.com/borisno2)! - Fix optional JSON, select and text admin fields not clearing to `null`; `json()` now refuses a `null` for a NOT NULL column with an error on the field.
+  A hook on an optional text field now receives `null`, not `''`, when it's emptied in the admin, so an `=== ''` check no longer fires. Guard with `typeof value === 'string'`, not `?.`, which turns `null` into `undefined` and silently drops the write.
+
+- [#2238](https://github.com/OpenSaasAU/stack/pull/2238) [`2ae9247`](https://github.com/OpenSaasAU/stack/commit/2ae9247fb0537b6105e851a3f706f7729707b677) Thanks [@borisno2](https://github.com/borisno2)! - Fix the singleton editor showing a set to-one relationship as empty, and stop logging an error for a singleton with a required field and no row yet.
+
+- [#2355](https://github.com/OpenSaasAU/stack/pull/2355) [`3b331cb`](https://github.com/OpenSaasAU/stack/commit/3b331cbeff433eb181a2448325c520558a2ccd31) Thanks [@borisno2](https://github.com/borisno2)! - Stop Markdown in `packages/ui` from adding classes to the prebuilt stylesheet, and guard against it losing classes that examples and packages use.
+
+- [#2205](https://github.com/OpenSaasAU/stack/pull/2205) [`dec240b`](https://github.com/OpenSaasAU/stack/commit/dec240b2e1596cb7edfa4da21cb7c2e146d05ab4) Thanks [@borisno2](https://github.com/borisno2)! - Render the admin's Sign Out control only with an `onSignOut` handler, instead of a button that only redirected, warn the user if the handler rejects, and reload an admin page restored from the back-forward cache.
+  The feature generator now emits `signOutAction` and tells you to pass it as `onSignOut`.
+
+- [#2291](https://github.com/OpenSaasAU/stack/pull/2291) [`9776d3f`](https://github.com/OpenSaasAU/stack/commit/9776d3f45abc83db10ecacf0712657b8b0ad7c44) Thanks [@borisno2](https://github.com/borisno2)! - The admin list view no longer sends a field whose `read` rule denies the session for every row to the browser: its name, type, UI config, relationship ref, foreign key and label column are withheld.
+
+- [#2334](https://github.com/OpenSaasAU/stack/pull/2334) [`d09eb15`](https://github.com/OpenSaasAU/stack/commit/d09eb15127b3ea5c3919275f93f409dc1b7e43dc) Thanks [@borisno2](https://github.com/borisno2)! - The admin list status line is now shown once, on the render after its action, and is cleared by sign-out.
+
+- [#2219](https://github.com/OpenSaasAU/stack/pull/2219) [`9a87cfa`](https://github.com/OpenSaasAU/stack/commit/9a87cfa75c464b1940908d20c0fe16c2a30ebf60) Thanks [@borisno2](https://github.com/borisno2)! - Make the admin usable at phone width: below `md` the sidebar moves to a drawer behind a menu button and `main` takes the full width.
+  `loading.tsx` should now render the new `AdminLoading`, which shares that frame.
+
+- [#2289](https://github.com/OpenSaasAU/stack/pull/2289) [`cb7e21d`](https://github.com/OpenSaasAU/stack/commit/cb7e21d153d26ee5edb9c4566c9f393891e3e62b) Thanks [@borisno2](https://github.com/borisno2)! - The admin list's column picker, `?columns=` and default columns omit a field whose `read` rule denies the session for every row, matching the MCP vocabulary.
+
+- [#2348](https://github.com/OpenSaasAU/stack/pull/2348) [`78e8fba`](https://github.com/OpenSaasAU/stack/commit/78e8fba88c2d40b3a5fa9ad5de4e05988e7ab496) Thanks [@borisno2](https://github.com/borisno2)! - Add `signOutAndConfirm(auth, headers)` to `@opensaas/stack-auth/server`. It throws when better-auth swallowed a failed session delete, and returns the identity provider's logout URL for the action to redirect to. The example and generated `signOutAction` use it: `redirect((await signOutAndConfirm(auth, await headers())) ?? '/sign-in')`.
+
+- [#2230](https://github.com/OpenSaasAU/stack/pull/2230) [`ad45bd0`](https://github.com/OpenSaasAU/stack/commit/ad45bd0bf8dcaf63f023344f9de7d376205be697) Thanks [@borisno2](https://github.com/borisno2)! - Item forms set `noValidate` and read the browser's constraint check themselves, so a failed submit focuses the first error, with its message on the field.
+
+- [#2211](https://github.com/OpenSaasAU/stack/pull/2211) [`af04b65`](https://github.com/OpenSaasAU/stack/commit/af04b65745d55e0e174c2b95b04f0577651f0861) Thanks [@borisno2](https://github.com/borisno2)! - Fix admin lists emptying on a sort the column cannot take: sorting now follows the ORM's own `order` answer per column, and `orderBy` refuses a virtual or multi-column field as a `ValidationError`.
+  A failed list read now shows an error state rather than the first-run empty state.
+
+- [#2231](https://github.com/OpenSaasAU/stack/pull/2231) [`5177197`](https://github.com/OpenSaasAU/stack/commit/517719783862d3e6034611c9c5889f47e3575546) Thanks [@borisno2](https://github.com/borisno2)! - Fix date pickers showing every date one column right of its weekday: the calendar's weeks now start on Monday and its header is derived from the grid.
+
+- [#2335](https://github.com/OpenSaasAU/stack/pull/2335) [`1ac5cfc`](https://github.com/OpenSaasAU/stack/commit/1ac5cfc3cabd17e3ebd0214e0d927521bdcfd0e6) Thanks [@borisno2](https://github.com/borisno2)! - A timestamp `is <date>` filter now matches the whole day: core treats a date-only `eq` value as that UTC day, and the Filter builder turns any date-only input (e.g. `8/4/2026`) into the same local-day range as `YYYY-MM-DD` (fixes [#2310](https://github.com/OpenSaasAU/stack/issues/2310)).
+
+- [#2354](https://github.com/OpenSaasAU/stack/pull/2354) [`95c27ec`](https://github.com/OpenSaasAU/stack/commit/95c27ec5be17996e7c34912c86b0ff1b394f4626) Thanks [@borisno2](https://github.com/borisno2)! - Inline cell edit no longer commits partial or invalid input (e.g. `9.` on a decimal) and now commits a select pick made with Enter.
+
+- [#2237](https://github.com/OpenSaasAU/stack/pull/2237) [`75c6df4`](https://github.com/OpenSaasAU/stack/commit/75c6df42570fb6e1ebf091d8a3b9b2526bee69de) Thanks [@borisno2](https://github.com/borisno2)! - A successful save through a redirecting server action no longer shows "NEXT_REDIRECT" as an error (fixes [#2227](https://github.com/OpenSaasAU/stack/issues/2227)).
+
+- [#2363](https://github.com/OpenSaasAU/stack/pull/2363) [`9024abb`](https://github.com/OpenSaasAU/stack/commit/9024abb407260db26703fe5ad011bba54252be14) Thanks [@borisno2](https://github.com/borisno2)! - Item forms, the singleton editor, relationship tables and preset searches no longer send never-readable fields the session also cannot write to the client, and preset searches drop tokens naming never-readable fields ([#2292](https://github.com/OpenSaasAU/stack/issues/2292)). A never-readable but writable field stays as a write-only control, per the triage decision.
+
 ## 0.44.0-alpha.5
 
 No changes in this release.
