@@ -1,5 +1,11 @@
 # create-opensaas-app
 
+## 0.4.0-alpha.5
+
+### Patch Changes
+
+- [#2412](https://github.com/OpenSaasAU/stack/pull/2412) [`ad85f09`](https://github.com/OpenSaasAU/stack/commit/ad85f095916eae5500e6e6b7e77e1ccbff24fa36) Thanks [@borisno2](https://github.com/borisno2)! - Track the stack's Session vocabulary release
+
 ## 0.4.0-alpha.4
 
 ### Patch Changes
