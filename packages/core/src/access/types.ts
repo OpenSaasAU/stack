@@ -339,6 +339,18 @@ export interface AccessContext<DB = AccessControlledDB> {
   _sessionVocabulary?: (
     listKey: string,
   ) => Promise<import('./session-vocabulary.js').SessionVocabulary | null>
+  /**
+   * `_sessionVocabulary(listKey)` with its row-dependent write answers (a
+   * field's `update`, the list's `update` and `delete`) resolved for the row
+   * whose id is `id`, against that row as stored, as the write decides them.
+   * A row-dependent field `read` stays row-dependent. Not kept: each call
+   * reads the row and asks the row-dependent rules again.
+   * @internal
+   */
+  _sessionVocabularyForItem?: (
+    listKey: string,
+    id: string | number,
+  ) => Promise<import('./session-vocabulary.js').SessionVocabulary | null>
 }
 
 export type PrismaFilter<T = Record<string, unknown>> = Partial<Record<keyof T, unknown>>

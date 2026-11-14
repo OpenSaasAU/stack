@@ -1,31 +1,22 @@
 'use client'
 
 import * as React from 'react'
-import { useMemo } from 'react'
 import { FieldRenderer } from '../fields/FieldRenderer.js'
 import { LoadingSpinner } from '../LoadingSpinner.js'
 import { Button } from '../../primitives/button.js'
-import type { FieldConfig, OpenSaasConfig } from '@opensaas/stack-core'
-import {
-  markUnwritableRelationships,
-  serializeFieldConfigs,
-} from '../../lib/serializeFieldConfig.js'
+import type { SerializableFieldConfig } from '../../lib/serializeFieldConfig.js'
 import { useItemForm } from '../../lib/useItemForm.js'
 import { FieldValidityContext } from '../../lib/fieldValidity.js'
 import { cn } from '../../lib/utils.js'
 import type { ItemFormClassNames } from './form-classnames.js'
 
 export interface ItemCreateFormProps<TData = Record<string, unknown>> {
-  fields: Record<string, FieldConfig>
   /**
-   * The list these `fields` belong to, and the config it lives in. Supply both
-   * to have the non-owning end of a one-to-one rendered read-only with an
-   * explanation, the way the admin item form does — it is not answerable from
-   * a field config alone (ADR-0064). Without them that field renders as a
-   * picker whose selection the engine refuses at save.
+   * The list's field configs from `serializeFieldConfigs(context, listKey, 'create')`
+   * on `@opensaas/stack-ui/server`, which withholds what the session can never
+   * read and marks what it can never write.
    */
-  listKey?: string
-  config?: OpenSaasConfig
+  fields: Record<string, SerializableFieldConfig>
   onSubmit: (data: TData) => Promise<{ success: boolean; error?: string }>
   onCancel?: () => void
   relationshipData?: Record<string, Array<{ id: string; label: string }>>
@@ -40,7 +31,7 @@ export interface ItemCreateFormProps<TData = Record<string, unknown>> {
  * @example
  * ```tsx
  * <ItemCreateForm
- *   fields={config.lists.Post.fields}
+ *   fields={fields} // await serializeFieldConfigs(context, 'Post', 'create') on the server
  *   onSubmit={async (data) => {
  *     const result = await createPost(data);
  *     return { success: !!result };
@@ -51,8 +42,6 @@ export interface ItemCreateFormProps<TData = Record<string, unknown>> {
  */
 export function ItemCreateForm<TData = Record<string, unknown>>({
   fields,
-  listKey,
-  config,
   onSubmit,
   onCancel,
   relationshipData = {},
@@ -61,12 +50,6 @@ export function ItemCreateForm<TData = Record<string, unknown>>({
   className,
   classNames,
 }: ItemCreateFormProps<TData>) {
-  const serializedFields = useMemo(() => {
-    const serialized = serializeFieldConfigs(fields)
-    if (listKey && config) markUnwritableRelationships(serialized, listKey, fields, config)
-    return serialized
-  }, [fields, listKey, config])
-
   const {
     formData,
     errors,
@@ -79,7 +62,7 @@ export function ItemCreateForm<TData = Record<string, unknown>>({
     formRef,
     errorBannerRef,
   } = useItemForm({
-    fields: serializedFields,
+    fields,
     mode: 'create',
     errorFallback: 'Failed to create item',
     onSubmit: async (data) => {

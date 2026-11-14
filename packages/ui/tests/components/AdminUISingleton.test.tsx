@@ -39,7 +39,7 @@ const config: OpenSaasConfig = {
     Settings: list({
       isSingleton: true,
       fields: { siteName: text() },
-      access: { operation: { query: () => true, create: () => true } },
+      access: { operation: { query: () => true, create: () => true, update: () => true } },
     }),
     Post: list({
       fields: { title: text() },

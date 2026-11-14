@@ -7,7 +7,7 @@ import { Button } from '@opensaas/stack-ui/primitives'
 import { ItemEditForm, DeleteButton } from '@opensaas/stack-ui/standalone'
 import { updatePost, deletePost } from '../../../lib/actions'
 import { PostStatusBadge } from '../../../components/PostStatusBadge'
-import type { Post, PostUpdateInput } from '@/.opensaas/types'
+import type { Post } from '@/.opensaas/types'
 import type { SerializableFieldConfig } from '@opensaas/stack-ui/server'
 
 /**
@@ -20,9 +20,11 @@ type EditablePost = Omit<Post, 'author'> & { author: { name: string } | null }
 export function PostEditor({
   post,
   fields,
+  initialData,
 }: {
   post: EditablePost
   fields: Record<string, SerializableFieldConfig>
+  initialData: Record<string, unknown>
 }) {
   const [editing, setEditing] = useState(false)
   const router = useRouter()
@@ -34,15 +36,9 @@ export function PostEditor({
           <CardTitle>Edit Post</CardTitle>
         </CardHeader>
         <CardContent>
-          <ItemEditForm<PostUpdateInput>
+          <ItemEditForm
             fields={fields}
-            initialData={{
-              title: post.title,
-              slug: post.slug,
-              content: post.content,
-              internalNotes: post.internalNotes,
-              status: post.status,
-            }}
+            initialData={initialData}
             onSubmit={async (data) => {
               const result = await updatePost(post.id, data)
 

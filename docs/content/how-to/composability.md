@@ -169,24 +169,40 @@ field's `ui` options carry on top. Import the type from
 
 Standalone form for creating items with custom submission handling.
 
-`config` here is the resolved config from the generated bundle. Its default
-export is a promise when plugins are present, so a server component awaits it
-before reading `lists`:
+The form takes field configs already serialised for the session. A server
+component reads them with `serializeFieldConfigs` from `@opensaas/stack-ui/server`,
+which withholds every field the session can never read and marks read-only every
+field it can never write, then passes them to a client component:
 
 ```tsx
-import { ItemCreateForm } from '@opensaas/stack-ui/standalone'
-import { config } from '@/.opensaas/context'
+// app/posts/new/page.tsx
+import { serializeFieldConfigs } from '@opensaas/stack-ui/server'
+import { getContext } from '@/.opensaas/context'
+import { CreatePost } from './CreatePost'
 
-export async function CreatePostPage() {
+export default async function CreatePostPage() {
+  const fields = await serializeFieldConfigs(await getContext(), 'Post', 'create')
+  return <CreatePost fields={fields} />
+}
+```
+
+```tsx
+// app/posts/new/CreatePost.tsx
+'use client'
+
+import { useRouter } from 'next/navigation'
+import { ItemCreateForm } from '@opensaas/stack-ui/standalone'
+import type { SerializableFieldConfig } from '@opensaas/stack-ui/server'
+
+export function CreatePost({ fields }: { fields: Record<string, SerializableFieldConfig> }) {
   const router = useRouter()
-  const { lists } = await config
 
   return (
     <div className="max-w-2xl mx-auto p-8">
       <h1 className="text-3xl font-bold mb-6">Create New Post</h1>
 
       <ItemCreateForm
-        fields={lists.Post.fields}
+        fields={fields}
         onSubmit={async (data) => {
           try {
             const post = await createPost(data)
@@ -210,9 +226,7 @@ export async function CreatePostPage() {
 
 ```typescript
 interface ItemCreateFormProps {
-  fields: Record<string, FieldConfig>
-  listKey?: string
-  config?: OpenSaasConfig
+  fields: Record<string, SerializableFieldConfig> // serializeFieldConfigs(context, listKey, 'create')
   onSubmit: (data: Record<string, unknown>) => Promise<{ success: boolean; error?: string }>
   onCancel?: () => void
   relationshipData?: Record<string, Array<{ id: string; label: string }>>
@@ -223,21 +237,27 @@ interface ItemCreateFormProps {
 }
 ```
 
+Neither form takes a `context` or a `listKey`: everything that depends on the
+session was settled on the server, and no access rule runs in the browser.
+
 #### ItemEditForm
 
-Standalone form for editing existing items.
+Standalone form for editing existing items. Its `fields` come from
+`serializeFieldConfigs(context, listKey, 'update')`, and its `initialData` from
+`serializeItemForForm(context, listKey, post)`, both on the server.
+`serializeItemForForm` applies each field's `ui.valueForClientSerialization` and
+leaves out every field the session never sees:
 
 ```tsx
+'use client'
+
 import { ItemEditForm } from '@opensaas/stack-ui/standalone'
-import { config } from '@/.opensaas/context'
 
-export async function EditPostPage({ post }) {
-  const { lists } = await config
-
+export function EditPost({ post, fields, initialData }) {
   return (
     <ItemEditForm
-      fields={lists.Post.fields}
-      initialData={post}
+      fields={fields}
+      initialData={initialData}
       onSubmit={async (data) => {
         const updated = await updatePost(post.id, data)
         return { success: !!updated }
@@ -429,8 +449,9 @@ for the full API, including the public `NavLink` component and the
 
 Combine standalone components for complex workflows:
 
-A client component cannot `await config` itself, so a server component reads the
-field configs and passes them down as props:
+A client component cannot read the session's field configs itself, so a server
+component calls `serializeFieldConfigs(context, listKey, 'create')` for each list
+and passes the results down as props:
 
 ```tsx
 'use client'
@@ -540,14 +561,15 @@ export function CustomDashboard({ postFields }) {
 Toggle between view and edit modes:
 
 ```tsx
-export function PostDetailPage({ post, postFields }) {
+// postFields and postValues come from serializeFieldConfigs and serializeItemForForm
+export function PostDetailPage({ post, postFields, postValues }) {
   const [editing, setEditing] = useState(false)
 
   if (editing) {
     return (
       <ItemEditForm
         fields={postFields}
-        initialData={post}
+        initialData={postValues}
         onSubmit={async (data) => {
           const updated = await updatePost(post.id, data)
           if (!updated) return { success: false, error: 'Could not save your changes' }

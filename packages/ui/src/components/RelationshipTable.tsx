@@ -12,7 +12,7 @@ import {
   type ListConfig,
 } from '@opensaas/stack-core'
 import { formatFieldName, formatListName } from '../lib/utils.js'
-import { serializeFieldConfig, type SerializableFieldConfig } from '../lib/serializeFieldConfig.js'
+import { projectFieldConfig, type SerializableFieldConfig } from '../lib/serializeFieldConfig.js'
 import { jsonSafeClone } from '../lib/jsonSafeClone.js'
 import {
   isOperationPotentiallyAllowed,
@@ -322,7 +322,7 @@ function columnFieldConfig(
   relatedListConfig: AnyListConfig | undefined,
 ): SerializableFieldConfig {
   const field = relatedListConfig?.fields[column] as FieldConfig | undefined
-  if (field) return serializeFieldConfig(field)
+  if (field) return projectFieldConfig(field)
   if (column === 'createdAt' || column === 'updatedAt') return { type: 'timestamp' }
   return { type: 'text' }
 }

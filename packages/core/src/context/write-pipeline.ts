@@ -1,17 +1,6 @@
 import type { OpenSaasConfig, ListConfig } from '../config/types.js'
-import type {
-  AccessContext,
-  OrmClient,
-  OrmRow,
-  PrismaFilter,
-  TransactionOpener,
-} from '../access/types.js'
-import {
-  assertAccessFilterConstrains,
-  checkAccess,
-  checkCreateAccess,
-  filterWritableFields,
-} from '../access/index.js'
+import type { AccessContext, OrmClient, OrmRow, TransactionOpener } from '../access/types.js'
+import { checkCreateAccess, filterWritableFields } from '../access/index.js'
 import {
   executeValidate,
   executeBeforeOperation,
@@ -25,7 +14,6 @@ import {
   countRows,
   deleteFirst,
   firstMatching,
-  identityPredicate,
   insertRow,
   updateFirst,
   whereCombinators,
@@ -35,7 +23,6 @@ import {
   type WriteScope,
 } from '../secured/write.js'
 import { readWrittenRow, visibleWrittenRow, writeReturnReadsRelations } from '../secured/read.js'
-import { resolveWhere, type WherePlan } from '../secured/vocabulary.js'
 import { hookPipeline } from './hook-pipeline.js'
 import {
   lowerRelationInput,
@@ -43,7 +30,6 @@ import {
   snapshotCallerInput,
 } from './relationship-input.js'
 import { enumerateInvolvedLists, runWithTransactionBoundary } from './transaction-boundary.js'
-import { guardedRuleItem, NO_RULE_VIEWS, ruleRowOf } from '../access/rule-item.js'
 import { TransactionRegistry, TransactionRolledBackError } from '../access/transaction-registry.js'
 import { warnOnce } from '../lib/warn-once.js'
 import {
@@ -68,18 +54,8 @@ import { withOwnSessionVocabulary } from '../access/session-vocabulary.js'
 
 export type WriteOperation = 'create' | 'update' | 'delete'
 
-/**
- * Result of resolving a write target (axis 1). `denied` covers access denial,
- * a missing target, or a filter non-match alike, and short-circuits to `null`
- * before any hooks or the DB call.
- *
- * `scope` is the predicate the write itself then runs under: the engine's own
- * identity predicate, and the Access Filter beside it when the list's rule
- * returned one, so an `UPDATE` is scoped by the same filter the target read
- * was (ADR-0044).
- */
-export type TargetResolution =
-  { status: 'ok'; originalItem: OrmRow | undefined; scope: WriteScope } | { status: 'denied' }
+export type { TargetResolution } from './write-target.js'
+import { resolveExistingTarget, type TargetResolution } from './write-target.js'
 
 /**
  * Per-operation strategy. Supplies the three axes on which create/update/delete
@@ -777,101 +753,6 @@ export function createWriteStrategy(
       // Singleton lists use an integer id, always 1 (matching Keystone 6).
       return insertRow(collection, singleton ? { id: 1, ...data } : data)
     },
-  }
-}
-
-/**
- * The Access Filter as a predicate to AND into the write's own, lowered
- * through the same seam a read lowers it through: trusted config, so its keys
- * are not read-gated, but total, so a rule that resolved to `undefined` is
- * refused rather than dropped (ADR-0022, ADR-0055).
- */
-async function accessFilterPlan(
-  listName: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-  listConfig: ListConfig<any>,
-  config: OpenSaasConfig,
-  context: AccessContext,
-  filter: PrismaFilter,
-): Promise<WherePlan> {
-  assertAccessFilterConstrains(filter)
-  return await resolveWhere(filter, {
-    listName,
-    listConfig,
-    config,
-    session: context.session,
-    context,
-    checkFieldRead: false,
-    applyRelationAccess: true,
-    accessFilterPath: [listName],
-  })
-}
-
-/**
- * Build the shared target resolution for update/delete: read the row by
- * identity (missing → denied), check operation-level access (false → denied),
- * and if access returns a filter, re-read under the filter as well (no match →
- * denied) and carry it forward as part of the write's own predicate.
- *
- * The second read is what gates the hooks: a filter non-match must short-
- * circuit to `null` before `beforeOperation` runs, which a scope merged into
- * the write alone could not do.
- */
-function resolveExistingTarget(
-  listName: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-  listConfig: ListConfig<any>,
-  config: OpenSaasConfig,
-  where: { id: string | number },
-  access: 'update' | 'delete',
-): (
-  collection: WriteCollection,
-  ops: WhereCombinators,
-  context: AccessContext,
-) => Promise<TargetResolution> {
-  return async (collection, ops, context) => {
-    const identity = identityPredicate(listName, where.id)
-    const item = await firstMatching(collection, [identity], ops)
-    if (!item) {
-      return { status: 'denied' }
-    }
-
-    if (context._isSudo) {
-      return { status: 'ok', originalItem: item, scope: [identity] }
-    }
-
-    const guard = guardedRuleItem(
-      ruleRowOf(item, NO_RULE_VIEWS, listConfig.fields, config, listName),
-    )
-    let accessResult: Awaited<ReturnType<typeof checkAccess>>
-    try {
-      accessResult = await checkAccess(listConfig.access?.operation?.[access], {
-        session: context.session,
-        item: guard.item,
-        context,
-      })
-    } catch (err) {
-      if (err instanceof TypeError && guard.tripped()) return { status: 'denied' }
-      throw err
-    }
-    if (guard.tripped()) return { status: 'denied' }
-
-    if (accessResult === false) {
-      return { status: 'denied' }
-    }
-
-    if (accessResult === true) {
-      return { status: 'ok', originalItem: item, scope: [identity] }
-    }
-
-    const filter = await accessFilterPlan(listName, listConfig, config, context, accessResult)
-    const scope: WriteScope = [identity, filter]
-    const scopedItem = await firstMatching(collection, scope, ops)
-    if (!scopedItem) {
-      return { status: 'denied' }
-    }
-
-    return { status: 'ok', originalItem: item, scope }
   }
 }
 

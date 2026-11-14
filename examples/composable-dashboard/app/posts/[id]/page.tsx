@@ -4,13 +4,11 @@ import { Button } from '@opensaas/stack-ui/primitives'
 import { getContext } from '@/.opensaas/context'
 import { demoSession } from '@/lib/demo-session'
 import { PostEditor } from './PostEditor'
-import { serializeFieldConfigs } from '@opensaas/stack-ui/server'
-import config from '@/opensaas.config'
+import { serializeFieldConfigs, serializeItemForForm } from '@opensaas/stack-ui/server'
 
 export default async function PostDetailPage(props: { params: Promise<{ id: string }> }) {
   const params = await props.params
   const context = await getContext(await demoSession())
-  const fields = serializeFieldConfigs((await config).lists.Post.fields)
 
   // `null` is not-found or denied — the two are deliberately indistinguishable
   const post = await context.db.Post.where({ id: { equals: params.id } })
@@ -20,6 +18,16 @@ export default async function PostDetailPage(props: { params: Promise<{ id: stri
   if (post === null) {
     notFound()
   }
+
+  const fields = await serializeFieldConfigs(context, 'Post', 'update', post)
+  const initialData = await serializeItemForForm(context, 'Post', {
+    id: post.id,
+    title: post.title,
+    slug: post.slug,
+    content: post.content,
+    internalNotes: post.internalNotes,
+    status: post.status,
+  })
 
   return (
     <div className="min-h-screen bg-background">
@@ -53,7 +61,7 @@ export default async function PostDetailPage(props: { params: Promise<{ id: stri
           </Link>
         </div>
 
-        <PostEditor post={post} fields={fields} />
+        <PostEditor post={post} fields={fields} initialData={initialData} />
       </main>
     </div>
   )

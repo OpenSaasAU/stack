@@ -5,7 +5,7 @@ import { resolveToManyEdgePlan } from '../../src/lib/relationshipEdges.js'
 import {
   markToManyEdgeWrites,
   markUnwritableRelationships,
-  serializeFieldConfigs,
+  projectFieldConfigs,
   UNWRITABLE_RELATIONSHIP_REASON,
 } from '../../src/lib/serializeFieldConfig.js'
 
@@ -93,7 +93,7 @@ describe('markToManyEdgeWrites', () => {
   function serialize(listKey: string, itemId: string | null | undefined) {
     const c = config()
     const fields = c.lists[listKey].fields
-    const serialized = serializeFieldConfigs(fields)
+    const serialized = projectFieldConfigs(fields)
     markUnwritableRelationships(serialized, listKey, fields, c)
     markToManyEdgeWrites(serialized, listKey, fields, c, itemId)
     return serialized

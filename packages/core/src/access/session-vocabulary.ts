@@ -1,11 +1,13 @@
 import type { FieldConfig, ListConfig, OpenSaasConfig, TypeInfo } from '../config/types.js'
-import type { AccessContext, AccessControl } from './types.js'
+import type { AccessContext, AccessControl, OrmRow } from './types.js'
 import { checkAccess } from './engine.js'
 import {
   classifyRowIndependentCreateAccess,
   classifyRowIndependentRead,
   classifyRowIndependentWrite,
+  classifyWriteForRow,
 } from './field-access.js'
+import { NO_RULE_VIEWS, ruleRowOf } from './rule-item.js'
 import { decideAdvertisement, type AdvertisementPolicy } from './decide-advertisement.js'
 import { isComputedField } from '../config/field-kind.js'
 import { ownsForeignKey } from '../context/junction.js'
@@ -13,6 +15,7 @@ import { resolveListTimestamps } from '../contract/derive.js'
 import { isRelationshipField } from '../fields/index.js'
 import { canQueryList, hasFilterSpec } from '../filter/collect.js'
 import { columnOrderedKeys } from '../secured/read.js'
+import { readStoredRow, writeTargetAllows } from '../context/write-target.js'
 
 /**
  * What a session may be told about one access question ahead of any request.
@@ -233,6 +236,107 @@ export async function resolveSessionVocabulary(
   }
 }
 
+async function resolveOperationForRow(
+  context: AccessContext,
+  config: OpenSaasConfig,
+  listKey: string,
+  answer: AccessAnswer,
+  operation: 'update' | 'delete',
+  stored: { row: OrmRow; id: string | number },
+): Promise<AccessAnswer> {
+  if (answer !== 'row-dependent') return answer
+  return await answerOrDeny(`${listKey}.${operation} (row)`, async () =>
+    (await writeTargetAllows(context, config, listKey, stored.row, stored.id, operation))
+      ? 'allow'
+      : 'deny',
+  )
+}
+
+function denyRowDependent(answer: AccessAnswer): AccessAnswer {
+  return answer === 'row-dependent' ? 'deny' : answer
+}
+
+/**
+ * `vocabulary` with its row-dependent write answers resolved for the row of
+ * the list whose id is `id`: a field's `update`, and the list's `update` and
+ * `delete`, each as the write decides it against that row as stored, the row
+ * an update reads before it decides. A field's `read` is not resolved: Field
+ * Visibility decides it on each read, against the row that read delivers, so
+ * a row-dependent `read` stays `'row-dependent'`. Every other answer is
+ * returned as it was, without asking its rule again. A row that is not there
+ * answers each row-dependent write question deny. A field rule that reads the
+ * payload stays `'row-dependent'`. Disclosure only, as the vocabulary is
+ * (ADR-0084).
+ */
+export async function resolveSessionVocabularyForItem(
+  context: AccessContext,
+  config: OpenSaasConfig,
+  vocabulary: SessionVocabulary,
+  id: string | number,
+): Promise<SessionVocabulary> {
+  const { listKey } = vocabulary
+  const listConfig = config.lists[listKey]
+  const row = await readStoredRow(context, listKey, id)
+  if (row === null) {
+    const operations = {
+      ...vocabulary.operations,
+      update: denyRowDependent(vocabulary.operations.update),
+      delete: denyRowDependent(vocabulary.operations.delete),
+    }
+    return {
+      listKey,
+      operations,
+      fields: new Map(
+        [...vocabulary.fields].map(([name, entry]): [string, FieldVocabulary] => [
+          name,
+          {
+            ...entry,
+            update: operations.update === 'deny' ? 'deny' : denyRowDependent(entry.update),
+          },
+        ]),
+      ),
+    }
+  }
+  const stored = { row, id }
+  const [update, del] = await Promise.all([
+    resolveOperationForRow(
+      context,
+      config,
+      listKey,
+      vocabulary.operations.update,
+      'update',
+      stored,
+    ),
+    resolveOperationForRow(
+      context,
+      config,
+      listKey,
+      vocabulary.operations.delete,
+      'delete',
+      stored,
+    ),
+  ])
+  const operations = { ...vocabulary.operations, update, delete: del }
+  const args = { session: context.session, context }
+  const ruleRow = ruleRowOf(row, NO_RULE_VIEWS, listConfig.fields, config, listKey)
+  const fields = await Promise.all(
+    [...vocabulary.fields].map(async ([name, entry]): Promise<[string, FieldVocabulary]> => {
+      const field = Object.hasOwn(listConfig.fields, name) ? listConfig.fields[name] : undefined
+      if (field === undefined) return [name, entry]
+      const update =
+        operations.update === 'deny'
+          ? 'deny'
+          : entry.update === 'row-dependent'
+            ? await answerOrDeny(`${listKey}.${name} (update, row)`, () =>
+                classifyWriteForRow(field.access, 'update', args, ruleRow),
+              )
+            : entry.update
+      return [name, { ...entry, update }]
+    }),
+  )
+  return { listKey, operations, fields: new Map(fields) }
+}
+
 /**
  * {@link resolveSessionVocabulary} bound to `context`, kept per list for the
  * life of the returned function. An answer that rejects is not kept.
@@ -254,11 +358,20 @@ export function bindSessionVocabulary(
   }
 }
 
-/** `context`, given its own {@link bindSessionVocabulary} resolver and memo. */
+/**
+ * `context`, given its own {@link bindSessionVocabulary} resolver and memo,
+ * and {@link resolveSessionVocabularyForItem} over it.
+ */
 export function withOwnSessionVocabulary<TContext extends AccessContext>(
   context: TContext,
   config: OpenSaasConfig,
 ): TContext {
-  context._sessionVocabulary = bindSessionVocabulary(context, config)
+  const vocabularyOf = bindSessionVocabulary(context, config)
+  context._sessionVocabulary = vocabularyOf
+  context._sessionVocabularyForItem = async (listKey, id) => {
+    const vocabulary = await vocabularyOf(listKey)
+    if (vocabulary === null) return null
+    return await resolveSessionVocabularyForItem(context, config, vocabulary, id)
+  }
   return context
 }

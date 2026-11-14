@@ -387,6 +387,33 @@ export async function classifyRowIndependentCreateAccess(
   )
 }
 
+/**
+ * What a field's `create`/`update` rule answers for one known row, with no
+ * payload: `'allow'` or `'deny'` as the write would decide it for that row,
+ * and `'row-dependent'` for a rule that reads `inputData` and so still cannot
+ * be answered ahead of a request. The rule sees `row` behind the write's own
+ * guard (ADR-0082).
+ */
+export async function classifyWriteForRow(
+  fieldAccess: FieldAccess | undefined,
+  operation: 'create' | 'update',
+  args: {
+    session: Session | null
+    context: AccessContext & { _isSudo?: boolean }
+  },
+  row: RuleRow,
+): Promise<'allow' | 'deny' | 'row-dependent'> {
+  return await answerWithoutRow((poisoned) =>
+    checkFieldAccess(fieldAccess, operation, {
+      session: args.session,
+      context: args.context,
+      item: row.item,
+      ruleRow: row,
+      inputData: poisoned,
+    }),
+  )
+}
+
 export function writeRuleRow(
   item: Record<string, unknown> | undefined,
   fieldConfigs: Record<string, FieldConfig>,

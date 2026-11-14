@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { Button, Card, CardContent, CardHeader, CardTitle } from '@opensaas/stack-ui/primitives'
 import { ListTable, SearchBar } from '@opensaas/stack-ui/standalone'
-import { config, getContext } from '@/.opensaas/context'
+import { getContext } from '@/.opensaas/context'
 import { demoSession } from '../../lib/demo-session'
 import { CreatePostDialog } from '../../components/CreatePostDialog'
 import { serializeFieldConfigs } from '@opensaas/stack-ui/server'
@@ -59,7 +59,7 @@ export default async function PostsPage(props: { searchParams: Promise<{ search?
       <main className="container mx-auto px-6 py-8">
         <div className="mb-6 flex items-center justify-between">
           <h2 className="text-3xl font-bold">Posts</h2>
-          <CreatePostDialog fields={serializeFieldConfigs((await config).lists.Post.fields)} />
+          <CreatePostDialog fields={await serializeFieldConfigs(context, 'Post', 'create')} />
         </div>
 
         {/* Search Bar — structured classNames slots (issue #709) let us tune a

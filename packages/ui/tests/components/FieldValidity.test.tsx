@@ -13,7 +13,10 @@ import { JsonField } from '../../src/components/fields/JsonField.js'
 import { PasswordField } from '../../src/components/fields/PasswordField.js'
 import { useFieldValidity } from '../../src/components/fields/index.js'
 import { FieldValidityContext } from '../../src/lib/fieldValidity.js'
-import type { SerializableFieldConfig } from '../../src/lib/serializeFieldConfig.js'
+import {
+  projectFieldConfigs,
+  type SerializableFieldConfig,
+} from '../../src/lib/serializeFieldConfig.js'
 
 const mockPush = vi.fn()
 const mockRefresh = vi.fn()
@@ -483,7 +486,9 @@ describe('every form that submits', () => {
   it('blocks the standalone create form', async () => {
     const onSubmit = vi.fn(async () => ({ success: true }))
     const user = userEvent.setup()
-    render(<ItemCreateForm fields={{ price: decimal() }} onSubmit={onSubmit} />)
+    render(
+      <ItemCreateForm fields={projectFieldConfigs({ price: decimal() })} onSubmit={onSubmit} />,
+    )
 
     const price = screen.getByLabelText(/^Price/)
     await user.type(price, '9.9x')
@@ -499,7 +504,7 @@ describe('every form that submits', () => {
     const user = userEvent.setup()
     render(
       <ItemEditForm
-        fields={{ meta: json(), title: text(), secret: password() }}
+        fields={projectFieldConfigs({ meta: json(), title: text(), secret: password() })}
         initialData={{ meta: { keep: true }, title: 'Hi', secret: { isSet: true } }}
         onSubmit={onSubmit}
         onCancel={onCancel}
