@@ -895,12 +895,13 @@ import type { PostUpdateInput } from '@/.opensaas/types'
 export default async function EditPostPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const context = await getContext()
-  const fields = await serializeFieldConfigs(context, 'Post', 'update')
 
   const post = await context.db.Post.where({ id }).first()
   if (!post) notFound()
 
+  const fields = await serializeFieldConfigs(context, 'Post', 'update', post)
   const initialData = await serializeItemForForm(context, 'Post', {
+    id: post.id,
     title: post.title,
     slug: post.slug,
     content: post.content,
@@ -1285,7 +1286,7 @@ There is no `getAdminContext` helper in this package. The host application is re
 
 ### serializeFieldConfigs
 
-`serializeFieldConfigs(context, listKey, purpose?)` returns a list's field configs in the client-safe shape the standalone forms take, resolved for the session `context` carries. It is the only way field configs leave the server: there is no form of it that skips the session.
+`serializeFieldConfigs(context, listKey, purpose?, item?)` returns a list's field configs in the client-safe shape the standalone forms take, resolved for the session `context` carries. It is the only way field configs leave the server: there is no form of it that skips the session.
 
 ```typescript
 import { serializeFieldConfigs } from '@opensaas/stack-ui/server'
@@ -1293,25 +1294,26 @@ import { getContext } from '@/.opensaas/context'
 
 const context = await getContext(session)
 const createFields = await serializeFieldConfigs(context, 'Post', 'create')
-const editFields = await serializeFieldConfigs(context, 'Post', 'update')
+const editFields = await serializeFieldConfigs(context, 'Post', 'update', post)
 ```
 
 It reads the session's Session vocabulary for the list:
 
 - A field the session can never read is withheld. On a `'create'` or `'update'` form, a field it may write but never read stays, empty and not required.
 - A field the session can never write for `purpose` carries `readOnly: true`, and the form renders it as a value rather than a control. A rule that reads the row (`item?.ownerId === session.userId`) is row-dependent and keeps the field editable; the write itself still decides.
+- `item` is the stored record an `'update'` form edits. Pass it and each row-dependent rule is answered for that row, so a field the rule denies there carries `readOnly: true` too. It is ignored for `'create'` and `'display'`.
 - `purpose` is `'create'`, `'update'` or `'display'` (the default). `'display'` withholds every never-readable field and marks read-only a field the session can write on neither operation.
 
 A `listKey` the context's config does not declare throws `SessionVocabularyUnavailableError`.
 
 ### serializeItemForForm
 
-`serializeItemForForm(context, listKey, item, purpose?)` prepares one record as `ItemEditForm`'s `initialData`. It applies each field's `ui.valueForClientSerialization` (a `password()` field becomes `{ isSet }`), leaves out every field `serializeFieldConfigs(context, listKey, purpose)` withholds, and drops any value the session can never read. `purpose` defaults to `'update'`.
+`serializeItemForForm(context, listKey, item, purpose?)` prepares one record as `ItemEditForm`'s `initialData`. It applies each field's `ui.valueForClientSerialization` (a `password()` field becomes `{ isSet }`), leaves out every field `serializeFieldConfigs(context, listKey, purpose, item)` withholds, and drops any value the session cannot read on this row. `purpose` defaults to `'update'`.
 
 ```typescript
 import { serializeFieldConfigs, serializeItemForForm } from '@opensaas/stack-ui/server'
 
-const fields = await serializeFieldConfigs(context, 'Post', 'update')
+const fields = await serializeFieldConfigs(context, 'Post', 'update', post)
 const initialData = await serializeItemForForm(context, 'Post', post)
 ```
 

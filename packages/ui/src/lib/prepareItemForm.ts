@@ -74,6 +74,12 @@ export function buildRelationshipInclude(
  * `operation` is the write this form performs: a field the session's Session
  * vocabulary denies for it is marked read-only, and a field it can never read
  * is withheld unless the form may write it.
+ *
+ * `accessItem` is the stored row an update form edits. When given, core
+ * answers each row-dependent rule for that row (#1402), so a field its rule
+ * denies there renders read-only. It differs from `itemData` in the derived
+ * item-view layout, whose details data has the Relationship-table section
+ * fields stripped out while a rule may still read them off `item`.
  */
 export async function prepareItemForm(
   context: AccessContext,
@@ -83,8 +89,13 @@ export async function prepareItemForm(
   listConfig: ListConfig<any>,
   itemData: Record<string, unknown>,
   operation: 'create' | 'update',
+  accessItem?: Record<string, unknown>,
 ): Promise<PreparedItemForm> {
-  const vocabularyPromise = readSessionVocabulary(context, listKey)
+  const vocabularyPromise = readSessionVocabulary(
+    context,
+    listKey,
+    operation === 'update' ? accessItem : undefined,
+  )
   // Bounded/projected fetch — see getRelationshipOptions.
   const relationshipData: Record<string, Array<{ id: string; label: string }>> = {}
   const relationshipFields = Object.entries(listConfig.fields).filter(

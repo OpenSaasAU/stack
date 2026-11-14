@@ -27,11 +27,20 @@ export class SessionVocabularyUnavailableError extends Error {
   }
 }
 
+/**
+ * The session's vocabulary for `listKey`, with its row-dependent answers
+ * resolved against `item` when the caller holds one loaded row of the list.
+ */
 export async function readSessionVocabulary(
   context: AnyStackContext,
   listKey: string,
+  item?: Readonly<Record<string, unknown>>,
 ): Promise<SessionVocabulary> {
-  const vocabulary = await engineContextOf(context)._sessionVocabulary?.(listKey)
+  const engine = engineContextOf(context)
+  const vocabulary =
+    item === undefined
+      ? await engine._sessionVocabulary?.(listKey)
+      : await engine._sessionVocabularyForItem?.(listKey, item)
   if (!vocabulary) throw new SessionVocabularyUnavailableError(listKey)
   return vocabulary
 }
@@ -135,12 +144,17 @@ function resolveList(context: AnyStackContext, listKey: string) {
  * session `context` carries, resolved from that session's Session vocabulary.
  *
  * A field the session can never read is withheld. A field it can never write
- * for `purpose` is marked `readOnly`; a rule that depends on the row keeps the
- * field editable, and the write itself still enforces it. On a `'create'` or
- * `'update'` form a field the session may write but never read stays, empty.
+ * for `purpose` is marked `readOnly`. On a `'create'` or `'update'` form a
+ * field the session may write but never read stays, empty.
  *
- * Pass `'create'` to `ItemCreateForm`'s `fields`, `'update'` to
- * `ItemEditForm`'s, and `'display'` (the default) to `ListTable`'s.
+ * A rule that depends on the row keeps the field editable, and the write
+ * itself still enforces it — unless `item` is given on an `'update'`: then each
+ * such rule is answered for that row, and a field it denies there is marked
+ * `readOnly` like any other.
+ *
+ * Pass `'create'` to `ItemCreateForm`'s `fields`, `'update'` (with the record
+ * being edited) to `ItemEditForm`'s, and `'display'` (the default) to
+ * `ListTable`'s.
  *
  * @throws {SessionVocabularyUnavailableError} when `listKey` is not a list of
  *   the context's config.
@@ -149,10 +163,12 @@ export async function serializeFieldConfigs(
   context: AnyStackContext,
   listKey: string,
   purpose: FieldConfigPurpose = 'display',
+  item?: Readonly<Record<string, unknown>>,
 ): Promise<Record<string, SerializableFieldConfig>> {
   const { engine, config, fields } = resolveList(context, listKey)
+  const rowItem = purpose === 'update' ? item : undefined
   return serializeFieldsForSession({
-    vocabulary: await readSessionVocabulary(engine, listKey),
+    vocabulary: await readSessionVocabulary(engine, listKey, rowItem),
     config,
     listKey,
     fields,
@@ -163,8 +179,8 @@ export async function serializeFieldConfigs(
 /**
  * One record of `listKey` prepared as `ItemEditForm`'s `initialData` for the
  * session `context` carries: each field's `ui.valueForClientSerialization` is
- * applied, and every field `serializeFieldConfigs(context, listKey, purpose)`
- * withholds is left out, as is any value the session can never read.
+ * applied, and every field `serializeFieldConfigs(context, listKey, purpose, item)`
+ * withholds is left out, as is any value the session cannot read on this row.
  *
  * @throws {SessionVocabularyUnavailableError} when `listKey` is not a list of
  *   the context's config.
@@ -177,7 +193,11 @@ export async function serializeItemForForm(
 ): Promise<Record<string, unknown>> {
   const { engine, fields } = resolveList(context, listKey)
   return formValuesForSession({
-    vocabulary: await readSessionVocabulary(engine, listKey),
+    vocabulary: await readSessionVocabulary(
+      engine,
+      listKey,
+      purpose === 'update' ? item : undefined,
+    ),
     fields,
     values: item,
     purpose,

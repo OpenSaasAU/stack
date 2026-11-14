@@ -2,14 +2,20 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { AccessContext, OpenSaasConfig } from '@opensaas/stack-core'
 import { relationship, text } from '@opensaas/stack-core/fields'
 import { createTestContext, type TestContext } from '@opensaas/stack-core/testing'
-import { buildDetailsItemData, composeItemViewRead } from '../../src/components/ItemForm.js'
+import {
+  buildAccessItemData,
+  buildDetailsItemData,
+  composeItemViewRead,
+} from '../../src/components/ItemForm.js'
 import { prepareItemForm } from '../../src/lib/prepareItemForm.js'
 import { deriveItemViewLayout } from '../../src/lib/deriveItemView.js'
+import { FIELD_WRITE_DENIED_REASON } from '../../src/lib/serializeFieldConfig.js'
 
 /**
- * A details field whose update rule reads the row is row-dependent in the
- * Session vocabulary, so the derived item-view layout keeps it editable
- * whatever the row holds; the secured write decides (ADR-0084).
+ * The derived item-view layout builds its form from details data with every
+ * Relationship-table section stripped out, but a details field's update rule
+ * is answered against the real row, section relation included (#1402). Core
+ * answers it; the admin evaluates no rule itself.
  */
 function makeConfig(): OpenSaasConfig {
   return {
@@ -39,7 +45,7 @@ function makeConfig(): OpenSaasConfig {
   }
 }
 
-describe('the derived item-view layout keeps a row-dependent update rule editable', () => {
+describe('the derived item-view layout checks field access against the real row (#1402)', () => {
   let harness: TestContext
 
   beforeAll(async () => {
@@ -70,20 +76,30 @@ describe('the derived item-view layout keeps a row-dependent update rule editabl
     const detailsListConfig = { ...listConfig, fields: Object.fromEntries(detailsFieldEntries) }
     const detailsItemData = buildDetailsItemData(itemData, layout)
 
-    return prepareItemForm(context, config, 'Post', detailsListConfig, detailsItemData, 'update')
+    return prepareItemForm(
+      context,
+      config,
+      'Post',
+      detailsListConfig,
+      detailsItemData,
+      'update',
+      buildAccessItemData(itemData, layout),
+    )
   }
 
-  it('leaves the field editable on a row the rule would allow', async () => {
+  it('reads the real (bounded) relation, not an empty/missing one, for a details field access rule', async () => {
     const context = harness.context as unknown as AccessContext
     const post = await context.db.Post.create({ data: { title: 'No comments yet' } })
     const postId = String(post?.id)
 
     const prepared = await prepareDetailsForm(postId)
 
+    // `item.comments` really is `[]` here — the rule's own answer, not the
+    // fail-open fallback for a missing/throwing rule.
     expect(prepared.serializableFields.title.readOnly).toBeUndefined()
   })
 
-  it('leaves the field editable on a row the rule would deny', async () => {
+  it('marks the field read-only once the real relation makes the rule deny', async () => {
     const context = harness.context as unknown as AccessContext
     const post = await context.db.Post.create({ data: { title: 'Has a comment' } })
     const postId = String(post?.id)
@@ -93,6 +109,7 @@ describe('the derived item-view layout keeps a row-dependent update rule editabl
 
     const prepared = await prepareDetailsForm(postId)
 
-    expect(prepared.serializableFields.title.readOnly).toBeUndefined()
+    expect(prepared.serializableFields.title.readOnly).toBe(true)
+    expect(prepared.serializableFields.title.readOnlyReason).toBe(FIELD_WRITE_DENIED_REASON)
   })
 })

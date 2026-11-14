@@ -45,6 +45,7 @@ function makeConfig(): OpenSaasConfig {
           }),
           writeOnly: text({ validation: { isRequired: true }, access: { read: () => false } }),
           ownerLocked: text({ access: { create: ownsRow, update: ownsRow } }),
+          ownerRead: text({ access: { read: ownsRow } }),
           brokenWrite: text({ access: { update: brokenRule } }),
           stamped: text({ access: { write: 'hooks' } }),
           adminReadsOnly: text({ access: { read: isAdmin, create: () => false } }),
@@ -222,6 +223,32 @@ describe('serializeFieldConfigs', () => {
     expect(serialized.ownerLocked.readOnly).toBeUndefined()
   })
 
+  it('answers a row-dependent update rule for the item an update form edits', async () => {
+    const context = database.context({ userId: 'author-1', role: 'author' })
+    const mine = await serializeFieldConfigs(context, 'Doc', 'update', {
+      id: 'doc-1',
+      ownerKey: 'author-1',
+    })
+    const theirs = await serializeFieldConfigs(context, 'Doc', 'update', {
+      id: 'doc-2',
+      ownerKey: 'someone-else',
+    })
+
+    expect(mine.ownerLocked.readOnly).toBeUndefined()
+    expect(theirs.ownerLocked.readOnly).toBe(true)
+    expect(theirs.ownerLocked.readOnlyReason).toBe(FIELD_WRITE_DENIED_REASON)
+    expect(theirs.title.readOnly).toBeUndefined()
+  })
+
+  it('ignores an item outside an update form', async () => {
+    const context = database.context({ userId: 'author-1', role: 'author' })
+    const theirs = { id: 'doc-2', ownerKey: 'someone-else' }
+    for (const purpose of ['create', 'display'] as const) {
+      const serialized = await serializeFieldConfigs(context, 'Doc', purpose, theirs)
+      expect(serialized.ownerLocked.readOnly).toBeUndefined()
+    }
+  })
+
   it('marks a write rule that throws read-only and logs it', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -275,6 +302,23 @@ describe('serializeItemForForm', () => {
     for (const key of Object.keys(values)) {
       if (key !== 'id') expect(fields).toHaveProperty(key)
     }
+  })
+
+  it('drops a value whose read rule denies it on this row', async () => {
+    const context = database.context({ userId: 'author-1', role: 'author' })
+    const values = await serializeItemForForm(context, 'Doc', {
+      ...item,
+      ownerKey: 'someone-else',
+      ownerRead: 'theirs',
+    })
+    const own = await serializeItemForForm(context, 'Doc', {
+      ...item,
+      ownerKey: 'author-1',
+      ownerRead: 'mine',
+    })
+
+    expect(values).not.toHaveProperty('ownerRead')
+    expect(own.ownerRead).toBe('mine')
   })
 
   it('refuses a list the config does not declare', async () => {

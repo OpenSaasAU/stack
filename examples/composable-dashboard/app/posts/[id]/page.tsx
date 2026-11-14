@@ -9,7 +9,6 @@ import { serializeFieldConfigs, serializeItemForForm } from '@opensaas/stack-ui/
 export default async function PostDetailPage(props: { params: Promise<{ id: string }> }) {
   const params = await props.params
   const context = await getContext(await demoSession())
-  const fields = await serializeFieldConfigs(context, 'Post', 'update')
 
   // `null` is not-found or denied — the two are deliberately indistinguishable
   const post = await context.db.Post.where({ id: { equals: params.id } })
@@ -20,7 +19,9 @@ export default async function PostDetailPage(props: { params: Promise<{ id: stri
     notFound()
   }
 
+  const fields = await serializeFieldConfigs(context, 'Post', 'update', post)
   const initialData = await serializeItemForForm(context, 'Post', {
+    id: post.id,
     title: post.title,
     slug: post.slug,
     content: post.content,

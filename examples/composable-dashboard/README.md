@@ -187,7 +187,7 @@ import { ListTable, SearchBar } from "@opensaas/stack-ui/standalone"
 import { ItemEditForm, DeleteButton } from '@opensaas/stack-ui/standalone'
 
 // `fields` comes from the server page:
-//   await serializeFieldConfigs(context, 'Post', 'update')  // @opensaas/stack-ui/server
+//   await serializeFieldConfigs(context, 'Post', 'update', post)  // @opensaas/stack-ui/server
 // and `initialData` from:
 //   await serializeItemForForm(context, 'Post', post)        // @opensaas/stack-ui/server
 {

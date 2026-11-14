@@ -44,3 +44,7 @@ Row action and Bulk action gating is not part of the vocabulary. It is about an 
 - A write rule that throws used to leave the field editable in the admin. It is now read-only there, as it already was absent from MCP's write schema.
 - MCP's own derivations move onto the vocabulary in a later change. Until then there are two correct derivations and not one.
 - What the admin sends as rows is unchanged by this record: withheld keys are still stripped from whole rows, not selected as a Projection.
+
+## Amendment (2026-11-14): a consumer holding a row resolves it through core
+
+A consumer that holds one known row may resolve the row-dependent answers against that row instead of choosing a row-dependent policy. Core does it, through the engine context, with the engine's own field-access evaluation and write-target resolution; `allow` and `deny` are not asked again. The admin item edit form does this, so a field whose rule denies the row being edited stays read-only (#1402). Consumers without a row keep choosing their own row-dependent policy, as above. It is still disclosure only.

@@ -151,7 +151,8 @@ import { ItemCreateForm } from '@opensaas/stack-ui/standalone'
 
 #### ItemEditForm
 
-Its `fields` come from `serializeFieldConfigs(context, 'Post', 'update')`, and its
+Its `fields` come from `serializeFieldConfigs(context, 'Post', 'update', post)`, which
+answers each row-dependent rule for that post, and its
 `initialData` from `serializeItemForForm(context, 'Post', post)`, which applies each
 field's `ui.valueForClientSerialization` and leaves out what the session never sees.
 
