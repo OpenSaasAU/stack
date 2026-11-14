@@ -17,6 +17,8 @@ import {
   OpenSaasConfig,
 } from '@opensaas/stack-core'
 import { resolveListUi } from '../lib/resolveListUi.js'
+import { operationAvailable } from '../lib/operationAvailable.js'
+import { UnavailableState } from './UnavailableState.js'
 import { buildRelationshipInclude, prepareItemForm } from '../lib/prepareItemForm.js'
 import { deriveItemViewLayout, type ItemViewLayout } from '../lib/deriveItemView.js'
 
@@ -153,6 +155,7 @@ async function ItemViewLayoutView({
 }) {
   const urlKey = getUrlKey(listKey)
   const { hideDelete, fieldMode } = await resolveListUi(listConfig, context)
+  const canDelete = !hideDelete && (await operationAvailable(context, listKey, 'delete'))
 
   // One secured read: the bounded rows each table renders and the total its
   // footer shows come back from the SAME call, both scoped by the related
@@ -226,7 +229,7 @@ async function ItemViewLayoutView({
         basePath={basePath}
         serverAction={serverAction}
         relationshipData={relationshipData}
-        canDelete={!hideDelete}
+        canDelete={canDelete}
         fieldMode={fieldMode}
       />
     </Card>
@@ -310,6 +313,23 @@ export async function ItemForm({
   // has one or more to-many relationships rendered as Relationship tables, use
   // the derived layout; otherwise (no tables, or create) fall through to the
   // single details-card path below — byte-identical to the pre-#734 form.
+  if (mode === 'create' && !(await operationAvailable(appContext, listKey, 'create'))) {
+    return (
+      <div className="max-w-4xl p-4 md:p-8">
+        <PageHeader
+          backHref={`${basePath}/${urlKey}`}
+          backLabel={`Back to ${formatListName(listKey)}`}
+          title={`Create ${formatListName(listKey)}`}
+        />
+        <UnavailableState
+          slot="item-create-unavailable"
+          title={`${formatListName(listKey)} can't be created here.`}
+          description={`You don't have access to create ${formatListName(listKey)} records.`}
+        />
+      </div>
+    )
+  }
+
   if (mode === 'edit' && itemId) {
     const layout = deriveItemViewLayout(config, listKey)
     if (layout.sections.length > 0) {
@@ -363,6 +383,8 @@ export async function ItemForm({
   }
 
   const { hideDelete, fieldMode } = await resolveListUi(listConfig, context)
+  const canDelete =
+    mode === 'edit' && !hideDelete && (await operationAvailable(appContext, listKey, 'delete'))
 
   // Also used by SingletonView so both editors serialize identically.
   const { serializableFields, initialData, relationshipData } = await prepareItemForm(
@@ -394,7 +416,7 @@ export async function ItemForm({
           basePath={basePath}
           serverAction={serverAction}
           relationshipData={relationshipData}
-          canDelete={!hideDelete}
+          canDelete={canDelete}
           fieldMode={fieldMode}
         />
       </div>

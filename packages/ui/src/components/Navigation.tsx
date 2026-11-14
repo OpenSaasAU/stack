@@ -25,8 +25,8 @@ export interface NavigationProps {
    * Access-scoped record counts to show next to opted-in list nav items (issue
    * #735), keyed by list key. Resolved upstream (by `AdminUI` via
    * `resolveNavCounts`) so this presentational chrome stays synchronous. Only
-   * lists present in this map show a count; a list that didn't opt in — or whose
-   * query access is statically denied — is simply absent and renders no badge.
+   * lists present in this map show a count; a list that didn't opt in, or whose
+   * `query` the session's vocabulary denies, is absent and renders no badge.
    */
   navCounts?: Record<string, number>
   /**

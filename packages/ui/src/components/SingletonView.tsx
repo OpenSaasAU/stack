@@ -1,10 +1,12 @@
 import * as React from 'react'
-import { Lock } from 'lucide-react'
+import { unstable_rethrow } from 'next/navigation.js'
+import { AlertTriangle } from 'lucide-react'
 import { resolveListUi } from '../lib/resolveListUi.js'
 import { ItemFormClient } from './ItemFormClient.js'
 import { formatListName } from '../lib/utils.js'
 import { PageHeader } from './PageHeader.js'
 import { EmptyState } from './EmptyState.js'
+import { UnavailableState } from './UnavailableState.js'
 import type { ServerActionInput } from '../server/types.js'
 import {
   type AnyStackContext,
@@ -14,6 +16,7 @@ import {
   ValidationError,
 } from '@opensaas/stack-core'
 import { prepareItemForm } from '../lib/prepareItemForm.js'
+import type { SessionVocabulary } from '@opensaas/stack-core/internal'
 import { vocabularyOrDeny } from '../lib/sessionFieldConfigs.js'
 
 export interface SingletonViewProps {
@@ -70,18 +73,35 @@ export async function SingletonView({
     )
   }
 
-  const vocabulary = await vocabularyOrDeny(appContext, listKey)
+  let vocabulary: SessionVocabulary | null
+  try {
+    vocabulary = await vocabularyOrDeny(appContext, listKey)
+  } catch (error) {
+    unstable_rethrow(error)
+    console.error(`Failed to read the session vocabulary for ${listKey}:`, error)
+    return (
+      <div className="max-w-4xl p-4 md:p-8">
+        <PageHeader title={formatListName(listKey)} />
+        <div role="alert" data-slot="singleton-view-error">
+          <EmptyState
+            icon={<AlertTriangle className="h-6 w-6" />}
+            title={`${formatListName(listKey)} could not be loaded`}
+            description="Something went wrong while reading it, so it is not shown here. Nothing has been changed."
+          />
+        </div>
+      </div>
+    )
+  }
+
   if (vocabulary === null || vocabulary.operations.query === 'deny') {
     return (
       <div className="max-w-4xl p-4 md:p-8">
         <PageHeader title={formatListName(listKey)} />
-        <div data-slot="singleton-view-unavailable">
-          <EmptyState
-            icon={<Lock className="h-6 w-6" />}
-            title={`${formatListName(listKey)} can't be shown here.`}
-            description={`You don't have access to ${formatListName(listKey)}.`}
-          />
-        </div>
+        <UnavailableState
+          slot="singleton-view-unavailable"
+          title={`${formatListName(listKey)} can't be shown here.`}
+          description={`You don't have access to ${formatListName(listKey)}.`}
+        />
       </div>
     )
   }

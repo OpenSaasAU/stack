@@ -1,6 +1,6 @@
 import Link from 'next/link.js'
 import { unstable_rethrow } from 'next/navigation.js'
-import { AlertTriangle, Lock, Plus } from 'lucide-react'
+import { AlertTriangle, Plus } from 'lucide-react'
 import { ListViewClient } from './ListViewClient.js'
 import type { SerializedBulkAction } from './BulkActions.js'
 import type { SerializedRowAction } from './RowActions.js'
@@ -13,6 +13,7 @@ import { jsonSafeClone } from '../lib/jsonSafeClone.js'
 import { applyClientValueTransforms } from '../lib/clientValueTransforms.js'
 import { readSessionVocabulary, withheldFieldNames } from '../lib/sessionFieldConfigs.js'
 import { EmptyState } from './EmptyState.js'
+import { UnavailableState } from './UnavailableState.js'
 import { PageHeader } from './PageHeader.js'
 import { Button } from '../primitives/button.js'
 import type { ServerActionInput } from '../server/types.js'
@@ -475,13 +476,11 @@ export async function ListView({
           title={title}
           actions={canCreate ? <CreateLink title={title} href={`${listHref}/create`} /> : undefined}
         />
-        <div data-slot="list-view-unavailable">
-          <EmptyState
-            icon={<Lock className="h-6 w-6" />}
-            title={`${title} can't be shown here.`}
-            description="You don't have access to view these records."
-          />
-        </div>
+        <UnavailableState
+          slot="list-view-unavailable"
+          title={`${title} can't be shown here.`}
+          description="You don't have access to view these records."
+        />
       </div>
     )
   }

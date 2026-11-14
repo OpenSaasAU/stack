@@ -1,19 +1,17 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { AccessContext } from '../access/types.js'
 import { text } from '../fields/index.js'
-import { createTestContext, ormClientFor, type TestContext } from '../testing/context.js'
+import { engineContextOf } from '../context/engine-context.js'
+import { createTestContext, type TestContext } from '../testing/context.js'
 import type { OpenSaasConfig } from './types.js'
-import { isListQueryStaticallyDenied, resolveNavCounts } from './nav-count.js'
-
-/**
- * Nav counts (#735): which lists get a badge at all, and what happens when one
- * list's count fails.
- *
- * A count is the secured `aggregate` reducer, so a badge reports exactly the
- * rows the session may see.
- */
+import { resolveNavCounts } from './nav-count.js'
 
 const BOOT = 120_000
+
+function nothing(answer: null | undefined): () => boolean
+function nothing(answer: null | undefined): () => boolean | null | undefined {
+  return () => answer
+}
 
 function schemaConfig(): OpenSaasConfig {
   return {
@@ -52,6 +50,23 @@ function schemaConfig(): OpenSaasConfig {
         },
         ui: { navCount: true },
       },
+      ReturnsNull: {
+        fields: { title: text() },
+        access: { operation: { create: () => true, query: nothing(null) } },
+        ui: { navCount: true },
+      },
+      ReturnsUndefined: {
+        fields: { title: text() },
+        access: { operation: { create: () => true, query: nothing(undefined) } },
+        ui: { navCount: true },
+      },
+      CountFails: {
+        fields: { title: text() },
+        access: {
+          operation: { create: () => true, query: () => ({ missing: { equals: 'x' } }) },
+        },
+        ui: { navCount: true },
+      },
       OnlySettings: {
         isSingleton: true,
         fields: { title: text() },
@@ -61,22 +76,6 @@ function schemaConfig(): OpenSaasConfig {
     },
   }
 }
-
-describe('isListQueryStaticallyDenied', () => {
-  test('absent query access is denied, matching the engine’s deny-by-default', () => {
-    expect(isListQueryStaticallyDenied({ fields: {} })).toBe(true)
-  })
-
-  test('an access block that declares no query rule is denied too', () => {
-    expect(isListQueryStaticallyDenied({ fields: {}, access: { operation: {} } })).toBe(true)
-  })
-
-  test('a function is decided per request, so it is not statically denied', () => {
-    expect(
-      isListQueryStaticallyDenied({ fields: {}, access: { operation: { query: () => false } } }),
-    ).toBe(false)
-  })
-})
 
 describe('resolveNavCounts', () => {
   let harness: TestContext
@@ -93,33 +92,55 @@ describe('resolveNavCounts', () => {
     await harness.truncate()
   })
 
-  /** The harness's context as the access engine's own shape. */
   function accessContext(): AccessContext {
-    return {
-      ...harness.context,
-      ormHandle: ormClientFor(harness.data, harness.client.orm),
-      _resolveOutputChain: [],
-    }
+    return engineContextOf(harness.context)
   }
 
   test(
-    'a list that did not opt in, a singleton and a statically denied list are never counted',
+    'a list that did not opt in, a singleton and a list the session may not query are never counted',
     async () => {
       const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
       try {
         await harness.context.db.Counted.create({ data: { title: 'one' } })
         await harness.context.db.Counted.create({ data: { title: 'two' } })
 
         const counts = await resolveNavCounts(accessContext(), schemaConfig())
 
-        // Only the opted-in, queryable list has a badge, and it carries the
-        // access-scoped total. A statically denied list is omitted before any
-        // query for its own reason: a `0` would read as "empty" when the truth
-        // is "you may see none of it".
         expect(counts).toEqual({ Counted: 2, Scoped: 0 })
       } finally {
         error.mockRestore()
+        warn.mockRestore()
       }
+    },
+    BOOT,
+  )
+
+  test.each(['ReturnsNull', 'ReturnsUndefined'])(
+    'a list whose query rule answers nothing (%s) has no count, and is never queried',
+    async (listKey) => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      try {
+        const counts = await resolveNavCounts(accessContext(), schemaConfig())
+
+        expect(Object.keys(counts)).not.toContain(listKey)
+        expect(counts.Counted).toBe(0)
+        expect(error.mock.calls.some((call) => String(call[0]).includes(listKey))).toBe(false)
+      } finally {
+        error.mockRestore()
+        warn.mockRestore()
+      }
+    },
+    BOOT,
+  )
+
+  test(
+    'a context that resolves no Session vocabulary counts nothing',
+    async () => {
+      const { _sessionVocabulary: _omitted, ...withoutVocabulary } = accessContext()
+      const counts = await resolveNavCounts(withoutVocabulary, schemaConfig())
+      expect(counts).toEqual({})
     },
     BOOT,
   )
@@ -150,18 +171,20 @@ describe('resolveNavCounts', () => {
     'a count that fails omits only its own badge and never rejects',
     async () => {
       const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
       try {
         await harness.context.db.Counted.create({ data: { title: 'one' } })
 
         const counts = await resolveNavCounts(accessContext(), schemaConfig())
 
-        expect(Object.keys(counts)).not.toContain('Throws')
+        expect(Object.keys(counts)).not.toContain('CountFails')
         expect(counts.Counted).toBeGreaterThan(0)
         expect(
-          error.mock.calls.some((call) => String(call[0]).includes('nav count for Throws')),
+          error.mock.calls.some((call) => String(call[0]).includes('nav count for CountFails')),
         ).toBe(true)
       } finally {
         error.mockRestore()
+        warn.mockRestore()
       }
     },
     BOOT,

@@ -37,7 +37,7 @@ describe('decideAdvertisement', () => {
     expect(warn).toHaveBeenCalledWith('denied "List.field"', failure)
   })
 
-  async function expectRethrown(thrown: unknown): Promise<void> {
+  async function expectRethrown(thrown: unknown, propagated: unknown = thrown): Promise<void> {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     await expect(
       decideAdvertisement(
@@ -48,7 +48,7 @@ describe('decideAdvertisement', () => {
         'deny',
         policy,
       ),
-    ).rejects.toBe(thrown)
+    ).rejects.toBe(propagated)
     expect(warn).not.toHaveBeenCalled()
   }
 
@@ -74,12 +74,38 @@ describe('decideAdvertisement', () => {
     ['dynamic server usage', 'DYNAMIC_SERVER_USAGE'],
     ['a client-side rendering bailout', 'BAILOUT_TO_CLIENT_SIDE_RENDERING'],
     ['a hanging prerender promise', 'HANGING_PROMISE_REJECTION'],
+    ['an interrupted prerender', 'NEXT_PRERENDER_INTERRUPTED'],
   ])('rethrows an Error carrying the digest of %s, without logging', async (_label, digest) => {
     await expectRethrown(new ControlFlow(digest))
   })
 
   test('rethrows a plain object carrying a control-flow digest', async () => {
     await expectRethrown({ digest: 'NEXT_HTTP_ERROR_FALLBACK;404' })
+  })
+
+  test.each([
+    ['redirect()', new ControlFlow('NEXT_REDIRECT;replace;/sign-in;307;')],
+    ['notFound()', new ControlFlow('NEXT_HTTP_ERROR_FALLBACK;404')],
+    ['postpone', { $$typeof: Symbol.for('react.postpone') }],
+  ])('rethrows the cause of an Error wrapping %s, without logging', async (_label, cause) => {
+    await expectRethrown(new Error('rule wrapped it', { cause }), cause)
+  })
+
+  test('rethrows a control-flow cause several links down', async () => {
+    const innermost = new ControlFlow('NEXT_REDIRECT;push;/;307;')
+    const middle = new Error('middle', { cause: innermost })
+    await expectRethrown(new Error('outer', { cause: middle }), innermost)
+  })
+
+  test('denies an ordinary throw whose cause is an unrelated error and logs it', async () => {
+    await expectDenied(new Error('rule failed', { cause: new Error('database unreachable') }))
+  })
+
+  test('denies a throw whose cause chain is a cycle and logs it', async () => {
+    const first = new Error('first')
+    const second = new Error('second', { cause: first })
+    Object.assign(first, { cause: second })
+    await expectDenied(first)
   })
 
   test('rethrows React’s postpone, without logging', async () => {

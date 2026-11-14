@@ -34,6 +34,8 @@ export { pascalToCamel, pascalToKebab, kebabToPascal, kebabToCamel } from './lib
 // Zod schema helpers used internally for validation
 export { validateWithZod, generateZodSchema } from './validation/schema.js'
 
+export { isHookOnlyField } from './access/field-access.js'
+
 export type {
   AccessAnswer,
   FieldVocabulary,

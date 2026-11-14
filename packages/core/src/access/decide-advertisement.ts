@@ -19,8 +19,10 @@ export interface AdvertisementPolicy {
  * A framework's control flow is rethrown, so the framework still acts on it:
  * a throw whose string `digest` starts with one of Next.js's control-flow
  * prefixes (`redirect()`, `notFound()` and the other HTTP fallbacks, dynamic
- * usage and client-rendering bailouts, a hanging prerender promise), and
- * React's postpone. Any other `digest` is an ordinary throw.
+ * usage and client-rendering bailouts, a hanging or interrupted prerender),
+ * and React's postpone. Like Next's `unstable_rethrow`, an `Error` whose
+ * `cause` chain reaches one of those has that cause rethrown. Any other
+ * `digest` is an ordinary throw.
  */
 export async function decideAdvertisement<T>(
   subject: string,
@@ -31,7 +33,8 @@ export async function decideAdvertisement<T>(
   try {
     return await decide()
   } catch (err) {
-    if (isControlFlow(err)) throw err
+    const controlFlow = controlFlowIn(err)
+    if (controlFlow !== undefined) throw controlFlow.thrown
     console.warn(policy.warning(subject), err)
     return denied
   }
@@ -44,9 +47,24 @@ const NEXT_CONTROL_FLOW_DIGEST_PREFIXES: readonly string[] = [
   'DYNAMIC_SERVER_USAGE',
   'BAILOUT_TO_CLIENT_SIDE_RENDERING',
   'HANGING_PROMISE_REJECTION',
+  'NEXT_PRERENDER_INTERRUPTED',
 ]
 
+const MAX_CAUSE_DEPTH = 16
+
 const REACT_POSTPONE = Symbol.for('react.postpone')
+
+function controlFlowIn(thrown: unknown): { thrown: unknown } | undefined {
+  const seen = new Set<unknown>()
+  let current = thrown
+  for (let depth = 0; depth <= MAX_CAUSE_DEPTH && !seen.has(current); depth++) {
+    if (isControlFlow(current)) return { thrown: current }
+    if (!(current instanceof Error) || !('cause' in current)) return undefined
+    seen.add(current)
+    current = current.cause
+  }
+  return undefined
+}
 
 function isControlFlow(thrown: unknown): boolean {
   if (typeof thrown !== 'object' || thrown === null) return false

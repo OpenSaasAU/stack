@@ -307,14 +307,13 @@ export interface ListViewClientProps {
    */
   serverAction?: (input: ServerActionInput) => Promise<unknown>
   /**
-   * Whether the list's delete access is NOT statically false — evaluated up
-   * front on the server (see `ListView`). Gates both the selection affordance
-   * and the built-in Delete: when `false`, no session can ever delete, so
-   * neither is shown. When `true`, Delete is offered and per-row denials are
-   * absorbed by Silent failure into the "N of M deleted" report.
+   * Whether the built-in Delete and the selection affordance are offered.
+   * `ListView` sets it from `ui.hideDelete` and the session's vocabulary.
+   * Per-row denials are absorbed by Silent failure into the "N of M deleted"
+   * report.
    */
   canDelete?: boolean
-  /** Whether the Create affordance is offered; resolved server-side from `ui.hideCreate`. Defaults to `true`. */
+  /** Whether the Create affordance is offered. `ListView` sets it from `ui.hideCreate` and the session's vocabulary. Defaults to `true`. */
   canCreate?: boolean
   /**
    * The label column to render with an initials-avatar Cell (issue #735). Set by

@@ -33,8 +33,8 @@ export interface RowSelectionBarProps {
   /**
    * The built-in Bulk action Delete handler. When provided, a Delete button is
    * shown (behind a {@link ConfirmDialog}); when omitted, no Delete is offered —
-   * the caller passes it only when the list's delete access is not statically
-   * false. The handler runs the deletion (row-by-row through the secured
+   * the caller passes it only when the session's vocabulary does not deny the
+   * list's `delete`. The handler runs the deletion (row-by-row through the secured
    * context) and resolves once done; the bar owns only the confirm + pending
    * affordance.
    */
@@ -56,7 +56,7 @@ export interface RowSelectionBarProps {
 /**
  * The selection bar shown above the list table while rows are selected
  * (issue #733). It reports the selection count, offers a Clear action and — when
- * `onDelete` is provided (delete access is not statically false) — the built-in
+ * `onDelete` is provided (the session's vocabulary does not deny `delete`) — the built-in
  * Bulk action Delete behind a confirmation.
  *
  * Styling uses Theme tokens only (no raw colours) and every part carries a named

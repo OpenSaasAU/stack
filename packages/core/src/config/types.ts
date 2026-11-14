@@ -2482,8 +2482,8 @@ export type ListUIConfig<TTypeInfo extends TypeInfo = TypeInfo> = {
    * Opt this list into an access-scoped record count next to its Admin chrome
    * nav item (issue #735). Default `false` — no count query runs for lists that
    * don't opt in. The count is fetched through the secured context, so it only
-   * ever reflects what the current session may see; a list whose query access
-   * is statically denied renders no count rather than a misleading zero.
+   * ever reflects what the current session may see; a list whose `query` the
+   * session's vocabulary denies renders no count rather than a misleading zero.
    *
    * @example
    * ```typescript

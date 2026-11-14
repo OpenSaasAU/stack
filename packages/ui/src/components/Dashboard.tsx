@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../primitives/card.js'
 import { PageHeader } from './PageHeader.js'
 import { EmptyState } from './EmptyState.js'
 import { resolveListUi } from '../lib/resolveListUi.js'
+import { operationAvailable } from '../lib/operationAvailable.js'
 
 export interface DashboardProps {
   context: AnyStackContext
@@ -33,11 +34,13 @@ export async function Dashboard({ context, config, basePath = '/admin' }: Dashbo
     await Promise.all(
       standardLists.map(async (listKey) => ({
         listKey,
-        hideCreate: (await resolveListUi(config.lists[listKey], engine)).hideCreate,
+        creatable:
+          !(await resolveListUi(config.lists[listKey], engine)).hideCreate &&
+          (await operationAvailable(context, listKey, 'create')),
       })),
     )
   )
-    .filter(({ hideCreate }) => !hideCreate)
+    .filter(({ creatable }) => creatable)
     .map(({ listKey }) => listKey)
 
   const listCounts = await Promise.all(
