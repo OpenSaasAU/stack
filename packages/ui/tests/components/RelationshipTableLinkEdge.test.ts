@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, it, expect } from 'vitest'
-import type { AccessContext, OpenSaasConfig } from '@opensaas/stack-core'
+import type { OpenSaasConfig } from '@opensaas/stack-core'
 import { relationship, text } from '@opensaas/stack-core/fields'
 import {
   createTestContext,
@@ -23,6 +23,16 @@ const BOOT = 120_000
 interface Gates {
   junctionCreate?: () => boolean
   bookUpdate?: () => boolean
+}
+
+function returnsNull(): boolean
+function returnsNull(): boolean | null {
+  return null
+}
+
+function returnsUndefined(): boolean
+function returnsUndefined(): boolean | undefined {
+  return undefined
 }
 
 function makeConfig(gates: Gates = {}): OpenSaasConfig {
@@ -85,11 +95,16 @@ function section(fieldName: string, ref: string): RelationshipTableSection {
 
 describe('resolveLinkEdge', () => {
   let harness: TestContext
-  let context: AccessContext
+  let gated: TestContext[] = []
+
+  async function contextFor(gates: Gates) {
+    const opened = await createTestContext(makeConfig(gates), { userId: 'u1' })
+    gated = [...gated, opened]
+    return opened.context
+  }
 
   beforeAll(async () => {
     harness = await createTestContext(makeConfig(), { userId: 'u1' })
-    context = harness.context as unknown as AccessContext
 
     const sudo = harness.context.sudo()
     await sudo.db.Tag.create({ data: { name: 'alpha' } })
@@ -102,17 +117,13 @@ describe('resolveLinkEdge', () => {
 
   afterAll(async () => {
     await harness?.close()
+    await Promise.all(gated.map((opened) => opened.close()))
   })
 
   it(
     'offers the control for an edge across a junction',
     async () => {
-      const edge = await resolveLinkEdge(
-        section('tags', 'PostTag.post'),
-        makeConfig(),
-        'Post',
-        context,
-      )
+      const edge = await resolveLinkEdge(section('tags', 'PostTag.post'), 'Post', harness.context)
 
       expect(edge?.mode).toBe('junction')
       if (edge?.mode !== 'junction') throw new Error('expected a junction edge')
@@ -126,11 +137,29 @@ describe('resolveLinkEdge', () => {
   it(
     "hides the control when the junction list's own create access is statically denied",
     async () => {
+      const gates = { junctionCreate: () => false }
       const edge = await resolveLinkEdge(
         section('tags', 'PostTag.post'),
-        makeConfig({ junctionCreate: () => false }),
         'Post',
-        context,
+        await contextFor(gates),
+      )
+
+      expect(edge).toBeNull()
+    },
+    BOOT,
+  )
+
+  it.each([
+    ['null', returnsNull],
+    ['undefined', returnsUndefined],
+  ])(
+    "hides the control when the junction list's create rule returns %s",
+    async (_name, junctionCreate) => {
+      const gates = { junctionCreate }
+      const edge = await resolveLinkEdge(
+        section('tags', 'PostTag.post'),
+        'Post',
+        await contextFor(gates),
       )
 
       expect(edge).toBeNull()
@@ -141,11 +170,11 @@ describe('resolveLinkEdge', () => {
   it(
     "offers the control for an ordinary to-many, gated on the related list's update access",
     async () => {
+      const gates = { bookUpdate: () => true }
       const edge = await resolveLinkEdge(
         section('books', 'Book.author'),
-        makeConfig({ bookUpdate: () => true }),
         'Author',
-        context,
+        await contextFor(gates),
       )
 
       expect(edge?.mode).toBe('foreignKey')
@@ -160,12 +189,7 @@ describe('resolveLinkEdge', () => {
   it(
     "hides the control when the related list's own update access is statically denied",
     async () => {
-      const edge = await resolveLinkEdge(
-        section('books', 'Book.author'),
-        makeConfig(),
-        'Author',
-        context,
-      )
+      const edge = await resolveLinkEdge(section('books', 'Book.author'), 'Author', harness.context)
 
       expect(edge).toBeNull()
     },
@@ -190,9 +214,8 @@ describe('resolveLinkEdge', () => {
 
         const edge = await resolveLinkEdge(
           section('tags', 'PostTag.post'),
-          makeConfig(),
           'Post',
-          recorded.context as unknown as AccessContext,
+          recorded.context,
         )
 
         expect(edge?.mode).toBe('junction')

@@ -10,6 +10,7 @@ const config: OpenSaasConfig = {
   lists: {
     Team: { fields: { members: relationship({ ref: 'Member.team', many: true }) } },
     Member: {
+      access: { operation: { query: () => true } },
       fields: {
         name: text(),
         team: relationship({ ref: 'Team.members' }),
