@@ -10,13 +10,10 @@ import { isRelationshipField } from '../fields/index.js'
 import { isClientSafeError } from '../lib/client-safe-error.js'
 import { McpToolError } from './tool-error.js'
 import type { McpSession, McpSessionProvider } from './types.js'
-import { decideAdvertisement } from './advertise.js'
-import {
-  McpWriteRefusedError,
-  assertWritableData,
-  generateFieldSchemas,
-  ownsForeignKey,
-} from './field-schema.js'
+import { decideAdvertisement } from '../access/decide-advertisement.js'
+import { mcpAdvertisement } from './advertise.js'
+import { McpWriteRefusedError, assertWritableData, generateFieldSchemas } from './field-schema.js'
+import { ownsForeignKey } from '../context/junction.js'
 import { listIdJsonSchema, parseListId } from '../contract/id-boundary.js'
 import { RELATION_QUANTIFIERS, SCALAR_OPERATORS } from '../secured/operators.js'
 import type { SecuredQuery } from '../secured/read.js'
@@ -439,6 +436,7 @@ async function handleToolsList(
             context,
           }),
         'deny',
+        mcpAdvertisement,
       )
 
       if (operationClassification !== 'deny') {
@@ -646,7 +644,7 @@ function coerceConnectIds(
   for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
     if (!Object.hasOwn(data, fieldName)) continue
     if (!isRelationshipField(fieldConfig)) continue
-    if (!ownsForeignKey(listKey, fieldName, fieldConfig, config)) continue
+    if (!ownsForeignKey(config, listKey, fieldName, fieldConfig)) continue
 
     const criterion = connectCriterion(data[fieldName])
     if (criterion === undefined) continue

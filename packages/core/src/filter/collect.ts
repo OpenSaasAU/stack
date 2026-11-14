@@ -16,7 +16,7 @@ export type FilterAccessArgs = {
   context: AccessContext & { _isSudo?: boolean }
 }
 
-async function canQueryList(
+export async function canQueryList(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
   args: FilterAccessArgs,
@@ -25,7 +25,7 @@ async function canQueryList(
   return (await checkAccess(listConfig.access?.operation?.query, args)) !== false
 }
 
-function hasFilterSpec(field: { getFilterSpec?: unknown; isFilterable?: boolean }): boolean {
+export function hasFilterSpec(field: { getFilterSpec?: unknown; isFilterable?: boolean }): boolean {
   return typeof field.getFilterSpec === 'function' && field.isFilterable !== false
 }
 

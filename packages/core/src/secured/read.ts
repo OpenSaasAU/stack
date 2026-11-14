@@ -1958,19 +1958,12 @@ export async function orderableKeys(
   listKey: string,
   keys: readonly string[],
 ): Promise<ReadonlySet<string>> {
-  const listConfig = Object.hasOwn(config.lists, listKey) ? config.lists[listKey] : undefined
-  if (listConfig === undefined) return new Set()
-  const binding: ReadBinding = {
-    listName: listKey,
-    listConfig,
-    ormHandle: context.ormHandle,
-    context,
-    config,
-  }
+  const binding = readBindingFor(context, config, listKey)
+  if (binding === undefined) return new Set()
   const secured = context._isSudo !== true
   try {
     const access = secured
-      ? await checkAccess(listConfig.access?.operation?.query, {
+      ? await checkAccess(binding.listConfig.access?.operation?.query, {
           session: context.session,
           context,
         })
@@ -1979,6 +1972,45 @@ export async function orderableKeys(
   } catch {
     return new Set()
   }
+  return await orderableAmong(binding, secured, keys)
+}
+
+/**
+ * Which of `keys` name a column of `listKey` a read can order by at all, asked
+ * of the resolution and lowering `orderBy` uses with no access rule consulted.
+ * Whether this session may order by them is the caller's question.
+ */
+export async function columnOrderedKeys(
+  context: AccessContext,
+  config: OpenSaasConfig,
+  listKey: string,
+  keys: readonly string[],
+): Promise<ReadonlySet<string>> {
+  const binding = readBindingFor(context, config, listKey)
+  if (binding === undefined) return new Set()
+  return await orderableAmong(binding, false, keys)
+}
+
+function readBindingFor(
+  context: AccessContext,
+  config: OpenSaasConfig,
+  listKey: string,
+): ReadBinding | undefined {
+  if (!Object.hasOwn(config.lists, listKey)) return undefined
+  return {
+    listName: listKey,
+    listConfig: config.lists[listKey],
+    ormHandle: context.ormHandle,
+    context,
+    config,
+  }
+}
+
+async function orderableAmong(
+  binding: ReadBinding,
+  secured: boolean,
+  keys: readonly string[],
+): Promise<ReadonlySet<string>> {
   const ctx = resolveContext(binding, secured)
   const unique = [...new Set(keys)]
   const answers = await Promise.all(unique.map((key) => canOrderBy(binding, ctx, key)))

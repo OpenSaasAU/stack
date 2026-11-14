@@ -57,6 +57,7 @@ import {
 // time (never during module evaluation), so by the time it runs the export is
 // fully initialised.
 import { buildDbDelegate } from './index.js'
+import { withOwnSessionVocabulary } from '../access/session-vocabulary.js'
 
 /**
  * Write Pipeline — runs the canonical, secured write sequence for one
@@ -396,7 +397,7 @@ function bindContextToTransaction(
   // Rebuild `db` against `tx`, referencing `txContext` itself so hooks reached
   // through it see the transactional context.
   txContext.db = buildDbDelegate(config, tx, txContext)
-  return txContext
+  return withOwnSessionVocabulary(txContext, config)
 }
 
 /**
@@ -432,7 +433,7 @@ function resolveAfterTransactionContext(
     _config: config,
   }
   afterTransactionContext.db = buildDbDelegate(config, base.ormHandle, afterTransactionContext)
-  return afterTransactionContext
+  return withOwnSessionVocabulary(afterTransactionContext, config)
 }
 
 interface WrittenRow {

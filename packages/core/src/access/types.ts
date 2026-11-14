@@ -330,6 +330,15 @@ export interface AccessContext<DB = AccessControlledDB> {
    * @internal
    */
   _orderableKeys?: (listKey: string, keys: readonly string[]) => Promise<ReadonlySet<string>>
+  /**
+   * What this context's session may be told about `listKey` ahead of any
+   * request, or `null` for a list the config does not declare (ADR-0084).
+   * Resolved once per list and kept for this context's life.
+   * @internal
+   */
+  _sessionVocabulary?: (
+    listKey: string,
+  ) => Promise<import('./session-vocabulary.js').SessionVocabulary | null>
 }
 
 export type PrismaFilter<T = Record<string, unknown>> = Partial<Record<keyof T, unknown>>
