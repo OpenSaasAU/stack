@@ -10,7 +10,7 @@ import type { OpenSaasConfig } from '../config/types.js'
 import type { AccessContext, Session } from '../access/types.js'
 import { classifyRowIndependentRead } from '../access/field-access.js'
 import { isRelationshipField } from '../fields/index.js'
-import { ownsForeignKey } from './field-schema.js'
+import { ownsForeignKey } from '../config/foreign-key-owner.js'
 import { listIdColumn, parseListId, type ListIdValue } from '../contract/id-boundary.js'
 import { RELATION_QUANTIFIERS } from '../secured/operators.js'
 

@@ -1,9 +1,11 @@
-import type { FieldConfig, OpenSaasConfig, RelationshipField } from '../config/types.js'
+import type { FieldConfig, OpenSaasConfig } from '../config/types.js'
 import type { AccessContext, Session } from '../access/types.js'
 import { classifyRowIndependentWrite } from '../access/field-access.js'
-import { decideAdvertisement } from './advertise.js'
+import { decideAdvertisement } from '../access/decide-advertisement.js'
+import { mcpAdvertisement } from './advertise.js'
+import { ownsForeignKey } from '../config/foreign-key-owner.js'
 import { mcpListReachable } from './reachability.js'
-import { isRelationshipField, isZonelessNativeType, shouldHaveForeignKey } from '../fields/index.js'
+import { isRelationshipField, isZonelessNativeType } from '../fields/index.js'
 import { listIdJsonSchema } from '../contract/id-boundary.js'
 
 /** JSON Schema for one field's own value, as the `create`/`update` `data` schema advertises it. */
@@ -86,30 +88,6 @@ export function fieldToJsonSchema(
   }
 
   return baseSchema
-}
-
-/**
- * Whether this end of the relationship holds the foreign-key column.
- *
- * `shouldHaveForeignKey` throws on a config `generate` would have refused — a
- * ref naming a list or field that is not declared, or a one-to-one claiming
- * `db.foreignKey` on both ends. `tools/list` lists every list at once, so
- * letting that escape would fail the whole listing over one bad field; an
- * ownership question with no answer is treated as "not this end", which at
- * worst omits a field the engine would have refused anyway.
- */
-export function ownsForeignKey(
-  listKey: string,
-  fieldName: string,
-  fieldConfig: RelationshipField,
-  config: OpenSaasConfig,
-): boolean {
-  if (!config.lists[fieldConfig.ref.split('.')[0]]) return false
-  try {
-    return shouldHaveForeignKey(listKey, fieldName, fieldConfig, config)
-  } catch {
-    return false
-  }
 }
 
 /**
@@ -249,6 +227,7 @@ export async function generateFieldSchemas(
       `${listKey}.${fieldName}`,
       () => classifyRowIndependentWrite(fieldConfig.access, operation, { session, context }),
       'deny',
+      mcpAdvertisement,
     )
     if (classification === 'deny') {
       if (isRequired) deniedRequiredField ??= fieldName

@@ -1,4 +1,4 @@
-import type { FieldConfig, OpenSaasConfig } from '../config/types.js'
+import type { FieldConfig, ListConfig, OpenSaasConfig, TypeInfo } from '../config/types.js'
 import type { AccessContext, AccessControl } from './types.js'
 import { checkAccess } from './engine.js'
 import {
@@ -6,8 +6,13 @@ import {
   classifyRowIndependentRead,
   classifyRowIndependentWrite,
 } from './field-access.js'
+import { decideAdvertisement, type AdvertisementPolicy } from './decide-advertisement.js'
+import { isComputedField } from '../config/field-kind.js'
+import { ownsForeignKey } from '../config/foreign-key-owner.js'
+import { resolveListTimestamps } from '../contract/derive.js'
 import { isRelationshipField } from '../fields/index.js'
-import { hasColumnOrder } from '../secured/read.js'
+import { canQueryList, hasFilterSpec } from '../filter/collect.js'
+import { columnOrderedKeys } from '../secured/read.js'
 
 /**
  * What a session may be told about one access question ahead of any request.
@@ -22,7 +27,9 @@ export type ListOperation = 'query' | 'create' | 'update' | 'delete'
 /** One field's entry in a {@link SessionVocabulary}. */
 export interface FieldVocabulary {
   readonly read: AccessAnswer
+  /** `'deny'` on a field that stores nothing and on a relationship side that does not own the foreign key. */
   readonly create: AccessAnswer
+  /** `'deny'` on a field that stores nothing and on a relationship side that does not own the foreign key. */
   readonly update: AccessAnswer
   /** Read is `'allow'`, the field has a Filter spec, and `isFilterable` is not false (ADR-0031). */
   readonly filterable: boolean
@@ -37,6 +44,8 @@ export interface FieldVocabulary {
  *
  * An operation answers `'allow'` when its rule returns `true` or a filter, and
  * `'deny'` when there is no rule or it returns `false`, `null` or `undefined`.
+ * `fields` carries the list's system fields too: `id`, and `createdAt` and
+ * `updatedAt` on a list with automatic timestamps, readable and never writable.
  * Disclosure only: Field Visibility and the Access Filter still decide every
  * read and write.
  */
@@ -53,19 +62,17 @@ const EVERY_OPERATION_ALLOWED: Readonly<Record<ListOperation, AccessAnswer>> = O
   delete: 'allow',
 })
 
+const vocabularyPolicy: AdvertisementPolicy = {
+  warning: (subject) =>
+    `[opensaas] The session vocabulary denies "${subject}": deciding its access threw.`,
+  propagatesConfigErrors: true,
+}
+
 async function answerOrDeny(
   subject: string,
   decide: () => Promise<AccessAnswer>,
 ): Promise<AccessAnswer> {
-  try {
-    return await decide()
-  } catch (err) {
-    console.warn(
-      `[opensaas] The session vocabulary denies "${subject}": deciding its access threw.`,
-      err,
-    )
-    return 'deny'
-  }
+  return await decideAdvertisement(subject, decide, 'deny', vocabularyPolicy)
 }
 
 function potentiallyAllowed(rule: AccessControl | undefined): AccessControl | undefined {
@@ -76,13 +83,14 @@ function potentiallyAllowed(rule: AccessControl | undefined): AccessControl | un
 async function resolveOperations(
   context: AccessContext,
   listKey: string,
-  operations: Partial<Record<ListOperation, AccessControl>> | undefined,
+  listConfig: ListConfig<TypeInfo>,
 ): Promise<Readonly<Record<ListOperation, AccessAnswer>>> {
   if (context._isSudo === true) return EVERY_OPERATION_ALLOWED
+  const operations = listConfig.access?.operation
   const args = { session: context.session, context }
   const [query, create, update, del] = await Promise.all([
     answerOrDeny(`${listKey}.query`, async () =>
-      (await checkAccess(operations?.query, args)) === false ? 'deny' : 'allow',
+      (await canQueryList(listConfig, args)) ? 'allow' : 'deny',
     ),
     answerOrDeny(`${listKey}.create`, () =>
       classifyRowIndependentCreateAccess(operations?.create, args),
@@ -97,14 +105,14 @@ async function resolveOperations(
   return { query, create, update, delete: del }
 }
 
-function hasFilterSpec(
+function storesWrites(
   fieldName: string,
   field: FieldConfig,
   listKey: string,
   config: OpenSaasConfig,
 ): boolean {
-  if (field.isFilterable === false || field.getFilterSpec === undefined) return false
-  return field.getFilterSpec(fieldName, listKey, config) !== undefined
+  if (isComputedField(field, fieldName, listKey, config)) return false
+  return !isRelationshipField(field) || ownsForeignKey(listKey, fieldName, field, config)
 }
 
 async function resolveField(
@@ -112,39 +120,86 @@ async function resolveField(
   config: OpenSaasConfig,
   listKey: string,
   operations: Readonly<Record<ListOperation, AccessAnswer>>,
+  ordered: ReadonlySet<string>,
   fieldName: string,
   field: FieldConfig,
 ): Promise<FieldVocabulary> {
+  const subject = `${listKey}.${fieldName}`
   const args = { session: context.session, context }
+  const writable = await decideAdvertisement(
+    `${subject} (write)`,
+    async () => storesWrites(fieldName, field, listKey, config),
+    false,
+    vocabularyPolicy,
+  )
   const ask = async (
     operation: 'read' | 'create' | 'update',
     gate: ListOperation,
     decide: () => Promise<AccessAnswer>,
   ): Promise<AccessAnswer> =>
-    operations[gate] === 'deny'
+    operations[gate] === 'deny' || (operation !== 'read' && !writable)
       ? 'deny'
-      : await answerOrDeny(`${listKey}.${fieldName} (${operation})`, decide)
-  const [read, create, update] = await Promise.all([
+      : await answerOrDeny(`${subject} (${operation})`, decide)
+  const [read, create, update, relationship] = await Promise.all([
     ask('read', 'query', () => classifyRowIndependentRead(field.access, args)),
     ask('create', 'create', () => classifyRowIndependentWrite(field.access, 'create', args)),
     ask('update', 'update', () => classifyRowIndependentWrite(field.access, 'update', args)),
+    decideAdvertisement(
+      `${subject} (relationship)`,
+      async () => (isRelationshipField(field) ? { targetList: field.ref.split('.')[0] } : null),
+      null,
+      vocabularyPolicy,
+    ),
   ])
   const readable = read === 'allow'
+  const filterable =
+    readable &&
+    (await decideAdvertisement(
+      `${subject} (filter)`,
+      async () =>
+        hasFilterSpec(field) && field.getFilterSpec?.(fieldName, listKey, config) !== undefined,
+      false,
+      vocabularyPolicy,
+    ))
   return {
     read,
     create,
     update,
-    filterable: readable && hasFilterSpec(fieldName, field, listKey, config),
-    sortable: readable && (await hasColumnOrder(context, config, listKey, fieldName)),
-    relationship: isRelationshipField(field) ? { targetList: field.ref.split('.')[0] } : null,
+    filterable,
+    sortable: readable && ordered.has(fieldName),
+    relationship,
+  }
+}
+
+function systemFieldNames(listConfig: ListConfig<TypeInfo>, config: OpenSaasConfig): string[] {
+  const timestamps = resolveListTimestamps(listConfig, config.db)
+  return [
+    'id',
+    ...(timestamps.createdAt ? ['createdAt'] : []),
+    ...(timestamps.updatedAt ? ['updatedAt'] : []),
+  ]
+}
+
+function systemField(
+  readable: boolean,
+  ordered: ReadonlySet<string>,
+  name: string,
+): FieldVocabulary {
+  return {
+    read: readable ? 'allow' : 'deny',
+    create: 'deny',
+    update: 'deny',
+    filterable: false,
+    sortable: readable && ordered.has(name),
+    relationship: null,
   }
 }
 
 /**
  * Resolve the {@link SessionVocabulary} of `listKey` for `context`'s session,
- * or `null` for a list the config does not declare. It never throws: a rule
- * that throws answers `'deny'` and is logged. Reached through
- * `context._sessionVocabulary`, which keeps the answer for the context's life.
+ * or `null` for a list the config does not declare. A rule that throws answers
+ * `'deny'` and is logged; a field rule that returns a filter is a config error
+ * and rejects with `InvalidFieldAccessResultError` (ADR-0030).
  */
 export async function resolveSessionVocabulary(
   context: AccessContext,
@@ -153,14 +208,56 @@ export async function resolveSessionVocabulary(
 ): Promise<SessionVocabulary | null> {
   if (!Object.hasOwn(config.lists, listKey)) return null
   const listConfig = config.lists[listKey]
-  const operations = await resolveOperations(context, listKey, listConfig.access?.operation)
+  const systemNames = systemFieldNames(listConfig, config)
+  const [operations, columnOrdered] = await Promise.all([
+    resolveOperations(context, listKey, listConfig),
+    columnOrderedKeys(context, config, listKey, [
+      ...Object.keys(listConfig.fields),
+      ...systemNames,
+    ]),
+  ])
+  const ordered: ReadonlySet<string> = operations.query === 'deny' ? new Set() : columnOrdered
   const entries = await Promise.all(
     Object.entries(listConfig.fields).map(
       async ([fieldName, field]): Promise<[string, FieldVocabulary]> => [
         fieldName,
-        await resolveField(context, config, listKey, operations, fieldName, field),
+        await resolveField(context, config, listKey, operations, ordered, fieldName, field),
       ],
     ),
   )
-  return { listKey, operations, fields: new Map(entries) }
+  const readable = operations.query !== 'deny'
+  const system = systemNames.map((name): [string, FieldVocabulary] => [
+    name,
+    systemField(readable, ordered, name),
+  ])
+  return { listKey, operations, fields: new Map([...entries, ...system]) }
+}
+
+const vocabularies = new WeakMap<AccessContext, Map<string, Promise<SessionVocabulary | null>>>()
+
+/**
+ * {@link resolveSessionVocabulary}, kept per list for `context`'s life. A
+ * context derived from it — rebound to a transaction, or extended for a
+ * `resolveOutput` hook — is a different object and resolves its own. An answer
+ * that rejects is not kept.
+ */
+export function sessionVocabularyOf(
+  context: AccessContext,
+  config: OpenSaasConfig,
+  listKey: string,
+): Promise<SessionVocabulary | null> {
+  let memo = vocabularies.get(context)
+  if (memo === undefined) {
+    memo = new Map()
+    vocabularies.set(context, memo)
+  }
+  const known = memo.get(listKey)
+  if (known !== undefined) return known
+  const resolving = resolveSessionVocabulary(context, config, listKey)
+  const kept = memo
+  kept.set(listKey, resolving)
+  resolving.catch(() => {
+    if (kept.get(listKey) === resolving) kept.delete(listKey)
+  })
+  return resolving
 }

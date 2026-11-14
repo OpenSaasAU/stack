@@ -333,11 +333,14 @@ export interface AccessContext<DB = AccessControlledDB> {
   /**
    * What this context's session may be told about `listKey` ahead of any
    * request, or `null` for a list the config does not declare (ADR-0084).
-   * Resolved once per list and kept for this context's life. A member for the
-   * reason `_orderableKeys` is, and optional for the reason `_config` is.
+   * Resolved against the context it is called on — a spread copy rebound to a
+   * transaction resolves its own — once per list, and kept for that context's
+   * life. A member for the reason `_orderableKeys` is, and optional for the
+   * reason `_config` is.
    * @internal
    */
   _sessionVocabulary?: (
+    this: AccessContext<DB>,
     listKey: string,
   ) => Promise<import('./session-vocabulary.js').SessionVocabulary | null>
 }

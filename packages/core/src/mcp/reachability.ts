@@ -1,7 +1,8 @@
 import type { OpenSaasConfig } from '../config/types.js'
 import type { AccessContext } from '../access/types.js'
 import { checkAccess } from '../access/engine.js'
-import { decideAdvertisement } from './advertise.js'
+import { decideAdvertisement } from '../access/decide-advertisement.js'
+import { mcpAdvertisement } from './advertise.js'
 
 export async function mcpListReachable(
   config: OpenSaasConfig,
@@ -25,6 +26,7 @@ export async function mcpListReachable(
       return answer !== false
     },
     false,
+    mcpAdvertisement,
   )
 }
 

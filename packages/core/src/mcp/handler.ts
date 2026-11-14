@@ -10,13 +10,10 @@ import { isRelationshipField } from '../fields/index.js'
 import { isClientSafeError } from '../lib/client-safe-error.js'
 import { McpToolError } from './tool-error.js'
 import type { McpSession, McpSessionProvider } from './types.js'
-import { decideAdvertisement } from './advertise.js'
-import {
-  McpWriteRefusedError,
-  assertWritableData,
-  generateFieldSchemas,
-  ownsForeignKey,
-} from './field-schema.js'
+import { decideAdvertisement } from '../access/decide-advertisement.js'
+import { mcpAdvertisement } from './advertise.js'
+import { McpWriteRefusedError, assertWritableData, generateFieldSchemas } from './field-schema.js'
+import { ownsForeignKey } from '../config/foreign-key-owner.js'
 import { listIdJsonSchema, parseListId } from '../contract/id-boundary.js'
 import { RELATION_QUANTIFIERS, SCALAR_OPERATORS } from '../secured/operators.js'
 import type { SecuredQuery } from '../secured/read.js'
@@ -439,6 +436,7 @@ async function handleToolsList(
             context,
           }),
         'deny',
+        mcpAdvertisement,
       )
 
       if (operationClassification !== 'deny') {
