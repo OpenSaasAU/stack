@@ -1,58 +1,63 @@
 import type { ListConfig, OpenSaasConfig } from '../config/types.js'
-import type { Session, AccessContext } from '../access/types.js'
-import { checkAccess } from '../access/engine.js'
-import { classifyRowIndependentRead, isFieldReadableForPredicate } from '../access/field-access.js'
+import type { AccessContext } from '../access/types.js'
+import type { SessionVocabulary } from '../access/session-vocabulary.js'
+import { filterSpecsOf } from '../access/vocabulary-filter-specs.js'
+import {
+  EngineContextUnavailableError,
+  engineContextOf,
+  type AnyStackContext,
+} from '../context/engine-context.js'
 import { parseFilterQuery } from './parse.js'
 import { serializeFilterQuery } from './serialize.js'
 import { buildFilterWhere } from './map.js'
 import type { FilterCondition, FilterFieldSuggestion, FilterSpec, FilterTerm } from './types.js'
 
 /**
- * The session/context a field's `read` access is evaluated against — the same
- * shape every other access-scoped admin-UI helper takes.
+ * The context whose own session and config the filter answers for. Pass the
+ * context `getContext()` (or `createTestContext`) built: any other context
+ * gets no Filter specs.
  */
 export type FilterAccessArgs = {
-  session: Session | null
-  context: AccessContext & { _isSudo?: boolean }
+  context: AnyStackContext
 }
 
-export async function canQueryList(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-  listConfig: ListConfig<any>,
+function engineOf(context: AnyStackContext): AccessContext | null {
+  try {
+    return engineContextOf(context)
+  } catch (error) {
+    if (error instanceof EngineContextUnavailableError) return null
+    throw error
+  }
+}
+
+async function vocabularyOf(
+  listKey: string,
   args: FilterAccessArgs,
-): Promise<boolean> {
-  if (args.context._isSudo === true) return true
-  return (await checkAccess(listConfig.access?.operation?.query, args)) !== false
-}
-
-export function hasFilterSpec(field: { getFilterSpec?: unknown; isFilterable?: boolean }): boolean {
-  return typeof field.getFilterSpec === 'function' && field.isFilterable !== false
+): Promise<SessionVocabulary | null> {
+  return (await engineOf(args.context)?._sessionVocabulary?.(listKey)) ?? null
 }
 
 /**
- * Resolve every field's {@link FilterSpec} for a list by delegating to each
- * field's optional `getFilterSpec` method. A field without the method (or one
- * whose method returns `undefined`) is simply not filterable — the absence
- * degrades gracefully so third-party fields keep working.
+ * The {@link FilterSpec} of every field the context's own
+ * {@link SessionVocabulary} answers filterable, as each field's optional
+ * `getFilterSpec` built it once for that context. A field the session cannot
+ * read in a predicate, including one whose `read` rule is row-dependent or
+ * throws, has no spec, and neither does a field with `isFilterable: false`, a
+ * field whose spec builder throws, or any field of a singleton, so a token
+ * naming it degrades to free text and never reaches `context.db` (ADR-0031,
+ * ADR-0084). A session denied the list's `query`, and a context core did not
+ * build, get no specs; neither throws.
  *
- * A field the session cannot READ is excluded here too (#915), evaluated the
- * same predicate-time way the secured read's own predicates enforce
- * (`isFieldReadableForPredicate` — no fetched row exists yet, so a
- * row-dependent `read` rule resolves to "not filterable"). This is what keeps
- * the admin UI from ever suggesting, autocompleting, or submitting a filter
- * the engine is going to reject: excluding the spec here means a token
- * naming that field degrades to free text (`buildFilterWhere`'s existing
- * "unknown field" path) rather than reaching `context.db` at all.
+ * The specs are built from the context's own config, for the context's own
+ * session.
  *
- * A session denied the list's `query` has nothing to filter, so it gets no specs
- * and no field `read` rule is asked, exactly as a read short-circuits.
- *
- * @param listConfig The list whose fields to inspect.
- * @param listKey    The list's key (passed through to each field's spec).
- * @param config     The full config (relationship specs resolve their target
- *   list's label field from it).
- * @param args       The session/context to evaluate field-level `read` access
- *   against.
+ * @param listConfig The list whose fields to report: its config entry in the
+ *   context's own config. A field the context's config does not declare gets
+ *   no spec.
+ * @param listKey    The list's key.
+ * @param config     The context's own config. Kept for signature stability;
+ *   the specs are built from the config the context carries.
+ * @param args       The context whose session and config the specs answer for.
  */
 export async function collectFilterSpecs(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
@@ -62,44 +67,14 @@ export async function collectFilterSpecs(
   args: FilterAccessArgs,
 ): Promise<Record<string, FilterSpec>> {
   const specs: Record<string, FilterSpec> = {}
-  if (!(await canQueryList(listConfig, args))) return specs
-  const filterableFields = Object.entries(listConfig.fields).filter(([, field]) =>
-    hasFilterSpec(field),
-  )
-  // Each field's read-access check is independent of every other's — run
-  // them concurrently rather than serially, since a `read` rule that does
-  // async work (e.g. a DB lookup) would otherwise add per-field latency to
-  // every list-view page render (found in review of #925).
-  const readableFlags = await Promise.all(
-    filterableFields.map(([, field]) => isFieldReadableForPredicate(field.access, args)),
-  )
-  filterableFields.forEach(([fieldName, field], index) => {
-    if (!readableFlags[index]) return
-    const spec = field.getFilterSpec!(fieldName, listKey, config)
-    if (spec) specs[fieldName] = spec
-  })
+  const vocabulary = await vocabularyOf(listKey, args)
+  if (vocabulary === null) return specs
+  const built = filterSpecsOf(vocabulary)
+  for (const fieldName of Object.keys(listConfig.fields)) {
+    const spec = built.get(fieldName)
+    if (spec !== undefined) specs[fieldName] = spec
+  }
   return specs
-}
-
-/**
- * The fields of a list whose `read` rule is row-independent and denies this
- * session, so no row can ever show them: the same omission the MCP vocabulary
- * makes (ADR-0053). A row-dependent rule is not named, and a rule that throws
- * is, so a field this session cannot classify stays hidden. A session denied
- * the list's `query` gets an empty set and no field rule is asked.
- */
-export async function collectUnreadableFields(
-  listConfig: OpenSaasConfig['lists'][string],
-  args: FilterAccessArgs,
-): Promise<Set<string>> {
-  if (!(await canQueryList(listConfig, args))) return new Set()
-  const fields = Object.entries(listConfig.fields)
-  const answers = await Promise.all(
-    fields.map(([, field]) =>
-      classifyRowIndependentRead(field.access, args).catch((): 'deny' => 'deny'),
-    ),
-  )
-  return new Set(fields.flatMap(([name], index) => (answers[index] === 'deny' ? [name] : [])))
 }
 
 /**
@@ -163,9 +138,11 @@ export function filterSuggestionsOf(specs: Record<string, FilterSpec>): FilterFi
 }
 
 /**
- * Whether this session may filter one field of a list by a related record's id
- * (`field:#id`): it may query the list, read the field in a predicate, and the
- * field's {@link FilterSpec} has `toIdCondition`. Asks only that field's rules.
+ * Whether the context's session may filter one field of a list by a related
+ * record's id (`field:#id`): its {@link SessionVocabulary} answers the field
+ * filterable, and the field's {@link FilterSpec} has `toIdCondition`. False,
+ * never a throw, for a context core did not build. The arguments are as
+ * {@link collectFilterSpecs} takes them.
  */
 export async function isFieldFilterableById(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
@@ -176,11 +153,9 @@ export async function isFieldFilterableById(
   args: FilterAccessArgs,
 ): Promise<boolean> {
   if (!Object.hasOwn(listConfig.fields, fieldName)) return false
-  const field = listConfig.fields[fieldName]
-  if (!hasFilterSpec(field)) return false
-  if (!(await canQueryList(listConfig, args))) return false
-  if (!(await isFieldReadableForPredicate(field.access, args))) return false
-  return field.getFilterSpec?.(fieldName, listKey, config)?.toIdCondition !== undefined
+  const vocabulary = await vocabularyOf(listKey, args)
+  if (vocabulary === null) return false
+  return filterSpecsOf(vocabulary).get(fieldName)?.toIdCondition !== undefined
 }
 
 /**

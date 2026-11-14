@@ -76,6 +76,11 @@ async function askSpy(context: AccessContext): Promise<void> {
 const ownsRow: FieldAccessControl = ({ session, item }) => item?.ownerId === session?.userId
 
 let countedReads = 0
+let redirecting = false
+
+const redirectSignal = Object.assign(new Error('NEXT_REDIRECT'), {
+  digest: 'NEXT_REDIRECT;replace;/sign-in;307;',
+})
 let hiddenReads = 0
 
 const config: OpenSaasConfig = {
@@ -255,6 +260,19 @@ const config: OpenSaasConfig = {
     Throwing: {
       fields: { title: text() },
       access: { operation: { query: throws, create: throws, update: throws, delete: throws } },
+    },
+    Redirecting: {
+      fields: {
+        title: text({
+          access: {
+            read: () => {
+              if (redirecting) throw redirectSignal
+              return true
+            },
+          },
+        }),
+      },
+      access: { operation: { query: () => true } },
     },
     Counted: {
       fields: {
@@ -872,4 +890,23 @@ describe('the session vocabulary', () => {
       BOOT,
     )
   })
+})
+
+describe('a framework control-flow throw', () => {
+  test(
+    'propagates out of the vocabulary instead of denying, and is not kept',
+    async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+      const context = database.context(author)
+      redirecting = true
+      try {
+        await expect(vocabularyOf(context, 'Redirecting')).rejects.toBe(redirectSignal)
+      } finally {
+        redirecting = false
+      }
+      expect(warn).not.toHaveBeenCalled()
+      expect((await fieldOf(context, 'Redirecting', 'title')).read).toBe('allow')
+    },
+    BOOT,
+  )
 })

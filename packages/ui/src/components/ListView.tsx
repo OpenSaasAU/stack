@@ -1,6 +1,6 @@
 import Link from 'next/link.js'
 import { unstable_rethrow } from 'next/navigation.js'
-import { AlertTriangle, Plus } from 'lucide-react'
+import { AlertTriangle, Lock, Plus } from 'lucide-react'
 import { ListViewClient } from './ListViewClient.js'
 import type { SerializedBulkAction } from './BulkActions.js'
 import type { SerializedRowAction } from './RowActions.js'
@@ -11,6 +11,7 @@ import { resolveListUi } from '../lib/resolveListUi.js'
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '../lib/pageSize.js'
 import { jsonSafeClone } from '../lib/jsonSafeClone.js'
 import { applyClientValueTransforms } from '../lib/clientValueTransforms.js'
+import { readSessionVocabulary, withheldFieldNames } from '../lib/sessionFieldConfigs.js'
 import { EmptyState } from './EmptyState.js'
 import { PageHeader } from './PageHeader.js'
 import { Button } from '../primitives/button.js'
@@ -32,7 +33,6 @@ import {
   getLabelFieldName,
   getUrlKey,
   isFieldFilterableById,
-  isRelationshipLabelReadable,
   isToManyRelationshipField,
   OpenSaasConfig,
   parseListId,
@@ -52,12 +52,12 @@ import {
   type ResolvedFilterRecord,
 } from '../lib/filterBuilderOptions.js'
 import {
-  collectUnreadableFields,
   filterByHasAccess,
   isRowActionAvailable,
   RELATIONSHIP_OPTIONS_MAX_TAKE,
   resolvePresetViews,
   withholdFilterFields,
+  type SessionVocabulary,
 } from '@opensaas/stack-core/internal'
 
 /**
@@ -192,12 +192,15 @@ async function resolveRecordLabels(
       let rows: Array<Record<string, unknown>> = []
       if (looked.length > 0) {
         try {
-          const labelReadable = await isRelationshipLabelReadable(context, config, relatedListKey)
-          const labelField = getLabelFieldName(relatedListConfig)
-          const read = context.db[relatedListKey].where({
-            id: { in: looked.map(({ value }) => value) },
-          })
-          rows = await (labelReadable ? read.select('id', labelField) : read.select('id')).all()
+          const vocabulary = (await context._sessionVocabulary?.(relatedListKey)) ?? null
+          if (vocabulary !== null && vocabulary.operations.query !== 'deny') {
+            const labelField = getLabelFieldName(relatedListConfig)
+            const labelReadable = vocabulary.fields.get(labelField)?.read === 'allow'
+            const read = context.db[relatedListKey].where({
+              id: { in: looked.map(({ value }) => value) },
+            })
+            rows = await (labelReadable ? read.select('id', labelField) : read.select('id')).all()
+          }
         } catch (error) {
           unstable_rethrow(error)
           console.error(`Filter labels for "${field}" could not be read:`, error)
@@ -274,13 +277,14 @@ async function isCountLinkable(
   context: AccessContext,
 ): Promise<boolean> {
   if (!Object.hasOwn(config.lists, otherListKey)) return false
-  const otherListConfig = config.lists[otherListKey]
-  if (otherListConfig.isSingleton) return false
   try {
-    return await isFieldFilterableById(otherListConfig, otherListKey, otherField, config, {
-      session: context.session,
-      context,
-    })
+    return await isFieldFilterableById(
+      config.lists[otherListKey],
+      otherListKey,
+      otherField,
+      config,
+      { context },
+    )
   } catch (error) {
     unstable_rethrow(error)
     console.error(`Count link to "${otherListKey}.${otherField}" could not be resolved:`, error)
@@ -312,6 +316,45 @@ async function resolveCountLinks(
   return Object.fromEntries(entries.filter((entry) => entry !== null))
 }
 
+function ListLoadFailure({ title, href }: { title: string; href: string }) {
+  return (
+    <div className="p-4 md:p-8">
+      <PageHeader title={title} />
+      <div role="alert" data-slot="list-view-error">
+        <EmptyState
+          icon={<AlertTriangle className="h-6 w-6" />}
+          title="This list could not be loaded"
+          description="Something went wrong while reading it, so its records are not shown here. Nothing has been changed."
+          actions={
+            <Button asChild size="sm" variant="outline">
+              <Link href={href}>Reload list</Link>
+            </Button>
+          }
+        />
+      </div>
+    </div>
+  )
+}
+
+function CreateLink({ title, href }: { title: string; href: string }) {
+  return (
+    <Button asChild>
+      <Link href={href}>
+        <Plus aria-hidden="true" />
+        Create {title}
+      </Link>
+    </Button>
+  )
+}
+
+function notFilterableFieldsOf(
+  vocabulary: SessionVocabulary,
+  fieldNames: Iterable<string>,
+): Set<string> {
+  const names = new Set([...fieldNames, ...vocabulary.fields.keys()])
+  return new Set([...names].filter((name) => vocabulary.fields.get(name)?.filterable !== true))
+}
+
 function readableFieldsOf<T>(
   fields: Record<string, T>,
   unreadable: ReadonlySet<string>,
@@ -319,7 +362,7 @@ function readableFieldsOf<T>(
   return Object.fromEntries(Object.entries(fields).filter(([name]) => !unreadable.has(name)))
 }
 
-function withheldKeysOf(
+function strippedRowKeysOf(
   unreadable: ReadonlySet<string>,
   listConfig: OpenSaasConfig['lists'][string],
   listKey: string,
@@ -428,17 +471,44 @@ export async function ListView({
     )
   }
 
-  const unreadableFields = await collectUnreadableFields(listConfig, {
-    session: context.session,
-    context,
-  })
+  const title = formatListName(listKey)
+  const listHref = `${basePath}/${urlKey}`
+  let vocabulary: SessionVocabulary
+  try {
+    vocabulary = await readSessionVocabulary(appContext, listKey)
+  } catch (error) {
+    unstable_rethrow(error)
+    console.error(`Failed to read the session vocabulary for ${listKey}:`, error)
+    return <ListLoadFailure title={title} href={listHref} />
+  }
+
+  if (vocabulary.operations.query === 'deny') {
+    const { hideCreate } = await resolveListUi(listConfig, context)
+    const canCreate = !hideCreate && vocabulary.operations.create !== 'deny'
+    return (
+      <div className="p-4 md:p-8">
+        <PageHeader
+          title={title}
+          actions={canCreate ? <CreateLink title={title} href={`${listHref}/create`} /> : undefined}
+        />
+        <div data-slot="list-view-unavailable">
+          <EmptyState
+            icon={<Lock className="h-6 w-6" />}
+            title={`${title} can't be shown here.`}
+            description="You don't have access to view these records."
+          />
+        </div>
+      </div>
+    )
+  }
+
+  const listFields = withStructuralTimestampDefaults(listConfig.fields, listConfig, config.db)
+  const unreadableFields = withheldFieldNames(vocabulary, Object.keys(listFields), 'display')
   const readable = (name: string) => !unreadableFields.has(name)
+  const sortable = (name: string) => vocabulary.fields.get(name)?.sortable === true
   const readableListFields = readableFieldsOf(listConfig.fields, unreadableFields)
-  const displayFields = readableFieldsOf(
-    withStructuralTimestampDefaults(listConfig.fields, listConfig, config.db),
-    unreadableFields,
-  )
-  const withheldKeys = withheldKeysOf(unreadableFields, listConfig, listKey, config)
+  const displayFields = readableFieldsOf(listFields, unreadableFields)
+  const strippedRowKeys = strippedRowKeysOf(unreadableFields, listConfig, listKey, config)
   const availableColumns = [
     ...new Set([
       ...(columns ?? []).filter((name) => !Object.hasOwn(displayFields, name)),
@@ -462,14 +532,14 @@ export async function ListView({
   const presetViews = resolvePresetViews(listConfig, listKey, context, preset)
   const activePreset = await presetViews.active
   const activeSearch = activePreset
-    ? withholdFilterFields(activePreset.search, unreadableFields)
+    ? withholdFilterFields(
+        activePreset.search,
+        notFilterableFieldsOf(vocabulary, Object.keys(listFields)),
+      )
     : search
   const sortCandidates = [sort, activePreset?.sort, initialSort]
 
-  const filterSpecs = await collectFilterSpecs(listConfig, listKey, config, {
-    session: context.session,
-    context,
-  })
+  const filterSpecs = await collectFilterSpecs(listConfig, listKey, config, { context })
   const filterSuggestions = filterSuggestionsOf(filterSpecs)
   const filterFields: FilterFields = new Map(
     filterSuggestions.map((suggestion) => [suggestion.field, suggestion]),
@@ -495,24 +565,16 @@ export async function ListView({
   let items: Array<Record<string, unknown>> = []
   let total = 0
   let countLinks: Record<string, CountFilterLink> = {}
-  let activeSort: ListViewSort | undefined
-  let sortableFields: Record<string, boolean> = {}
+  const activeSort = sortCandidates.find((candidate) => candidate && sortable(candidate.field))
+  const sortableFields = Object.fromEntries(
+    [...displayedColumns].map((column) => [column, sortable(column)]),
+  )
 
   try {
     const dbContext = context.db
     if (!dbContext || !dbContext[key]) {
       throw new Error(`Context for ${listKey} not found`)
     }
-
-    const orderable =
-      (await context._orderableKeys?.(listKey, [
-        ...displayedColumns,
-        ...sortCandidates.flatMap((candidate) => (candidate ? [candidate.field] : [])),
-      ])) ?? new Set<string>()
-    activeSort = sortCandidates.find((candidate) => candidate && orderable.has(candidate.field))
-    sortableFields = Object.fromEntries(
-      [...displayedColumns].map((column) => [column, orderable.has(column)]),
-    )
 
     // Parse the URL filter query into a server-side `where` fragment via the
     // filter engine (ADR-0017). Field-scoped tokens, comparisons, quoted values
@@ -556,23 +618,7 @@ export async function ListView({
   } catch (error) {
     unstable_rethrow(error)
     console.error(`Failed to fetch ${listKey}:`, error)
-    return (
-      <div className="p-4 md:p-8">
-        <PageHeader title={formatListName(listKey)} />
-        <div role="alert" data-slot="list-view-error">
-          <EmptyState
-            icon={<AlertTriangle className="h-6 w-6" />}
-            title="This list could not be loaded"
-            description="Something went wrong while reading it, so its records are not shown here. Nothing has been changed."
-            actions={
-              <Button asChild size="sm" variant="outline">
-                <Link href={`${basePath}/${urlKey}`}>Reload list</Link>
-              </Button>
-            }
-          />
-        </div>
-      </div>
-    )
+    return <ListLoadFailure title={title} href={listHref} />
   }
 
   const relationshipRefs: Record<string, string> = {}
@@ -590,7 +636,7 @@ export async function ListView({
   // Resolve each relationship value before crossing the server/client boundary
   // — ListConfig objects carry functions and can't be passed as props.
   const itemsWithResolvedLabels = items.map((item) => {
-    const resolved = withoutKeys(item, withheldKeys)
+    const resolved = withoutKeys(item, strippedRowKeys)
     for (const [fieldName, ref] of Object.entries(relationshipRefs)) {
       const field = listConfig.fields[fieldName]
       if (isToManyRelationshipField(field)) {
@@ -681,18 +727,9 @@ export async function ListView({
   return (
     <div className="p-4 md:p-8">
       <PageHeader
-        title={formatListName(listKey)}
+        title={title}
         description={`${total} ${total === 1 ? 'item' : 'items'}`}
-        actions={
-          hideCreate ? undefined : (
-            <Button asChild>
-              <Link href={`${basePath}/${urlKey}/create`}>
-                <Plus aria-hidden="true" />
-                Create {formatListName(listKey)}
-              </Link>
-            </Button>
-          )
-        }
+        actions={hideCreate ? undefined : <CreateLink title={title} href={`${listHref}/create`} />}
       />
 
       <ListViewClient

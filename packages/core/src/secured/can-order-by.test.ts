@@ -155,7 +155,16 @@ async function canOrderBy(
   listKey: string,
   key: string,
 ): Promise<boolean | undefined> {
-  return (await context._orderableKeys?.(listKey, [key]))?.has(key)
+  return (await context._sessionVocabulary?.(listKey))?.fields.get(key)?.sortable === true
+}
+
+async function sortableAmong(
+  context: AccessContext,
+  listKey: string,
+  keys: readonly string[],
+): Promise<Set<string>> {
+  const vocabulary = await context._sessionVocabulary?.(listKey)
+  return new Set(keys.filter((key) => vocabulary?.fields.get(key)?.sortable === true))
 }
 
 function canOrder(context: AccessContext, key: string): Promise<boolean | undefined> {
@@ -183,7 +192,6 @@ describe('canOrderBy', () => {
     'id',
     'createdAt',
     'updatedAt',
-    'ownerId',
   ])(
     '%s has an order, and a read ordered by it runs',
     async (key) => {
@@ -228,12 +236,12 @@ describe('canOrderBy', () => {
     BOOT,
   )
 
-  test(
-    'a part column of a multi-column field is ordered as the column it is',
-    async () => {
+  test.each(['address_line', 'ownerId'])(
+    'the column %s orders, though the vocabulary names fields, not columns',
+    async (key) => {
       const context = engineContext()
-      expect(await canOrder(context, 'address_line')).toBe(true)
-      await expect(context.db.Record.orderBy({ address_line: 'asc' }).all()).resolves.toEqual([])
+      expect(await canOrder(context, key)).toBe(false)
+      await expect(context.db.Record.orderBy({ [key]: 'asc' }).all()).resolves.toEqual([])
     },
     BOOT,
   )
@@ -310,7 +318,7 @@ describe('canOrderBy', () => {
     async () => {
       readRuleCalls = 0
       const context = engineContext()
-      expect(await context._orderableKeys?.('Gated', ['title'])).toEqual(new Set())
+      expect(await sortableAmong(context, 'Gated', ['title'])).toEqual(new Set())
       await expect(context.db.Gated.all()).resolves.toEqual([])
       expect(readRuleCalls).toBe(0)
     },
@@ -323,7 +331,7 @@ describe('canOrderBy', () => {
       readRuleThrows = true
       try {
         const context = engineContextOf(database.context({ role: 'editor' }))
-        expect(await context._orderableKeys?.('Gated', ['title'])).toEqual(new Set())
+        expect(await sortableAmong(context, 'Gated', ['title'])).toEqual(new Set())
       } finally {
         readRuleThrows = false
       }
@@ -334,7 +342,7 @@ describe('canOrderBy', () => {
   test(
     'answers for several keys at once',
     async () => {
-      const answer = await engineContext()._orderableKeys?.('Record', [
+      const answer = await sortableAmong(engineContext(), 'Record', [
         'title',
         'active',
         'rank',

@@ -1945,37 +1945,6 @@ async function canOrderBy(
 }
 
 /**
- * Which of `keys` a read of `listKey` may order by: the answer `orderBy` gives
- * this session, read off the same access check, resolution and lowering with
- * nothing executed. It never throws. A key it cannot answer for is left out, so
- * a read-denied key, an absent one and a column with no `order` trait are
- * indistinguishable to a caller (ADR-0031, ADR-0055), and a real fault is left
- * for the read itself to report.
- */
-export async function orderableKeys(
-  context: AccessContext,
-  config: OpenSaasConfig,
-  listKey: string,
-  keys: readonly string[],
-): Promise<ReadonlySet<string>> {
-  const binding = readBindingFor(context, config, listKey)
-  if (binding === undefined) return new Set()
-  const secured = context._isSudo !== true
-  try {
-    const access = secured
-      ? await checkAccess(binding.listConfig.access?.operation?.query, {
-          session: context.session,
-          context,
-        })
-      : true
-    if (access === false) return new Set()
-  } catch {
-    return new Set()
-  }
-  return await orderableAmong(binding, secured, keys)
-}
-
-/**
  * Which of `keys` name a column of `listKey` a read can order by at all, asked
  * of the resolution and lowering `orderBy` uses with no access rule consulted.
  * Whether this session may order by them is the caller's question.

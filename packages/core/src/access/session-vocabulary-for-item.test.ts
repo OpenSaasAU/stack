@@ -224,18 +224,28 @@ describe('the Session vocabulary resolved against one row', () => {
     expect(fieldOf(vocabulary, 'hookOnly').update).toBe('deny')
   })
 
-  test('a row that is not there denies every row-dependent answer', async () => {
+  test('a row that is not there denies every row-dependent write answer', async () => {
     const mine = await seed('Guarded', { ownerId: 'author-1', locked: 'no' })
+    const doc = await seed('Doc', { ownerId: 'author-1' })
     const context = database.context(author)
     await database
       .context(null)
       .sudo()
       .db.Guarded.delete({ where: { id: idOf(mine) } })
+    await database
+      .context(null)
+      .sudo()
+      .db.Doc.delete({ where: { id: idOf(doc) } })
 
     const vocabulary = await forItem(context, 'Guarded', mine)
+    const docVocabulary = await forItem(context, 'Doc', doc)
 
     expect(vocabulary.operations).toMatchObject({ update: 'deny', delete: 'deny' })
     expect(fieldOf(vocabulary, 'title').update).toBe('deny')
+    expect(fieldOf(docVocabulary, 'ownerOptional')).toMatchObject({
+      read: 'row-dependent',
+      update: 'deny',
+    })
   })
 
   test('an undeclared list resolves to null', async () => {

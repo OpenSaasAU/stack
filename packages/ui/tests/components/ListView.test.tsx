@@ -2,7 +2,12 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import type { AccessContext, OpenSaasConfig, Session } from '@opensaas/stack-core'
+import {
+  engineContextOf,
+  type AccessContext,
+  type OpenSaasConfig,
+  type Session,
+} from '@opensaas/stack-core'
 import {
   checkbox,
   json,
@@ -40,6 +45,17 @@ const BOOT = 120_000
 const INTERNAL_FAILURE = 'relation "internal_table" does not exist'
 let readsFail = false
 let controlFlow: () => void = () => undefined
+let countedReadRules = 0
+
+function returnsNull(): boolean
+function returnsNull(): boolean | null {
+  return null
+}
+
+function returnsUndefined(): boolean
+function returnsUndefined(): boolean | undefined {
+  return undefined
+}
 
 function titlesOf(value: unknown): string[] {
   if (!Array.isArray(value)) return []
@@ -189,6 +205,23 @@ const config: OpenSaasConfig = {
         },
       },
     },
+    Inbox: {
+      fields: { body: text() },
+      access: { operation: { query: () => false, create: () => true } },
+    },
+    Redirecting: {
+      fields: {
+        title: text({
+          access: {
+            read: () => {
+              controlFlow()
+              return true
+            },
+          },
+        }),
+      },
+      access: { operation: { query: () => true } },
+    },
     Ledger: {
       fields: {
         name: text(),
@@ -229,6 +262,61 @@ const config: OpenSaasConfig = {
       fields: {
         secret: text({ access: { read: () => false } }),
         hidden: text({ ui: { listView: { defaultColumn: false } } }),
+      },
+      access: { operation: { query: () => true } },
+    },
+    Catalog: {
+      fields: {
+        name: text(),
+        sku: text({ isFilterable: false }),
+        cost: text({ access: { read: () => false } }),
+        ownLabel: text({ access: { read: ({ item }) => item.name === 'Mine' } }),
+        counted: text({
+          access: {
+            read: () => {
+              countedReadRules += 1
+              return true
+            },
+          },
+        }),
+      },
+      db: { timestamps: false },
+      access: { operation: { query: () => true } },
+      ui: {
+        listView: {
+          presets: [
+            {
+              key: 'cheap',
+              label: 'Cheap',
+              search: 'cost:5 name:Mine',
+              sort: { field: 'ownLabel', direction: 'asc' },
+            },
+            { key: 'own', label: 'Own', search: 'ownLabel:Mine sku:A1 name:Mine' },
+          ],
+        },
+      },
+    },
+    Hub: {
+      fields: {
+        name: text(),
+        nulls: relationship({ ref: 'NullSpoke.hub', many: true }),
+        undefs: relationship({ ref: 'UndefSpoke.hub', many: true }),
+      },
+      access: { operation: { query: () => true } },
+    },
+    NullSpoke: {
+      fields: { name: text(), hub: relationship({ ref: 'Hub.nulls' }) },
+      access: { operation: { query: returnsNull } },
+    },
+    UndefSpoke: {
+      fields: { name: text(), hub: relationship({ ref: 'Hub.undefs' }) },
+      access: { operation: { query: returnsUndefined } },
+    },
+    Pin: {
+      fields: {
+        name: text(),
+        nullSpoke: relationship({ ref: 'NullSpoke' }),
+        undefSpoke: relationship({ ref: 'UndefSpoke' }),
       },
       access: { operation: { query: () => true } },
     },
@@ -278,6 +366,16 @@ async function render(
 ): Promise<ListViewClientProps> {
   return findListViewClientProps(
     await ListView({ context: contextAt(session), config, basePath: '/admin', ...props }),
+  )
+}
+
+async function renderHtml(
+  session: Session | null,
+  listKey: string,
+  props: Omit<Parameters<typeof ListView>[0], 'context' | 'config' | 'basePath' | 'listKey'> = {},
+): Promise<string> {
+  return renderToStaticMarkup(
+    await ListView({ context: contextAt(session), config, basePath: '/admin', listKey, ...props }),
   )
 }
 
@@ -583,18 +681,18 @@ describe('ListView relationship lookup by id', () => {
   it(
     'renders without a link when the other list’s field rule throws, and links no singleton',
     async () => {
-      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
       try {
         await create('Bin', { name: 'Blue' })
         const props = await render(ada, { listKey: 'Bin', columns: ['name', 'boxes', 'notices'] })
         expect(props.items.map((item) => item.name)).toEqual(['Blue'])
         expect(props.countLinks).toEqual({})
-        expect(consoleError).toHaveBeenCalledWith(
-          'Count link to "Box.bin" could not be resolved:',
+        expect(consoleWarn).toHaveBeenCalledWith(
+          expect.stringContaining('"Box.bin (read)"'),
           expect.any(Error),
         )
       } finally {
-        consoleError.mockRestore()
+        consoleWarn.mockRestore()
       }
     },
     BOOT,
@@ -1034,18 +1132,20 @@ describe('ListView when the read fails (#2180)', () => {
   )
 
   it(
-    'leaves a session denied query empty even when a read rule would throw on it',
+    'shows a session denied query the unavailable state even when a read rule would throw on it',
     async () => {
       const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
-      const plain = await render(null, { listKey: 'Gated' })
-      const searched = await render(null, { listKey: 'Gated', search: 'title:x' })
-      const logged = log.mock.calls.length
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+      const plain = await renderHtml(null, 'Gated')
+      const searched = await renderHtml(null, 'Gated', { search: 'title:x' })
+      const logged = log.mock.calls.length + warn.mock.calls.length
       log.mockRestore()
+      warn.mockRestore()
 
-      expect(plain.items).toEqual([])
-      expect(plain.total).toBe(0)
-      expect(plain.filterSuggestions).toEqual([])
-      expect(searched.items).toEqual([])
+      for (const html of [plain, searched]) {
+        expect(html).toContain('Gated can&#x27;t be shown here.')
+        expect(html).not.toContain('could not be loaded')
+      }
       expect(logged).toBe(0)
     },
     BOOT,
@@ -1073,16 +1173,75 @@ describe('ListView when the read fails (#2180)', () => {
   )
 
   it(
-    'leaves a session denied query on the empty value, which is not a failure',
+    'shows a session denied query that it cannot see the list, which is not a failure',
     async () => {
       const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
-      const props = await render(ada, { listKey: 'Vault' })
+      const html = await renderHtml(ada, 'Vault')
       const logged = log.mock.calls.length
       log.mockRestore()
 
-      expect(props.items).toEqual([])
-      expect(props.total).toBe(0)
+      expect(html).toContain('data-slot="list-view-unavailable"')
+      expect(html).toContain('Vault can&#x27;t be shown here.')
+      expect(html).not.toContain('role="alert"')
+      expect(html).not.toContain('/admin/vault/create')
+      expect(html).not.toContain('sealed')
       expect(logged).toBe(0)
+    },
+    BOOT,
+  )
+
+  it(
+    'keeps Create on a list the session may create in but not query',
+    async () => {
+      await create('Inbox', { body: 'private submission' })
+      const html = await renderHtml(ada, 'Inbox')
+      expect(html).toContain('Inbox can&#x27;t be shown here.')
+      expect(html).toContain('href="/admin/inbox/create"')
+      expect(html).toContain('Create Inbox')
+      expect(html).not.toContain('private submission')
+      expect(html).not.toContain('<table')
+    },
+    BOOT,
+  )
+
+  it(
+    'shows the could-not-be-loaded state for a context that carries no session vocabulary',
+    async () => {
+      const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      const engine = engineContextOf(contextAt(ada))
+      const bare: AccessContext = { ...engine, _sessionVocabulary: undefined }
+      const html = renderToStaticMarkup(
+        await ListView({ context: bare, config, basePath: '/admin', listKey: 'Post' }),
+      )
+      const logged = log.mock.calls.length
+      log.mockRestore()
+
+      expect(html).toContain('This list could not be loaded')
+      expect(logged).toBe(1)
+    },
+    BOOT,
+  )
+
+  it.each([
+    ['redirect()', () => redirect('/sign-in'), 'NEXT_REDIRECT'],
+    ['notFound()', () => notFound(), 'NEXT_HTTP_ERROR_FALLBACK;404'],
+  ])(
+    'lets %s from a field read rule through to Next',
+    async (_label, thrower, digest) => {
+      const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+      controlFlow = thrower
+      try {
+        await expect(
+          ListView({ context: contextAt(ada), config, basePath: '/admin', listKey: 'Redirecting' }),
+        ).rejects.toMatchObject({ digest: expect.stringContaining(digest) })
+        expect(log).not.toHaveBeenCalled()
+        expect(warn).not.toHaveBeenCalled()
+      } finally {
+        controlFlow = () => undefined
+        log.mockRestore()
+        warn.mockRestore()
+      }
     },
     BOOT,
   )
@@ -1239,6 +1398,161 @@ describe('ListView sends no field the session can never read to the client (#229
       const admin = await render({ role: 'admin' }, { listKey: 'Ledger' })
       expect(Object.keys(admin.fieldTypes)).toContain('audit')
       expect(Object.keys(admin.fields ?? {})).toContain('audit')
+    },
+    BOOT,
+  )
+})
+
+describe('ListView reads the Session vocabulary (#2397)', () => {
+  it(
+    'shows a row-dependent readable field but neither filters nor sorts by it',
+    async () => {
+      const props = await render(ada, {
+        listKey: 'Catalog',
+        columns: ['name', 'ownLabel'],
+        sort: { field: 'ownLabel', direction: 'asc' },
+      })
+      expect(props.columns).toEqual(['name', 'ownLabel'])
+      expect(props.filterSuggestions?.map((s) => s.field)).not.toContain('ownLabel')
+      expect(props.sortableFields).toEqual({ name: true, ownLabel: false })
+      expect(props.initialSort).toBeUndefined()
+    },
+    BOOT,
+  )
+
+  it(
+    'offers no filter on an isFilterable: false field, while still showing it',
+    async () => {
+      const props = await render(ada, { listKey: 'Catalog', columns: ['name', 'sku'] })
+      expect(props.filterSuggestions?.map((s) => s.field)).toEqual(['name', 'counted'])
+      expect(props.columns).toContain('sku')
+    },
+    BOOT,
+  )
+
+  it(
+    'leaves a field the session cannot read out of a Preset view, and its sort to the vocabulary',
+    async () => {
+      const props = await render(ada, { listKey: 'Catalog', preset: 'cheap' })
+      expect(props.activePreset).toBe('cheap')
+      expect(props.search).toBe('name:Mine')
+      expect(props.initialSort).toBeUndefined()
+      expect(JSON.stringify(props)).not.toContain('cost')
+    },
+    BOOT,
+  )
+
+  it(
+    'leaves out of a Preset view every token naming a field the session cannot filter by',
+    async () => {
+      const props = await render(ada, { listKey: 'Catalog', preset: 'own' })
+      expect(props.activePreset).toBe('own')
+      expect(props.search).toBe('name:Mine')
+    },
+    BOOT,
+  )
+
+  it(
+    'asks each field rule once for what the list view offers',
+    async () => {
+      countedReadRules = 0
+      const props = await render(ada, { listKey: 'Catalog', columns: ['name', 'counted'] })
+      expect(props.sortableFields).toEqual({ name: true, counted: true })
+      expect(props.filterSuggestions?.map((s) => s.field)).toContain('counted')
+      expect(countedReadRules).toBe(1)
+    },
+    BOOT,
+  )
+
+  it(
+    'hides the field whose read rule throws, logs it, and still renders',
+    async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+      try {
+        const props = await render(ada, { listKey: 'Brittle', search: 'meta:x' })
+        expect(props.items).toEqual([])
+        expect(Object.keys(props.fieldTypes)).not.toContain('meta')
+        expect(props.filterSuggestions?.map((s) => s.field)).toEqual(['name'])
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining('"Brittle.meta (read)"'),
+          expect.any(Error),
+        )
+      } finally {
+        warn.mockRestore()
+      }
+    },
+    BOOT,
+  )
+})
+
+describe('ListView reads the related list’s vocabulary for links and labels (#2397, #2382)', () => {
+  it(
+    'links no count to a list whose query rule returns null or undefined',
+    async () => {
+      const hub = await create('Hub', { name: 'Centre' })
+      await create('NullSpoke', { name: 'Hidden one', hub: { connect: { id: hub.id } } })
+      await create('UndefSpoke', { name: 'Hidden two', hub: { connect: { id: hub.id } } })
+      const props = await render(ada, { listKey: 'Hub', columns: ['name', 'nulls', 'undefs'] })
+      expect(props.items.map((item) => item.name)).toEqual(['Centre'])
+      expect(props.countLinks).toEqual({})
+    },
+    BOOT,
+  )
+
+  it(
+    'treats a related list with no vocabulary as no link and no label, logging nothing',
+    async () => {
+      const hub = await create('Hub', { name: 'Centre' })
+      await create('NullSpoke', { name: 'Hidden one', hub: { connect: { id: hub.id } } })
+      const engine = engineContextOf(contextAt(ada))
+      const ownOnly = (listKey: string): AccessContext => ({
+        ...engine,
+        _sessionVocabulary: async (asked) =>
+          asked === listKey ? ((await engine._sessionVocabulary?.(asked)) ?? null) : null,
+      })
+      const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      try {
+        const hubProps = findListViewClientProps(
+          await ListView({
+            context: ownOnly('Hub'),
+            config,
+            basePath: '/admin',
+            listKey: 'Hub',
+            columns: ['name', 'nulls', 'undefs'],
+          }),
+        )
+        expect(hubProps.countLinks).toEqual({})
+
+        const author = String(ada.userId)
+        const postProps = findListViewClientProps(
+          await ListView({
+            context: ownOnly('Post'),
+            config,
+            basePath: '/admin',
+            listKey: 'Post',
+            search: `author:#${author}`,
+          }),
+        )
+        expect(postProps.recordLabels).toEqual({ author: [{ id: author, label: null }] })
+        expect(log).not.toHaveBeenCalled()
+      } finally {
+        log.mockRestore()
+      }
+    },
+    BOOT,
+  )
+
+  it.each([
+    ['null', 'NullSpoke', 'nullSpoke'],
+    ['undefined', 'UndefSpoke', 'undefSpoke'],
+  ])(
+    'resolves no filter-chip label from a list whose query rule returns %s',
+    async (_label, listKey, field) => {
+      const spoke = await create(listKey, { name: 'Classified' })
+      const id = String(spoke.id)
+      const props = await render(ada, { listKey: 'Pin', search: `${field}:#${id}` })
+      expect(props.recordLabels).toEqual({ [field]: [{ id, label: null }] })
+      expect(JSON.stringify(props)).not.toContain('Classified')
     },
     BOOT,
   )

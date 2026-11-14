@@ -35,7 +35,8 @@ describe('an asset field has no order', () => {
     '%s',
     async (key) => {
       const context = engineContextOf(database.context(null))
-      expect(await context._orderableKeys?.('Asset', [key])).toEqual(new Set())
+      const vocabulary = await context._sessionVocabulary?.('Asset')
+      expect(vocabulary?.fields.get(key)?.sortable).toBe(false)
     },
     BOOT,
   )
