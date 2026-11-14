@@ -14,11 +14,8 @@ import {
 import { formatFieldName, formatListName } from '../lib/utils.js'
 import { projectFieldConfig, type SerializableFieldConfig } from '../lib/serializeFieldConfig.js'
 import { jsonSafeClone } from '../lib/jsonSafeClone.js'
-import {
-  isOperationPotentiallyAllowed,
-  isFieldPotentiallyWritable,
-} from '../lib/operationAccess.js'
-import { collectUnreadableFields } from '@opensaas/stack-core/internal'
+import type { SessionVocabulary } from '@opensaas/stack-core/internal'
+import { readSessionVocabulary, withheldFieldNames } from '../lib/sessionFieldConfigs.js'
 import { prepareItemForm } from '../lib/prepareItemForm.js'
 import type { RelationshipTableSection } from '../lib/deriveItemView.js'
 import { resolveToManyEdgePlan } from '../lib/relationshipEdges.js'
@@ -64,29 +61,26 @@ export interface RelationshipTableProps {
 
 /**
  * Decide which removal control (if any) a row should show (ADR-0018, #739).
- * The configured `removeAction` is the ceiling; {@link isOperationPotentiallyAllowed}
- * against the RELATED list's operation access is the gate — a denial there
- * surfaces at commit time as a Silent failure (row stays, reason shown).
+ * The configured `removeAction` is the ceiling; the RELATED list's Session
+ * vocabulary is the gate, and only a deny withholds the control. A row the
+ * rule denies surfaces at commit time as a Silent failure (row stays, reason
+ * shown).
  */
 async function resolveRemoveMode(
   section: RelationshipTableSection,
   relatedListConfig: AnyListConfig | undefined,
+  relatedVocabulary: SessionVocabulary | null,
   context: AccessContext,
 ): Promise<RemoveMode> {
-  if (section.removeAction === 'none' || !relatedListConfig) return null
-
-  const access = relatedListConfig.access?.operation
-  const args = { session: context.session, context }
+  if (section.removeAction === 'none' || !relatedListConfig || !relatedVocabulary) return null
 
   if (section.removeAction === 'delete') {
-    if ((await resolveListUi(relatedListConfig, context)).hideDelete) return null
-    return (await isOperationPotentiallyAllowed(access, 'delete', args)) ? 'delete' : null
+    if (relatedVocabulary.operations.delete === 'deny') return null
+    return (await resolveListUi(relatedListConfig, context)).hideDelete ? null : 'delete'
   }
 
-  // Default: disconnect — only where the schema allows it (nullable back-ref FK)
-  // and the related list's update access is not hard-denied.
   if (!section.disconnectable) return null
-  return (await isOperationPotentiallyAllowed(access, 'update', args)) ? 'disconnect' : null
+  return relatedVocabulary.operations.update === 'deny' ? null : 'disconnect'
 }
 
 /** Columns never inline-editable regardless of access (system + write-excluded). */
@@ -95,10 +89,9 @@ const NON_EDITABLE_COLUMNS = new Set(['id', 'createdAt', 'updatedAt'])
 /**
  * The subset of columns whose cells may be inline-edited (issue #737, ADR-0018).
  *
- * The RELATED list's own operation-level update access
- * ({@link isOperationPotentiallyAllowed}) is the table gate — a hard deny yields
- * no editable cells. Each column is then editable only when it is a writable
- * scalar field of the related list, EXCLUDING:
+ * The RELATED list's Session vocabulary is the gate: its `update` operation
+ * answering deny yields no editable cells. Each column is then editable only
+ * when it is a writable scalar field of the related list, EXCLUDING:
  * - relationship columns (relationship editing is out of scope here — they render
  *   as `{ id, label }` and stay read-only),
  * - virtual/computed fields (not stored; nothing to write),
@@ -106,24 +99,18 @@ const NON_EDITABLE_COLUMNS = new Set(['id', 'createdAt', 'updatedAt'])
  *   `draft === displayValue` guard never holds and an unchanged cell would waste
  *   a round-trip; they also need a proper structured editor — out of scope here),
  * - password fields and system columns (`id`/`createdAt`/`updatedAt`),
- * - any field whose UPDATE field-access is statically denied
- *   ({@link isFieldPotentiallyWritable}).
+ * - any field whose `update` answer in the vocabulary is deny.
  *
- * All evaluation is on the related list's own access — never the parent's.
+ * A row-dependent answer keeps the cell editable; the secured commit decides
+ * it for the row.
  */
-export async function resolveEditableColumns(
+export function resolveEditableColumns(
   section: RelationshipTableSection,
   relatedListConfig: AnyListConfig | undefined,
-  context: AccessContext,
-): Promise<string[]> {
-  if (!relatedListConfig) return []
-
-  const tableUpdatable = await isOperationPotentiallyAllowed(
-    relatedListConfig.access?.operation,
-    'update',
-    { session: context.session, context },
-  )
-  if (!tableUpdatable) return []
+  relatedVocabulary: SessionVocabulary | null,
+): string[] {
+  if (!relatedListConfig || !relatedVocabulary) return []
+  if (relatedVocabulary.operations.update === 'deny') return []
 
   const editable: string[] = []
   for (const column of section.columns) {
@@ -134,14 +121,8 @@ export async function resolveEditableColumns(
     if (field.type === 'password') continue
     if (field.type === 'json') continue
     if ('virtual' in field && field.virtual) continue
-    if (
-      await isFieldPotentiallyWritable(field.access, 'update', {
-        session: context.session,
-        context,
-      })
-    ) {
-      editable.push(column)
-    }
+    const update = relatedVocabulary.fields.get(column)?.update
+    if (update !== undefined && update !== 'deny') editable.push(column)
   }
   return editable
 }
@@ -159,8 +140,7 @@ interface CreateFormData {
  * Gating (ADR-0018): the "+ Add" is shown only when
  * - a back-reference field exists to preset the link (list-only refs have none,
  *   so cannot be pre-linked and are excluded — mirroring #739's disconnect), and
- * - the RELATED list's own `create` access is not statically denied
- *   ({@link isOperationPotentiallyAllowed}).
+ * - the RELATED list's Session vocabulary does not deny `create`.
  *
  * The create form is the related list's fields with the back-reference removed —
  * it is preset + hidden, set on the server from the parent id — so the drawer
@@ -170,19 +150,14 @@ interface CreateFormData {
 async function resolveCreateForm(
   section: RelationshipTableSection,
   relatedListConfig: AnyListConfig | undefined,
+  relatedVocabulary: SessionVocabulary | null,
   config: OpenSaasConfig,
   context: AccessContext,
 ): Promise<CreateFormData | null> {
-  if (!section.backReferenceField || !relatedListConfig) return null
+  if (!section.backReferenceField || !relatedListConfig || !relatedVocabulary) return null
+  if (relatedVocabulary.operations.create === 'deny') return null
 
   if ((await resolveListUi(relatedListConfig, context)).hideCreate) return null
-
-  const allowed = await isOperationPotentiallyAllowed(
-    relatedListConfig.access?.operation,
-    'create',
-    { session: context.session, context },
-  )
-  if (!allowed) return null
 
   const formFields: Record<string, FieldConfig> = {}
   for (const [key, field] of Object.entries(relatedListConfig.fields)) {
@@ -229,11 +204,12 @@ export type LinkEdgeData =
  * Prepare the add-an-edge control for this table, or `null` when it should not
  * be offered (#1329).
  *
- * The gate is over the list the write is actually evaluated against — the
- * junction list's `create` for an edge across one, the related list's `update`
- * for an edge held in its own foreign key — never the parent's. A row-dependent
- * rule that denies still denies at commit, silently, so the control is a
- * ceiling and never a promise.
+ * The gate is the Session vocabulary of the list the write is actually
+ * evaluated against — the junction list's `create` for an edge across one, the
+ * related list's `update` for an edge held in its own foreign key — never the
+ * parent's. Only a deny hides the control: a row-dependent rule that denies
+ * still denies at commit, silently, so the control is a ceiling and never a
+ * promise.
  *
  * A to-many whose edges cannot be written at all
  * ({@link resolveToManyEdgePlan} returning `null` — a list-only `ref`, a
@@ -250,17 +226,12 @@ export async function resolveLinkEdge(
   section: RelationshipTableSection,
   config: OpenSaasConfig,
   parentListKey: string,
-  context: AccessContext,
+  context: AnyStackContext,
 ): Promise<LinkEdgeData | null> {
   const edge = resolveJunctionEdge(config, parentListKey, section.fieldName)
   if (edge) {
-    const junctionListConfig = config.lists[edge.junctionListKey]
-    const allowed = await isOperationPotentiallyAllowed(
-      junctionListConfig?.access?.operation,
-      'create',
-      { session: context.session, context },
-    )
-    if (!allowed) return null
+    const junction = await readSessionVocabulary(context, edge.junctionListKey)
+    if (junction.operations.create === 'deny') return null
 
     return {
       mode: 'junction',
@@ -273,13 +244,8 @@ export async function resolveLinkEdge(
   const plan = resolveToManyEdgePlan(config, parentListKey, section.fieldName)
   if (!plan) return null
 
-  const relatedListConfig = config.lists[plan.relatedListKey]
-  const allowed = await isOperationPotentiallyAllowed(
-    relatedListConfig?.access?.operation,
-    'update',
-    { session: context.session, context },
-  )
-  if (!allowed) return null
+  const related = await readSessionVocabulary(context, plan.relatedListKey)
+  if (related.operations.update === 'deny') return null
 
   return {
     mode: 'foreignKey',
@@ -295,11 +261,9 @@ export async function resolveLinkEdge(
  * relationship Cell renders — using the shared label seam so it never drifts
  * from the list page's relationship cells.
  */
-function toRelationshipCellValue(
-  value: unknown,
-  relatedListConfig: AnyListConfig | undefined,
-): unknown {
-  if (!relatedListConfig || value == null) return value
+function toRelationshipCellValue(value: unknown, relatedListConfig: AnyListConfig | null): unknown {
+  if (value == null) return value
+  if (!relatedListConfig) return Array.isArray(value) ? [] : null
   const resolveOne = (entry: unknown): unknown => {
     if (!entry || typeof entry !== 'object' || !('id' in entry)) return entry
     const row = applyClientValueTransforms(
@@ -345,10 +309,12 @@ function toNumber(value: unknown): number | null {
  * edit #737) from rows already fetched through the secured context, then hands
  * minimal, serialisable props to {@link RelationshipTableClient}.
  *
- * Inline cell edit (#737): {@link resolveEditableColumns} decides — from the
- * RELATED list's own operation- and field-level update access — which columns
- * may be edited in place; that set is passed as `editableColumns`. Every commit
- * runs on the related list through the secured context, never the parent's.
+ * Everything it tells the client about the related list — the columns it
+ * shows, which cells may be edited in place, its removal, create and link
+ * controls — is read from that list's own Session vocabulary, never the
+ * parent's. A relationship column's labels are resolved only where the session
+ * may query that column's own target list. Every commit runs on the related
+ * list through the secured context.
  */
 export async function RelationshipTable({
   config,
@@ -366,33 +332,38 @@ export async function RelationshipTable({
   const context = engineContextOf(appContext)
   const relatedListConfig = config.lists[section.relatedListKey]
   const relatedUrlKey = getUrlKey(section.relatedListKey)
-  const unreadable = relatedListConfig
-    ? await collectUnreadableFields(relatedListConfig, { session: context.session, context })
+  const relatedVocabulary = relatedListConfig
+    ? await readSessionVocabulary(context, section.relatedListKey)
+    : null
+  const unreadable = relatedVocabulary
+    ? withheldFieldNames(relatedVocabulary, [...section.columns, ...section.sumColumns], 'display')
     : new Set<string>()
   const shownColumns = section.columns.filter((column) => !unreadable.has(column))
   const shownSumColumns = section.sumColumns.filter((column) => !unreadable.has(column))
 
-  const removeMode = readOnly ? null : await resolveRemoveMode(section, relatedListConfig, context)
+  const removeMode = readOnly
+    ? null
+    : await resolveRemoveMode(section, relatedListConfig, relatedVocabulary, context)
   const createForm = readOnly
     ? null
-    : await resolveCreateForm(section, relatedListConfig, config, context)
+    : await resolveCreateForm(section, relatedListConfig, relatedVocabulary, config, context)
   const linkEdge = readOnly ? null : await resolveLinkEdge(section, config, parentListKey, context)
   const editableColumns = readOnly
     ? []
-    : await resolveEditableColumns(section, relatedListConfig, context)
+    : resolveEditableColumns(section, relatedListConfig, relatedVocabulary)
 
-  // The related list config for each relationship column, keyed by column, so
-  // its values can be label-resolved via that column's OWN target list (a
-  // `Post.author` column resolves against User, not Post).
-  const columnRelatedList = new Map<string, AnyListConfig | undefined>()
-  for (const column of shownColumns) {
-    const columnField = relatedListConfig?.fields[column]
-    if (columnField?.type === 'relationship' && 'ref' in columnField) {
-      const targetKey =
-        typeof columnField.ref === 'string' ? columnField.ref.split('.')[0] : undefined
-      columnRelatedList.set(column, targetKey ? config.lists[targetKey] : undefined)
-    }
-  }
+  const columnRelatedList = new Map<string, AnyListConfig | null>()
+  await Promise.all(
+    shownColumns.map(async (column) => {
+      const targetKey = relatedVocabulary?.fields.get(column)?.relationship?.targetList
+      if (targetKey === undefined) return
+      const target = Object.hasOwn(config.lists, targetKey) ? config.lists[targetKey] : null
+      const queryable =
+        target !== null &&
+        (await readSessionVocabulary(context, targetKey)).operations.query !== 'deny'
+      columnRelatedList.set(column, queryable ? target : null)
+    }),
+  )
 
   // Resolve relationship-column values to { id, label } and drop everything
   // outside the shown columns (keeping `id` for the row link).
@@ -405,7 +376,7 @@ export async function RelationshipTable({
     const prepared: Record<string, unknown> = { id: row.id }
     for (const column of shownColumns) {
       prepared[column] = columnRelatedList.has(column)
-        ? toRelationshipCellValue(row[column], columnRelatedList.get(column))
+        ? toRelationshipCellValue(row[column], columnRelatedList.get(column) ?? null)
         : row[column]
     }
     return applyClientValueTransforms(shownFields, prepared)

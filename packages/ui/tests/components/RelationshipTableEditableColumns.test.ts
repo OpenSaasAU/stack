@@ -1,22 +1,29 @@
-import { describe, it, expect } from 'vitest'
-import type { AccessContext } from '@opensaas/stack-core'
+import { afterAll, beforeAll, describe, it, expect } from 'vitest'
+import type { OpenSaasConfig } from '@opensaas/stack-core'
 import { list } from '@opensaas/stack-core'
 import { text, json, integer, password, virtual } from '@opensaas/stack-core/fields'
+import { createTestDatabase, type TestDatabase } from '@opensaas/stack-core/testing'
 import { resolveEditableColumns } from '../../src/components/RelationshipTable.js'
 import type { RelationshipTableSection } from '../../src/lib/deriveItemView.js'
+import { readSessionVocabulary } from '../../src/lib/sessionFieldConfigs.js'
 
-// A minimal access-scoped context: resolveEditableColumns only forwards it to
-// the related list's own access functions (which ignore it here).
-function makeContext(): AccessContext {
-  const context = {
-    db: {},
-    session: null,
-    storage: {},
-    plugins: {},
-    _isSudo: false,
-    _resolveOutputChain: [],
-  }
-  return context as unknown as AccessContext
+const BOOT = 120_000
+
+const config: OpenSaasConfig = {
+  db: { provider: 'postgresql' },
+  lists: {
+    Item: list({
+      access: { operation: { query: () => true, update: () => true } },
+      fields: {
+        title: text(),
+        count: integer(),
+        secret: password(),
+        computed: virtual({ type: 'string', hooks: { resolveOutput: () => 'x' } }),
+        payload: json(),
+        metadata: json(),
+      },
+    }),
+  },
 }
 
 function section(columns: string[]): RelationshipTableSection {
@@ -33,51 +40,40 @@ function section(columns: string[]): RelationshipTableSection {
   }
 }
 
+let database: TestDatabase
+
+beforeAll(async () => {
+  database = await createTestDatabase(config)
+}, BOOT)
+
+afterAll(async () => {
+  await database?.close()
+})
+
+async function editable(columns: string[]): Promise<string[]> {
+  const vocabulary = await readSessionVocabulary(database.context(null), 'Item')
+  return resolveEditableColumns(section(columns), config.lists.Item, vocabulary)
+}
+
 describe('resolveEditableColumns — json exclusion (#761)', () => {
-  it('excludes json columns from inline-editable columns', async () => {
-    // The related list allows update at the operation level, and every field's
-    // update field-access is allow-by-default — so only the field TYPE gates it.
-    const relatedListConfig = list({
-      access: { operation: { update: () => true } },
-      fields: {
-        title: text(),
-        metadata: json(),
-      },
-    })
+  it(
+    'excludes json columns from inline-editable columns',
+    async () => {
+      const columns = await editable(['title', 'metadata'])
 
-    const editable = await resolveEditableColumns(
-      section(['title', 'metadata']),
-      relatedListConfig,
-      makeContext(),
-    )
+      expect(columns).toEqual(['title'])
+      expect(columns).not.toContain('metadata')
+    },
+    BOOT,
+  )
 
-    // The scalar text column is editable; the json column is not (it needs a
-    // proper structured editor, and its fresh-reference draft would otherwise
-    // waste a round-trip on the reference-equality no-op guard).
-    expect(editable).toEqual(['title'])
-    expect(editable).not.toContain('metadata')
-  })
-
-  it('keeps the existing scalar / relationship / virtual / password / system exclusions intact', async () => {
-    const relatedListConfig = list({
-      access: { operation: { update: () => true } },
-      fields: {
-        title: text(),
-        count: integer(),
-        secret: password(),
-        computed: virtual({ type: 'string', hooks: { resolveOutput: () => 'x' } }),
-        payload: json(),
-      },
-    })
-
-    const editable = await resolveEditableColumns(
-      section(['id', 'title', 'count', 'secret', 'computed', 'payload', 'createdAt']),
-      relatedListConfig,
-      makeContext(),
-    )
-
-    // Only the writable scalars remain; json joins password/virtual/system in
-    // the excluded set.
-    expect(editable).toEqual(['title', 'count'])
-  })
+  it(
+    'keeps the existing scalar / relationship / virtual / password / system exclusions intact',
+    async () => {
+      expect(
+        await editable(['id', 'title', 'count', 'secret', 'computed', 'payload', 'createdAt']),
+      ).toEqual(['title', 'count'])
+    },
+    BOOT,
+  )
 })
