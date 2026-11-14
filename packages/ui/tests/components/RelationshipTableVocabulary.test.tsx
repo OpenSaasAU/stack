@@ -200,6 +200,35 @@ describe('Relationship table reads the related list’s Session vocabulary', () 
   )
 
   it(
+    'refuses a row-dependent inline edit for a row the session cannot edit, with a reason the cell shows',
+    async () => {
+      const task = await database
+        .context(null)
+        .sudo()
+        .db.Task.create({ data: { title: 'Not mine', assignee: 'someone-else', status: 'open' } })
+      if (task === null) throw new Error('fixture task was not created')
+      const id = String(task.id)
+
+      const outcome = await database.context(admin).serverAction({
+        listKey: 'Task',
+        action: 'updateRelated',
+        id,
+        field: 'status',
+        value: 'done',
+      })
+
+      expect(outcome).toMatchObject({ updated: false, error: expect.any(String) })
+      const stored = await database
+        .context(null)
+        .sudo()
+        .db.Task.where({ id: { equals: id } })
+        .first()
+      expect(stored?.status).toBe('open')
+    },
+    BOOT,
+  )
+
+  it(
     'resolves a relationship column’s labels only where its own target list may be queried',
     async () => {
       const allowed = await tableProps(admin)
@@ -245,6 +274,197 @@ describe('item form relationship lookups read the related list’s Session vocab
     'looks up nothing when the related list’s query is denied',
     async () => {
       expect(await reviewerOptions({ userId: 'user-1', role: 'returns-null' })).toEqual([])
+    },
+    BOOT,
+  )
+})
+
+function makeEdgeConfig(): OpenSaasConfig {
+  const open = { query: () => true, create: () => true, update: () => true, delete: () => true }
+  return {
+    db: { provider: 'postgresql' },
+    lists: {
+      Board: {
+        fields: {
+          name: text(),
+          cards: relationship({ ref: 'Card.board', many: true }),
+          notes: relationship({ ref: 'Note.board', many: true }),
+          feedback: relationship({ ref: 'Feedback.board', many: true }),
+          labels: relationship({ ref: 'BoardLabel.board', many: true }),
+        },
+        access: { operation: open },
+      },
+      Card: {
+        fields: {
+          title: text(),
+          board: relationship({ ref: 'Board.cards', access: { update: () => false } }),
+        },
+        access: { operation: open },
+      },
+      Note: {
+        fields: {
+          body: text(),
+          board: relationship({ ref: 'Board.notes', access: { create: () => false } }),
+        },
+        access: { operation: open },
+      },
+      Feedback: {
+        fields: {
+          body: text(),
+          board: relationship({ ref: 'Board.feedback' }),
+        },
+        access: { operation: { create: () => true, update: () => true, delete: () => true } },
+      },
+      Label: {
+        fields: {
+          name: text(),
+          boards: relationship({ ref: 'BoardLabel.label', many: true }),
+        },
+        access: { operation: open },
+      },
+      BoardLabel: {
+        fields: {
+          board: relationship({ ref: 'Board.labels', access: { create: () => false } }),
+          label: relationship({ ref: 'Label.boards' }),
+        },
+        access: { operation: open },
+      },
+    },
+  }
+}
+
+function edgeSection(
+  fieldName: string,
+  ref: string,
+  overrides: Partial<RelationshipTableSection> = {},
+): RelationshipTableSection {
+  const [relatedListKey, backReferenceField] = ref.split('.')
+  return {
+    fieldName,
+    ref,
+    relatedListKey,
+    backReferenceField,
+    columns: ['body'],
+    take: 10,
+    sumColumns: [],
+    removeAction: 'disconnect',
+    disconnectable: true,
+    ...overrides,
+  }
+}
+
+describe('Relationship table reads the back-reference field’s own answers', () => {
+  const edgeConfig = makeEdgeConfig()
+  let edgeDatabase: TestDatabase
+
+  beforeAll(async () => {
+    edgeDatabase = await createTestDatabase(edgeConfig)
+  }, BOOT)
+
+  afterAll(async () => {
+    await edgeDatabase?.close()
+  })
+
+  async function edgeProps(
+    tableSection: RelationshipTableSection,
+    propConfig: OpenSaasConfig = edgeConfig,
+  ): Promise<RelationshipTableClientProps> {
+    const element = await RelationshipTable({
+      config: propConfig,
+      section: tableSection,
+      rows: [{ id: 'row-1', title: 'A card', body: 'NeverShownBody' }],
+      total: 1,
+      basePath: '/admin',
+      context: edgeDatabase.context(admin),
+      parentListKey: 'Board',
+      parentId: 'board-1',
+      serverAction: async () => null,
+    })
+    if (!React.isValidElement<RelationshipTableClientProps>(element)) {
+      throw new Error('RelationshipTable rendered no client table')
+    }
+    return element.props
+  }
+
+  it(
+    'hides disconnect and link when the back-reference field’s update is denied',
+    async () => {
+      const props = await edgeProps(edgeSection('cards', 'Card.board', { columns: ['title'] }))
+
+      expect(props.removeMode).toBeNull()
+      expect(props.linkEdge).toBeUndefined()
+      expect(props.canCreate).toBe(true)
+    },
+    BOOT,
+  )
+
+  it(
+    'hides “+ Add” when the back-reference field’s create is denied',
+    async () => {
+      const props = await edgeProps(edgeSection('notes', 'Note.board'))
+
+      expect(props.canCreate).toBe(false)
+      expect(props.removeMode).toBe('disconnect')
+      expect(props.linkEdge?.mode).toBe('foreignKey')
+    },
+    BOOT,
+  )
+
+  it(
+    'hides the junction link when a junction foreign key’s create is denied',
+    async () => {
+      const props = await edgeProps(edgeSection('labels', 'BoardLabel.board', { columns: [] }))
+
+      expect(props.linkEdge).toBeUndefined()
+    },
+    BOOT,
+  )
+
+  it(
+    'renders a query-denied related list unavailable, with no columns and no write controls',
+    async () => {
+      const props = await edgeProps(edgeSection('feedback', 'Feedback.board'))
+
+      expect(props.unavailable).toBe(true)
+      expect(props.columns).toEqual([])
+      expect(props.rows).toEqual([])
+      expect(props.removeMode).toBeNull()
+      expect(props.canCreate).toBe(false)
+      expect(props.linkEdge).toBeUndefined()
+      expect(props.editableColumns).toEqual([])
+      expect(JSON.stringify(props)).not.toContain('NeverShownBody')
+    },
+    BOOT,
+  )
+
+  it(
+    'renders a related list the context cannot resolve unavailable instead of throwing',
+    async () => {
+      const propConfig: OpenSaasConfig = {
+        ...edgeConfig,
+        lists: {
+          ...edgeConfig.lists,
+          Board: {
+            ...edgeConfig.lists.Board,
+            fields: {
+              ...edgeConfig.lists.Board.fields,
+              ghosts: relationship({ ref: 'Ghost.board', many: true }),
+            },
+          },
+          Ghost: {
+            fields: { body: text(), board: relationship({ ref: 'Board.ghosts' }) },
+            access: { operation: { query: () => true, update: () => true, create: () => true } },
+          },
+        },
+      }
+
+      const props = await edgeProps(edgeSection('ghosts', 'Ghost.board'), propConfig)
+
+      expect(props.unavailable).toBe(true)
+      expect(props.columns).toEqual([])
+      expect(props.removeMode).toBeNull()
+      expect(props.canCreate).toBe(false)
+      expect(props.linkEdge).toBeUndefined()
     },
     BOOT,
   )

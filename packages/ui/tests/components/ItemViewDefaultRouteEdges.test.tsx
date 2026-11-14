@@ -86,7 +86,7 @@ async function renderDefaultItemView(harness: TestContext, config: OpenSaasConfi
   const layout = deriveItemViewLayout(config, 'User')
   const section = layout.sections[0]
   const context = harness.context as unknown as AccessContext
-  const linkEdge = await resolveLinkEdge(section, config, 'User', context)
+  const linkEdge = await resolveLinkEdge(section, 'User', context)
   const record = await harness.context.db.User.where({ id: userId }).include('posts').first()
   const rows = Array.isArray(record?.posts) ? (record.posts as Array<Record<string, unknown>>) : []
 

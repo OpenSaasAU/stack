@@ -123,12 +123,7 @@ describe('resolveLinkEdge', () => {
   it(
     'offers the control for an edge across a junction',
     async () => {
-      const edge = await resolveLinkEdge(
-        section('tags', 'PostTag.post'),
-        makeConfig(),
-        'Post',
-        harness.context,
-      )
+      const edge = await resolveLinkEdge(section('tags', 'PostTag.post'), 'Post', harness.context)
 
       expect(edge?.mode).toBe('junction')
       if (edge?.mode !== 'junction') throw new Error('expected a junction edge')
@@ -145,7 +140,6 @@ describe('resolveLinkEdge', () => {
       const gates = { junctionCreate: () => false }
       const edge = await resolveLinkEdge(
         section('tags', 'PostTag.post'),
-        makeConfig(gates),
         'Post',
         await contextFor(gates),
       )
@@ -164,7 +158,6 @@ describe('resolveLinkEdge', () => {
       const gates = { junctionCreate }
       const edge = await resolveLinkEdge(
         section('tags', 'PostTag.post'),
-        makeConfig(gates),
         'Post',
         await contextFor(gates),
       )
@@ -180,7 +173,6 @@ describe('resolveLinkEdge', () => {
       const gates = { bookUpdate: () => true }
       const edge = await resolveLinkEdge(
         section('books', 'Book.author'),
-        makeConfig(gates),
         'Author',
         await contextFor(gates),
       )
@@ -197,12 +189,7 @@ describe('resolveLinkEdge', () => {
   it(
     "hides the control when the related list's own update access is statically denied",
     async () => {
-      const edge = await resolveLinkEdge(
-        section('books', 'Book.author'),
-        makeConfig(),
-        'Author',
-        harness.context,
-      )
+      const edge = await resolveLinkEdge(section('books', 'Book.author'), 'Author', harness.context)
 
       expect(edge).toBeNull()
     },
@@ -227,7 +214,6 @@ describe('resolveLinkEdge', () => {
 
         const edge = await resolveLinkEdge(
           section('tags', 'PostTag.post'),
-          makeConfig(),
           'Post',
           recorded.context,
         )
