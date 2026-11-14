@@ -3,7 +3,7 @@ import type { AccessContext, Session } from '../access/types.js'
 import { classifyRowIndependentWrite } from '../access/field-access.js'
 import { decideAdvertisement } from '../access/decide-advertisement.js'
 import { mcpAdvertisement } from './advertise.js'
-import { ownsForeignKey } from '../config/foreign-key-owner.js'
+import { ownsForeignKey } from '../context/junction.js'
 import { mcpListReachable } from './reachability.js'
 import { isRelationshipField, isZonelessNativeType } from '../fields/index.js'
 import { listIdJsonSchema } from '../contract/id-boundary.js'
@@ -152,7 +152,7 @@ export async function assertWritableData(
     if (
       fieldConfig &&
       isRelationshipField(fieldConfig) &&
-      !ownsForeignKey(listKey, fieldName, fieldConfig, config)
+      !ownsForeignKey(config, listKey, fieldName, fieldConfig)
     ) {
       continue
     }
@@ -188,7 +188,7 @@ export async function generateFieldSchemas(
     // invite a tool call that can only fail.
     if (
       isRelationshipField(fieldConfig) &&
-      !ownsForeignKey(listKey, fieldName, fieldConfig, config)
+      !ownsForeignKey(config, listKey, fieldName, fieldConfig)
     ) {
       continue
     }

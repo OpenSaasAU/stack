@@ -10,7 +10,7 @@ import type { OpenSaasConfig } from '../config/types.js'
 import type { AccessContext, Session } from '../access/types.js'
 import { classifyRowIndependentRead } from '../access/field-access.js'
 import { isRelationshipField } from '../fields/index.js'
-import { ownsForeignKey } from '../config/foreign-key-owner.js'
+import { ownsForeignKey } from '../context/junction.js'
 import { listIdColumn, parseListId, type ListIdValue } from '../contract/id-boundary.js'
 import { RELATION_QUANTIFIERS } from '../secured/operators.js'
 
@@ -104,7 +104,7 @@ function foreignKeyRelation(
   const fieldConfig = config.lists[listKey]?.fields[fieldName]
   if (!isRelationshipField(fieldConfig)) return undefined
   if (!visible(listKey, fieldName)) return undefined
-  if (!ownsForeignKey(listKey, fieldName, fieldConfig, config)) return undefined
+  if (!ownsForeignKey(config, listKey, fieldName, fieldConfig)) return undefined
   return fieldConfig.ref.split('.')[0]
 }
 

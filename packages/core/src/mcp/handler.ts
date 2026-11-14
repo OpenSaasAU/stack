@@ -13,7 +13,7 @@ import type { McpSession, McpSessionProvider } from './types.js'
 import { decideAdvertisement } from '../access/decide-advertisement.js'
 import { mcpAdvertisement } from './advertise.js'
 import { McpWriteRefusedError, assertWritableData, generateFieldSchemas } from './field-schema.js'
-import { ownsForeignKey } from '../config/foreign-key-owner.js'
+import { ownsForeignKey } from '../context/junction.js'
 import { listIdJsonSchema, parseListId } from '../contract/id-boundary.js'
 import { RELATION_QUANTIFIERS, SCALAR_OPERATORS } from '../secured/operators.js'
 import type { SecuredQuery } from '../secured/read.js'
@@ -644,7 +644,7 @@ function coerceConnectIds(
   for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
     if (!Object.hasOwn(data, fieldName)) continue
     if (!isRelationshipField(fieldConfig)) continue
-    if (!ownsForeignKey(listKey, fieldName, fieldConfig, config)) continue
+    if (!ownsForeignKey(config, listKey, fieldName, fieldConfig)) continue
 
     const criterion = connectCriterion(data[fieldName])
     if (criterion === undefined) continue

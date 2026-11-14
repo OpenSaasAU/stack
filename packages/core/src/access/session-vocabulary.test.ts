@@ -146,6 +146,11 @@ const config: OpenSaasConfig = {
       },
       access: { operation: openOperations },
     },
+    Settings: {
+      fields: { siteName: text(), tagline: text() },
+      isSingleton: true,
+      access: { operation: openOperations },
+    },
     Stamped: {
       fields: { title: text() },
       db: { timestamps: true },
@@ -395,26 +400,31 @@ describe('the session vocabulary', () => {
     )
 
     test(
-      'a field rule returning a filter is a config error, not a denial',
+      'a field rule returning a filter denies that field, is logged, and leaves the list answered',
       async () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-        await expect(vocabularyOf(database.context(author), 'FieldFilter')).rejects.toBeInstanceOf(
-          InvalidFieldAccessResultError,
+        const vocabulary = await vocabularyOf(database.context(author), 'FieldFilter')
+        expect(vocabulary.fields.get('filtered')).toMatchObject({ read: 'deny', filterable: false })
+        expect(vocabulary.fields.get('title')).toMatchObject({ read: 'allow', filterable: true })
+        expect(vocabulary.operations).toEqual(everyOperation('allow'))
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining('FieldFilter.filtered'),
+          expect.any(InvalidFieldAccessResultError),
         )
-        expect(warn).not.toHaveBeenCalled()
       },
       BOOT,
     )
 
     test(
-      'a rejected answer is not kept for the context’s life',
+      'a contained denial is kept for the context’s life like any other answer',
       async () => {
+        quietly()
         filterOnceCalls = 0
         const context = database.context(author)
-        await expect(vocabularyOf(context, 'FilterOnce')).rejects.toBeInstanceOf(
-          InvalidFieldAccessResultError,
-        )
-        expect((await fieldOf(context, 'FilterOnce', 'title')).read).toBe('allow')
+        expect((await fieldOf(context, 'FilterOnce', 'title')).read).toBe('deny')
+        expect((await fieldOf(context, 'FilterOnce', 'title')).read).toBe('deny')
+        expect(filterOnceCalls).toBe(1)
+        expect((await fieldOf(database.context(author), 'FilterOnce', 'title')).read).toBe('allow')
       },
       BOOT,
     )
@@ -703,6 +713,41 @@ describe('the session vocabulary', () => {
       BOOT,
     )
   })
+  describe('singletons', () => {
+    test(
+      'a singleton is never deletable, sudo included',
+      async () => {
+        expect(await operationsOf(database.context(author), 'Settings')).toEqual({
+          query: 'allow',
+          create: 'allow',
+          update: 'allow',
+          delete: 'deny',
+        })
+        expect((await operationsOf(database.context(anonymous).sudo(), 'Settings')).delete).toBe(
+          'deny',
+        )
+      },
+      BOOT,
+    )
+
+    test(
+      'no field of a singleton is filterable or sortable, sudo included',
+      async () => {
+        for (const context of [database.context(author), database.context(author).sudo()]) {
+          const vocabulary = await vocabularyOf(context, 'Settings')
+          for (const fieldName of ['siteName', 'tagline', 'id']) {
+            expect(vocabulary.fields.get(fieldName)).toMatchObject({
+              read: 'allow',
+              filterable: false,
+              sortable: false,
+            })
+          }
+        }
+      },
+      BOOT,
+    )
+  })
+
   describe('system fields', () => {
     test(
       'id is readable, sortable, not filterable and never writable',
@@ -800,15 +845,29 @@ describe('the session vocabulary', () => {
     )
 
     test(
-      'a resolveOutput hook asks the rules with the context it was handed',
+      'resolveOutput hooks share the read context’s answer: rules are asked once, with that context',
       async () => {
         const context = database.context(author)
-        await context.sudo().db.Probe.create({ data: { title: 'probe' } })
+        await context.sudo().db.Probe.create({ data: { title: 'probe-rows' } })
+        await context.sudo().db.Probe.create({ data: { title: 'probe-rows' } })
         resetSpies()
-        expect(await context.db.Probe.where({ title: { equals: 'probe' } }).first()).toMatchObject({
-          probe: 'probed',
-        })
-        expectEachHookAskedWithItsOwnContext(1)
+        expect(await context.db.Probe.where({ title: { equals: 'probe-rows' } }).all()).toEqual([
+          expect.objectContaining({ probe: 'probed' }),
+          expect.objectContaining({ probe: 'probed' }),
+        ])
+        expect(hookContexts).toHaveLength(2)
+        expect(ruleContexts).toEqual([engineContextOf(context)])
+      },
+      BOOT,
+    )
+
+    test(
+      'a detached call answers for the context it was taken from',
+      async () => {
+        const context = database.context(admin)
+        const { _sessionVocabulary } = engineContextOf(context)
+        const vocabulary = await _sessionVocabulary?.('Memo')
+        expect(vocabulary?.fields.get('adminOnly')?.read).toBe('allow')
       },
       BOOT,
     )
