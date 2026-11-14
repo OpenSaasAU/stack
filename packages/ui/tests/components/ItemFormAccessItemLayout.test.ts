@@ -3,7 +3,7 @@ import type { AccessContext, OpenSaasConfig } from '@opensaas/stack-core'
 import { relationship, text } from '@opensaas/stack-core/fields'
 import { createTestContext, type TestContext } from '@opensaas/stack-core/testing'
 import { buildDetailsItemData, composeItemViewRead } from '../../src/components/ItemForm.js'
-import { prepareItemForm } from '../../src/lib/prepareItemForm.js'
+import { buildRelationshipInclude, prepareItemForm } from '../../src/lib/prepareItemForm.js'
 import { deriveItemViewLayout } from '../../src/lib/deriveItemView.js'
 import { FIELD_WRITE_DENIED_REASON } from '../../src/lib/serializeFieldConfig.js'
 
@@ -24,6 +24,11 @@ function makeConfig(): OpenSaasConfig {
             },
           }),
           status: text(),
+          draft: text({
+            access: {
+              read: ({ item }) => Array.isArray(item?.comments) && item.comments.length === 0,
+            },
+          }),
           summary: text({ access: { update: ({ item }) => item?.status !== 'locked' } }),
           comments: relationship({ ref: 'Comment.post', many: true }),
         },
@@ -86,7 +91,9 @@ describe('the derived item-view layout answers field access as the update does (
   }
 
   async function createPost(status: string): Promise<string> {
-    const post = await contextOf().db.Post.create({ data: { title: 't', status, summary: 's' } })
+    const post = await contextOf().db.Post.create({
+      data: { title: 't', status, summary: 's', draft: 'visible' },
+    })
     return String(post?.id)
   }
 
@@ -109,5 +116,36 @@ describe('the derived item-view layout answers field access as the update does (
     await expect(
       contextOf().db.Post.update({ where: { id: postId }, data: { title: 'changed' } }),
     ).rejects.toThrow(/title/)
+  })
+
+  async function prepareEditForm(postId: string) {
+    const config = makeConfig()
+    const context = contextOf()
+    const listConfig = config.lists.Post
+    const itemData = await buildRelationshipInclude(listConfig)
+      .reduce((read, fieldName) => read.include(fieldName), context.db.Post.where({ id: postId }))
+      .first()
+    if (!itemData) throw new Error('the edit read returned nothing')
+    return prepareItemForm(context, config, 'Post', listConfig, itemData, 'update', postId)
+  }
+
+  it('keeps a relation-reading read rule field and the value the include-read delivered', async () => {
+    const prepared = await prepareEditForm(await createPost('open'))
+
+    expect(prepared.serializableFields.draft).toBeDefined()
+    expect(prepared.serializableFields.draft.readOnly).toBeUndefined()
+    expect(prepared.initialData.draft).toBe('visible')
+  })
+
+  it('carries no value for that field on a row whose read rule Field Visibility denies', async () => {
+    const postId = await createPost('open')
+    await contextOf().db.Comment.create({
+      data: { body: 'First', post: { connect: { id: postId } } },
+    })
+
+    const prepared = await prepareEditForm(postId)
+
+    expect(prepared.serializableFields.draft).toBeDefined()
+    expect(prepared.initialData).not.toHaveProperty('draft')
   })
 })

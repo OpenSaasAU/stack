@@ -143,7 +143,7 @@ describe('the Session vocabulary resolved against one row', () => {
     expect(fieldOf(onTheirs, 'ownerDirect').update).toBe('deny')
   })
 
-  test('an optional-chained item rule resolves read and update for the row', async () => {
+  test('an optional-chained item rule resolves update for the row and leaves read row-dependent', async () => {
     const mine = await seed('Doc', { ownerId: 'author-1' })
     const theirs = await seed('Doc', { ownerId: 'someone-else' })
     const context = database.context(author)
@@ -151,8 +151,8 @@ describe('the Session vocabulary resolved against one row', () => {
     const onMine = fieldOf(await forItem(context, 'Doc', mine), 'ownerOptional')
     const onTheirs = fieldOf(await forItem(context, 'Doc', theirs), 'ownerOptional')
 
-    expect(onMine).toMatchObject({ read: 'allow', update: 'allow' })
-    expect(onTheirs).toMatchObject({ read: 'deny', update: 'deny' })
+    expect(onMine).toMatchObject({ read: 'row-dependent', update: 'allow' })
+    expect(onTheirs).toMatchObject({ read: 'row-dependent', update: 'deny' })
   })
 
   test('a rule that reads the payload stays row-dependent', async () => {

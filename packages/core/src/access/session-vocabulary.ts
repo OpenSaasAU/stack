@@ -2,7 +2,6 @@ import type { FieldConfig, ListConfig, OpenSaasConfig, TypeInfo } from '../confi
 import type { AccessContext, AccessControl, OrmRow } from './types.js'
 import { checkAccess } from './engine.js'
 import {
-  checkRowRead,
   classifyRowIndependentCreateAccess,
   classifyRowIndependentRead,
   classifyRowIndependentWrite,
@@ -258,13 +257,16 @@ function denyRowDependent(answer: AccessAnswer): AccessAnswer {
 }
 
 /**
- * `vocabulary` with its row-dependent answers resolved for the row of the list
- * whose id is `id`: a field's `read` and `update`, and the list's `update` and
- * `delete`, each as the engine decides it against that row as stored, the row
- * an update reads before it decides. Every other answer is returned as it
- * was, without asking its rule again. A row that is not there answers each
- * row-dependent question deny. A field rule that reads the payload stays
- * `'row-dependent'`. Disclosure only, as the vocabulary is (ADR-0084).
+ * `vocabulary` with its row-dependent write answers resolved for the row of
+ * the list whose id is `id`: a field's `update`, and the list's `update` and
+ * `delete`, each as the write decides it against that row as stored, the row
+ * an update reads before it decides. A field's `read` is not resolved: Field
+ * Visibility decides it on each read, against the row that read delivers, so
+ * a row-dependent `read` stays `'row-dependent'`. Every other answer is
+ * returned as it was, without asking its rule again. A row that is not there
+ * answers each row-dependent write question deny. A field rule that reads the
+ * payload stays `'row-dependent'`. Disclosure only, as the vocabulary is
+ * (ADR-0084).
  */
 export async function resolveSessionVocabularyForItem(
   context: AccessContext,
@@ -289,7 +291,6 @@ export async function resolveSessionVocabularyForItem(
           name,
           {
             ...entry,
-            read: denyRowDependent(entry.read),
             update: operations.update === 'deny' ? 'deny' : denyRowDependent(entry.update),
           },
         ]),
@@ -322,22 +323,15 @@ export async function resolveSessionVocabularyForItem(
     [...vocabulary.fields].map(async ([name, entry]): Promise<[string, FieldVocabulary]> => {
       const field = Object.hasOwn(listConfig.fields, name) ? listConfig.fields[name] : undefined
       if (field === undefined) return [name, entry]
-      const subject = `${listKey}.${name}`
-      const [read, fieldUpdate] = await Promise.all([
-        entry.read === 'row-dependent'
-          ? answerOrDeny(`${subject} (read, row)`, async () =>
-              (await checkRowRead(field.access, args, ruleRow)) ? 'allow' : 'deny',
-            )
-          : entry.read,
+      const update =
         operations.update === 'deny'
           ? 'deny'
           : entry.update === 'row-dependent'
-            ? answerOrDeny(`${subject} (update, row)`, () =>
+            ? await answerOrDeny(`${listKey}.${name} (update, row)`, () =>
                 classifyWriteForRow(field.access, 'update', args, ruleRow),
               )
-            : entry.update,
-      ])
-      return [name, { ...entry, read, update: fieldUpdate }]
+            : entry.update
+      return [name, { ...entry, update }]
     }),
   )
   return { listKey, operations, fields: new Map(fields) }

@@ -76,8 +76,10 @@ export function buildRelationshipInclude(
  * is withheld unless the form may write it.
  *
  * `itemId` is the record an update form edits. When given, core answers each
- * row-dependent rule for that row as stored, as the update decides it (#1402),
- * so a field its rule denies there renders read-only.
+ * row-dependent write rule for that row as stored, as the update decides it
+ * (#1402), so a field its rule denies there renders read-only. `itemData` is
+ * the session's own secured read, so a row-dependent `read` rule has already
+ * been applied to it.
  */
 export async function prepareItemForm(
   context: AccessContext,

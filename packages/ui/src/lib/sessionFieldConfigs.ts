@@ -158,9 +158,10 @@ function resolveList(context: AnyStackContext, listKey: string) {
  *
  * A rule that depends on the row keeps the field editable, and the write
  * itself still enforces it — unless `item` is given on an `'update'`: then each
- * such rule is answered for the row with `item`'s id, against that row as
- * stored, as the update decides it, and a field it denies there is marked
- * `readOnly` like any other.
+ * such write rule is answered for the row with `item`'s id, against that row
+ * as stored, as the update decides it, and a field it denies there is marked
+ * `readOnly` like any other. A `read` rule that depends on the row keeps the
+ * field; the read that produced the form's values applied it.
  *
  * Pass `'create'` to `ItemCreateForm`'s `fields`, `'update'` (with the record
  * being edited) to `ItemEditForm`'s, and `'display'` (the default) to
@@ -189,7 +190,9 @@ export async function serializeFieldConfigs(
  * One record of `listKey` prepared as `ItemEditForm`'s `initialData` for the
  * session `context` carries: each field's `ui.valueForClientSerialization` is
  * applied, and every field `serializeFieldConfigs(context, listKey, purpose, item)`
- * withholds is left out, as is any value the session cannot read on this row.
+ * withholds is left out, as is any value the session can never read. Pass the
+ * record as the session's own secured read returned it: that read has already
+ * applied Field Visibility to a rule that depends on the row.
  *
  * @throws {SessionVocabularyUnavailableError} when `listKey` is not a list of
  *   the context's config.

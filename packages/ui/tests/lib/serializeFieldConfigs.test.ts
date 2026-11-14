@@ -318,17 +318,23 @@ describe('serializeItemForForm', () => {
     }
   })
 
-  it('drops a value whose read rule denies it on this row', async () => {
+  it('keeps what the session read returned for a row-dependent read rule', async () => {
     const context = database.context({ userId: 'author-1', role: 'author' })
+    const readAs = async (data: Record<string, string>) => {
+      const seeded = await seedDoc(data)
+      const row = await context.db.Doc.where({ id: { equals: String(seeded.id) } }).first()
+      if (row === null) throw new Error('Could not read Doc')
+      return row
+    }
     const values = await serializeItemForForm(
       context,
       'Doc',
-      await seedDoc({ ownerKey: 'someone-else', ownerRead: 'theirs' }),
+      await readAs({ ownerKey: 'someone-else', ownerRead: 'theirs' }),
     )
     const own = await serializeItemForForm(
       context,
       'Doc',
-      await seedDoc({ ownerKey: 'author-1', ownerRead: 'mine' }),
+      await readAs({ ownerKey: 'author-1', ownerRead: 'mine' }),
     )
 
     expect(values).not.toHaveProperty('ownerRead')

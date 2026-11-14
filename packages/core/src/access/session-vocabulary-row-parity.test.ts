@@ -54,7 +54,7 @@ const config: OpenSaasConfig = {
 const updateRules = ['noComments', 'secretOpen', 'quiet'] as const
 const readRules = ['readNoComments', 'readSecretOpen', 'readQuiet'] as const
 
-describe('the Session vocabulary for one row answers as the engine does', () => {
+describe('the Session vocabulary for one row answers writes as the engine does', () => {
   let database: TestDatabase
 
   beforeAll(async () => {
@@ -127,23 +127,19 @@ describe('the Session vocabulary for one row answers as the engine does', () => 
   test.each([
     ['open', 'quiet'],
     ['closed', 'loud'],
-  ])('a read rule answers for the stored row (secret %s, shout %s)', async (secret, shout) => {
-    const id = await seed(secret, shout)
-    const vocabulary = await vocabularyFor(id)
-    const row = await database
-      .context(editor)
-      .db.Post.where({ id: { equals: id } })
-      .first()
-    if (row === null) throw new Error('No row')
+  ])(
+    'a row-dependent read rule stays row-dependent (secret %s, shout %s)',
+    async (secret, shout) => {
+      const vocabulary = await vocabularyFor(await seed(secret, shout))
 
-    for (const fieldName of readRules) {
-      const answer = vocabulary.fields.get(fieldName)?.read
-      expect([fieldName, answer]).toEqual([
-        fieldName,
-        Object.hasOwn(row, fieldName) ? 'allow' : 'deny',
-      ])
-    }
-  })
+      for (const fieldName of readRules) {
+        expect([fieldName, vocabulary.fields.get(fieldName)?.read]).toEqual([
+          fieldName,
+          'row-dependent',
+        ])
+      }
+    },
+  )
 
   test('a rule reading a relation the stored row does not carry denies, as the write does', async () => {
     const id = await seed('open', 'quiet')
