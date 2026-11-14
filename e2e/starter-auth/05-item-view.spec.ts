@@ -82,30 +82,21 @@ test.describe('Item view layout', () => {
     await expect(footer).toContainText('Showing 2 of 2 rows')
     await expect(footer).toContainText('15')
 
-    // Rows show only access-visible data: the closed Session list (ADR-0013,
-    // ungranted here) renders its Relationship table empty rather than leaking.
-    const sessions = page.locator('[data-slot="relationship-table"]', {
-      has: page.getByRole('heading', { name: 'Sessions', exact: true }),
-    })
-    await expect(sessions.locator('[data-slot="relationship-table-empty"]')).toBeVisible()
-    // Access-scoped M (issue #752): the denied Session list's total is 0, never
-    // a leaked true count of the user's sessions.
-    await expect(sessions.locator('[data-slot="relationship-table-footer"]')).toContainText(
-      'Showing 0 of 0 rows',
-    )
-
-    // Secondary note (issue #752): the example curates the auth Account/Session
-    // Relationship tables so credential/token columns are NOT surfaced by
-    // default. The Account table shows non-sensitive columns only.
-    const accounts = page.locator('[data-slot="relationship-table"]', {
-      has: page.getByRole('heading', { name: 'Accounts', exact: true }),
-    })
-    await expect(accounts.getByRole('columnheader', { name: 'Access Token' })).toHaveCount(0)
-    await expect(accounts.getByRole('columnheader', { name: 'Refresh Token' })).toHaveCount(0)
-    await expect(accounts.getByRole('columnheader', { name: 'Id Token' })).toHaveCount(0)
-    await expect(accounts.getByRole('columnheader', { name: 'Provider Id' })).toBeVisible()
-    // The Session table likewise omits its `token` column.
-    await expect(sessions.getByRole('columnheader', { name: 'Token', exact: true })).toHaveCount(0)
+    // The closed Session and Account lists (ADR-0013, ungranted here) cannot be
+    // queried, so their sections render unavailable: no columns, no rows and no
+    // count, never a leaked total or credential column.
+    for (const heading of ['Sessions', 'Accounts']) {
+      const closed = page.locator('[data-slot="relationship-table"]', {
+        has: page.getByRole('heading', { name: heading, exact: true }),
+      })
+      await expect(closed.locator('[data-slot="relationship-table-empty"]')).toContainText(
+        "can't be shown here",
+      )
+      await expect(closed.getByRole('columnheader')).toHaveCount(0)
+      await expect(closed.locator('[data-slot="relationship-table-footer"]')).not.toContainText(
+        'Showing',
+      )
+    }
   })
 
   test('clicking an editable relationship-table cell edits in place instead of navigating', async ({

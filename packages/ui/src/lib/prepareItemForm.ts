@@ -1,7 +1,7 @@
 import {
   type AccessContext,
+  getLabelFieldName,
   getRelationshipOptions,
-  isRelationshipLabelReadable,
   OpenSaasConfig,
 } from '@opensaas/stack-core'
 import type { ListConfig } from '@opensaas/stack-core'
@@ -108,16 +108,19 @@ export async function prepareItemForm(
       if (!ref) return null
       // Parse ref format: "ListName.fieldName"
       const relatedListName = ref.split('.')[0]
-      if (!config.lists[relatedListName]) return null
+      if (!Object.hasOwn(config.lists, relatedListName)) return null
+      const relatedListConfig = config.lists[relatedListName]
 
       try {
-        const [vocabulary, labelReadable] = await Promise.all([
+        const [vocabulary, relatedVocabulary] = await Promise.all([
           vocabularyPromise,
-          isRelationshipLabelReadable(context, config, relatedListName),
+          readSessionVocabulary(context, relatedListName),
         ])
         if (withheldFieldNames(vocabulary, [fieldName], operation).has(fieldName)) return null
+        if (relatedVocabulary.operations.query === 'deny') return [fieldName, []] as const
+        const labelField = getLabelFieldName(relatedListConfig)
         const options = await getRelationshipOptions(context, config, relatedListName, {
-          labelReadable,
+          labelReadable: relatedVocabulary.fields.get(labelField)?.read === 'allow',
           selectedIds: extractSelectedIds(itemData[fieldName], fieldConfigAny.many),
         })
         return [fieldName, options] as const
