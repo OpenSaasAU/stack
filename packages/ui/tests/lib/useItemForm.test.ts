@@ -3,7 +3,6 @@ import { act, renderHook } from '@testing-library/react'
 import {
   diffEdgeSelections,
   transformItemFormData,
-  transformInitialData,
   getEditableFields,
   PARTIAL_SAVE_PREFIX,
   UnwritableRelationshipError,
@@ -110,25 +109,6 @@ describe('transformItemFormData', () => {
       title: 'Post',
       author: { connect: { id: 'u1' } },
     })
-  })
-})
-
-describe('transformInitialData', () => {
-  it('applies a field valueForClientSerialization transform', () => {
-    const fields = {
-      when: {
-        type: 'timestamp',
-        ui: { valueForClientSerialization: ({ value }: { value: unknown }) => `iso:${value}` },
-      },
-      title: { type: 'text' },
-    }
-    const out = transformInitialData(fields, { when: 123, title: 'x' })
-    expect(out).toEqual({ when: 'iso:123', title: 'x' })
-  })
-
-  it('leaves data unchanged when no transform is defined', () => {
-    const fields = { title: { type: 'text' } }
-    expect(transformInitialData(fields, { title: 'x' })).toEqual({ title: 'x' })
   })
 })
 

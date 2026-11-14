@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@opensaas/stack-ui/primitives'
 import { Button } from '@opensaas/stack-ui/primitives'
-import { config, getContext } from '@/.opensaas/context'
+import { getContext } from '@/.opensaas/context'
 import { demoSession } from '../lib/demo-session'
 import { CreatePostDialog } from '../components/CreatePostDialog'
 import { serializeFieldConfigs } from '@opensaas/stack-ui/server'
@@ -108,7 +108,7 @@ export default async function HomePage() {
               <CardTitle>Quick Actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              <CreatePostDialog fields={serializeFieldConfigs((await config).lists.Post.fields)} />
+              <CreatePostDialog fields={await serializeFieldConfigs(context, 'Post', 'create')} />
               <Link href="/posts" className="block">
                 <Button variant="outline" className="w-full">
                   View All Posts

@@ -7,7 +7,7 @@ vi.mock('@opensaas/stack-core', async (importOriginal) => {
 })
 
 import { getRelationshipOptions } from '@opensaas/stack-core'
-import { bigInt, relationship, select, text } from '@opensaas/stack-core/fields'
+import { bigInt, password, relationship, select, text } from '@opensaas/stack-core/fields'
 import { createTestContext, type TestContext } from '@opensaas/stack-core/testing'
 import { prepareItemForm } from '../../src/lib/prepareItemForm.js'
 
@@ -69,6 +69,13 @@ function makeConfig(): OpenSaasConfig {
             validation: { isRequired: true },
             access: { read: () => false },
           }),
+          hiddenPin: password({
+            access: { read: () => false, create: () => false, update: () => false },
+          }),
+          hiddenReviewer: relationship({
+            ref: 'Author',
+            access: { read: () => false, create: () => false, update: () => false },
+          }),
         },
         access: { operation: { query: () => true, create: () => true, update: () => true } },
       },
@@ -77,6 +84,10 @@ function makeConfig(): OpenSaasConfig {
       User: {
         fields: { name: text(), profile: relationship({ ref: 'Profile.user' }) },
         access: { operation: { query: () => true, create: () => true } },
+      },
+      Feedback: {
+        fields: { message: text(), author: relationship({ ref: 'Author' }) },
+        access: { operation: { query: () => false, create: () => true } },
       },
       Profile: {
         fields: { bio: text(), user: relationship({ ref: 'User.profile' }) },
@@ -326,5 +337,58 @@ describe('prepareItemForm unreadable fields', () => {
     expect(serializableFields.writeOnly).toBeDefined()
     expect(serializableFields.writeOnly.validation?.isRequired).toBe(false)
     expect(initialData).not.toHaveProperty('writeOnly')
+  })
+})
+
+describe('prepareItemForm on a list the session may create but not query', () => {
+  it('keeps the options of an editable relationship field on the create form', async () => {
+    const options = [{ id: 'a1', label: 'Ada Lovelace' }]
+    mockedGetRelationshipOptions.mockResolvedValue(options)
+    const config = makeConfig()
+
+    const { serializableFields, relationshipData } = await prepareItemForm(
+      context,
+      config,
+      'Feedback',
+      config.lists.Feedback,
+      {},
+      'create',
+    )
+
+    expect(serializableFields.author?.readOnly).toBeUndefined()
+    expect(relationshipData.author).toEqual(options)
+  })
+})
+
+describe('prepareItemForm withheld fields', () => {
+  it.each(['create', 'update'] as const)(
+    'sends no value-transformed key for a withheld field on %s',
+    async (operation) => {
+      const config = makeConfig()
+      const { serializableFields, initialData } = await prepareItemForm(
+        context,
+        config,
+        'Doc',
+        config.lists.Doc,
+        operation === 'update' ? { id: '1', title: 't' } : {},
+        operation,
+      )
+      expect(serializableFields).not.toHaveProperty('hiddenPin')
+      expect(initialData).not.toHaveProperty('hiddenPin')
+    },
+  )
+
+  it('fetches no relationship options for a withheld relationship field', async () => {
+    const config = makeConfig()
+    const { relationshipData } = await prepareItemForm(
+      context,
+      config,
+      'Doc',
+      config.lists.Doc,
+      {},
+      'create',
+    )
+    expect(mockedGetRelationshipOptions).not.toHaveBeenCalled()
+    expect(relationshipData).not.toHaveProperty('hiddenReviewer')
   })
 })

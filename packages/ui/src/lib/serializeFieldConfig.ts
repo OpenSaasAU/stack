@@ -7,7 +7,7 @@ import type { ComponentType } from 'react'
 import type { CellComponent } from '../components/cells/registry.js'
 import { rendersAsRelationshipTable } from './deriveItemView.js'
 
-/** The client-safe projection of a `FieldConfig` — see {@link serializeFieldConfig}. */
+/** The client-safe projection of a `FieldConfig` — see {@link projectFieldConfig}. */
 export type SerializableFieldConfig = {
   type: string
   label?: string
@@ -104,8 +104,7 @@ export const JUNCTION_EDGE_RELATIONSHIP_REASON =
 
 /**
  * Shown beneath a field an item form cannot write because the field's own
- * CREATE/UPDATE access denies this session — set by `markWriteDeniedFields`
- * in `operationAccess.ts` (issue #1402).
+ * CREATE/UPDATE access denies this session in its Session vocabulary.
  */
 export const FIELD_WRITE_DENIED_REASON = "Not editable — you don't have permission to change this."
 
@@ -116,7 +115,7 @@ export const FIELD_HOOK_ONLY_REASON = 'Not editable — this value is set by the
  * Omits functions (getZodSchema, getContractField, getFilterSpec) and
  * non-serializable properties (access, hooks, typePatch, valueForClientSerialization).
  */
-export function serializeFieldConfig(fieldConfig: FieldConfig): SerializableFieldConfig {
+export function projectFieldConfig(fieldConfig: FieldConfig): SerializableFieldConfig {
   const config: SerializableFieldConfig = {
     type: fieldConfig.type,
   }
@@ -180,14 +179,14 @@ export function serializeFieldConfig(fieldConfig: FieldConfig): SerializableFiel
   return config
 }
 
-/** Same as {@link serializeFieldConfig}, applied to every field in a list's fields map. */
-export function serializeFieldConfigs(
+/** Same as {@link projectFieldConfig}, applied to every field in a list's fields map. */
+export function projectFieldConfigs(
   fields: Record<string, FieldConfig>,
 ): Record<string, SerializableFieldConfig> {
   const serialized: Record<string, SerializableFieldConfig> = {}
 
   for (const [fieldName, fieldConfig] of Object.entries(fields)) {
-    serialized[fieldName] = serializeFieldConfig(fieldConfig)
+    serialized[fieldName] = projectFieldConfig(fieldConfig)
   }
 
   return serialized
@@ -197,7 +196,7 @@ export function serializeFieldConfigs(
  * Mark every relationship whose foreign key lives on the related row, so no
  * editable control renders for it.
  *
- * {@link serializeFieldConfig} already catches the to-many case from the field
+ * {@link projectFieldConfig} already catches the to-many case from the field
  * alone. The other case — the non-owning end of a one-to-one, where both ends
  * are `many: false` and only one holds the column — is not visible in the
  * field config and needs the whole config to answer (ADR-0064).
@@ -250,7 +249,7 @@ export function markUnwritableRelationships(
 
 /**
  * Make every to-many relationship whose edges CAN be written from this form
- * writable, replacing the read-only mark {@link serializeFieldConfig} gave it
+ * writable, replacing the read-only mark {@link projectFieldConfig} gave it
  * with the plan those writes follow (ADR-0050).
  *
  * Only a form editing an existing record may do this: an edge is a write
