@@ -11,6 +11,7 @@ import { resolveListUi } from '../lib/resolveListUi.js'
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '../lib/pageSize.js'
 import { jsonSafeClone } from '../lib/jsonSafeClone.js'
 import { applyClientValueTransforms } from '../lib/clientValueTransforms.js'
+import { readSessionVocabulary, withheldFieldNames } from '../lib/sessionFieldConfigs.js'
 import { EmptyState } from './EmptyState.js'
 import { PageHeader } from './PageHeader.js'
 import { Button } from '../primitives/button.js'
@@ -31,8 +32,6 @@ import {
   getItemLabel,
   getLabelFieldName,
   getUrlKey,
-  isFieldFilterableById,
-  isRelationshipLabelReadable,
   isToManyRelationshipField,
   OpenSaasConfig,
   parseListId,
@@ -52,7 +51,6 @@ import {
   type ResolvedFilterRecord,
 } from '../lib/filterBuilderOptions.js'
 import {
-  collectUnreadableFields,
   filterByHasAccess,
   isRowActionAvailable,
   RELATIONSHIP_OPTIONS_MAX_TAKE,
@@ -192,12 +190,15 @@ async function resolveRecordLabels(
       let rows: Array<Record<string, unknown>> = []
       if (looked.length > 0) {
         try {
-          const labelReadable = await isRelationshipLabelReadable(context, config, relatedListKey)
-          const labelField = getLabelFieldName(relatedListConfig)
-          const read = context.db[relatedListKey].where({
-            id: { in: looked.map(({ value }) => value) },
-          })
-          rows = await (labelReadable ? read.select('id', labelField) : read.select('id')).all()
+          const vocabulary = await readSessionVocabulary(context, relatedListKey)
+          if (vocabulary.operations.query !== 'deny') {
+            const labelField = getLabelFieldName(relatedListConfig)
+            const labelReadable = vocabulary.fields.get(labelField)?.read === 'allow'
+            const read = context.db[relatedListKey].where({
+              id: { in: looked.map(({ value }) => value) },
+            })
+            rows = await (labelReadable ? read.select('id', labelField) : read.select('id')).all()
+          }
         } catch (error) {
           unstable_rethrow(error)
           console.error(`Filter labels for "${field}" could not be read:`, error)
@@ -275,12 +276,17 @@ async function isCountLinkable(
 ): Promise<boolean> {
   if (!Object.hasOwn(config.lists, otherListKey)) return false
   const otherListConfig = config.lists[otherListKey]
-  if (otherListConfig.isSingleton) return false
+  if (!Object.hasOwn(otherListConfig.fields, otherField)) return false
   try {
-    return await isFieldFilterableById(otherListConfig, otherListKey, otherField, config, {
-      session: context.session,
-      context,
-    })
+    const vocabulary = await readSessionVocabulary(context, otherListKey)
+    if (vocabulary.operations.query === 'deny') return false
+    if (vocabulary.fields.get(otherField)?.filterable !== true) return false
+    const spec = otherListConfig.fields[otherField].getFilterSpec?.(
+      otherField,
+      otherListKey,
+      config,
+    )
+    return spec?.toIdCondition !== undefined
   } catch (error) {
     unstable_rethrow(error)
     console.error(`Count link to "${otherListKey}.${otherField}" could not be resolved:`, error)
@@ -319,7 +325,7 @@ function readableFieldsOf<T>(
   return Object.fromEntries(Object.entries(fields).filter(([name]) => !unreadable.has(name)))
 }
 
-function withheldKeysOf(
+function strippedRowKeysOf(
   unreadable: ReadonlySet<string>,
   listConfig: OpenSaasConfig['lists'][string],
   listKey: string,
@@ -428,17 +434,14 @@ export async function ListView({
     )
   }
 
-  const unreadableFields = await collectUnreadableFields(listConfig, {
-    session: context.session,
-    context,
-  })
+  const vocabulary = await readSessionVocabulary(appContext, listKey)
+  const listFields = withStructuralTimestampDefaults(listConfig.fields, listConfig, config.db)
+  const unreadableFields = withheldFieldNames(vocabulary, Object.keys(listFields), 'display')
   const readable = (name: string) => !unreadableFields.has(name)
+  const sortable = (name: string) => vocabulary.fields.get(name)?.sortable === true
   const readableListFields = readableFieldsOf(listConfig.fields, unreadableFields)
-  const displayFields = readableFieldsOf(
-    withStructuralTimestampDefaults(listConfig.fields, listConfig, config.db),
-    unreadableFields,
-  )
-  const withheldKeys = withheldKeysOf(unreadableFields, listConfig, listKey, config)
+  const displayFields = readableFieldsOf(listFields, unreadableFields)
+  const strippedRowKeys = strippedRowKeysOf(unreadableFields, listConfig, listKey, config)
   const availableColumns = [
     ...new Set([
       ...(columns ?? []).filter((name) => !Object.hasOwn(displayFields, name)),
@@ -495,24 +498,16 @@ export async function ListView({
   let items: Array<Record<string, unknown>> = []
   let total = 0
   let countLinks: Record<string, CountFilterLink> = {}
-  let activeSort: ListViewSort | undefined
-  let sortableFields: Record<string, boolean> = {}
+  const activeSort = sortCandidates.find((candidate) => candidate && sortable(candidate.field))
+  const sortableFields = Object.fromEntries(
+    [...displayedColumns].map((column) => [column, sortable(column)]),
+  )
 
   try {
     const dbContext = context.db
     if (!dbContext || !dbContext[key]) {
       throw new Error(`Context for ${listKey} not found`)
     }
-
-    const orderable =
-      (await context._orderableKeys?.(listKey, [
-        ...displayedColumns,
-        ...sortCandidates.flatMap((candidate) => (candidate ? [candidate.field] : [])),
-      ])) ?? new Set<string>()
-    activeSort = sortCandidates.find((candidate) => candidate && orderable.has(candidate.field))
-    sortableFields = Object.fromEntries(
-      [...displayedColumns].map((column) => [column, orderable.has(column)]),
-    )
 
     // Parse the URL filter query into a server-side `where` fragment via the
     // filter engine (ADR-0017). Field-scoped tokens, comparisons, quoted values
@@ -590,7 +585,7 @@ export async function ListView({
   // Resolve each relationship value before crossing the server/client boundary
   // — ListConfig objects carry functions and can't be passed as props.
   const itemsWithResolvedLabels = items.map((item) => {
-    const resolved = withoutKeys(item, withheldKeys)
+    const resolved = withoutKeys(item, strippedRowKeys)
     for (const [fieldName, ref] of Object.entries(relationshipRefs)) {
       const field = listConfig.fields[fieldName]
       if (isToManyRelationshipField(field)) {

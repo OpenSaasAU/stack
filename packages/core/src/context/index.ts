@@ -8,7 +8,7 @@ import { isClientSafeError } from '../lib/client-safe-error.js'
 import { nullPrototypeRegistry } from '../lib/null-prototype-registry.js'
 import { warnOnce } from '../lib/warn-once.js'
 import type { OpenedTransaction, OrmClient, OrmRow, TransactionOpener } from '../access/types.js'
-import { createSecuredRead, orderableKeys, type SecuredQuery } from '../secured/read.js'
+import { createSecuredRead, type SecuredQuery } from '../secured/read.js'
 import { withOwnSessionVocabulary } from '../access/session-vocabulary.js'
 import {
   createLivenessProbe,
@@ -803,7 +803,6 @@ export function getContext<TConfig extends OpenSaasConfig>(
     _rowLock: lock,
     _config: config,
     _baseContext,
-    _orderableKeys: (listKey, keys) => orderableKeys(context, config, listKey, keys),
   }
   withOwnSessionVocabulary(context, config)
 

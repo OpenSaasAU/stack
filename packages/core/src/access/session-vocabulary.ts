@@ -13,7 +13,6 @@ import { isComputedField } from '../config/field-kind.js'
 import { ownsForeignKey } from '../context/junction.js'
 import { resolveListTimestamps } from '../contract/derive.js'
 import { isRelationshipField } from '../fields/index.js'
-import { canQueryList, hasFilterSpec } from '../filter/collect.js'
 import { columnOrderedKeys } from '../secured/read.js'
 import { readStoredRow, writeTargetAllows } from '../context/write-target.js'
 
@@ -78,6 +77,10 @@ async function answerOrDeny(
   return await decideAdvertisement(subject, decide, 'deny', vocabularyPolicy)
 }
 
+function hasFilterSpec(field: FieldConfig): boolean {
+  return typeof field.getFilterSpec === 'function' && field.isFilterable !== false
+}
+
 function potentiallyAllowed(rule: AccessControl | undefined): AccessControl | undefined {
   if (rule === undefined) return undefined
   return async (args) => (await checkAccess(rule, args)) !== false
@@ -96,7 +99,7 @@ async function resolveOperations(
   const args = { session: context.session, context }
   const [query, create, update, del] = await Promise.all([
     answerOrDeny(`${listKey}.query`, async () =>
-      (await canQueryList(listConfig, args)) ? 'allow' : 'deny',
+      (await checkAccess(listConfig.access?.operation?.query, args)) !== false ? 'allow' : 'deny',
     ),
     answerOrDeny(`${listKey}.create`, () =>
       classifyRowIndependentCreateAccess(operations?.create, args),

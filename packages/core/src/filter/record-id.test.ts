@@ -47,11 +47,14 @@ const config: OpenSaasConfig = {
     Post: {
       fields: {
         title: text({ validation: { isRequired: true } }),
-        author: relationship({ ref: 'User.posts' }),
+        author: relationship({
+          ref: 'User.posts',
+          access: { read: ({ session }) => String(session?.role ?? '') !== 'blind' },
+        }),
         tag: relationship({ ref: 'Tag.posts' }),
         owner: relationship({ ref: 'Owner.posts' }),
       },
-      access: { operation: { query: () => true } },
+      access: { operation: { query: ({ session }) => String(session?.role ?? '') !== 'blocked' } },
     },
   },
 }
@@ -246,16 +249,8 @@ describe('isFieldFilterableById', () => {
   test(
     'is false when the session may not query the list or read the field',
     async () => {
-      const denied = { ...config.lists.Post, access: { operation: { query: () => false } } }
-      const unreadable = {
-        ...config.lists.Post,
-        fields: {
-          ...config.lists.Post.fields,
-          author: relationship({ ref: 'User.posts', access: { read: () => false } }),
-        },
-      }
-      expect(await filterable(denied, 'author')).toBe(false)
-      expect(await filterable(unreadable, 'author')).toBe(false)
+      expect(await filterable(config.lists.Post, 'author', { role: 'blocked' })).toBe(false)
+      expect(await filterable(config.lists.Post, 'author', { role: 'blind' })).toBe(false)
     },
     BOOT,
   )

@@ -18,7 +18,7 @@ import {
   isOperationPotentiallyAllowed,
   isFieldPotentiallyWritable,
 } from '../lib/operationAccess.js'
-import { collectUnreadableFields } from '@opensaas/stack-core/internal'
+import { readSessionVocabulary, withheldFieldNames } from '../lib/sessionFieldConfigs.js'
 import { prepareItemForm } from '../lib/prepareItemForm.js'
 import type { RelationshipTableSection } from '../lib/deriveItemView.js'
 import { resolveToManyEdgePlan } from '../lib/relationshipEdges.js'
@@ -366,9 +366,17 @@ export async function RelationshipTable({
   const context = engineContextOf(appContext)
   const relatedListConfig = config.lists[section.relatedListKey]
   const relatedUrlKey = getUrlKey(section.relatedListKey)
-  const unreadable = relatedListConfig
-    ? await collectUnreadableFields(relatedListConfig, { session: context.session, context })
-    : new Set<string>()
+  const relatedVocabulary = relatedListConfig
+    ? await readSessionVocabulary(appContext, section.relatedListKey)
+    : null
+  const unreadable =
+    relatedVocabulary === null || relatedVocabulary.operations.query === 'deny'
+      ? new Set<string>()
+      : withheldFieldNames(
+          relatedVocabulary,
+          [...section.columns, ...section.sumColumns],
+          'display',
+        )
   const shownColumns = section.columns.filter((column) => !unreadable.has(column))
   const shownSumColumns = section.sumColumns.filter((column) => !unreadable.has(column))
 

@@ -322,15 +322,6 @@ export interface AccessContext<DB = AccessControlledDB> {
    */
   _config?: import('../config/types.js').OpenSaasConfig
   /**
-   * Which of `keys` this context's reads of `listKey` may order by, without
-   * running a read. A member rather than an export because the admin list view
-   * sits in the client graph of any app importing `@opensaas/stack-ui`, and the
-   * module that answers this imports Node builtins. Optional for the reason
-   * `_config` is; a context core built always carries it.
-   * @internal
-   */
-  _orderableKeys?: (listKey: string, keys: readonly string[]) => Promise<ReadonlySet<string>>
-  /**
    * What this context's session may be told about `listKey` ahead of any
    * request, or `null` for a list the config does not declare (ADR-0084).
    * Resolved once per list and kept for this context's life.

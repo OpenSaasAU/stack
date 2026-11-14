@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { filterQueryTokens, parseFilterQuery } from './parse.js'
 import {
   buildFilterWhere,
@@ -11,7 +11,6 @@ import {
   buildListFilterWhere,
   collectFilterSpecs,
   collectFilterSuggestions,
-  collectUnreadableFields,
   withholdFilterFields,
   type FilterAccessArgs,
 } from './collect.js'
@@ -30,16 +29,25 @@ import {
 } from '../fields/index.js'
 import type { OpenSaasConfig } from '../config/types.js'
 import type { AccessContext } from '../access/types.js'
+import { withOwnSessionVocabulary } from '../access/session-vocabulary.js'
 
 const tokensOf = (written: string) => filterQueryTokens(parseFilterQuery(written))
 
-// A permissive session/context — no field on any list under test declares
-// field-level `read` access unless a test says so, so every field is
-// filterable/sortable by default (matching `checkFieldAccess`'s own
-// allow-by-default for a field with no rule).
-const noAccessArgs: FilterAccessArgs = {
-  session: null,
-  context: { _isSudo: false } as unknown as AccessContext,
+// An anonymous session over a context that carries only what the Session
+// vocabulary needs, so a field with no `read` rule is filterable and every
+// rule is asked exactly as a real context asks it.
+function argsFor(config: OpenSaasConfig): FilterAccessArgs {
+  const context = withOwnSessionVocabulary(
+    {
+      _isSudo: false,
+      session: null,
+      db: {},
+      ormHandle: undefined,
+      _resolveOutputChain: [],
+    } as unknown as AccessContext,
+    config,
+  )
+  return { session: null, context }
 }
 
 const READABLE = { operation: { query: () => true } }
@@ -624,14 +632,14 @@ describe('buildFilterWhere — empty-value tokens (#1509)', () => {
       config.lists.Post,
       'Post',
       config,
-      noAccessArgs,
+      argsFor(config),
     )
     const withNoQuery = await buildListFilterWhere(
       '',
       config.lists.Post,
       'Post',
       config,
-      noAccessArgs,
+      argsFor(config),
     )
     expect(withEmptyValue).toEqual(withNoQuery)
     expect(withEmptyValue).toBeUndefined()
@@ -689,7 +697,7 @@ describe('core field Filter specs', () => {
   }
 
   it('collectFilterSpecs resolves a spec for every filterable core field', async () => {
-    const collected = await collectFilterSpecs(postConfig, 'Post', config, noAccessArgs)
+    const collected = await collectFilterSpecs(postConfig, 'Post', config, argsFor(config))
     expect(Object.keys(collected).sort()).toEqual(
       ['author', 'featured', 'occurredAtMs', 'publishedAt', 'status', 'title', 'views'].sort(),
     )
@@ -849,10 +857,10 @@ describe('core field Filter specs', () => {
 
   it('negates a to-one relationship with one NOT, since NOT some already includes none', async () => {
     expect(
-      await buildListFilterWhere('-author:Ada', postConfig, 'Post', config, noAccessArgs),
+      await buildListFilterWhere('-author:Ada', postConfig, 'Post', config, argsFor(config)),
     ).toEqual({ NOT: { author: { some: { name: { contains: 'Ada' } } } } })
     expect(
-      await buildListFilterWhere('-author:!', postConfig, 'Post', config, noAccessArgs),
+      await buildListFilterWhere('-author:!', postConfig, 'Post', config, argsFor(config)),
     ).toEqual({ NOT: { author: { none: {} } } })
   })
 
@@ -905,7 +913,7 @@ describe('core field Filter specs', () => {
       gatedConfig.lists.Entry,
       'Entry',
       gatedConfig,
-      noAccessArgs,
+      argsFor(gatedConfig),
     )
     expect(where).toEqual({ NOT: {} })
   })
@@ -936,7 +944,12 @@ describe('core field Filter specs', () => {
 
   it('does not produce specs for password/json/virtual (absence degrades gracefully)', async () => {
     // A list of non-filterable fields yields no specs at all.
-    const specsForUser = await collectFilterSpecs(config.lists.User, 'User', config, noAccessArgs)
+    const specsForUser = await collectFilterSpecs(
+      config.lists.User,
+      'User',
+      config,
+      argsFor(config),
+    )
     // User only has `name` (text) → exactly one spec, proving non-text absence.
     expect(Object.keys(specsForUser)).toEqual(['name'])
   })
@@ -958,7 +971,7 @@ describe('core field Filter specs', () => {
       gatedConfig.lists.Organisation,
       'Organisation',
       gatedConfig,
-      noAccessArgs,
+      argsFor(gatedConfig),
     )
     expect(Object.keys(collected)).toEqual(['name'])
   })
@@ -982,64 +995,67 @@ describe('core field Filter specs', () => {
       gatedConfig.lists.Organisation,
       'Organisation',
       gatedConfig,
-      noAccessArgs,
+      argsFor(gatedConfig),
     )
     expect(Object.keys(collected)).toEqual(['name'])
   })
-})
 
-describe('collectUnreadableFields', () => {
-  const rules = list({
-    access: READABLE,
-    fields: {
-      name: text(),
-      secret: text({ access: { read: () => false } }),
-      ownNote: text({ access: { read: ({ item }) => item.name === 'Mine' } }),
-      audit: text({ access: { read: ({ session }) => session?.role === 'admin' } }),
-    },
-  })
-
-  it('names only the fields a row-independent rule denies this session', async () => {
-    expect([...(await collectUnreadableFields(rules, noAccessArgs))].sort()).toEqual([
-      'audit',
-      'secret',
-    ])
-    expect([
-      ...(await collectUnreadableFields(rules, { ...noAccessArgs, session: { role: 'admin' } })),
-    ]).toEqual(['secret'])
-  })
-
-  it('names a field whose rule throws without reading the row, and spares its siblings', async () => {
-    const throwing = list({
-      access: READABLE,
-      fields: {
-        name: text(),
-        broken: text({
-          access: {
-            read: () => {
-              throw new Error('rule failed')
+  it('excludes a field whose read rule throws, logs it, and keeps its siblings', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const gatedConfig: OpenSaasConfig = {
+        db: { provider: 'postgresql' },
+        lists: {
+          Organisation: list({
+            access: READABLE,
+            fields: {
+              name: text(),
+              broken: text({
+                access: {
+                  read: () => {
+                    throw new Error('rule failed')
+                  },
+                },
+              }),
             },
-          },
-        }),
-      },
-    })
-    expect([...(await collectUnreadableFields(throwing, noAccessArgs))]).toEqual(['broken'])
+          }),
+        },
+      }
+      const collected = await collectFilterSpecs(
+        gatedConfig.lists.Organisation,
+        'Organisation',
+        gatedConfig,
+        argsFor(gatedConfig),
+      )
+      expect(Object.keys(collected)).toEqual(['name'])
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('Organisation.broken'),
+        expect.any(Error),
+      )
+    } finally {
+      warn.mockRestore()
+    }
   })
 
   it('asks no field rule for a session denied the list', async () => {
-    const asked = list({
-      access: { operation: { query: () => false } },
-      fields: {
-        title: text({
-          access: {
-            read: () => {
-              throw new Error('asked')
-            },
-          },
+    const asked = vi.fn(() => true)
+    const deniedConfig: OpenSaasConfig = {
+      db: { provider: 'postgresql' },
+      lists: {
+        Organisation: list({
+          access: { operation: { query: () => false } },
+          fields: { name: text({ access: { read: asked } }) },
         }),
       },
-    })
-    expect([...(await collectUnreadableFields(asked, noAccessArgs))]).toEqual([])
+    }
+    const collected = await collectFilterSpecs(
+      deniedConfig.lists.Organisation,
+      'Organisation',
+      deniedConfig,
+      argsFor(deniedConfig),
+    )
+    expect(collected).toEqual({})
+    expect(asked).not.toHaveBeenCalled()
   })
 })
 
@@ -1052,7 +1068,7 @@ describe('buildListFilterWhere (end-to-end over a real list config)', () => {
       config.lists.Post,
       'Post',
       config,
-      noAccessArgs,
+      argsFor(config),
     )
     expect(where).toEqual({
       AND: [
@@ -1068,7 +1084,7 @@ describe('buildListFilterWhere (end-to-end over a real list config)', () => {
 
   it('returns undefined for an all-whitespace query', async () => {
     expect(
-      await buildListFilterWhere('   ', config.lists.Post, 'Post', config, noAccessArgs),
+      await buildListFilterWhere('   ', config.lists.Post, 'Post', config, argsFor(config)),
     ).toBeUndefined()
   })
 
@@ -1093,7 +1109,7 @@ describe('buildListFilterWhere (end-to-end over a real list config)', () => {
       gatedConfig.lists.Organisation,
       'Organisation',
       gatedConfig,
-      noAccessArgs,
+      argsFor(gatedConfig),
     )
     expect(where).toEqual({ name: { contains: '12' } })
   })
@@ -1141,13 +1157,13 @@ describe('to-many relationship Filter spec (presence — issue #732, ADR-0055)',
   it('end-to-end: `posts:>0` becomes a presence filter and `posts:>5` degrades', async () => {
     const config = countConfig()
     expect(
-      await buildListFilterWhere('posts:>0', config.lists.User, 'User', config, noAccessArgs),
+      await buildListFilterWhere('posts:>0', config.lists.User, 'User', config, argsFor(config)),
     ).toEqual({ posts: { some: {} } })
     expect(
-      await buildListFilterWhere('posts:>=1', config.lists.User, 'User', config, noAccessArgs),
+      await buildListFilterWhere('posts:>=1', config.lists.User, 'User', config, argsFor(config)),
     ).toEqual({ posts: { some: {} } })
     expect(
-      await buildListFilterWhere('posts:>5', config.lists.User, 'User', config, noAccessArgs),
+      await buildListFilterWhere('posts:>5', config.lists.User, 'User', config, argsFor(config)),
     ).toEqual({ name: { contains: '5' } })
   })
 })
@@ -1159,7 +1175,7 @@ describe('collectFilterSuggestions', () => {
       config.lists.Post,
       'Post',
       config,
-      noAccessArgs,
+      argsFor(config),
     )
     // No functions anywhere → JSON round-trips cleanly.
     expect(JSON.parse(JSON.stringify(suggestions))).toEqual(suggestions)
@@ -1175,7 +1191,7 @@ describe('collectFilterSuggestions', () => {
       config.lists.Post,
       'Post',
       config,
-      noAccessArgs,
+      argsFor(config),
     )
     expect(
       suggestions
@@ -1192,7 +1208,7 @@ describe('collectFilterSuggestions', () => {
       config.lists.Post,
       'Post',
       config,
-      noAccessArgs,
+      argsFor(config),
     )
     expect(suggestions.find((s) => s.field === 'author')?.negation).toBe('includesEmpty')
     expect(suggestions.find((s) => s.field === 'title')?.negation).toBeUndefined()
@@ -1215,7 +1231,7 @@ describe('collectFilterSuggestions', () => {
       gatedConfig.lists.Organisation,
       'Organisation',
       gatedConfig,
-      noAccessArgs,
+      argsFor(gatedConfig),
     )
     expect(suggestions.map((s) => s.field)).toEqual(['name'])
   })
@@ -1252,7 +1268,7 @@ describe('collectFilterSuggestions', () => {
         config.lists.Thing,
         'Thing',
         config,
-        noAccessArgs,
+        argsFor(config),
       )
       const spec = field.getFilterSpec?.('value', 'Thing', config)
       expect(spec?.suggestions.valueFormat).toEqual(suggestion.valueFormat)
@@ -1294,7 +1310,7 @@ describe('collectFilterSuggestions', () => {
       config.lists.Thing,
       'Thing',
       config,
-      noAccessArgs,
+      argsFor(config),
     )
     expect(suggestion.valueFormat).toBeUndefined()
     const spec = field.getFilterSpec?.('value', 'Thing', config)
@@ -1312,7 +1328,7 @@ describe('collectFilterSuggestions', () => {
       POSTS_CONFIG.lists.User,
       'User',
       POSTS_CONFIG,
-      noAccessArgs,
+      argsFor(POSTS_CONFIG),
     )
     const suggestion = suggestions.find((entry) => entry.field === 'posts')
     const spec = POSTS_CONFIG.lists.User.fields.posts.getFilterSpec?.('posts', 'User', POSTS_CONFIG)
@@ -1536,7 +1552,7 @@ describe('ranges (`field:a..b`)', () => {
       config.lists.Thing,
       'Thing',
       config,
-      noAccessArgs,
+      argsFor(config),
     )
     expect(Object.fromEntries(suggestions.map((s) => [s.field, s.datePicker]))).toEqual({
       at: 'instant',

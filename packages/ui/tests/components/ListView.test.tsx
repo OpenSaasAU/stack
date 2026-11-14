@@ -40,6 +40,17 @@ const BOOT = 120_000
 const INTERNAL_FAILURE = 'relation "internal_table" does not exist'
 let readsFail = false
 let controlFlow: () => void = () => undefined
+let countedReadRules = 0
+
+function returnsNull(): boolean
+function returnsNull(): boolean | null {
+  return null
+}
+
+function returnsUndefined(): boolean
+function returnsUndefined(): boolean | undefined {
+  return undefined
+}
 
 function titlesOf(value: unknown): string[] {
   if (!Array.isArray(value)) return []
@@ -229,6 +240,60 @@ const config: OpenSaasConfig = {
       fields: {
         secret: text({ access: { read: () => false } }),
         hidden: text({ ui: { listView: { defaultColumn: false } } }),
+      },
+      access: { operation: { query: () => true } },
+    },
+    Catalog: {
+      fields: {
+        name: text(),
+        sku: text({ isFilterable: false }),
+        cost: text({ access: { read: () => false } }),
+        ownLabel: text({ access: { read: ({ item }) => item.name === 'Mine' } }),
+        counted: text({
+          access: {
+            read: () => {
+              countedReadRules += 1
+              return true
+            },
+          },
+        }),
+      },
+      db: { timestamps: false },
+      access: { operation: { query: () => true } },
+      ui: {
+        listView: {
+          presets: [
+            {
+              key: 'cheap',
+              label: 'Cheap',
+              search: 'cost:5 name:Mine',
+              sort: { field: 'ownLabel', direction: 'asc' },
+            },
+          ],
+        },
+      },
+    },
+    Hub: {
+      fields: {
+        name: text(),
+        nulls: relationship({ ref: 'NullSpoke.hub', many: true }),
+        undefs: relationship({ ref: 'UndefSpoke.hub', many: true }),
+      },
+      access: { operation: { query: () => true } },
+    },
+    NullSpoke: {
+      fields: { name: text(), hub: relationship({ ref: 'Hub.nulls' }) },
+      access: { operation: { query: returnsNull } },
+    },
+    UndefSpoke: {
+      fields: { name: text(), hub: relationship({ ref: 'Hub.undefs' }) },
+      access: { operation: { query: returnsUndefined } },
+    },
+    Pin: {
+      fields: {
+        name: text(),
+        nullSpoke: relationship({ ref: 'NullSpoke' }),
+        undefSpoke: relationship({ ref: 'UndefSpoke' }),
       },
       access: { operation: { query: () => true } },
     },
@@ -583,18 +648,18 @@ describe('ListView relationship lookup by id', () => {
   it(
     'renders without a link when the other list’s field rule throws, and links no singleton',
     async () => {
-      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
       try {
         await create('Bin', { name: 'Blue' })
         const props = await render(ada, { listKey: 'Bin', columns: ['name', 'boxes', 'notices'] })
         expect(props.items.map((item) => item.name)).toEqual(['Blue'])
         expect(props.countLinks).toEqual({})
-        expect(consoleError).toHaveBeenCalledWith(
-          'Count link to "Box.bin" could not be resolved:',
+        expect(consoleWarn).toHaveBeenCalledWith(
+          expect.stringContaining('"Box.bin (read)"'),
           expect.any(Error),
         )
       } finally {
-        consoleError.mockRestore()
+        consoleWarn.mockRestore()
       }
     },
     BOOT,
@@ -1239,6 +1304,108 @@ describe('ListView sends no field the session can never read to the client (#229
       const admin = await render({ role: 'admin' }, { listKey: 'Ledger' })
       expect(Object.keys(admin.fieldTypes)).toContain('audit')
       expect(Object.keys(admin.fields ?? {})).toContain('audit')
+    },
+    BOOT,
+  )
+})
+
+describe('ListView reads the Session vocabulary (#2397)', () => {
+  it(
+    'shows a row-dependent readable field but neither filters nor sorts by it',
+    async () => {
+      const props = await render(ada, {
+        listKey: 'Catalog',
+        columns: ['name', 'ownLabel'],
+        sort: { field: 'ownLabel', direction: 'asc' },
+      })
+      expect(props.columns).toEqual(['name', 'ownLabel'])
+      expect(props.filterSuggestions?.map((s) => s.field)).not.toContain('ownLabel')
+      expect(props.sortableFields).toEqual({ name: true, ownLabel: false })
+      expect(props.initialSort).toBeUndefined()
+    },
+    BOOT,
+  )
+
+  it(
+    'offers no filter on an isFilterable: false field, while still showing it',
+    async () => {
+      const props = await render(ada, { listKey: 'Catalog', columns: ['name', 'sku'] })
+      expect(props.filterSuggestions?.map((s) => s.field)).toEqual(['name', 'counted'])
+      expect(props.columns).toContain('sku')
+    },
+    BOOT,
+  )
+
+  it(
+    'leaves a field the session cannot read out of a Preset view, and its sort to the vocabulary',
+    async () => {
+      const props = await render(ada, { listKey: 'Catalog', preset: 'cheap' })
+      expect(props.activePreset).toBe('cheap')
+      expect(props.search).toBe('name:Mine')
+      expect(props.initialSort).toBeUndefined()
+      expect(JSON.stringify(props)).not.toContain('cost')
+    },
+    BOOT,
+  )
+
+  it(
+    'asks each field rule once for what the list view offers',
+    async () => {
+      countedReadRules = 0
+      const props = await render(ada, { listKey: 'Catalog', columns: ['name', 'counted'] })
+      expect(props.sortableFields).toEqual({ name: true, counted: true })
+      expect(props.filterSuggestions?.map((s) => s.field)).toContain('counted')
+      expect(countedReadRules).toBe(1)
+    },
+    BOOT,
+  )
+
+  it(
+    'hides the field whose read rule throws, logs it, and still renders',
+    async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+      try {
+        const props = await render(ada, { listKey: 'Brittle', search: 'meta:x' })
+        expect(props.items).toEqual([])
+        expect(Object.keys(props.fieldTypes)).not.toContain('meta')
+        expect(props.filterSuggestions?.map((s) => s.field)).toEqual(['name'])
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining('"Brittle.meta (read)"'),
+          expect.any(Error),
+        )
+      } finally {
+        warn.mockRestore()
+      }
+    },
+    BOOT,
+  )
+})
+
+describe('ListView reads the related list’s vocabulary for links and labels (#2397, #2382)', () => {
+  it(
+    'links no count to a list whose query rule returns null or undefined',
+    async () => {
+      const hub = await create('Hub', { name: 'Centre' })
+      await create('NullSpoke', { name: 'Hidden one', hub: { connect: { id: hub.id } } })
+      await create('UndefSpoke', { name: 'Hidden two', hub: { connect: { id: hub.id } } })
+      const props = await render(ada, { listKey: 'Hub', columns: ['name', 'nulls', 'undefs'] })
+      expect(props.items.map((item) => item.name)).toEqual(['Centre'])
+      expect(props.countLinks).toEqual({})
+    },
+    BOOT,
+  )
+
+  it.each([
+    ['null', 'NullSpoke', 'nullSpoke'],
+    ['undefined', 'UndefSpoke', 'undefSpoke'],
+  ])(
+    'resolves no filter-chip label from a list whose query rule returns %s',
+    async (_label, listKey, field) => {
+      const spoke = await create(listKey, { name: 'Classified' })
+      const id = String(spoke.id)
+      const props = await render(ada, { listKey: 'Pin', search: `${field}:#${id}` })
+      expect(props.recordLabels).toEqual({ [field]: [{ id, label: null }] })
+      expect(JSON.stringify(props)).not.toContain('Classified')
     },
     BOOT,
   )
