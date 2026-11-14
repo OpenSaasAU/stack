@@ -12,32 +12,11 @@ type CountDelegate = {
 }
 
 /**
- * Whether a list's query access is **statically denied** — provably no session
- * can read any row, without evaluating a session-dependent function.
- *
- * Mirrors the list view's `canDeleteList` static check (issue #733): absent
- * access is deny-by-default (matching the access engine), so only an explicit
- * `false` counts as statically denied here — a function or `true` falls
- * through to a real per-row check via the secured context.
- *
- * A statically-denied list must render no nav count at all: a `0` there would
- * imply "this list is empty" when the truth is "you may see none of it".
- */
-export function isListQueryStaticallyDenied(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-  listConfig: ListConfig<any>,
-): boolean {
-  const queryAccess = listConfig.access?.operation?.query
-  if (queryAccess === undefined) return true
-  if (typeof queryAccess === 'boolean') return !queryAccess
-  return false
-}
-
-/**
  * Resolve the access-scoped nav counts for lists that opt in via
  * `ui.navCount` (issue #735). A list gets an entry only if it opts in, isn't
- * a singleton (no meaningful count), and isn't {@link isListQueryStaticallyDenied}
- * — everything else is omitted from the map, never zeroed.
+ * a singleton, and its Session vocabulary does not deny `query` (ADR-0084) —
+ * everything else is omitted from the map, never zeroed. A context that
+ * resolves no vocabulary for a list counts it as denied.
  *
  * Each count is read through the secured `context.db`, so it reflects
  * exactly what the current session may see.
@@ -53,12 +32,13 @@ export async function resolveNavCounts(
     const listConfig = lists[listKey] as ListConfig<TypeInfo> | undefined
     if (!listConfig) return false
     if (listConfig.ui?.navCount !== true) return false
-    if (listConfig.isSingleton) return false
-    return !isListQueryStaticallyDenied(listConfig)
+    return !listConfig.isSingleton
   })
 
   await Promise.all(
     optedIn.map(async (listKey) => {
+      const vocabulary = (await context._sessionVocabulary?.(listKey)) ?? null
+      if (vocabulary === null || vocabulary.operations.query === 'deny') return
       const delegate: CountDelegate | undefined = context.db?.[listKey]
       if (!delegate?.aggregate) return
       // A single list's count failing (a DB hiccup, a throwing access filter or

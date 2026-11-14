@@ -291,6 +291,8 @@ function makeEdgeConfig(): OpenSaasConfig {
           notes: relationship({ ref: 'Note.board', many: true }),
           feedback: relationship({ ref: 'Feedback.board', many: true }),
           labels: relationship({ ref: 'BoardLabel.board', many: true }),
+          tags: relationship({ ref: 'BoardTag.board', many: true }),
+          stars: relationship({ ref: 'BoardStar.board', many: true }),
         },
         access: { operation: open },
       },
@@ -326,6 +328,34 @@ function makeEdgeConfig(): OpenSaasConfig {
         fields: {
           board: relationship({ ref: 'Board.labels', access: { create: () => false } }),
           label: relationship({ ref: 'Label.boards' }),
+        },
+        access: { operation: open },
+      },
+      Tag: {
+        fields: {
+          name: text(),
+          boards: relationship({ ref: 'BoardTag.tag', many: true }),
+        },
+        access: { operation: open },
+      },
+      BoardTag: {
+        fields: {
+          board: relationship({ ref: 'Board.tags' }),
+          tag: relationship({ ref: 'Tag.boards', access: { create: () => false } }),
+        },
+        access: { operation: open },
+      },
+      Star: {
+        fields: {
+          name: text(),
+          boards: relationship({ ref: 'BoardStar.star', many: true }),
+        },
+        access: { operation: open },
+      },
+      BoardStar: {
+        fields: {
+          board: relationship({ ref: 'Board.stars' }),
+          star: relationship({ ref: 'Star.boards' }),
         },
         access: { operation: open },
       },
@@ -416,6 +446,30 @@ describe('Relationship table reads the back-reference field’s own answers', ()
       const props = await edgeProps(edgeSection('labels', 'BoardLabel.board', { columns: [] }))
 
       expect(props.linkEdge).toBeUndefined()
+    },
+    BOOT,
+  )
+
+  it(
+    'hides the junction link when the junction’s target foreign key’s create is denied',
+    async () => {
+      const props = await edgeProps(edgeSection('tags', 'BoardTag.board', { columns: [] }))
+
+      expect(props.linkEdge).toBeUndefined()
+    },
+    BOOT,
+  )
+
+  it(
+    'offers the junction link when both junction foreign keys may be created',
+    async () => {
+      const props = await edgeProps(edgeSection('stars', 'BoardStar.board', { columns: [] }))
+
+      expect(props.linkEdge).toMatchObject({
+        mode: 'junction',
+        junctionListKey: 'BoardStar',
+        targetField: 'star',
+      })
     },
     BOOT,
   )

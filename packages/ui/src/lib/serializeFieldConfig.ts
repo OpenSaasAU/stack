@@ -2,6 +2,7 @@ import type { FieldConfig, OpenSaasConfig } from '@opensaas/stack-core'
 import type { SelectOption } from '@opensaas/stack-core/fields'
 import { isRelationshipField, shouldHaveForeignKey } from '@opensaas/stack-core/fields'
 import { resolveJunctionEdge } from '@opensaas/stack-core'
+import { isHookOnlyField } from '@opensaas/stack-core/internal'
 import { resolveToManyEdgePlan } from './relationshipEdges.js'
 import type { ComponentType } from 'react'
 import type { CellComponent } from '../components/cells/registry.js'
@@ -120,7 +121,7 @@ export function projectFieldConfig(fieldConfig: FieldConfig): SerializableFieldC
     type: fieldConfig.type,
   }
 
-  if (fieldConfig.access?.write === 'hooks') {
+  if (isHookOnlyField(fieldConfig)) {
     config.readOnly = true
     config.readOnlyReason = FIELD_HOOK_ONLY_REASON
   }

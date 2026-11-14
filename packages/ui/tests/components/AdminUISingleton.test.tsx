@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import * as React from 'react'
 import { render, screen } from '@testing-library/react'
-import type { AccessContext, OpenSaasConfig } from '@opensaas/stack-core'
+import type { OpenSaasConfig } from '@opensaas/stack-core'
 import { list } from '@opensaas/stack-core'
 import { relationship, text } from '@opensaas/stack-core/fields'
 import { createTestContext, createTestDatabase } from '@opensaas/stack-core/testing'
@@ -78,7 +78,7 @@ describe('AdminUI singleton routing', () => {
     async () => {
       const harness = await createTestContext(config, null)
       try {
-        const context = harness.context as unknown as AccessContext
+        const context = harness.context
 
         const singletonTree = await AdminUI({
           context,
@@ -110,7 +110,7 @@ describe('AdminUI singleton routing', () => {
       const harness = await createTestContext(config, null)
       try {
         await harness.context.sudo().db.Settings.create({ data: { siteName: 'My Site' } })
-        const context = harness.context as unknown as AccessContext
+        const context = harness.context
 
         const element = await SingletonView({
           context,
@@ -160,7 +160,7 @@ describe('AdminUI singleton routing', () => {
 
       const harness = await createTestContext(autoCreateFalseConfig, null)
       try {
-        const context = harness.context as unknown as AccessContext
+        const context = harness.context
 
         const element = await SingletonView({
           context,
@@ -203,7 +203,7 @@ describe('AdminUI singleton routing', () => {
       }
       const harness = await createTestContext(relConfig, null)
       try {
-        const context = harness.context as unknown as AccessContext
+        const context = harness.context
         const tag = await harness.context.db.Tag.create({ data: { name: 'Hot' } })
         if (tag === null) throw new Error('tag not created')
         await harness.context.db.Settings.get?.()
@@ -244,7 +244,7 @@ describe('AdminUI singleton routing', () => {
       const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
       const harness = await createTestContext(reqConfig, null)
       try {
-        const context = harness.context as unknown as AccessContext
+        const context = harness.context
         const element = await SingletonView({
           context,
           config: reqConfig,
@@ -289,7 +289,7 @@ describe('AdminUI singleton routing', () => {
 
       const harness = await createTestContext(readDeniedConfig, null)
       try {
-        const context = harness.context as unknown as AccessContext
+        const context = harness.context
 
         const element = await SingletonView({
           context,
@@ -338,7 +338,7 @@ describe('AdminUI singleton routing', () => {
 
       const harness = await createTestContext(createDeniedConfig, null)
       try {
-        const context = harness.context as unknown as AccessContext
+        const context = harness.context
 
         const element = await SingletonView({
           context,
@@ -367,7 +367,7 @@ describe('AdminUI singleton routing', () => {
         lists: {
           Post: list({
             fields: { title: text({ validation: { isRequired: true } }) },
-            access: { operation: { query: () => true } },
+            access: { operation: { query: () => true, create: () => true } },
           }),
         },
       }
@@ -378,7 +378,7 @@ describe('AdminUI singleton routing', () => {
         await seeding.create({ data: { title: 'Second Post' } })
 
         const element = await ListView({
-          context: database.context(null) as unknown as AccessContext,
+          context: database.context(null),
           config: postConfig,
           listKey: 'Post',
           basePath: '/admin',

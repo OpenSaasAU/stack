@@ -28,8 +28,8 @@ export interface RelationshipTableCellProps {
   numeric?: boolean
   /**
    * Whether this column is inline-editable for the session: the related list's
-   * update access is potentially allowed AND the field's update field-access is
-   * not statically denied (decided server-side, #737). `false` renders a plain
+   * update access is potentially allowed AND the session's vocabulary does not
+   * deny the field's `update` (decided server-side, #737). `false` renders a plain
    * read-only Cell with no edit affordance.
    */
   editable: boolean

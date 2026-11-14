@@ -12,6 +12,15 @@ import { guardedRuleItem, NO_RULE_VIEWS, ruleRowOf, type RuleRow } from './rule-
 import { shouldHaveForeignKey } from '../fields/index.js'
 import { isSystemFieldName } from './system-fields.js'
 
+function isHookOnlyAccess(fieldAccess: FieldAccess | undefined): boolean {
+  return fieldAccess?.write === 'hooks'
+}
+
+/** Whether `field` is declared Hook-only (`access: { write: 'hooks' }`, ADR-0076). */
+export function isHookOnlyField(field: FieldConfig): boolean {
+  return isHookOnlyAccess(field.access)
+}
+
 /**
  * Whether `fieldConfig`'s side of a to-one relationship owns the `<field>Id`
  * column at all — false on the non-owning side of a one-to-one (ADR-0064),
@@ -139,7 +148,7 @@ export async function checkFieldAccess(
     ruleRow?: RuleRow
   },
 ): Promise<boolean> {
-  if (operation !== 'read' && fieldAccess?.write === 'hooks') {
+  if (operation !== 'read' && isHookOnlyAccess(fieldAccess)) {
     return false
   }
 
@@ -562,7 +571,7 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
     if (
       operation === 'create' &&
       args.defaultedFields?.has(fieldName) &&
-      (fieldConfig?.access?.allowCreateDefault || fieldConfig?.access?.write === 'hooks')
+      (fieldConfig?.access?.allowCreateDefault || isHookOnlyAccess(fieldConfig?.access))
     ) {
       filtered[fieldName] = value
       continue
