@@ -83,7 +83,6 @@ function seed(model: string, row: object): Promise<Record<string, unknown>> {
 async function whereFor(query: string, session: Session = reader) {
   const context = engineContextOf(database.context(session))
   return buildListFilterWhere(query, config.lists.Post, 'Post', config, {
-    session: context.session,
     context,
   })
 }
@@ -231,7 +230,6 @@ describe('isFieldFilterableById', () => {
   ): Promise<boolean> {
     const context = engineContextOf(database.context(session))
     return isFieldFilterableById(listConfig, 'Post', field, config, {
-      session: context.session,
       context,
     })
   }

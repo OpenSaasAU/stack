@@ -86,7 +86,6 @@ async function filtered(
   // test over the Test context makes (`access/multi-column-read-write.test.ts`).
   const accessContext = context as unknown as AccessContext
   const where = await buildListFilterWhere(query, config.lists[listKey], listKey, config, {
-    session: context.session,
     context: accessContext,
   })
   const read = context.db[listKey]
@@ -524,7 +523,6 @@ describe('a field with isFilterable: false', () => {
     async () => {
       const context = database.context(ada)
       const suggestions = await collectFilterSuggestions(config.lists.Post, 'Post', config, {
-        session: context.session,
         context: context as unknown as AccessContext,
       })
       expect(suggestions.map((s) => s.field)).not.toContain('apiToken')
@@ -537,7 +535,7 @@ describe('a field with isFilterable: false', () => {
     'cannot be filtered by id',
     async () => {
       const context = database.context(ada)
-      const args = { session: context.session, context: context as unknown as AccessContext }
+      const args = { context: context as unknown as AccessContext }
       expect(await isFieldFilterableById(config.lists.Post, 'Post', 'author', config, args)).toBe(
         true,
       )

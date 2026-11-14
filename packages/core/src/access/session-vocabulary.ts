@@ -15,6 +15,8 @@ import { resolveListTimestamps } from '../contract/derive.js'
 import { isRelationshipField } from '../fields/index.js'
 import { columnOrderedKeys } from '../secured/read.js'
 import { readStoredRow, writeTargetAllows } from '../context/write-target.js'
+import type { FilterSpec } from '../filter/types.js'
+import { filterSpecsOf, withFilterSpecs } from './vocabulary-filter-specs.js'
 
 /**
  * What a session may be told about one access question ahead of any request.
@@ -128,6 +130,11 @@ function storesWrites(
 
 type UnorderedFieldVocabulary = Omit<FieldVocabulary, 'sortable'>
 
+interface ResolvedField {
+  readonly entry: UnorderedFieldVocabulary
+  readonly spec: FilterSpec | undefined
+}
+
 async function resolveField(
   context: AccessContext,
   config: OpenSaasConfig,
@@ -136,7 +143,7 @@ async function resolveField(
   composable: boolean,
   fieldName: string,
   field: FieldConfig,
-): Promise<UnorderedFieldVocabulary> {
+): Promise<ResolvedField> {
   const subject = `${listKey}.${fieldName}`
   const args = { session: context.session, context }
   const writable = storesWrites(fieldName, field, listKey, config)
@@ -153,22 +160,24 @@ async function resolveField(
     ask('create', 'create', () => classifyRowIndependentWrite(field.access, 'create', args)),
     ask('update', 'update', () => classifyRowIndependentWrite(field.access, 'update', args)),
   ])
-  const filterable =
-    composable &&
-    read === 'allow' &&
-    (await decideAdvertisement(
-      `${subject} (filter)`,
-      async () =>
-        hasFilterSpec(field) && field.getFilterSpec?.(fieldName, listKey, config) !== undefined,
-      false,
-      vocabularyPolicy,
-    ))
+  const spec =
+    composable && read === 'allow' && hasFilterSpec(field)
+      ? await decideAdvertisement<FilterSpec | undefined>(
+          `${subject} (filter)`,
+          async () => field.getFilterSpec?.(fieldName, listKey, config),
+          undefined,
+          vocabularyPolicy,
+        )
+      : undefined
   return {
-    read,
-    create,
-    update,
-    filterable,
-    relationship: isRelationshipField(field) ? { targetList: field.ref.split('.')[0] } : null,
+    entry: {
+      read,
+      create,
+      update,
+      filterable: spec !== undefined,
+      relationship: isRelationshipField(field) ? { targetList: field.ref.split('.')[0] } : null,
+    },
+    spec,
   }
 }
 
@@ -206,12 +215,21 @@ export async function resolveSessionVocabulary(
   const listConfig = config.lists[listKey]
   const composable = !listConfig.isSingleton
   const operations = await resolveOperations(context, listKey, listConfig, !composable)
-  const declared = await Promise.all(
+  const resolved = await Promise.all(
     Object.entries(listConfig.fields).map(
-      async ([fieldName, field]): Promise<[string, UnorderedFieldVocabulary]> => [
+      async ([fieldName, field]): Promise<[string, ResolvedField]> => [
         fieldName,
         await resolveField(context, config, listKey, operations, composable, fieldName, field),
       ],
+    ),
+  )
+  const declared = resolved.map(([name, { entry }]): [string, UnorderedFieldVocabulary] => [
+    name,
+    entry,
+  ])
+  const specs = new Map(
+    resolved.flatMap(([name, { spec }]): [string, FilterSpec][] =>
+      spec === undefined ? [] : [[name, spec]],
     ),
   )
   const readable = operations.query !== 'deny'
@@ -227,16 +245,19 @@ export async function resolveSessionVocabulary(
     composable && probed.length > 0
       ? await columnOrderedKeys(context, config, listKey, probed)
       : new Set()
-  return {
-    listKey,
-    operations,
-    fields: new Map(
-      entries.map(([name, entry]): [string, FieldVocabulary] => [
-        name,
-        { ...entry, sortable: ordered.has(name) },
-      ]),
-    ),
-  }
+  return withFilterSpecs(
+    {
+      listKey,
+      operations,
+      fields: new Map(
+        entries.map(([name, entry]): [string, FieldVocabulary] => [
+          name,
+          { ...entry, sortable: ordered.has(name) },
+        ]),
+      ),
+    },
+    specs,
+  )
 }
 
 async function resolveOperationForRow(
@@ -286,19 +307,22 @@ export async function resolveSessionVocabularyForItem(
       update: denyRowDependent(vocabulary.operations.update),
       delete: denyRowDependent(vocabulary.operations.delete),
     }
-    return {
-      listKey,
-      operations,
-      fields: new Map(
-        [...vocabulary.fields].map(([name, entry]): [string, FieldVocabulary] => [
-          name,
-          {
-            ...entry,
-            update: operations.update === 'deny' ? 'deny' : denyRowDependent(entry.update),
-          },
-        ]),
-      ),
-    }
+    return withFilterSpecs(
+      {
+        listKey,
+        operations,
+        fields: new Map(
+          [...vocabulary.fields].map(([name, entry]): [string, FieldVocabulary] => [
+            name,
+            {
+              ...entry,
+              update: operations.update === 'deny' ? 'deny' : denyRowDependent(entry.update),
+            },
+          ]),
+        ),
+      },
+      filterSpecsOf(vocabulary),
+    )
   }
   const stored = { row, id }
   const [update, del] = await Promise.all([
@@ -337,7 +361,10 @@ export async function resolveSessionVocabularyForItem(
       return [name, { ...entry, update }]
     }),
   )
-  return { listKey, operations, fields: new Map(fields) }
+  return withFilterSpecs(
+    { listKey, operations, fields: new Map(fields) },
+    filterSpecsOf(vocabulary),
+  )
 }
 
 /**

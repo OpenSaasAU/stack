@@ -2,7 +2,12 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import type { AccessContext, OpenSaasConfig, Session } from '@opensaas/stack-core'
+import {
+  engineContextOf,
+  type AccessContext,
+  type OpenSaasConfig,
+  type Session,
+} from '@opensaas/stack-core'
 import {
   checkbox,
   json,
@@ -200,6 +205,23 @@ const config: OpenSaasConfig = {
         },
       },
     },
+    Inbox: {
+      fields: { body: text() },
+      access: { operation: { query: () => false, create: () => true } },
+    },
+    Redirecting: {
+      fields: {
+        title: text({
+          access: {
+            read: () => {
+              controlFlow()
+              return true
+            },
+          },
+        }),
+      },
+      access: { operation: { query: () => true } },
+    },
     Ledger: {
       fields: {
         name: text(),
@@ -269,6 +291,7 @@ const config: OpenSaasConfig = {
               search: 'cost:5 name:Mine',
               sort: { field: 'ownLabel', direction: 'asc' },
             },
+            { key: 'own', label: 'Own', search: 'ownLabel:Mine sku:A1 name:Mine' },
           ],
         },
       },
@@ -343,6 +366,16 @@ async function render(
 ): Promise<ListViewClientProps> {
   return findListViewClientProps(
     await ListView({ context: contextAt(session), config, basePath: '/admin', ...props }),
+  )
+}
+
+async function renderHtml(
+  session: Session | null,
+  listKey: string,
+  props: Omit<Parameters<typeof ListView>[0], 'context' | 'config' | 'basePath' | 'listKey'> = {},
+): Promise<string> {
+  return renderToStaticMarkup(
+    await ListView({ context: contextAt(session), config, basePath: '/admin', listKey, ...props }),
   )
 }
 
@@ -1099,18 +1132,20 @@ describe('ListView when the read fails (#2180)', () => {
   )
 
   it(
-    'leaves a session denied query empty even when a read rule would throw on it',
+    'shows a session denied query the unavailable state even when a read rule would throw on it',
     async () => {
       const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
-      const plain = await render(null, { listKey: 'Gated' })
-      const searched = await render(null, { listKey: 'Gated', search: 'title:x' })
-      const logged = log.mock.calls.length
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+      const plain = await renderHtml(null, 'Gated')
+      const searched = await renderHtml(null, 'Gated', { search: 'title:x' })
+      const logged = log.mock.calls.length + warn.mock.calls.length
       log.mockRestore()
+      warn.mockRestore()
 
-      expect(plain.items).toEqual([])
-      expect(plain.total).toBe(0)
-      expect(plain.filterSuggestions).toEqual([])
-      expect(searched.items).toEqual([])
+      for (const html of [plain, searched]) {
+        expect(html).toContain('Gated can&#x27;t be shown here.')
+        expect(html).not.toContain('could not be loaded')
+      }
       expect(logged).toBe(0)
     },
     BOOT,
@@ -1138,16 +1173,75 @@ describe('ListView when the read fails (#2180)', () => {
   )
 
   it(
-    'leaves a session denied query on the empty value, which is not a failure',
+    'shows a session denied query that it cannot see the list, which is not a failure',
     async () => {
       const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
-      const props = await render(ada, { listKey: 'Vault' })
+      const html = await renderHtml(ada, 'Vault')
       const logged = log.mock.calls.length
       log.mockRestore()
 
-      expect(props.items).toEqual([])
-      expect(props.total).toBe(0)
+      expect(html).toContain('data-slot="list-view-unavailable"')
+      expect(html).toContain('Vault can&#x27;t be shown here.')
+      expect(html).not.toContain('role="alert"')
+      expect(html).not.toContain('/admin/vault/create')
+      expect(html).not.toContain('sealed')
       expect(logged).toBe(0)
+    },
+    BOOT,
+  )
+
+  it(
+    'keeps Create on a list the session may create in but not query',
+    async () => {
+      await create('Inbox', { body: 'private submission' })
+      const html = await renderHtml(ada, 'Inbox')
+      expect(html).toContain('Inbox can&#x27;t be shown here.')
+      expect(html).toContain('href="/admin/inbox/create"')
+      expect(html).toContain('Create Inbox')
+      expect(html).not.toContain('private submission')
+      expect(html).not.toContain('<table')
+    },
+    BOOT,
+  )
+
+  it(
+    'shows the could-not-be-loaded state for a context that carries no session vocabulary',
+    async () => {
+      const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      const engine = engineContextOf(contextAt(ada))
+      const bare: AccessContext = { ...engine, _sessionVocabulary: undefined }
+      const html = renderToStaticMarkup(
+        await ListView({ context: bare, config, basePath: '/admin', listKey: 'Post' }),
+      )
+      const logged = log.mock.calls.length
+      log.mockRestore()
+
+      expect(html).toContain('This list could not be loaded')
+      expect(logged).toBe(1)
+    },
+    BOOT,
+  )
+
+  it.each([
+    ['redirect()', () => redirect('/sign-in'), 'NEXT_REDIRECT'],
+    ['notFound()', () => notFound(), 'NEXT_HTTP_ERROR_FALLBACK;404'],
+  ])(
+    'lets %s from a field read rule through to Next',
+    async (_label, thrower, digest) => {
+      const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+      controlFlow = thrower
+      try {
+        await expect(
+          ListView({ context: contextAt(ada), config, basePath: '/admin', listKey: 'Redirecting' }),
+        ).rejects.toMatchObject({ digest: expect.stringContaining(digest) })
+        expect(log).not.toHaveBeenCalled()
+        expect(warn).not.toHaveBeenCalled()
+      } finally {
+        controlFlow = () => undefined
+        log.mockRestore()
+        warn.mockRestore()
+      }
     },
     BOOT,
   )
@@ -1349,6 +1443,16 @@ describe('ListView reads the Session vocabulary (#2397)', () => {
   )
 
   it(
+    'leaves out of a Preset view every token naming a field the session cannot filter by',
+    async () => {
+      const props = await render(ada, { listKey: 'Catalog', preset: 'own' })
+      expect(props.activePreset).toBe('own')
+      expect(props.search).toBe('name:Mine')
+    },
+    BOOT,
+  )
+
+  it(
     'asks each field rule once for what the list view offers',
     async () => {
       countedReadRules = 0
@@ -1391,6 +1495,49 @@ describe('ListView reads the related list’s vocabulary for links and labels (#
       const props = await render(ada, { listKey: 'Hub', columns: ['name', 'nulls', 'undefs'] })
       expect(props.items.map((item) => item.name)).toEqual(['Centre'])
       expect(props.countLinks).toEqual({})
+    },
+    BOOT,
+  )
+
+  it(
+    'treats a related list with no vocabulary as no link and no label, logging nothing',
+    async () => {
+      const hub = await create('Hub', { name: 'Centre' })
+      await create('NullSpoke', { name: 'Hidden one', hub: { connect: { id: hub.id } } })
+      const engine = engineContextOf(contextAt(ada))
+      const ownOnly = (listKey: string): AccessContext => ({
+        ...engine,
+        _sessionVocabulary: async (asked) =>
+          asked === listKey ? ((await engine._sessionVocabulary?.(asked)) ?? null) : null,
+      })
+      const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      try {
+        const hubProps = findListViewClientProps(
+          await ListView({
+            context: ownOnly('Hub'),
+            config,
+            basePath: '/admin',
+            listKey: 'Hub',
+            columns: ['name', 'nulls', 'undefs'],
+          }),
+        )
+        expect(hubProps.countLinks).toEqual({})
+
+        const author = String(ada.userId)
+        const postProps = findListViewClientProps(
+          await ListView({
+            context: ownOnly('Post'),
+            config,
+            basePath: '/admin',
+            listKey: 'Post',
+            search: `author:#${author}`,
+          }),
+        )
+        expect(postProps.recordLabels).toEqual({ author: [{ id: author, label: null }] })
+        expect(log).not.toHaveBeenCalled()
+      } finally {
+        log.mockRestore()
+      }
     },
     BOOT,
   )

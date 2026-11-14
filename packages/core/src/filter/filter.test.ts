@@ -11,6 +11,7 @@ import {
   buildListFilterWhere,
   collectFilterSpecs,
   collectFilterSuggestions,
+  isFieldFilterableById,
   withholdFilterFields,
   type FilterAccessArgs,
 } from './collect.js'
@@ -47,7 +48,7 @@ function argsFor(config: OpenSaasConfig): FilterAccessArgs {
     } as unknown as AccessContext,
     config,
   )
-  return { session: null, context }
+  return { context }
 }
 
 const READABLE = { operation: { query: () => true } }
@@ -1035,6 +1036,53 @@ describe('core field Filter specs', () => {
     } finally {
       warn.mockRestore()
     }
+  })
+
+  it('builds each Filter spec once per context, and a spec builder that throws later is not asked again', async () => {
+    let builds = 0
+    const counted = text()
+    const countedConfig: OpenSaasConfig = {
+      db: { provider: 'postgresql' },
+      lists: {
+        Organisation: list({
+          access: READABLE,
+          fields: {
+            name: text(),
+            counted: {
+              ...counted,
+              getFilterSpec: (fieldName, listKey, specConfig) => {
+                builds += 1
+                if (builds > 1) throw new Error('spec rebuilt')
+                return counted.getFilterSpec?.(fieldName, listKey, specConfig)
+              },
+            },
+          },
+        }),
+      },
+    }
+    const args = argsFor(countedConfig)
+    const listConfig = countedConfig.lists.Organisation
+    const collected = await collectFilterSpecs(listConfig, 'Organisation', countedConfig, args)
+    expect(Object.keys(collected)).toEqual(['name', 'counted'])
+    expect(await collectFilterSuggestions(listConfig, 'Organisation', countedConfig, args)).toEqual(
+      expect.arrayContaining([expect.objectContaining({ field: 'counted' })]),
+    )
+    expect(builds).toBe(1)
+  })
+
+  it('gives a context core did not build no specs, without throwing', async () => {
+    const lightweight: FilterAccessArgs = {
+      context: { session: null, db: {} } as unknown as AccessContext,
+    }
+    const listConfig = config.lists.Post
+    expect(await collectFilterSpecs(listConfig, 'Post', config, lightweight)).toEqual({})
+    expect(await collectFilterSuggestions(listConfig, 'Post', config, lightweight)).toEqual([])
+    expect(await buildListFilterWhere('title:x', listConfig, 'Post', config, lightweight)).toEqual(
+      buildFilterWhere(parseFilterQuery('title:x'), {}),
+    )
+    expect(await isFieldFilterableById(listConfig, 'Post', 'author', config, lightweight)).toBe(
+      false,
+    )
   })
 
   it('asks no field rule for a session denied the list', async () => {

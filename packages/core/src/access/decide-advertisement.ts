@@ -15,6 +15,10 @@ export interface AdvertisementPolicy {
  * broad — an `InvalidFieldAccessResultError` costs the question its answer just
  * as a throwing rule does — and every contained throw warns, or a denial would
  * have no diagnostic at all.
+ *
+ * A throw carrying a string `digest` is a framework's control flow — Next.js's
+ * `redirect()`, `notFound()` and dynamic-usage bailouts — and is rethrown, so
+ * the framework still acts on it.
  */
 export async function decideAdvertisement<T>(
   subject: string,
@@ -25,7 +29,17 @@ export async function decideAdvertisement<T>(
   try {
     return await decide()
   } catch (err) {
+    if (isControlFlow(err)) throw err
     console.warn(policy.warning(subject), err)
     return denied
   }
+}
+
+function isControlFlow(thrown: unknown): boolean {
+  return (
+    typeof thrown === 'object' &&
+    thrown !== null &&
+    'digest' in thrown &&
+    typeof thrown.digest === 'string'
+  )
 }

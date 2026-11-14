@@ -1,42 +1,63 @@
 import type { ListConfig, OpenSaasConfig } from '../config/types.js'
-import type { Session, AccessContext } from '../access/types.js'
+import type { AccessContext } from '../access/types.js'
 import type { SessionVocabulary } from '../access/session-vocabulary.js'
-import { engineContextOf } from '../context/engine-context.js'
+import { filterSpecsOf } from '../access/vocabulary-filter-specs.js'
+import {
+  EngineContextUnavailableError,
+  engineContextOf,
+  type AnyStackContext,
+} from '../context/engine-context.js'
 import { parseFilterQuery } from './parse.js'
 import { serializeFilterQuery } from './serialize.js'
 import { buildFilterWhere } from './map.js'
 import type { FilterCondition, FilterFieldSuggestion, FilterSpec, FilterTerm } from './types.js'
 
 /**
- * The session/context a field's `read` access is evaluated against — the same
- * shape every other access-scoped admin-UI helper takes.
+ * The context whose own session and config the filter answers for. Pass the
+ * context `getContext()` (or `createTestContext`) built: any other context
+ * gets no Filter specs.
  */
 export type FilterAccessArgs = {
-  session: Session | null
-  context: AccessContext & { _isSudo?: boolean }
+  context: AnyStackContext
+}
+
+function engineOf(context: AnyStackContext): AccessContext | null {
+  try {
+    return engineContextOf(context)
+  } catch (error) {
+    if (error instanceof EngineContextUnavailableError) return null
+    throw error
+  }
 }
 
 async function vocabularyOf(
   listKey: string,
   args: FilterAccessArgs,
 ): Promise<SessionVocabulary | null> {
-  return (await engineContextOf(args.context)._sessionVocabulary?.(listKey)) ?? null
+  return (await engineOf(args.context)?._sessionVocabulary?.(listKey)) ?? null
 }
 
 /**
- * Resolve the {@link FilterSpec} of every field the session's
- * {@link SessionVocabulary} answers filterable, by delegating to each field's
- * optional `getFilterSpec` method. A field the session cannot read in a
- * predicate, including one whose `read` rule is row-dependent or throws, has
- * no spec, so a token naming it degrades to free text and never reaches
- * `context.db` (ADR-0031, ADR-0084). A session denied the list's `query`, and
- * a context core did not build, get no specs.
+ * The {@link FilterSpec} of every field the context's own
+ * {@link SessionVocabulary} answers filterable, as each field's optional
+ * `getFilterSpec` built it once for that context. A field the session cannot
+ * read in a predicate, including one whose `read` rule is row-dependent or
+ * throws, has no spec, and neither does a field with `isFilterable: false`, a
+ * field whose spec builder throws, or any field of a singleton, so a token
+ * naming it degrades to free text and never reaches `context.db` (ADR-0031,
+ * ADR-0084). A session denied the list's `query`, and a context core did not
+ * build, get no specs; neither throws.
  *
- * @param listConfig The list whose fields to inspect.
- * @param listKey    The list's key (passed through to each field's spec).
- * @param config     The full config (relationship specs resolve their target
- *   list's label field from it).
- * @param args       The context whose session the vocabulary is resolved for.
+ * The specs are built from the context's own config, for the context's own
+ * session.
+ *
+ * @param listConfig The list whose fields to report: its config entry in the
+ *   context's own config. A field the context's config does not declare gets
+ *   no spec.
+ * @param listKey    The list's key.
+ * @param config     The context's own config. Kept for signature stability;
+ *   the specs are built from the config the context carries.
+ * @param args       The context whose session and config the specs answer for.
  */
 export async function collectFilterSpecs(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
@@ -48,10 +69,10 @@ export async function collectFilterSpecs(
   const specs: Record<string, FilterSpec> = {}
   const vocabulary = await vocabularyOf(listKey, args)
   if (vocabulary === null) return specs
-  for (const [fieldName, field] of Object.entries(listConfig.fields)) {
-    if (vocabulary.fields.get(fieldName)?.filterable !== true) continue
-    const spec = field.getFilterSpec?.(fieldName, listKey, config)
-    if (spec) specs[fieldName] = spec
+  const built = filterSpecsOf(vocabulary)
+  for (const fieldName of Object.keys(listConfig.fields)) {
+    const spec = built.get(fieldName)
+    if (spec !== undefined) specs[fieldName] = spec
   }
   return specs
 }
@@ -117,9 +138,11 @@ export function filterSuggestionsOf(specs: Record<string, FilterSpec>): FilterFi
 }
 
 /**
- * Whether this session may filter one field of a list by a related record's id
- * (`field:#id`): its {@link SessionVocabulary} answers the field filterable,
- * and the field's {@link FilterSpec} has `toIdCondition`.
+ * Whether the context's session may filter one field of a list by a related
+ * record's id (`field:#id`): its {@link SessionVocabulary} answers the field
+ * filterable, and the field's {@link FilterSpec} has `toIdCondition`. False,
+ * never a throw, for a context core did not build. The arguments are as
+ * {@link collectFilterSpecs} takes them.
  */
 export async function isFieldFilterableById(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
@@ -131,9 +154,8 @@ export async function isFieldFilterableById(
 ): Promise<boolean> {
   if (!Object.hasOwn(listConfig.fields, fieldName)) return false
   const vocabulary = await vocabularyOf(listKey, args)
-  if (vocabulary?.fields.get(fieldName)?.filterable !== true) return false
-  const field = listConfig.fields[fieldName]
-  return field.getFilterSpec?.(fieldName, listKey, config)?.toIdCondition !== undefined
+  if (vocabulary === null) return false
+  return filterSpecsOf(vocabulary).get(fieldName)?.toIdCondition !== undefined
 }
 
 /**
