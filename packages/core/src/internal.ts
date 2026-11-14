@@ -39,6 +39,13 @@ export { validateWithZod, generateZodSchema } from './validation/schema.js'
 // This is the single field-access evaluator — the UI must not re-implement it.
 export { checkFieldAccess } from './access/index.js'
 
+export type {
+  AccessAnswer,
+  FieldVocabulary,
+  ListOperation,
+  SessionVocabulary,
+} from './access/session-vocabulary.js'
+
 // Config-shape sub-types consumed by sibling packages (not part of the consumer surface)
 export type {
   DatabaseConfig,

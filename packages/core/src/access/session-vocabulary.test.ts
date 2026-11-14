@@ -79,7 +79,12 @@ const config: OpenSaasConfig = {
         notes: relationship({ ref: 'Note.memo', many: true }),
       },
       access: {
-        operation: { query: () => true, create: () => true, update: () => true, delete: () => true },
+        operation: {
+          query: () => true,
+          create: () => true,
+          update: () => true,
+          delete: () => true,
+        },
       },
     },
     Note: {
@@ -90,7 +95,12 @@ const config: OpenSaasConfig = {
     Open: {
       fields: { title: text() },
       access: {
-        operation: { query: () => true, create: () => true, update: () => true, delete: () => true },
+        operation: {
+          query: () => true,
+          create: () => true,
+          update: () => true,
+          delete: () => true,
+        },
       },
     },
     Closed: {
@@ -194,10 +204,7 @@ function quietly(): void {
   vi.spyOn(console, 'warn').mockImplementation(() => undefined)
 }
 
-async function vocabularyOf(
-  context: AnyStackContext,
-  listKey: string,
-): Promise<SessionVocabulary> {
+async function vocabularyOf(context: AnyStackContext, listKey: string): Promise<SessionVocabulary> {
   const vocabulary = await engineContextOf(context)._sessionVocabulary?.(listKey)
   if (vocabulary === undefined || vocabulary === null) {
     throw new Error(`No session vocabulary for "${listKey}"`)
@@ -278,7 +285,10 @@ describe('the session vocabulary', () => {
       async () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
         expect((await memoField(author, 'filtered')).read).toBe('deny')
-        expect(warn).toHaveBeenCalledWith(expect.stringContaining('Memo.filtered'), expect.anything())
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining('Memo.filtered'),
+          expect.anything(),
+        )
       },
       BOOT,
     )
@@ -339,7 +349,12 @@ describe('the session vocabulary', () => {
       ['Filtered', { query: 'allow', create: 'deny', update: 'allow', delete: 'allow' }],
       [
         'RowReading',
-        { query: 'allow', create: 'row-dependent', update: 'row-dependent', delete: 'row-dependent' },
+        {
+          query: 'allow',
+          create: 'row-dependent',
+          update: 'row-dependent',
+          delete: 'row-dependent',
+        },
       ],
     ])(
       '%s answers the same for every session',
@@ -461,7 +476,7 @@ describe('the session vocabulary', () => {
     )
 
     test(
-      'a throwing read rule is neither, and is logged',
+      'a throwing read rule is neither',
       async () => {
         quietly()
         expect(await memoField(author, 'throwing')).toMatchObject({

@@ -9,6 +9,7 @@ import { nullPrototypeRegistry } from '../lib/null-prototype-registry.js'
 import { warnOnce } from '../lib/warn-once.js'
 import type { OpenedTransaction, OrmClient, OrmRow, TransactionOpener } from '../access/types.js'
 import { createSecuredRead, orderableKeys, type SecuredQuery } from '../secured/read.js'
+import { resolveSessionVocabulary, type SessionVocabulary } from '../access/session-vocabulary.js'
 import {
   createLivenessProbe,
   createRowLockLane,
@@ -762,6 +763,8 @@ export function getContext<TConfig extends OpenSaasConfig>(
             _transactionOwner,
           )
 
+  const vocabularies = new Map<string, Promise<SessionVocabulary | null>>()
+
   const context: AccessContext = {
     session,
     ormHandle,
@@ -803,6 +806,13 @@ export function getContext<TConfig extends OpenSaasConfig>(
     _config: config,
     _baseContext,
     _orderableKeys: (listKey, keys) => orderableKeys(context, config, listKey, keys),
+    _sessionVocabulary: (listKey) => {
+      const known = vocabularies.get(listKey)
+      if (known !== undefined) return known
+      const resolving = resolveSessionVocabulary(context, config, listKey)
+      vocabularies.set(listKey, resolving)
+      return resolving
+    },
   }
 
   populateDbDelegate(db, config, ormHandle, context, lock)

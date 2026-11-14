@@ -1986,6 +1986,29 @@ export async function orderableKeys(
 }
 
 /**
+ * Whether `key` names a column of `listKey` a read can order by at all, asked
+ * of the resolution and lowering `orderBy` uses with no access rule consulted.
+ * Whether this session may order by it is the caller's question.
+ */
+export async function hasColumnOrder(
+  context: AccessContext,
+  config: OpenSaasConfig,
+  listKey: string,
+  key: string,
+): Promise<boolean> {
+  const listConfig = Object.hasOwn(config.lists, listKey) ? config.lists[listKey] : undefined
+  if (listConfig === undefined) return false
+  const binding: ReadBinding = {
+    listName: listKey,
+    listConfig,
+    ormHandle: context.ormHandle,
+    context,
+    config,
+  }
+  return await canOrderBy(binding, resolveContext(binding, false), key)
+}
+
+/**
  * The read members of one list's secured surface, bound to `ormHandle` and
  * `context`. The collection is held by the closure and never handed out: no
  * `Collection` and no `CollectionState` is reachable from the returned value
