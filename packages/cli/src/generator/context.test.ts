@@ -1,8 +1,11 @@
+import * as fs from 'fs'
+import * as os from 'os'
+import * as path from 'path'
 import { describe, it, expect } from 'vitest'
 import type { ContractData, OpenSaasConfig } from '@opensaas/stack-core'
 import { deriveContract } from '@opensaas/stack-core'
 import { text } from '@opensaas/stack-core/fields'
-import { generateContext } from './context.js'
+import { generateContext, projectDependsOnNext } from './context.js'
 
 const config: OpenSaasConfig = {
   db: { provider: 'postgresql' },
@@ -180,5 +183,73 @@ describe('generateContext', () => {
 
   it('matches the full snapshot', () => {
     expect(generateContext(config, data)).toMatchSnapshot()
+  })
+
+  it('wires no framework control-flow predicate into a project without Next', () => {
+    const context = generateContext(config, data)
+
+    expect(context).not.toContain('next/')
+    expect(context).not.toContain('unstable_rethrow')
+    expect(context).not.toContain('isFrameworkControlFlow')
+  })
+
+  it('injects Next’s own unstable_rethrow, OR’ed with the config’s, into a Next project', () => {
+    const context = generateContext(config, data, {}, { next: true })
+
+    expect(context).toContain(
+      "import { controlFlowFromRethrow, processGlobal, processLifetimeContext } from '@opensaas/stack-core/internal'",
+    )
+    expect(context).toContain("const { unstable_rethrow } = await import('next/navigation')")
+    expect(context).toContain('return controlFlowFromRethrow(unstable_rethrow)')
+    expect(context).toContain(
+      'isNextControlFlow(thrown) || appConfig.isFrameworkControlFlow?.(thrown) === true',
+    )
+    expect(context).toMatch(
+      /const isNextControlFlow = await loadNextControlFlow\(\)\s*resolvedConfig = \{\s*\.\.\.appConfig,[\s\S]*?isFrameworkControlFlow:[\s\S]*?_tables:/,
+    )
+  })
+
+  it('imports next/navigation only lazily, so the bundle still loads where Next cannot be resolved', () => {
+    const context = generateContext(config, data, {}, { next: true })
+
+    expect(context).not.toMatch(/^import .* from 'next\//m)
+    expect(context).toMatch(
+      /async function loadNextControlFlow\(\)[\s\S]*?catch \{\s*return undefined/,
+    )
+  })
+
+  it('matches the full snapshot for a Next project', () => {
+    expect(generateContext(config, data, {}, { next: true })).toMatchSnapshot()
+  })
+})
+
+describe('projectDependsOnNext', () => {
+  function projectWith(manifest: string | null): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'opensaas-next-detect-'))
+    if (manifest !== null) fs.writeFileSync(path.join(dir, 'package.json'), manifest, 'utf-8')
+    return dir
+  }
+
+  it.each(['dependencies', 'devDependencies', 'peerDependencies'])(
+    'is true when %s declares next',
+    (key) => {
+      expect(
+        projectDependsOnNext(projectWith(JSON.stringify({ [key]: { next: '^16.4.2' } }))),
+      ).toBe(true)
+    },
+  )
+
+  it('is false when no dependency map declares next', () => {
+    const manifest = JSON.stringify({
+      dependencies: { '@opensaas/stack-core': '*', 'next-auth': '*' },
+      scripts: { next: 'next dev' },
+    })
+    expect(projectDependsOnNext(projectWith(manifest))).toBe(false)
+  })
+
+  it('is false without a package.json, or with one that does not parse', () => {
+    expect(projectDependsOnNext(projectWith(null))).toBe(false)
+    expect(projectDependsOnNext(projectWith('{ not json'))).toBe(false)
+    expect(projectDependsOnNext(projectWith('null'))).toBe(false)
   })
 })

@@ -9,7 +9,11 @@ import {
   classifyWriteForRow,
 } from './field-access.js'
 import { NO_RULE_VIEWS, ruleRowOf } from './rule-item.js'
-import { decideAdvertisement, type AdvertisementPolicy } from './decide-advertisement.js'
+import {
+  controlFlowPredicateOf,
+  decideAdvertisement,
+  type AdvertisementPolicy,
+} from './decide-advertisement.js'
 import { isComputedField } from '../config/field-kind.js'
 import { ownsForeignKey } from '../context/junction.js'
 import { resolveListTimestamps } from '../contract/derive.js'
@@ -85,7 +89,7 @@ async function answerOrDeny(
   const within = new Set(answering.getStore())
   within.add(context)
   return await answering.run(within, () =>
-    decideAdvertisement(subject, decide, 'deny', vocabularyPolicy),
+    decideAdvertisement(subject, decide, 'deny', vocabularyPolicy, controlFlowPredicateOf(context)),
   )
 }
 
@@ -243,6 +247,7 @@ function declaredFieldQuestions(
           async () => field.getFilterSpec?.(fieldName, listKey, config),
           undefined,
           vocabularyPolicy,
+          controlFlowPredicateOf(context, config),
         )
       : undefined,
   )

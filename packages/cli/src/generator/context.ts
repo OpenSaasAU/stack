@@ -22,6 +22,77 @@ const DEFAULT_REFERENCES: ContextReferences = {
   contractJsonImport: DEFAULT_CONTRACT_JSON_IMPORT,
 }
 
+/** What the generated context wires in from the host framework. */
+export interface ContextFramework {
+  /**
+   * Inject Next.js's own `unstable_rethrow` as `isFrameworkControlFlow`,
+   * OR'ed with the config's (ADR-0084). Set when the project depends on
+   * `next`; see {@link projectDependsOnNext}.
+   */
+  next: boolean
+}
+
+/**
+ * Whether the project at `projectDir` declares `next` in its `package.json`
+ * dependencies, devDependencies or peerDependencies. A missing or unreadable
+ * manifest is not a Next project.
+ */
+export function projectDependsOnNext(projectDir: string): boolean {
+  let manifest: unknown
+  try {
+    manifest = JSON.parse(fs.readFileSync(path.join(projectDir, 'package.json'), 'utf-8'))
+  } catch {
+    return false
+  }
+  if (typeof manifest !== 'object' || manifest === null) return false
+  return (['dependencies', 'devDependencies', 'peerDependencies'] as const).some((key) => {
+    const declared: unknown = key in manifest ? Reflect.get(manifest, key) : undefined
+    return typeof declared === 'object' && declared !== null && 'next' in declared
+  })
+}
+
+// Known limits:
+// - Next's bundler resolves `next/navigation` only by that exact specifier,
+//   aliasing it per layer, and plain Node cannot resolve it at all (`next`
+//   has no `exports` map, ADR-0054). So it is imported lazily, and a host
+//   that cannot load it keeps core's built-in recognition alone.
+const NEXT_CONTROL_FLOW_LOADER = `
+/**
+ * Next's own recognition of its control flow, so a redirect() or notFound()
+ * thrown inside an access rule reaches Next rather than a logged deny.
+ * Undefined where \`next/navigation\` does not load, as under plain Node.
+ */
+async function loadNextControlFlow(): Promise<((thrown: unknown) => boolean) | undefined> {
+  try {
+    const { unstable_rethrow } = await import('next/navigation')
+    return controlFlowFromRethrow(unstable_rethrow)
+  } catch {
+    return undefined
+  }
+}
+`
+
+function resolvedConfigSource(framework: ContextFramework): string {
+  if (!framework.next) {
+    return `    resolvedConfig = {
+      ...(await configPromise),
+      _tables: { dependencies: dependencyTable, constraints: constraintMap },
+    }`
+  }
+  return `    const appConfig = await configPromise
+    const isNextControlFlow = await loadNextControlFlow()
+    resolvedConfig = {
+      ...appConfig,
+      ...(isNextControlFlow === undefined
+        ? {}
+        : {
+            isFrameworkControlFlow: (thrown: unknown) =>
+              isNextControlFlow(thrown) || appConfig.isFrameworkControlFlow?.(thrown) === true,
+          }),
+      _tables: { dependencies: dependencyTable, constraints: constraintMap },
+    }`
+}
+
 function storageUtilities(config: OpenSaasConfig): string {
   const hasStorage = !!config.storage && Object.keys(config.storage).length > 0
   if (!hasStorage) {
@@ -118,6 +189,7 @@ export function generateContext(
   config: OpenSaasConfig,
   data: ContractData,
   references: Partial<ContextReferences> = {},
+  framework: ContextFramework = { next: false },
 ): string {
   const { configImport, contractJsonImport } = { ...DEFAULT_REFERENCES, ...references }
   const configImportPath = withTsExtension(configImport)
@@ -141,7 +213,7 @@ export function generateContext(
 import { getContext as getOpensaasContext, requireOrmHandle } from '@opensaas/stack-core'
 import { resolveRuntimeConnection } from '@opensaas/stack-core/client'
 import { originTripwire } from '@opensaas/stack-core/origin'
-import { processGlobal, processLifetimeContext } from '@opensaas/stack-core/internal'
+import { ${framework.next ? 'controlFlowFromRethrow, ' : ''}processGlobal, processLifetimeContext } from '@opensaas/stack-core/internal'
 import type { Session as OpensaasSession, OpenSaasConfig } from '@opensaas/stack-core'
 import postgres from '@prisma/orm-postgres/runtime'
 import { contractFromJson } from '@prisma/orm-postgres/static'
@@ -154,7 +226,7 @@ import configOrPromise from ${quote(configImportPath)}
 // Resolve config if it's a Promise (when plugins are present)
 const configPromise = Promise.resolve(configOrPromise)
 let resolvedConfig: OpenSaasConfig | null = null
-
+${framework.next ? NEXT_CONTROL_FLOW_LOADER : ''}
 /**
  * The ORM client, built from the committed contract artifact rather than from
  * a generated client tree, so the runtime executes exactly the structure the
@@ -250,10 +322,7 @@ function getClient() {
  */
 async function getConfig() {
   if (!resolvedConfig) {
-    resolvedConfig = {
-      ...(await configPromise),
-      _tables: { dependencies: dependencyTable, constraints: constraintMap },
-    }
+${resolvedConfigSource(framework)}
   }
   return resolvedConfig
 }
@@ -356,8 +425,9 @@ export function writeContext(
   data: ContractData,
   outputPath: string,
   references?: Partial<ContextReferences>,
+  framework?: ContextFramework,
 ): void {
-  const content = generateContext(config, data, references)
+  const content = generateContext(config, data, references, framework)
 
   const dir = path.dirname(outputPath)
   if (!fs.existsSync(dir)) {

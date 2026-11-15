@@ -1,7 +1,7 @@
 import type { OpenSaasConfig } from '../config/types.js'
 import type { AccessContext } from '../access/types.js'
 import { checkAccess } from '../access/engine.js'
-import { decideAdvertisement } from '../access/decide-advertisement.js'
+import { controlFlowPredicateOf, decideAdvertisement } from '../access/decide-advertisement.js'
 import { mcpAdvertisement } from './advertise.js'
 
 export async function mcpListReachable(
@@ -27,6 +27,7 @@ export async function mcpListReachable(
     },
     false,
     mcpAdvertisement,
+    controlFlowPredicateOf(context, config),
   )
 }
 

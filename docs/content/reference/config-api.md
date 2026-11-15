@@ -116,6 +116,20 @@ Admin UI customization options.
 
 `(report: AfterTransactionErrorReport) => void | Promise<void>` — called once for each `afterTransaction` hook that throws, with `{ error, status, listKey, operation }`. A throwing hook never changes a write's or `context.transaction()`'s result; when this is unset, or itself throws, the error is written to `console.error`.
 
+##### `isFrameworkControlFlow`
+
+`(thrown: unknown) => boolean` — recognises a host framework's control flow (a redirect, a not-found, a rendering bailout) thrown from inside an access rule, so the Session vocabulary, MCP's advertised vocabulary and the admin's nav counts let it propagate to the framework instead of folding it into a logged deny. It is added to the built-in recognition of Next.js's control-flow digests and React's postpone, never in place of it, and an `Error` whose `cause` chain reaches a recognised value has that value rethrown.
+
+The generated `.opensaas/context.ts` sets this to Next.js's own `unstable_rethrow` when the project's `package.json` declares `next`, OR'ed with any predicate the config declares. It loads `next/navigation` lazily, so a script that loads the bundle under plain Node, where that module does not resolve, keeps the built-in recognition alone. Declare one yourself only for another framework:
+
+```typescript
+export default config({
+  db: { provider: 'postgresql' },
+  lists: {},
+  isFrameworkControlFlow: (thrown) => thrown instanceof Response,
+})
+```
+
 ##### `mcp`
 
 Model Context Protocol server configuration for AI assistant integration.

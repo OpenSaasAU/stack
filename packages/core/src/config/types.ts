@@ -3962,6 +3962,35 @@ export interface OpenSaasConfig {
    * ```
    */
   onAfterTransactionError?: (report: AfterTransactionErrorReport) => void | Promise<void>
+  /**
+   * Recognises a host framework's control flow — a redirect, a not-found, a
+   * dynamic-rendering bailout — thrown from inside an access rule or a nav
+   * count, so it propagates to the framework instead of being folded into a
+   * logged deny. Consulted by the Session vocabulary, MCP's advertised
+   * vocabulary and the admin's nav counts (ADR-0084).
+   *
+   * Added to the built-in recognition, never in place of it: a value is
+   * control flow when this returns `true` **or** the built-in check of
+   * Next.js's control-flow digests and React's postpone recognises it. As
+   * with the built-in check, an `Error` whose `cause` chain reaches a
+   * recognised value has that value rethrown, not the wrapper.
+   *
+   * The generated context sets this to Next.js's own `unstable_rethrow` when
+   * the project depends on `next` and `next/navigation` loads, OR'ed with any
+   * predicate declared here.
+   *
+   * @param thrown - Any thrown value, which is why it is `unknown`.
+   *
+   * @example
+   * ```typescript
+   * config({
+   *   db: { provider: 'postgresql' },
+   *   lists: {},
+   *   isFrameworkControlFlow: (thrown) => thrown instanceof Response,
+   * })
+   * ```
+   */
+  isFrameworkControlFlow?: (thrown: unknown) => boolean
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Config must accept any list configuration
   lists: Record<string, ListConfig<any>>
   session?: SessionConfig
