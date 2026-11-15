@@ -89,7 +89,9 @@ describe('generateContext', () => {
   it('shares the client across module instances through the process-wide registry, unconditionally', () => {
     const context = generateContext(config, data)
 
-    expect(context).toContain("import { processGlobal } from '@opensaas/stack-core/internal'")
+    expect(context).toMatch(
+      /import \{ processGlobal\b[^}]*\} from '@opensaas\/stack-core\/internal'/,
+    )
     expect(context).toContain("processGlobal('client', isPublishedClient, () => ({")
     expect(context).toContain('contractJson.storage.storageHash')
     expect(context).toContain('contractJson.domain')
@@ -120,6 +122,20 @@ describe('generateContext', () => {
     expect(context).toContain('export const rawOpensaasContext: Promise<Context> = {')
     expect(context).toContain('getRawContext().then(onFulfilled, onRejected)')
     expect(context).toContain('export const config = getConfig()')
+  })
+
+  it('marks the raw context as process-lifetime, so its session vocabulary keeps nothing', () => {
+    const context = generateContext(config, data)
+
+    expect(context).toContain(
+      "import { processGlobal, processLifetimeContext } from '@opensaas/stack-core/internal'",
+    )
+    expect(context).toMatch(
+      /async function buildRawContext\(\)[^]*?return processLifetimeContext\(\s*getOpensaasContext\(/,
+    )
+    expect(context).not.toMatch(
+      /export async function getContext<[^]*?processLifetimeContext[^]*?async function buildRawContext/,
+    )
   })
 
   it('carries .ts extensions on every relative VALUE import (ADR-0054)', () => {

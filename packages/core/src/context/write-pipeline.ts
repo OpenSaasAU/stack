@@ -43,7 +43,10 @@ import {
 // time (never during module evaluation), so by the time it runs the export is
 // fully initialised.
 import { buildDbDelegate } from './index.js'
-import { withOwnSessionVocabulary } from '../access/session-vocabulary.js'
+import {
+  invalidatesSessionVocabularyOf,
+  withOwnSessionVocabulary,
+} from '../access/session-vocabulary.js'
 
 /**
  * Write Pipeline — runs the canonical, secured write sequence for one
@@ -246,7 +249,7 @@ export async function runWritePipeline(args: WritePipelineArgs): Promise<OrmRow 
   // write must be reachable after that transaction closes. `beforeTransaction`
   // keeps running through `context` as given — see `runWithTransactionBoundary`'s
   // own param doc for why that one is deliberately left alone.
-  return runWithTransactionBoundary({
+  const written = await runWithTransactionBoundary({
     config,
     involvedLists,
     context,
@@ -283,6 +286,11 @@ export async function runWritePipeline(args: WritePipelineArgs): Promise<OrmRow 
       }
     },
   })
+  if (written !== null) {
+    context._invalidateSessionVocabulary?.()
+    existingOwner?.noteWrite()
+  }
+  return written
 }
 
 /**
@@ -409,7 +417,12 @@ function resolveAfterTransactionContext(
     _config: config,
   }
   afterTransactionContext.db = buildDbDelegate(config, base.ormHandle, afterTransactionContext)
-  return withSingletonProbe(withOwnSessionVocabulary(afterTransactionContext, config))
+  return withSingletonProbe(
+    invalidatesSessionVocabularyOf(
+      withOwnSessionVocabulary(afterTransactionContext, config),
+      context,
+    ),
+  )
 }
 
 interface WrittenRow {

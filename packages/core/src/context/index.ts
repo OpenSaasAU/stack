@@ -9,7 +9,10 @@ import { nullPrototypeRegistry } from '../lib/null-prototype-registry.js'
 import { warnOnce } from '../lib/warn-once.js'
 import type { OpenedTransaction, OrmClient, OrmRow, TransactionOpener } from '../access/types.js'
 import { createSecuredRead, type SecuredQuery } from '../secured/read.js'
-import { withOwnSessionVocabulary } from '../access/session-vocabulary.js'
+import {
+  invalidatesSessionVocabularyOf,
+  withOwnSessionVocabulary,
+} from '../access/session-vocabulary.js'
 import { withSingletonProbe } from './write-target.js'
 import {
   createLivenessProbe,
@@ -1354,42 +1357,48 @@ export function getContext<TConfig extends OpenSaasConfig>(
 
   // Bypasses access control; hooks and validation still run.
   function sudo(): StackContext<AccessControlledDB> {
-    return getContext(
-      config,
-      ormHandle,
-      session,
-      context.storage,
-      true,
-      undefined,
-      // ADR-0028: a sudo write issued from inside an owned transaction (e.g.
-      // `tx.sudo().db.x.create()`) must still defer to that owner.
-      context._transactionOwner,
-      client,
-      _unsafeTransaction,
-      // Carry the same base-client context forward (issue #1348) — sudo()
-      // derives a new context, not a new transaction boundary.
-      context._baseContext,
+    return vocabularyDerivedFrom(
+      context,
+      getContext(
+        config,
+        ormHandle,
+        session,
+        context.storage,
+        true,
+        undefined,
+        // ADR-0028: a sudo write issued from inside an owned transaction (e.g.
+        // `tx.sudo().db.x.create()`) must still defer to that owner.
+        context._transactionOwner,
+        client,
+        _unsafeTransaction,
+        // Carry the same base-client context forward (issue #1348) — sudo()
+        // derives a new context, not a new transaction boundary.
+        context._baseContext,
+      ),
     )
   }
 
   // Substitutes the session; access control and hooks still run against it
   // (orthogonal to `sudo`, so the receiver's sudo state is preserved).
   function withSession(newSession: Session | null): StackContext<AccessControlledDB> {
-    return getContext(
-      config,
-      ormHandle,
-      newSession,
-      context.storage,
-      _isSudo,
-      undefined,
-      // ADR-0028: a write issued from inside an owned transaction (e.g.
-      // `tx.withSession(s).db.x.create()`) must still defer to that owner.
-      context._transactionOwner,
-      client,
-      _unsafeTransaction,
-      // Carry the same base-client context forward (issue #1348) — withSession()
-      // derives a new context, not a new transaction boundary.
-      context._baseContext,
+    return vocabularyDerivedFrom(
+      context,
+      getContext(
+        config,
+        ormHandle,
+        newSession,
+        context.storage,
+        _isSudo,
+        undefined,
+        // ADR-0028: a write issued from inside an owned transaction (e.g.
+        // `tx.withSession(s).db.x.create()`) must still defer to that owner.
+        context._transactionOwner,
+        client,
+        _unsafeTransaction,
+        // Carry the same base-client context forward (issue #1348) — withSession()
+        // derives a new context, not a new transaction boundary.
+        context._baseContext,
+      ),
     )
   }
 
@@ -1420,7 +1429,10 @@ export function getContext<TConfig extends OpenSaasConfig>(
 
     const settled = runTransactionBody(fn, registry, ormClient)
 
-    return settleTransactionOwner(settled, registry, config)
+    return settleTransactionOwner(settled, registry, config).then((result) => {
+      if (registry.hasWritten) context._invalidateSessionVocabulary?.()
+      return result
+    })
   }
 
   function runTransactionBody<T>(
@@ -1512,6 +1524,14 @@ export function getContext<TConfig extends OpenSaasConfig>(
     [ENGINE_FACE]: context,
   }
   return returned
+}
+
+function vocabularyDerivedFrom(
+  receiver: AccessContext,
+  derived: StackContext<AccessControlledDB>,
+): StackContext<AccessControlledDB> {
+  invalidatesSessionVocabularyOf(engineContextOf(derived), receiver)
+  return derived
 }
 
 /**

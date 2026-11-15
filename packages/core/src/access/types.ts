@@ -324,7 +324,8 @@ export interface AccessContext<DB = AccessControlledDB> {
   /**
    * What this context's session may be told about `listKey` ahead of any
    * request, or `null` for a list the config does not declare (ADR-0084).
-   * Resolved once per list and kept for this context's life. Asks every rule
+   * Resolved once per list and kept until a write through this context
+   * succeeds; a process-lifetime context keeps nothing (ADR-0084). Asks every rule
    * of the list: use `_sessionVocabularyQuestions` for a few answers about a
    * list, and this only to serialise or advertise the list.
    * @internal
@@ -353,6 +354,12 @@ export interface AccessContext<DB = AccessControlledDB> {
     listKey: string,
     id: string | number,
   ) => Promise<import('./session-vocabulary.js').SessionVocabulary | null>
+  /**
+   * Clears what this context's session vocabulary has kept, called when a
+   * write through it succeeds (ADR-0084).
+   * @internal
+   */
+  _invalidateSessionVocabulary?: () => void
   /**
    * Whether the singleton list `listKey`'s one row is stored yet, answered on
    * this context's own client without `get()`'s auto-create and without

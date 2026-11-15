@@ -68,6 +68,7 @@ export class TransactionRegistry {
   private poisoned = false
   private firstFailure: unknown
   private unsafeReached = false
+  private wrote = false
 
   /** The caller reached the Unsafe surface, whose failures the stack does not observe. */
   noteUnsafeReached(): void {
@@ -76,6 +77,15 @@ export class TransactionRegistry {
 
   get hasReachedUnsafe(): boolean {
     return this.unsafeReached
+  }
+
+  /** A secured write joined to this owner succeeded. */
+  noteWrite(): void {
+    this.wrote = true
+  }
+
+  get hasWritten(): boolean {
+    return this.wrote
   }
 
   /** Marks the owner rollback-only. The first failure recorded is the one reported. */

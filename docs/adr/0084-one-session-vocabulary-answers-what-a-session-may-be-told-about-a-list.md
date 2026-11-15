@@ -52,3 +52,12 @@ A consumer that holds one known row may resolve the row-dependent write answers 
 ## Amendment (2026-11-15): answers are asked one question at a time
 
 The vocabulary is also reachable as questions (`_sessionVocabularyQuestions`), each answer asked only when needed and kept once per context, sharing that memo with the whole vocabulary; a consumer wanting a few answers about a list asks the questions, and resolves the whole vocabulary only to serialise or advertise that list (#2419).
+
+## Amendment (2026-11-15): how long an answer is kept
+
+The memo is request-scoped, and four rules bound it (#2413):
+
+- **Per context, cleared on write.** A context built by `getContext`, `sudo()`, `withSession()`, a transaction or a write's own hooks keeps each answer until a secured `create`, `update` or `delete` through it succeeds; a denied or failed write clears nothing. A write through a context derived with `sudo()` or `withSession()`, or through an `afterTransaction` context, also clears the context it came from. A rule that reads data the caller just changed must see the change on its next ask, and between writes the cost stays at one ask per rule.
+- **A transaction clears its opener on commit.** The transaction context has its own memo, so nothing asked inside reaches the outer one. The outer memo can still hold an answer from before the transaction, so a transaction that commits with at least one successful secured write clears it. A rollback leaves it, since nothing it read changed.
+- **Not on the process-wide context.** The generated `rawOpensaasContext` is held by `createAuth` for the life of the process, so no request bounds its memo. It is marked with `processLifetimeContext` and answers every ask afresh.
+- **A derived `resolveOutput` context shares only what it is not part of.** It shares its read context's answers, so sibling hooks still ask each rule once. While one of that context's rules is being asked, a hook reached from that rule answers from its own memo, because the shared answer may be the one waiting on it. Following the resolve chain, the cycle guard then ends the recursion.

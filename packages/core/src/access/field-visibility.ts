@@ -6,6 +6,7 @@ import { checkRowRead } from './field-access.js'
 import { NO_RULE_VIEWS, ruleRowOf, type RuleRow, type RuleViewTree } from './rule-item.js'
 import { RESOLVE_CHAIN_MAX_LENGTH } from './depth-limits.js'
 import { ResolveOutputCycleError } from './errors.js'
+import { withDerivedSessionVocabulary } from './session-vocabulary.js'
 import type {
   DependencyAdditions,
   FieldSelectionScope,
@@ -111,6 +112,7 @@ function deriveResolveOutputContext(
   }
   if (config) {
     derived.db = buildDbDelegate(config, context.ormHandle, derived)
+    withDerivedSessionVocabulary(derived, context, config)
   }
   return derived
 }
