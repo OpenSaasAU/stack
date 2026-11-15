@@ -161,6 +161,20 @@ describe('the process-lifetime context', () => {
   )
 
   test(
+    'leaves a context that carries no config as it was',
+    async () => {
+      const context = database.context(null)
+      const engine = engineContextOf(context)
+      const kept = engine._sessionVocabulary
+      engine._config = undefined
+
+      expect(processLifetimeContext(context)).toBe(context)
+      expect(engine._sessionVocabulary).toBe(kept)
+    },
+    BOOT,
+  )
+
+  test(
     'a request context keeps its answer until it writes',
     async () => {
       const context = database.context(null)
