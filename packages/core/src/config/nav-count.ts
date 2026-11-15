@@ -19,6 +19,10 @@ type CountDelegate = {
  * everything else is omitted from the map, never zeroed. A context that
  * resolves no vocabulary for a list counts it as denied.
  *
+ * Never rejects over one list: a list whose vocabulary read or count fails is
+ * omitted and logged. A framework's control flow (`redirect()`, `notFound()`)
+ * raised by either propagates.
+ *
  * Each count is read through the secured `context.db`, so it reflects
  * exactly what the current session may see.
  */

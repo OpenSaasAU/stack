@@ -5,10 +5,10 @@ import {
   createTestContext,
   createPlanRecorder,
   type TestContext,
-  untypedRule,
 } from '@opensaas/stack-core/testing'
 import { resolveLinkEdge } from '../../src/components/RelationshipTable.js'
 import type { RelationshipTableSection } from '../../src/lib/deriveItemView.js'
+import { untypedRule } from '../untyped-rule.js'
 
 /**
  * The server half of the add-an-edge control (#1329): which sections get one.

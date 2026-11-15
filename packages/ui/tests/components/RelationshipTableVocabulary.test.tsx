@@ -3,11 +3,12 @@ import * as React from 'react'
 import type { OpenSaasConfig, Session } from '@opensaas/stack-core'
 import { engineContextOf } from '@opensaas/stack-core'
 import { integer, relationship, text } from '@opensaas/stack-core/fields'
-import { createTestDatabase, type TestDatabase, untypedRule } from '@opensaas/stack-core/testing'
+import { createTestDatabase, type TestDatabase } from '@opensaas/stack-core/testing'
 import { RelationshipTable } from '../../src/components/RelationshipTable.js'
 import type { RelationshipTableClientProps } from '../../src/components/RelationshipTableClient.js'
 import type { RelationshipTableSection } from '../../src/lib/deriveItemView.js'
 import { prepareItemForm } from '../../src/lib/prepareItemForm.js'
+import { untypedRule } from '../untyped-rule.js'
 
 vi.mock('next/navigation.js', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),

@@ -38,4 +38,3 @@ export {
   type PlanRecorder,
   type RecordedPlan,
 } from './plans.js'
-export { untypedRule } from './untyped-rule.js'

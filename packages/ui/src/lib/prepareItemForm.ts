@@ -13,7 +13,7 @@ import {
   SessionVocabularyUnavailableError,
   withheldFieldNames,
 } from './sessionFieldConfigs.js'
-import { fieldReadable, vocabularyQuestionsOrDeny } from './vocabularyQuestions.js'
+import { fieldReadable, vocabularyQuestionsOf } from './vocabularyQuestions.js'
 
 /**
  * One record's id as the string the client form carries. An `int autoincrement`
@@ -114,7 +114,7 @@ export async function prepareItemForm(
       const relatedListConfig = config.lists[relatedListName]
 
       try {
-        const related = vocabularyQuestionsOrDeny(context, relatedListName)
+        const related = vocabularyQuestionsOf(context, relatedListName)
         if (related === null) throw new SessionVocabularyUnavailableError(relatedListName)
         const [vocabulary, relatedQuery] = await Promise.all([
           vocabularyPromise,

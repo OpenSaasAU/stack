@@ -5,7 +5,8 @@ import { InvalidFieldAccessResultError } from './errors.js'
 import type { AccessAnswer, FieldVocabulary, SessionVocabulary } from './session-vocabulary.js'
 import { engineContextOf, type AnyStackContext } from '../context/engine-context.js'
 import { relationship, text, virtual } from '../fields/index.js'
-import { createTestDatabase, untypedRule, type TestDatabase } from '../testing/index.js'
+import { createTestDatabase, type TestDatabase } from '../testing/context.js'
+import { untypedRule } from '../testing/untyped-rule.js'
 
 const BOOT = 120_000
 

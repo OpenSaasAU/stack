@@ -324,7 +324,9 @@ export interface AccessContext<DB = AccessControlledDB> {
   /**
    * What this context's session may be told about `listKey` ahead of any
    * request, or `null` for a list the config does not declare (ADR-0084).
-   * Resolved once per list and kept for this context's life.
+   * Resolved once per list and kept for this context's life. Asks every rule
+   * of the list: use `_sessionVocabularyQuestions` for a few answers about a
+   * list, and this only to serialise or advertise the list.
    * @internal
    */
   _sessionVocabulary?: (

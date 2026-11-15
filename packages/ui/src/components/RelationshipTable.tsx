@@ -16,7 +16,7 @@ import { projectFieldConfig, type SerializableFieldConfig } from '../lib/seriali
 import { jsonSafeClone } from '../lib/jsonSafeClone.js'
 import type { SessionVocabulary } from '@opensaas/stack-core/internal'
 import { vocabularyOrDeny, withheldFieldNames } from '../lib/sessionFieldConfigs.js'
-import { vocabularyQuestionsOrDeny } from '../lib/vocabularyQuestions.js'
+import { vocabularyQuestionsOf } from '../lib/vocabularyQuestions.js'
 import { prepareItemForm } from '../lib/prepareItemForm.js'
 import type { RelationshipTableSection } from '../lib/deriveItemView.js'
 import { resolveToManyEdgePlan } from '../lib/relationshipEdges.js'
@@ -239,7 +239,7 @@ export async function resolveLinkEdge(
 
   const edge = resolveJunctionEdge(config, parentListKey, section.fieldName)
   if (edge) {
-    const junction = vocabularyQuestionsOrDeny(context, edge.junctionListKey)
+    const junction = vocabularyQuestionsOf(context, edge.junctionListKey)
     if (junction === null || (await junction.operation('create')) === 'deny') return null
     if ((await junction.field(edge.backReferenceField)?.create()) === 'deny') return null
     if ((await junction.field(edge.targetField)?.create()) === 'deny') return null
@@ -255,7 +255,7 @@ export async function resolveLinkEdge(
   const plan = resolveToManyEdgePlan(config, parentListKey, section.fieldName)
   if (!plan) return null
 
-  const related = vocabularyQuestionsOrDeny(context, plan.relatedListKey)
+  const related = vocabularyQuestionsOf(context, plan.relatedListKey)
   if (related === null || (await related.operation('update')) === 'deny') return null
   if ((await related.field(plan.backReferenceField)?.update()) === 'deny') return null
 
@@ -398,7 +398,7 @@ export async function RelationshipTable({
       const targetKey = relatedVocabulary.fields.get(column)?.relationship?.targetList
       if (targetKey === undefined) return
       const target = Object.hasOwn(config.lists, targetKey) ? config.lists[targetKey] : null
-      const targetQuestions = target === null ? null : vocabularyQuestionsOrDeny(context, targetKey)
+      const targetQuestions = target === null ? null : vocabularyQuestionsOf(context, targetKey)
       const queryable =
         targetQuestions !== null && (await targetQuestions.operation('query')) !== 'deny'
       columnRelatedList.set(column, queryable ? target : null)

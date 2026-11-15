@@ -17,11 +17,12 @@ import {
   timestamp,
   virtual,
 } from '@opensaas/stack-core/fields'
-import { createTestDatabase, type TestDatabase, untypedRule } from '@opensaas/stack-core/testing'
+import { createTestDatabase, type TestDatabase } from '@opensaas/stack-core/testing'
 import { RELATIONSHIP_OPTIONS_MAX_TAKE } from '@opensaas/stack-core/internal'
 import { notFound, redirect } from 'next/navigation.js'
 import { ListView } from '../../src/components/ListView.js'
 import { ListViewClient, type ListViewClientProps } from '../../src/components/ListViewClient.js'
+import { untypedRule } from '../untyped-rule.js'
 
 vi.mock('next/navigation.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('next/navigation.js')>()),

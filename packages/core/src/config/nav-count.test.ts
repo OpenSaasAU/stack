@@ -2,7 +2,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vit
 import type { AccessContext } from '../access/types.js'
 import { text } from '../fields/index.js'
 import { engineContextOf } from '../context/engine-context.js'
-import { createTestContext, untypedRule, type TestContext } from '../testing/index.js'
+import { createTestContext, type TestContext } from '../testing/context.js'
+import { untypedRule } from '../testing/untyped-rule.js'
 import type { OpenSaasConfig } from './types.js'
 import { resolveNavCounts } from './nav-count.js'
 
@@ -280,6 +281,31 @@ describe('resolveNavCounts', () => {
       }
 
       await expect(resolveNavCounts(redirecting, schemaConfig())).rejects.toBe(redirect)
+    },
+    BOOT,
+  )
+
+  test(
+    'a framework control-flow throw from the count itself propagates',
+    async () => {
+      const redirect = Object.assign(new Error('NEXT_REDIRECT'), {
+        digest: 'NEXT_REDIRECT;replace;/sign-in;307;',
+      })
+      const engine = accessContext()
+      const counting: AccessContext = {
+        ...engine,
+        db: {
+          ...engine.db,
+          Counted: {
+            ...engine.db.Counted,
+            aggregate: async () => {
+              throw redirect
+            },
+          },
+        },
+      }
+
+      await expect(resolveNavCounts(counting, schemaConfig())).rejects.toBe(redirect)
     },
     BOOT,
   )

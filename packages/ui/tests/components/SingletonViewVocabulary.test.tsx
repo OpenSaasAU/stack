@@ -4,8 +4,9 @@ import { cleanup, render, screen } from '@testing-library/react'
 import { engineContextOf } from '@opensaas/stack-core'
 import type { OpenSaasConfig, OperationAccess, Session } from '@opensaas/stack-core'
 import { text } from '@opensaas/stack-core/fields'
-import { createTestDatabase, untypedRule } from '@opensaas/stack-core/testing'
+import { createTestDatabase } from '@opensaas/stack-core/testing'
 import { SingletonView } from '../../src/components/SingletonView.js'
+import { untypedRule } from '../untyped-rule.js'
 
 vi.mock('next/navigation.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('next/navigation.js')>()),

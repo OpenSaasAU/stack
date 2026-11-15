@@ -4,9 +4,10 @@ import * as React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { OpenSaasConfig, Session } from '@opensaas/stack-core'
 import { text } from '@opensaas/stack-core/fields'
-import { createTestDatabase, type TestDatabase, untypedRule } from '@opensaas/stack-core/testing'
+import { createTestDatabase, type TestDatabase } from '@opensaas/stack-core/testing'
 import { ListView } from '../../src/components/ListView.js'
 import { ListViewClient, type ListViewClientProps } from '../../src/components/ListViewClient.js'
+import { untypedRule } from '../untyped-rule.js'
 
 vi.mock('next/navigation.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('next/navigation.js')>()),

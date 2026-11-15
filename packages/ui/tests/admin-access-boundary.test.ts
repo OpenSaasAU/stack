@@ -74,6 +74,10 @@ function isEvaluatorName(name: string): boolean {
 function bindingKey(element: ts.BindingElement): string | undefined {
   const key = element.propertyName ?? element.name
   if (ts.isIdentifier(key) || ts.isStringLiteralLike(key)) return key.text
+  if (ts.isComputedPropertyName(key)) {
+    const expression = unwrap(key.expression)
+    if (ts.isStringLiteralLike(expression)) return expression.text
+  }
   return undefined
 }
 
@@ -167,6 +171,7 @@ describe('the boundary scan', () => {
     ['a renamed destructured access', `const { access: rules } = field`],
     ['a nested destructured access', `const { access: { operation } } = listConfig`],
     ['a destructured access parameter', `function f({ access }: Props) { return access }`],
+    ['a computed-key destructured access', `const { ['access']: a } = field`],
     ['an aliased access', `const rules = field.access`],
     ['an optional aliased access', `const rules = listConfig?.access`],
     ['a whole-object access read', `Object.values(field.access ?? {})`],

@@ -6,7 +6,7 @@ import { relationship, text } from '@opensaas/stack-core/fields'
 import { createTestDatabase, type TestDatabase } from '@opensaas/stack-core/testing'
 import { ListView } from '../../src/components/ListView.js'
 import { ListViewClient, type ListViewClientProps } from '../../src/components/ListViewClient.js'
-import { RelationshipTable } from '../../src/components/RelationshipTable.js'
+import { RelationshipTable, resolveLinkEdge } from '../../src/components/RelationshipTable.js'
 import type { RelationshipTableClientProps } from '../../src/components/RelationshipTableClient.js'
 import { prepareItemForm } from '../../src/lib/prepareItemForm.js'
 import { operationAvailable } from '../../src/lib/operationAvailable.js'
@@ -63,8 +63,27 @@ const config: OpenSaasConfig = {
         other: countedText('Watched.other'),
         third: countedText('Watched.third'),
         hubs: relationship({ ref: 'Hub.watched', many: true }),
+        owner: relationship({
+          ref: 'Owner.items',
+          access: {
+            read: counting('Watched.owner.read'),
+            create: counting('Watched.owner.create'),
+            update: counting('Watched.owner.update'),
+          },
+        }),
       },
       access: { operation: countedOperations('Watched') },
+    },
+    Owner: {
+      fields: { name: text(), items: relationship({ ref: 'Watched.owner', many: true }) },
+      access: {
+        operation: {
+          query: () => true,
+          create: () => true,
+          update: () => true,
+          delete: () => true,
+        },
+      },
     },
     Hub: {
       fields: {
@@ -185,6 +204,31 @@ describe('a consumer asking about a related list asks only the rules its answers
       expect(await operationAvailable(database.context(admin), 'Watched', 'create')).toBe(true)
 
       expect(askedOf('Watched')).toEqual(['Watched.create'])
+    },
+    BOOT,
+  )
+
+  it(
+    'the link control asks only the related list’s update and its back-reference’s update',
+    async () => {
+      const edge = await resolveLinkEdge(
+        {
+          fieldName: 'items',
+          ref: 'Watched.owner',
+          relatedListKey: 'Watched',
+          backReferenceField: 'owner',
+          columns: ['name'],
+          take: 10,
+          sumColumns: [],
+          removeAction: 'disconnect',
+          disconnectable: true,
+        },
+        'Owner',
+        database.context(admin),
+      )
+
+      expect(edge?.mode).toBe('foreignKey')
+      expect(askedOf('Watched')).toEqual(['Watched.owner.update', 'Watched.update'])
     },
     BOOT,
   )
