@@ -34,6 +34,17 @@ async function isPromoted(session: Session | null, context: AccessContext): Prom
   return member?.role === 'admin'
 }
 
+let watching = false
+let watched: AccessContext | undefined
+let seen: AccessAnswer[] = []
+let compensateMember: string | undefined
+
+async function askPromoted(context: AccessContext | undefined): Promise<void> {
+  if (!watching || context === undefined) return
+  const answer = await context._sessionVocabularyQuestions?.('Promoted')?.operation('create')
+  seen.push(answer ?? 'deny')
+}
+
 async function peekLooped(context: AccessContext): Promise<string> {
   const answer = await context._sessionVocabularyQuestions?.('Looped')?.operation('query')
   return answer ?? 'none'
@@ -55,6 +66,34 @@ const config: OpenSaasConfig = {
     Member: {
       fields: { name: text({ validation: { isRequired: true } }), role: text() },
       access: { operation: openOperations },
+      hooks: {
+        beforeOperation: async ({ context }) => await askPromoted(context),
+        afterOperation: async ({ context }) => await askPromoted(context),
+        afterTransaction: async () => await askPromoted(watched),
+      },
+    },
+    Compensating: {
+      fields: { title: text() },
+      access: { operation: openOperations },
+      hooks: {
+        afterTransaction: async ({ status, context }) => {
+          if (status !== 'rolled-back' || compensateMember === undefined) return
+          await context.db.Member.update({
+            where: { id: compensateMember },
+            data: { role: 'admin' },
+          })
+        },
+      },
+    },
+    Vanishing: {
+      fields: { title: text() },
+      access: { operation: openOperations },
+      hooks: {
+        beforeOperation: async (args) => {
+          if (args.operation !== 'update') return
+          await args.context.db.Vanishing.delete({ where: { id: args.item.id } })
+        },
+      },
     },
     Promoted: {
       fields: { title: text() },
@@ -103,6 +142,10 @@ afterAll(async () => {
 beforeEach(async () => {
   gateAsks = 0
   promotionAsks = 0
+  watching = false
+  watched = undefined
+  seen = []
+  compensateMember = undefined
   vi.restoreAllMocks()
   const sudo = database.context(null).sudo()
   for (const row of await sudo.db.Toggle.all())
@@ -278,6 +321,99 @@ describe('a write through a context', () => {
         }),
       ).rejects.toThrow('roll back')
       expect(await operationOf(context, 'Promoted', 'create')).toBe('deny')
+      expect(promotionAsks).toBe(1)
+    },
+    BOOT,
+  )
+})
+
+describe('a hook asking after the write that promoted the role', () => {
+  test(
+    'afterOperation sees the promotion its own beforeOperation could not',
+    async () => {
+      const { id, session } = await newMember('member')
+      const context = database.context(session)
+
+      watching = true
+      await context.db.Member.update({ where: { id }, data: { role: 'admin' } })
+      watching = false
+      expect(seen).toEqual(['deny', 'allow'])
+    },
+    BOOT,
+  )
+
+  test(
+    'afterTransaction of a root write sees it through the context the write was issued with',
+    async () => {
+      const { id, session } = await newMember('member')
+      const context = database.context(session)
+      expect(await operationOf(context, 'Promoted', 'create')).toBe('deny')
+
+      watched = engineContextOf(context)
+      watching = true
+      await context.db.Member.update({ where: { id }, data: { role: 'admin' } })
+      watching = false
+      watched = undefined
+      expect(seen).toEqual(['deny', 'allow', 'allow'])
+    },
+    BOOT,
+  )
+
+  test(
+    'a deferred afterTransaction sees it through the transaction’s opener',
+    async () => {
+      const { id, session } = await newMember('member')
+      const context = database.context(session)
+      expect(await operationOf(context, 'Promoted', 'create')).toBe('deny')
+
+      watched = engineContextOf(context)
+      await context.transaction(async (tx) => {
+        await tx.db.Member.update({ where: { id }, data: { role: 'admin' } })
+        watching = true
+      })
+      watching = false
+      watched = undefined
+      expect(seen).toEqual(['allow'])
+    },
+    BOOT,
+  )
+})
+
+describe('a compensating write after a rollback', () => {
+  test(
+    'clears the memo of the transaction’s opener',
+    async () => {
+      const { id, session } = await newMember('member')
+      const context = database.context(session)
+      expect(await operationOf(context, 'Promoted', 'create')).toBe('deny')
+
+      compensateMember = id
+      await expect(
+        context.transaction(async (tx) => {
+          await tx.db.Compensating.create({ data: { title: 'c' } })
+          throw new Error('roll back')
+        }),
+      ).rejects.toThrow('roll back')
+      expect(await operationOf(context, 'Promoted', 'create')).toBe('allow')
+    },
+    BOOT,
+  )
+})
+
+describe('an abandoned write', () => {
+  test(
+    'answers null and invalidates nothing',
+    async () => {
+      const { session } = await newMember('member')
+      const context = database.context(session)
+      const row = await context.db.Vanishing.create({ data: { title: 'v' } })
+      if (row === null) throw new Error('row not created')
+
+      await operationOf(context, 'Promoted', 'create')
+      expect(
+        await context.db.Vanishing.update({ where: { id: row.id }, data: { title: 'w' } }),
+      ).toBeNull()
+      await operationOf(context, 'Promoted', 'create')
       expect(promotionAsks).toBe(1)
     },
     BOOT,

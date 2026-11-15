@@ -249,7 +249,7 @@ export async function runWritePipeline(args: WritePipelineArgs): Promise<OrmRow 
   // write must be reachable after that transaction closes. `beforeTransaction`
   // keeps running through `context` as given — see `runWithTransactionBoundary`'s
   // own param doc for why that one is deliberately left alone.
-  const written = await runWithTransactionBoundary({
+  return runWithTransactionBoundary({
     config,
     involvedLists,
     context,
@@ -257,8 +257,9 @@ export async function runWritePipeline(args: WritePipelineArgs): Promise<OrmRow 
     joinedOwner: existingOwner,
     ownedRegistry,
     runTransaction: async () => {
+      let written: Awaited<ReturnType<typeof runWriteInTransaction>>
       try {
-        return await runInTransaction(opener, ormHandle, async (tx, openedLock) => {
+        written = await runInTransaction(opener, ormHandle, async (tx, openedLock) => {
           const written = await runWriteInTransaction(
             {
               ...args,
@@ -282,15 +283,15 @@ export async function runWritePipeline(args: WritePipelineArgs): Promise<OrmRow 
       } catch (error) {
         if (!(error instanceof WriteAbandonedSignal)) throw error
         ;(existingOwner ?? ownedRegistry)?.poison(error)
-        return null
+        written = null
       }
+      if (written !== null) {
+        context._invalidateSessionVocabulary?.()
+        existingOwner?.noteWrite()
+      }
+      return written
     },
   })
-  if (written !== null) {
-    context._invalidateSessionVocabulary?.()
-    existingOwner?.noteWrite()
-  }
-  return written
 }
 
 /**
@@ -419,8 +420,11 @@ function resolveAfterTransactionContext(
   afterTransactionContext.db = buildDbDelegate(config, base.ormHandle, afterTransactionContext)
   return withSingletonProbe(
     invalidatesSessionVocabularyOf(
-      withOwnSessionVocabulary(afterTransactionContext, config),
-      context,
+      invalidatesSessionVocabularyOf(
+        withOwnSessionVocabulary(afterTransactionContext, config),
+        context,
+      ),
+      base,
     ),
   )
 }
@@ -567,6 +571,7 @@ async function runWriteInTransaction(
   // back with the write, and no after-hook fires for a write that did not
   // happen.
   if (item === null) throw new WriteAbandonedSignal()
+  context._invalidateSessionVocabulary?.()
 
   // ── Phase 9: list-level afterOperation ──────────────────────────────────────
   await executeAfterOperation(
@@ -692,6 +697,7 @@ async function runDeletePath(args: {
   // ── Phase 8: DB delete ──────────────────────────────────────────────────────
   const deleted = await strategy.persist(collection, ops, scope, {})
   if (deleted === null) throw new WriteAbandonedSignal()
+  context._invalidateSessionVocabulary?.()
 
   // ── Phase 9: list-level afterOperation (delete) ─────────────────────────────
   await executeAfterOperation(listConfig.hooks, {

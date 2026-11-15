@@ -1427,12 +1427,12 @@ export function getContext<TConfig extends OpenSaasConfig>(
     const registry = new TransactionRegistry()
     const ormClient = ormHandle as unknown as TransactionCapable
 
-    const settled = runTransactionBody(fn, registry, ormClient)
-
-    return settleTransactionOwner(settled, registry, config).then((result) => {
+    const settled = runTransactionBody(fn, registry, ormClient).then((result) => {
       if (registry.hasWritten) context._invalidateSessionVocabulary?.()
       return result
     })
+
+    return settleTransactionOwner(settled, registry, config)
   }
 
   function runTransactionBody<T>(
