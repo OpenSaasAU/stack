@@ -6,6 +6,7 @@ import type {
   ListIdValue,
   OpenSaasConfig,
 } from '@opensaas/stack-core'
+import { singletonRowStored } from '@opensaas/stack-core/internal'
 import type { FieldVocabulary, SessionVocabulary } from '@opensaas/stack-core/internal'
 import { applyClientValueTransforms } from './clientValueTransforms.js'
 import { jsonSafeClone } from './jsonSafeClone.js'
@@ -167,7 +168,7 @@ function resolveList(context: AnyStackContext, listKey: string) {
   const config = engine._config
   const listConfig = config && Object.hasOwn(config.lists, listKey) ? config.lists[listKey] : null
   if (!config || !listConfig) throw new SessionVocabularyUnavailableError(listKey)
-  return { engine, config, fields: listConfig.fields }
+  return { engine, config, fields: listConfig.fields, singleton: Boolean(listConfig.isSingleton) }
 }
 
 /**
@@ -208,9 +209,14 @@ export async function serializeFieldConfigs(
   }).fields
 }
 
-function relatedId(value: unknown): string | null {
-  if (typeof value !== 'object' || value === null || !('id' in value)) return null
-  const id: unknown = value.id
+/**
+ * One record's id as the string the client form carries. An `int autoincrement`
+ * list's id arrives as a number (ADR-0048); the server action's id boundary
+ * parses each string back to its own list's key type.
+ */
+export function readId(record: unknown): string | null {
+  if (typeof record !== 'object' || record === null || !('id' in record)) return null
+  const id: unknown = record.id
   if (typeof id === 'string') return id
   return typeof id === 'number' ? String(id) : null
 }
@@ -219,33 +225,66 @@ function isToOne(field: FieldConfig): boolean {
   return field.type === 'relationship' && !('many' in field && field.many === true)
 }
 
+interface FormProjection {
+  scalars: string[]
+  relationships: string[]
+}
+
+function formProjection(
+  fields: Record<string, FieldConfig>,
+  vocabulary: SessionVocabulary,
+): FormProjection {
+  const readable = Object.entries(fields).filter(
+    ([fieldName]) => vocabulary.fields.get(fieldName)?.read !== 'deny',
+  )
+  return {
+    scalars: readable
+      .filter(([, field]) => field.type !== 'relationship')
+      .map(([fieldName]) => fieldName),
+    relationships: readable.filter(([, field]) => isToOne(field)).map(([fieldName]) => fieldName),
+  }
+}
+
+function projectFormRow(
+  row: Readonly<Record<string, unknown>>,
+  { scalars, relationships }: FormProjection,
+): Record<string, unknown> {
+  const values: Record<string, unknown> = { id: row.id }
+  for (const fieldName of scalars) {
+    if (Object.hasOwn(row, fieldName)) values[fieldName] = row[fieldName]
+  }
+  for (const fieldName of relationships) {
+    if (Object.hasOwn(row, fieldName)) values[fieldName] = readId(row[fieldName])
+  }
+  return values
+}
+
 async function readFormRow(
   engine: AccessContext,
   listKey: string,
   id: ListIdValue,
-  fields: Record<string, FieldConfig>,
-  vocabulary: SessionVocabulary,
+  projection: FormProjection,
 ): Promise<Record<string, unknown> | null> {
-  const readable = Object.entries(fields).filter(
-    ([fieldName]) => vocabulary.fields.get(fieldName)?.read !== 'deny',
-  )
-  const relationships = readable
-    .filter(([, field]) => isToOne(field))
-    .map(([fieldName]) => fieldName)
-  const scalars = readable
-    .filter(([, field]) => field.type !== 'relationship')
-    .map(([fieldName]) => fieldName)
-  const read = relationships.reduce(
+  const read = projection.relationships.reduce(
     (query, fieldName) => query.include(fieldName, (related) => related.select('id')),
-    engine.db[listKey].where({ id: { equals: id } }).select('id', ...scalars),
+    engine.db[listKey].where({ id: { equals: id } }).select('id', ...projection.scalars),
   )
   const row = await read.first()
-  if (row === null) return null
-  const values: Record<string, unknown> = { ...row }
-  for (const fieldName of relationships) {
-    if (Object.hasOwn(values, fieldName)) values[fieldName] = relatedId(values[fieldName])
-  }
-  return values
+  return row === null ? null : projectFormRow(row, projection)
+}
+
+async function readSingletonFormRow(
+  engine: AccessContext,
+  listKey: string,
+  id: ListIdValue,
+  projection: FormProjection,
+): Promise<Record<string, unknown> | null> {
+  const delegate = engine.db[listKey]
+  if (!delegate.get || !(await singletonRowStored(engine, listKey))) return null
+  const include = Object.fromEntries(projection.relationships.map((name) => [name, true]))
+  const row = await delegate.get({ include })
+  if (row === null || row.id !== id) return null
+  return projectFormRow(row, projection)
 }
 
 /**
@@ -275,23 +314,19 @@ export async function serializeItemForForm(
   id: ListIdValue,
   purpose: FieldConfigPurpose = 'update',
 ): Promise<Record<string, unknown> | null> {
-  const { engine, config, fields } = resolveList(context, listKey)
+  const { engine, config, fields, singleton } = resolveList(context, listKey)
   const parsed = parseListId(config, listKey, id)
   if (!parsed.ok) return null
-  const row = await readFormRow(
-    engine,
-    listKey,
-    parsed.value,
-    fields,
-    await readSessionVocabulary(engine, listKey),
-  )
+  const vocabulary = await readSessionVocabulary(engine, listKey)
+  const projection = formProjection(fields, vocabulary)
+  const read = singleton ? readSingletonFormRow : readFormRow
+  const row = await read(engine, listKey, parsed.value, projection)
   if (row === null) return null
   return formValuesForSession({
-    vocabulary: await readSessionVocabulary(
-      engine,
-      listKey,
-      purpose === 'update' ? parsed.value : undefined,
-    ),
+    vocabulary:
+      purpose === 'update'
+        ? await readSessionVocabulary(engine, listKey, parsed.value)
+        : vocabulary,
     fields,
     values: row,
     purpose,

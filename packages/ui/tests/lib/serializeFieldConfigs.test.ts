@@ -82,6 +82,26 @@ function makeConfig(): OpenSaasConfig {
         fields: { label: text(), doc: relationship({ ref: 'Doc.hiddenWatchers' }) },
         access: { operation: { query: () => true, create: () => true, update: () => true } },
       },
+      Settings: {
+        isSingleton: true,
+        fields: { siteName: text() },
+        access: {
+          operation: {
+            query: ({ session }) => session !== null,
+            create: () => true,
+            update: () => true,
+          },
+        },
+      },
+      Counter: {
+        db: { idField: 'int autoincrement' },
+        fields: { label: text() },
+        access: { operation: { query: () => true, create: () => true, update: () => true } },
+      },
+      Note: {
+        fields: { body: text(), memo: relationship({ ref: 'Memo' }) },
+        access: { operation: { query: () => true, create: () => true, update: () => true } },
+      },
       Memo: {
         fields: { body: text(), ownerKey: text() },
         access: {
@@ -358,6 +378,54 @@ describe('serializeItemForForm', () => {
     const owner = await serializeItemForForm(author(), 'User', String(user.id))
     expect(owner?.name).toBe('Ada')
     expect(owner).not.toHaveProperty('docs')
+  })
+
+  it('reads an int autoincrement row from a string id', async () => {
+    const counter = await database
+      .context(null)
+      .sudo()
+      .db.Counter.create({ data: { label: 'visits' } })
+    if (counter === null) throw new Error('Could not seed Counter')
+
+    const values = await serializeItemForForm(author(), 'Counter', String(counter.id))
+
+    expect(values?.id).toBe(counter.id)
+    expect(values?.label).toBe('visits')
+  })
+
+  it('answers null for a to-one whose target the session cannot query, with no foreign key', async () => {
+    const sudo = database.context(null).sudo()
+    const memo = await sudo.db.Memo.create({ data: { body: 'private', ownerKey: 'someone-else' } })
+    if (memo === null) throw new Error('Could not seed Memo')
+    const note = await sudo.db.Note.create({
+      data: { body: 'n', memo: { connect: { id: memo.id } } },
+    })
+    if (note === null) throw new Error('Could not seed Note')
+
+    const values = await serializeItemForForm(author(), 'Note', String(note.id))
+
+    expect(values?.body).toBe('n')
+    expect(values?.memo).toBeNull()
+    expect(values).not.toHaveProperty('memoId')
+    expect(JSON.stringify(values)).not.toContain(String(memo.id))
+  })
+
+  it('reads a singleton without creating it, and only by its own id', async () => {
+    const sudo = database.context(null).sudo()
+    await expect(serializeItemForForm(author(), 'Settings', 1)).resolves.toBeNull()
+    await expect(
+      sudo.db.Settings.update({ where: { id: 1 }, data: { siteName: 'probe' } }),
+    ).resolves.toBeNull()
+
+    const seeded = await sudo.db.Settings.get?.()
+    if (!seeded) throw new Error('Could not seed Settings')
+    await sudo.db.Settings.update({ where: { id: seeded.id }, data: { siteName: 'Stack' } })
+
+    const values = await serializeItemForForm(author(), 'Settings', '1')
+    expect(values?.id).toBe(seeded.id)
+    expect(values?.siteName).toBe('Stack')
+    await expect(serializeItemForForm(author(), 'Settings', 2)).resolves.toBeNull()
+    await expect(serializeItemForForm(database.context(null), 'Settings', 1)).resolves.toBeNull()
   })
 
   it('returns null for an id the session cannot query', async () => {

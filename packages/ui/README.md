@@ -157,6 +157,8 @@ answers each row-dependent rule for that post, and its
 row itself through the session's secured surface, applies each field's
 `ui.valueForClientSerialization` and leaves out what the session never sees. It
 returns `null` when the session may not read the row or no row has that id.
+A to-many relationship is not prefilled: the standalone form shows it empty and
+read-only even when the row has children.
 
 ```tsx
 import { ItemEditForm } from '@opensaas/stack-ui/standalone'
