@@ -20,7 +20,8 @@ An edit form's values come from `serializeItemForForm`, also on `@opensaas/stack
 
 ```tsx
 const editFields = await serializeFieldConfigs(context, 'Post', 'update', post) // answers row-dependent rules for `post`
-const initialData = await serializeItemForForm(context, 'Post', post)
+const initialData = await serializeItemForForm(context, 'Post', post.id)
+if (initialData === null) notFound()
 ```
 
 ```tsx

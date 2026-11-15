@@ -19,7 +19,10 @@ export interface ItemEditFormProps<
    * read and marks what it can never write.
    */
   fields: Record<string, SerializableFieldConfig>
-  /** The record's values from `serializeItemForForm(context, listKey, item)` on the server. */
+  /**
+   * The record's values from `serializeItemForForm(context, listKey, id)` on the
+   * server, which reads the row itself through the session's secured surface.
+   */
   initialData: TData
   onSubmit: (data: TData) => Promise<{ success: boolean; error?: string }>
   onCancel?: () => void
@@ -42,7 +45,7 @@ export interface ItemEditFormProps<
  * ```tsx
  * <ItemEditForm
  *   fields={fields} // await serializeFieldConfigs(context, 'Post', 'update') on the server
- *   initialData={initialData} // await serializeItemForForm(context, 'Post', post) on the server
+ *   initialData={initialData} // await serializeItemForForm(context, 'Post', postId) on the server
  *   onSubmit={async (data) => {
  *     const result = await updatePost(postId, data);
  *     return { success: !!result };
