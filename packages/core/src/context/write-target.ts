@@ -3,6 +3,7 @@ import type { AccessContext, OrmRow, PrismaFilter } from '../access/types.js'
 import { assertAccessFilterConstrains, checkAccess } from '../access/engine.js'
 import { guardedRuleItem, NO_RULE_VIEWS, ruleRowOf } from '../access/rule-item.js'
 import {
+  countRows,
   firstMatching,
   identityPredicate,
   whereCombinators,
@@ -155,6 +156,23 @@ export async function readStoredRow(
     [identityPredicate(listKey, id)],
     await whereCombinators(),
   )
+}
+
+/**
+ * Whether a singleton list's one row is stored yet, answered without `get()`'s
+ * auto-create and without reading any of its columns.
+ */
+export async function singletonRowStored(
+  context: AccessContext,
+  listKey: string,
+): Promise<boolean> {
+  return (await countRows(writeCollection(context.ormHandle, listKey), listKey)) > 0
+}
+
+/** `context`, given its own {@link AccessContext._singletonRowStored}. */
+export function withSingletonProbe<TContext extends AccessContext>(context: TContext): TContext {
+  context._singletonRowStored = (listKey) => singletonRowStored(context, listKey)
+  return context
 }
 
 /**

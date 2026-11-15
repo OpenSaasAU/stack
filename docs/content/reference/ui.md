@@ -881,8 +881,9 @@ renders whatever `error` you return.
 A standalone form for editing existing items.
 
 `ItemEditForm` is `ItemCreateForm` plus `initialData` — the values the form opens
-with. There is no `itemId` prop and no fetching inside the component: you read
-the row yourself, seed the form from it, and decide what the update does.
+with. There is no `itemId` prop and no fetching inside the component: the server
+reads the row with `serializeItemForForm`, seeds the form from it, and you decide
+what the update does.
 
 ```typescript
 // app/posts/[id]/page.tsx
@@ -896,16 +897,10 @@ export default async function EditPostPage({ params }: { params: Promise<{ id: s
   const { id } = await params
   const context = await getContext()
 
-  const post = await context.db.Post.where({ id }).first()
-  if (!post) notFound()
+  const initialData = await serializeItemForForm(context, 'Post', id)
+  if (initialData === null) notFound()
 
-  const fields = await serializeFieldConfigs(context, 'Post', 'update', post)
-  const initialData = await serializeItemForForm(context, 'Post', {
-    id: post.id,
-    title: post.title,
-    slug: post.slug,
-    content: post.content,
-  })
+  const fields = await serializeFieldConfigs(context, 'Post', 'update', initialData)
 
   async function updatePost(data: PostUpdateInput) {
     'use server'
@@ -921,14 +916,15 @@ export default async function EditPostPage({ params }: { params: Promise<{ id: s
 }
 ```
 
-`first()` returns `null` for a row that does not exist and for one this session
-may not read, so the `notFound()` branch covers both. The same is true of
+`serializeItemForForm` reads the row itself and returns `null` for a row that does
+not exist and for one this session may not read, so the `notFound()` branch covers
+both. The same is true of
 `update()`'s `null`.
 
 **Props:**
 
 - `fields` - The serialised field configs, from `serializeFieldConfigs(context, listKey, 'update')`
-- `initialData` - The values the form opens with, from `serializeItemForForm(context, listKey, item)` on the server. The form does not run a field's `ui.valueForClientSerialization` itself
+- `initialData` - The values the form opens with, from `serializeItemForForm(context, listKey, id)` on the server. The form does not run a field's `ui.valueForClientSerialization` itself
 - `onSubmit` - `(data) => Promise<{ success: boolean; error?: string }>`
 - `onCancel?` - Called when the cancel button is pressed
 - `relationshipData?` - Pre-fetched `{ id, label }` options per relationship field
@@ -1308,13 +1304,23 @@ A `listKey` the context's config does not declare throws `SessionVocabularyUnava
 
 ### serializeItemForForm
 
-`serializeItemForForm(context, listKey, item, purpose?)` prepares one record as `ItemEditForm`'s `initialData`. It applies each field's `ui.valueForClientSerialization` (a `password()` field becomes `{ isSet }`), leaves out every field `serializeFieldConfigs(context, listKey, purpose, item)` withholds, and drops any value the session can never read. Pass the record as the session's own secured read returned it: that read has already applied Field Visibility to any `read` rule that depends on the row. `purpose` defaults to `'update'`.
+`serializeItemForForm(context, listKey, id, purpose?)` prepares one record as `ItemEditForm`'s `initialData`. It takes the record's `id`, not the record: it reads the row itself through the session's own secured surface, so Field Visibility applies every `read` rule, one that depends on the row included, and a row from `context.unsafe`, a `sudo()` read or a hand-built object has no way in. It then applies each field's `ui.valueForClientSerialization` (a `password()` field becomes `{ isSet }`), leaves out every field `serializeFieldConfigs(context, listKey, purpose)` withholds, and reduces a to-one relationship to its related id. `purpose` defaults to `'update'`.
+
+The access that applies is that of the context you pass: pass `context.sudo()` and the row is read as sudo.
+
+A to-many relationship is not prefilled: the serialiser does not read its children, so the standalone form shows it empty and read-only even when the row has children. Render to-many edges yourself, or use the admin's item view.
+
+On a singleton list, pass the singleton's own id. The row is read through `get()`, but the serialiser never creates it: a singleton with no stored row answers `null`.
+
+`id` is parsed against the list's `db.idField`, the same boundary coercion an admin URL segment goes through, so a string from route params works for an `int autoincrement` list too. It returns `null` when the session may not read the row, when no row has that id, and when the id is not one the list's key type can hold. Branch on it as you would on `first()`.
 
 ```typescript
+import { notFound } from 'next/navigation'
 import { serializeFieldConfigs, serializeItemForForm } from '@opensaas/stack-ui/server'
 
-const fields = await serializeFieldConfigs(context, 'Post', 'update', post)
-const initialData = await serializeItemForForm(context, 'Post', post)
+const initialData = await serializeItemForForm(context, 'Post', id)
+if (initialData === null) notFound()
+const fields = await serializeFieldConfigs(context, 'Post', 'update', initialData)
 ```
 
 It throws `SessionVocabularyUnavailableError` for a list the config does not declare.

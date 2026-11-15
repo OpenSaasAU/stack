@@ -244,9 +244,11 @@ session was settled on the server, and no access rule runs in the browser.
 
 Standalone form for editing existing items. Its `fields` come from
 `serializeFieldConfigs(context, listKey, 'update')`, and its `initialData` from
-`serializeItemForForm(context, listKey, post)`, both on the server.
-`serializeItemForForm` applies each field's `ui.valueForClientSerialization` and
-leaves out every field the session never sees:
+`serializeItemForForm(context, listKey, post.id)`, both on the server.
+`serializeItemForForm` reads the row itself through the session's secured surface,
+returns `null` when the session may not read it or it does not exist, applies each
+field's `ui.valueForClientSerialization` and leaves out every field the session
+never sees:
 
 ```tsx
 'use client'

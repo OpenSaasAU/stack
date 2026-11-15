@@ -55,7 +55,7 @@ import { withOwnSessionVocabulary } from '../access/session-vocabulary.js'
 export type WriteOperation = 'create' | 'update' | 'delete'
 
 export type { TargetResolution } from './write-target.js'
-import { resolveExistingTarget, type TargetResolution } from './write-target.js'
+import { resolveExistingTarget, withSingletonProbe, type TargetResolution } from './write-target.js'
 
 /**
  * Per-operation strategy. Supplies the three axes on which create/update/delete
@@ -373,7 +373,7 @@ function bindContextToTransaction(
   // Rebuild `db` against `tx`, referencing `txContext` itself so hooks reached
   // through it see the transactional context.
   txContext.db = buildDbDelegate(config, tx, txContext)
-  return withOwnSessionVocabulary(txContext, config)
+  return withSingletonProbe(withOwnSessionVocabulary(txContext, config))
 }
 
 /**
@@ -409,7 +409,7 @@ function resolveAfterTransactionContext(
     _config: config,
   }
   afterTransactionContext.db = buildDbDelegate(config, base.ormHandle, afterTransactionContext)
-  return withOwnSessionVocabulary(afterTransactionContext, config)
+  return withSingletonProbe(withOwnSessionVocabulary(afterTransactionContext, config))
 }
 
 interface WrittenRow {

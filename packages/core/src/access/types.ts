@@ -353,6 +353,13 @@ export interface AccessContext<DB = AccessControlledDB> {
     listKey: string,
     id: string | number,
   ) => Promise<import('./session-vocabulary.js').SessionVocabulary | null>
+  /**
+   * Whether the singleton list `listKey`'s one row is stored yet, answered on
+   * this context's own client without `get()`'s auto-create and without
+   * reading any column.
+   * @internal
+   */
+  _singletonRowStored?: (listKey: string) => Promise<boolean>
 }
 
 export type PrismaFilter<T = Record<string, unknown>> = Partial<Record<keyof T, unknown>>

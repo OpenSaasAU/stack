@@ -8,24 +8,13 @@ import type { ListConfig } from '@opensaas/stack-core'
 import type { SerializableFieldConfig } from './serializeFieldConfig.js'
 import {
   formValuesForSession,
+  readId,
   readSessionVocabulary,
   serializeFieldsForSession,
   SessionVocabularyUnavailableError,
   withheldFieldNames,
 } from './sessionFieldConfigs.js'
 import { fieldReadable, vocabularyQuestionsOf } from './vocabularyQuestions.js'
-
-/**
- * One record's id as the string the client form carries. An `int autoincrement`
- * list's id arrives as a number (ADR-0048); the server action's id boundary
- * parses each string back to its own list's key type.
- */
-function readId(record: unknown): string | null {
-  if (!record || typeof record !== 'object' || !('id' in record)) return null
-  const id: unknown = record.id
-  if (typeof id === 'string') return id
-  return typeof id === 'number' ? String(id) : null
-}
 
 /**
  * Extract the currently-selected id(s) from a hydrated relationship value so
