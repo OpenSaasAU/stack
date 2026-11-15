@@ -3,15 +3,11 @@ import type { AccessContext } from '../access/types.js'
 import { text } from '../fields/index.js'
 import { engineContextOf } from '../context/engine-context.js'
 import { createTestContext, type TestContext } from '../testing/context.js'
+import { untypedRule } from '../testing/untyped-rule.js'
 import type { OpenSaasConfig } from './types.js'
 import { resolveNavCounts } from './nav-count.js'
 
 const BOOT = 120_000
-
-function nothing(answer: null | undefined): () => boolean
-function nothing(answer: null | undefined): () => boolean | null | undefined {
-  return () => answer
-}
 
 function schemaConfig(): OpenSaasConfig {
   return {
@@ -52,12 +48,12 @@ function schemaConfig(): OpenSaasConfig {
       },
       ReturnsNull: {
         fields: { title: text() },
-        access: { operation: { create: () => true, query: nothing(null) } },
+        access: { operation: { create: () => true, query: untypedRule(() => null) } },
         ui: { navCount: true },
       },
       ReturnsUndefined: {
         fields: { title: text() },
-        access: { operation: { create: () => true, query: nothing(undefined) } },
+        access: { operation: { create: () => true, query: untypedRule(() => undefined) } },
         ui: { navCount: true },
       },
       CountFails: {
@@ -138,7 +134,7 @@ describe('resolveNavCounts', () => {
   test(
     'a context that resolves no Session vocabulary counts nothing',
     async () => {
-      const { _sessionVocabulary: _omitted, ...withoutVocabulary } = accessContext()
+      const { _sessionVocabularyQuestions: _omitted, ...withoutVocabulary } = accessContext()
       const counts = await resolveNavCounts(withoutVocabulary, schemaConfig())
       expect(counts).toEqual({})
     },
@@ -186,6 +182,130 @@ describe('resolveNavCounts', () => {
         error.mockRestore()
         warn.mockRestore()
       }
+    },
+    BOOT,
+  )
+
+  test(
+    'a vocabulary read that fails omits only its own badge and never rejects',
+    async () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+      try {
+        const engine = accessContext()
+        const failure = new Error('vocabulary failed')
+        const failing: AccessContext = {
+          ...engine,
+          _sessionVocabularyQuestions: (listKey) => {
+            const questions = engine._sessionVocabularyQuestions?.(listKey) ?? null
+            if (questions === null || listKey !== 'Scoped') return questions
+            return {
+              ...questions,
+              operation: async () => {
+                throw failure
+              },
+            }
+          },
+        }
+
+        const counts = await resolveNavCounts(failing, schemaConfig())
+
+        expect(counts).toEqual({ Counted: 0 })
+        expect(error).toHaveBeenCalledWith('Failed to resolve nav count for Scoped:', failure)
+      } finally {
+        error.mockRestore()
+      }
+    },
+    BOOT,
+  )
+
+  test(
+    'deciding a badge asks only the query rule of each opted-in list',
+    async () => {
+      const asked: string[] = []
+      const counting = (name: string) => () => {
+        asked.push(name)
+        return true
+      }
+      const config: OpenSaasConfig = {
+        db: { provider: 'postgresql' },
+        lists: {
+          Counted: {
+            fields: {
+              title: text({
+                access: { read: counting('title.read'), update: counting('title.update') },
+              }),
+            },
+            access: {
+              operation: {
+                query: counting('query'),
+                create: counting('create'),
+                update: counting('update'),
+                delete: counting('delete'),
+              },
+            },
+            ui: { navCount: true },
+          },
+        },
+      }
+      const own = await createTestContext(config, null)
+      try {
+        asked.length = 0
+        await resolveNavCounts(engineContextOf(own.context), config)
+        expect(asked.filter((name) => name !== 'query')).toEqual([])
+      } finally {
+        await own.close()
+      }
+    },
+    BOOT,
+  )
+
+  test(
+    'a framework control-flow throw from deciding a badge propagates',
+    async () => {
+      const redirect = Object.assign(new Error('NEXT_REDIRECT'), {
+        digest: 'NEXT_REDIRECT;replace;/sign-in;307;',
+      })
+      const engine = accessContext()
+      const redirecting: AccessContext = {
+        ...engine,
+        _sessionVocabularyQuestions: (listKey) => {
+          const questions = engine._sessionVocabularyQuestions?.(listKey) ?? null
+          if (questions === null) return null
+          return {
+            ...questions,
+            operation: async () => {
+              throw redirect
+            },
+          }
+        },
+      }
+
+      await expect(resolveNavCounts(redirecting, schemaConfig())).rejects.toBe(redirect)
+    },
+    BOOT,
+  )
+
+  test(
+    'a framework control-flow throw from the count itself propagates',
+    async () => {
+      const redirect = Object.assign(new Error('NEXT_REDIRECT'), {
+        digest: 'NEXT_REDIRECT;replace;/sign-in;307;',
+      })
+      const engine = accessContext()
+      const counting: AccessContext = {
+        ...engine,
+        db: {
+          ...engine.db,
+          Counted: {
+            ...engine.db.Counted,
+            aggregate: async () => {
+              throw redirect
+            },
+          },
+        },
+      }
+
+      await expect(resolveNavCounts(counting, schemaConfig())).rejects.toBe(redirect)
     },
     BOOT,
   )

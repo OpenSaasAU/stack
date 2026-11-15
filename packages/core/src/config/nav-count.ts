@@ -1,4 +1,5 @@
 import type { AccessContext } from '../access/types.js'
+import { rethrowControlFlow } from '../access/decide-advertisement.js'
 import type { AggregateBuild } from '../secured/aggregate.js'
 import type { ListConfig, OpenSaasConfig, TypeInfo } from './types.js'
 
@@ -17,6 +18,10 @@ type CountDelegate = {
  * a singleton, and its Session vocabulary does not deny `query` (ADR-0084) —
  * everything else is omitted from the map, never zeroed. A context that
  * resolves no vocabulary for a list counts it as denied.
+ *
+ * Never rejects over one list: a list whose vocabulary read or count fails is
+ * omitted and logged. A framework's control flow (`redirect()`, `notFound()`)
+ * raised by either propagates.
  *
  * Each count is read through the secured `context.db`, so it reflects
  * exactly what the current session may see.
@@ -37,18 +42,20 @@ export async function resolveNavCounts(
 
   await Promise.all(
     optedIn.map(async (listKey) => {
-      const vocabulary = (await context._sessionVocabulary?.(listKey)) ?? null
-      if (vocabulary === null || vocabulary.operations.query === 'deny') return
       const delegate: CountDelegate | undefined = context.db?.[listKey]
-      if (!delegate?.aggregate) return
       // A single list's count failing (a DB hiccup, a throwing access filter or
       // hook) must not blank the whole admin chrome — `AdminUI` awaits this
       // before rendering the shell. Degrade like the sibling `ListView`: log and
-      // omit just that badge. Other lists' counts are unaffected.
+      // omit just that badge. Other lists' counts are unaffected. A framework's
+      // control flow (`redirect()`, `notFound()`) still reaches the framework.
       try {
+        const questions = context._sessionVocabularyQuestions?.(listKey) ?? null
+        if (questions === null || (await questions.operation('query')) === 'deny') return
+        if (!delegate?.aggregate) return
         const reduced = await delegate.aggregate((aggregate) => ({ total: aggregate.count() }))
         counts[listKey] = reduced.total
       } catch (error) {
+        rethrowControlFlow(error)
         console.error(`Failed to resolve nav count for ${listKey}:`, error)
       }
     }),

@@ -8,6 +8,7 @@ import {
 } from '@opensaas/stack-core/testing'
 import { resolveLinkEdge } from '../../src/components/RelationshipTable.js'
 import type { RelationshipTableSection } from '../../src/lib/deriveItemView.js'
+import { untypedRule } from '../untyped-rule.js'
 
 /**
  * The server half of the add-an-edge control (#1329): which sections get one.
@@ -21,19 +22,13 @@ import type { RelationshipTableSection } from '../../src/lib/deriveItemView.js'
 const BOOT = 120_000
 
 interface Gates {
-  junctionCreate?: () => boolean
-  bookUpdate?: () => boolean
+  junctionCreate?: (args: object) => boolean
+  bookUpdate?: (args: object) => boolean
 }
 
-function returnsNull(): boolean
-function returnsNull(): boolean | null {
-  return null
-}
+const returnsNull = untypedRule(() => null)
 
-function returnsUndefined(): boolean
-function returnsUndefined(): boolean | undefined {
-  return undefined
-}
+const returnsUndefined = untypedRule(() => undefined)
 
 function makeConfig(gates: Gates = {}): OpenSaasConfig {
   return {

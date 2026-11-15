@@ -8,6 +8,7 @@ import { RelationshipTable } from '../../src/components/RelationshipTable.js'
 import type { RelationshipTableClientProps } from '../../src/components/RelationshipTableClient.js'
 import type { RelationshipTableSection } from '../../src/lib/deriveItemView.js'
 import { prepareItemForm } from '../../src/lib/prepareItemForm.js'
+import { untypedRule } from '../untyped-rule.js'
 
 vi.mock('next/navigation.js', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
@@ -21,11 +22,10 @@ const isAdmin = ({ session }: RuleArgs): boolean => session?.role === 'admin'
 
 const ownsTask = ({ session, item }: RuleArgs): boolean => item?.assignee === session?.userId
 
-function adminOrNothing(args: RuleArgs): boolean
-function adminOrNothing({ session }: RuleArgs): boolean | null | undefined {
+const adminOrNothing = untypedRule(({ session }: RuleArgs) => {
   if (session?.role === 'admin') return true
   return session?.role === 'returns-null' ? null : undefined
-}
+})
 
 function makeConfig(): OpenSaasConfig {
   return {

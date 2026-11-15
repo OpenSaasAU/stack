@@ -7,6 +7,7 @@ import { text } from '@opensaas/stack-core/fields'
 import { createTestDatabase, type TestDatabase } from '@opensaas/stack-core/testing'
 import { ListView } from '../../src/components/ListView.js'
 import { ListViewClient, type ListViewClientProps } from '../../src/components/ListViewClient.js'
+import { untypedRule } from '../untyped-rule.js'
 
 vi.mock('next/navigation.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('next/navigation.js')>()),
@@ -25,11 +26,10 @@ const BOOT = 120_000
 
 type RuleArgs = { session: Session | null }
 
-function adminOrNothing(args: RuleArgs): boolean
-function adminOrNothing({ session }: RuleArgs): boolean | null | undefined {
+const adminOrNothing = untypedRule(({ session }: RuleArgs) => {
   if (session?.role === 'admin') return true
   return session?.role === 'returns-null' ? null : undefined
-}
+})
 
 const config: OpenSaasConfig = {
   db: { provider: 'postgresql' },
