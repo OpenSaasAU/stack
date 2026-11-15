@@ -153,8 +153,10 @@ import { ItemCreateForm } from '@opensaas/stack-ui/standalone'
 
 Its `fields` come from `serializeFieldConfigs(context, 'Post', 'update', post)`, which
 answers each row-dependent rule for that post, and its
-`initialData` from `serializeItemForForm(context, 'Post', post)`, which applies each
-field's `ui.valueForClientSerialization` and leaves out what the session never sees.
+`initialData` from `serializeItemForForm(context, 'Post', post.id)`, which reads the
+row itself through the session's secured surface, applies each field's
+`ui.valueForClientSerialization` and leaves out what the session never sees. It
+returns `null` when the session may not read the row or no row has that id.
 
 ```tsx
 import { ItemEditForm } from '@opensaas/stack-ui/standalone'

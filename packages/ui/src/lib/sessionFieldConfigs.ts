@@ -1,5 +1,11 @@
-import { engineContextOf } from '@opensaas/stack-core'
-import type { AnyStackContext, FieldConfig, OpenSaasConfig } from '@opensaas/stack-core'
+import { engineContextOf, parseListId } from '@opensaas/stack-core'
+import type {
+  AccessContext,
+  AnyStackContext,
+  FieldConfig,
+  ListIdValue,
+  OpenSaasConfig,
+} from '@opensaas/stack-core'
 import type { FieldVocabulary, SessionVocabulary } from '@opensaas/stack-core/internal'
 import { applyClientValueTransforms } from './clientValueTransforms.js'
 import { jsonSafeClone } from './jsonSafeClone.js'
@@ -202,28 +208,92 @@ export async function serializeFieldConfigs(
   }).fields
 }
 
+function relatedId(value: unknown): string | null {
+  if (typeof value !== 'object' || value === null || !('id' in value)) return null
+  const id: unknown = value.id
+  if (typeof id === 'string') return id
+  return typeof id === 'number' ? String(id) : null
+}
+
+function isToOne(field: FieldConfig): boolean {
+  return field.type === 'relationship' && !('many' in field && field.many === true)
+}
+
+async function readFormRow(
+  engine: AccessContext,
+  listKey: string,
+  id: ListIdValue,
+  fields: Record<string, FieldConfig>,
+  vocabulary: SessionVocabulary,
+): Promise<Record<string, unknown> | null> {
+  const readable = Object.entries(fields).filter(
+    ([fieldName]) => vocabulary.fields.get(fieldName)?.read !== 'deny',
+  )
+  const relationships = readable
+    .filter(([, field]) => isToOne(field))
+    .map(([fieldName]) => fieldName)
+  const scalars = readable
+    .filter(([, field]) => field.type !== 'relationship')
+    .map(([fieldName]) => fieldName)
+  const read = relationships.reduce(
+    (query, fieldName) => query.include(fieldName, (related) => related.select('id')),
+    engine.db[listKey].where({ id: { equals: id } }).select('id', ...scalars),
+  )
+  const row = await read.first()
+  if (row === null) return null
+  const values: Record<string, unknown> = { ...row }
+  for (const fieldName of relationships) {
+    if (Object.hasOwn(values, fieldName)) values[fieldName] = relatedId(values[fieldName])
+  }
+  return values
+}
+
 /**
- * One record of `listKey` prepared as `ItemEditForm`'s `initialData` for the
- * session `context` carries: each field's `ui.valueForClientSerialization` is
- * applied, and every field `serializeFieldConfigs(context, listKey, purpose, item)`
- * withholds is left out, as is any value the session can never read. Pass the
- * record as the session's own secured read returned it: that read has already
- * applied Field Visibility to a rule that depends on the row.
+ * One record of `listKey`, read by `id` through the session's own secured
+ * surface and prepared as `ItemEditForm`'s `initialData`. The read applies
+ * the Access Filter and Field Visibility, including a `read` rule that depends
+ * on the row; each field's `ui.valueForClientSerialization` is then applied,
+ * every field `serializeFieldConfigs(context, listKey, purpose)` withholds is
+ * left out, and a to-one relationship is reduced to its related id.
+ *
+ * `id` is parsed against the list's `db.idField`, as an admin URL segment is.
+ * Resolves `null` when the session may not read the row, when no row has that
+ * id, and when the list's key type cannot hold `id`.
  *
  * @throws {SessionVocabularyUnavailableError} when `listKey` is not a list of
  *   the context's config.
+ *
+ * @example
+ * ```typescript
+ * const initialData = await serializeItemForForm(context, 'Post', params.id)
+ * if (initialData === null) notFound()
+ * ```
  */
 export async function serializeItemForForm(
   context: AnyStackContext,
   listKey: string,
-  item: Record<string, unknown>,
+  id: ListIdValue,
   purpose: FieldConfigPurpose = 'update',
-): Promise<Record<string, unknown>> {
-  const { engine, fields } = resolveList(context, listKey)
-  return formValuesForSession({
-    vocabulary: await readSessionVocabulary(engine, listKey, updatedRowId(purpose, item)),
+): Promise<Record<string, unknown> | null> {
+  const { engine, config, fields } = resolveList(context, listKey)
+  const parsed = parseListId(config, listKey, id)
+  if (!parsed.ok) return null
+  const row = await readFormRow(
+    engine,
+    listKey,
+    parsed.value,
     fields,
-    values: item,
+    await readSessionVocabulary(engine, listKey),
+  )
+  if (row === null) return null
+  return formValuesForSession({
+    vocabulary: await readSessionVocabulary(
+      engine,
+      listKey,
+      purpose === 'update' ? parsed.value : undefined,
+    ),
+    fields,
+    values: row,
     purpose,
   })
 }

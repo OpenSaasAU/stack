@@ -189,7 +189,7 @@ import { ItemEditForm, DeleteButton } from '@opensaas/stack-ui/standalone'
 // `fields` comes from the server page:
 //   await serializeFieldConfigs(context, 'Post', 'update', post)  // @opensaas/stack-ui/server
 // and `initialData` from:
-//   await serializeItemForForm(context, 'Post', post)        // @opensaas/stack-ui/server
+//   await serializeItemForForm(context, 'Post', post.id)     // @opensaas/stack-ui/server, null when denied or gone
 {
   editing ? (
     <ItemEditForm

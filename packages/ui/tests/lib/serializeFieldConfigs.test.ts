@@ -82,6 +82,17 @@ function makeConfig(): OpenSaasConfig {
         fields: { label: text(), doc: relationship({ ref: 'Doc.hiddenWatchers' }) },
         access: { operation: { query: () => true, create: () => true, update: () => true } },
       },
+      Memo: {
+        fields: { body: text(), ownerKey: text() },
+        access: {
+          operation: {
+            query: ({ session }) =>
+              session === null ? false : { ownerKey: { equals: String(session.userId) } },
+            create: () => true,
+            update: () => true,
+          },
+        },
+      },
     },
   }
 }
@@ -293,21 +304,22 @@ describe('serializeFieldConfigs', () => {
 })
 
 describe('serializeItemForForm', () => {
-  const item = {
-    id: 'doc-1',
-    title: 'Plan',
-    secretNote: 'classified',
-    writeOnly: 'kept-server-side',
-    pin: 'hash',
-    sealedPin: 'hash',
-  }
+  const author = () => database.context({ userId: 'author-1', role: 'author' })
+
+  it('takes an id, never a row', async () => {
+    const stored = await seedDoc({})
+    // @ts-expect-error a row is not an id: the serialiser reads the row itself
+    await expect(serializeItemForForm(author(), 'Doc', stored)).resolves.toBeNull()
+  })
 
   it('applies value transforms and leaves out what the update form withholds', async () => {
-    const context = database.context({ userId: 'author-1', role: 'author' })
-    const stored = await seedDoc({ secretNote: 'classified' })
-    const values = await serializeItemForForm(context, 'Doc', { ...item, id: stored.id })
+    const context = author()
+    const stored = await seedDoc({ secretNote: 'classified', pin: 'hash', sealedPin: 'hash' })
+    const values = await serializeItemForForm(context, 'Doc', String(stored.id))
     const fields = await serializeFieldConfigs(context, 'Doc', 'update')
+    if (values === null) throw new Error('Could not serialise Doc')
 
+    expect(values.id).toBe(stored.id)
     expect(values.title).toBe('Plan')
     expect(values.pin).toEqual({ isSet: true })
     expect(values).not.toHaveProperty('secretNote')
@@ -318,32 +330,57 @@ describe('serializeItemForForm', () => {
     }
   })
 
-  it('keeps what the session read returned for a row-dependent read rule', async () => {
-    const context = database.context({ userId: 'author-1', role: 'author' })
-    const readAs = async (data: Record<string, string>) => {
-      const seeded = await seedDoc(data)
-      const row = await context.db.Doc.where({ id: { equals: String(seeded.id) } }).first()
-      if (row === null) throw new Error('Could not read Doc')
-      return row
-    }
-    const values = await serializeItemForForm(
-      context,
-      'Doc',
-      await readAs({ ownerKey: 'someone-else', ownerRead: 'theirs' }),
-    )
-    const own = await serializeItemForForm(
-      context,
-      'Doc',
-      await readAs({ ownerKey: 'author-1', ownerRead: 'mine' }),
-    )
+  it('strips a field a row-dependent read rule denies on that row', async () => {
+    const context = author()
+    const theirs = await seedDoc({ ownerKey: 'someone-else', ownerRead: 'theirs' })
+    const mine = await seedDoc({ ownerKey: 'author-1', ownerRead: 'mine' })
 
+    const values = await serializeItemForForm(context, 'Doc', String(theirs.id))
+    const own = await serializeItemForForm(context, 'Doc', String(mine.id))
+
+    expect(values).not.toBeNull()
     expect(values).not.toHaveProperty('ownerRead')
-    expect(own.ownerRead).toBe('mine')
+    expect(own?.ownerRead).toBe('mine')
+  })
+
+  it('reduces a to-one relationship to the related id and reads no to-many', async () => {
+    const sudo = database.context(null).sudo()
+    const user = await sudo.db.User.create({ data: { name: 'Ada' } })
+    if (user === null) throw new Error('Could not seed User')
+    const doc = await sudo.db.Doc.create({
+      data: { title: 'Plan', writeOnly: 'w', owner: { connect: { id: user.id } } },
+    })
+    if (doc === null) throw new Error('Could not seed Doc')
+
+    const values = await serializeItemForForm(author(), 'Doc', String(doc.id))
+
+    expect(values?.owner).toBe(user.id)
+    const owner = await serializeItemForForm(author(), 'User', String(user.id))
+    expect(owner?.name).toBe('Ada')
+    expect(owner).not.toHaveProperty('docs')
+  })
+
+  it('returns null for an id the session cannot query', async () => {
+    const sudo = database.context(null).sudo()
+    const memo = await sudo.db.Memo.create({ data: { body: 'private', ownerKey: 'someone-else' } })
+    if (memo === null) throw new Error('Could not seed Memo')
+
+    await expect(serializeItemForForm(author(), 'Memo', String(memo.id))).resolves.toBeNull()
+  })
+
+  it('returns null for a missing id', async () => {
+    await expect(
+      serializeItemForForm(author(), 'Doc', '0190a8b0-0000-7000-8000-000000000000'),
+    ).resolves.toBeNull()
+  })
+
+  it('returns null for an id the list cannot hold', async () => {
+    await expect(serializeItemForForm(author(), 'Doc', 'not-an-id')).resolves.toBeNull()
   })
 
   it('refuses a list the config does not declare', async () => {
-    await expect(serializeItemForForm(database.context(null), 'Nope', item)).rejects.toBeInstanceOf(
-      SessionVocabularyUnavailableError,
-    )
+    await expect(
+      serializeItemForForm(database.context(null), 'Nope', '0190a8b0-0000-7000-8000-000000000000'),
+    ).rejects.toBeInstanceOf(SessionVocabularyUnavailableError)
   })
 })
