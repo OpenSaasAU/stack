@@ -3,4 +3,4 @@
 'create-opensaas-app': patch
 ---
 
-Add `singletonRowStored` to `@opensaas/stack-core/internal`, so `serializeItemForForm` can read a singleton without triggering `get()`'s auto-create.
+The engine context answers whether a singleton's row is stored, so `serializeItemForForm` can read a singleton without triggering `get()`'s auto-create.

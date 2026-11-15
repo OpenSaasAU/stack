@@ -169,6 +169,12 @@ export async function singletonRowStored(
   return (await countRows(writeCollection(context.ormHandle, listKey), listKey)) > 0
 }
 
+/** `context`, given its own {@link AccessContext._singletonRowStored}. */
+export function withSingletonProbe<TContext extends AccessContext>(context: TContext): TContext {
+  context._singletonRowStored = (listKey) => singletonRowStored(context, listKey)
+  return context
+}
+
 /**
  * Whether the engine would let `context` update or delete `item`, a stored row
  * of `listKey` read by {@link readStoredRow}: the target resolution an update

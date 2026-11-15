@@ -10,6 +10,7 @@ import { warnOnce } from '../lib/warn-once.js'
 import type { OpenedTransaction, OrmClient, OrmRow, TransactionOpener } from '../access/types.js'
 import { createSecuredRead, type SecuredQuery } from '../secured/read.js'
 import { withOwnSessionVocabulary } from '../access/session-vocabulary.js'
+import { withSingletonProbe } from './write-target.js'
 import {
   createLivenessProbe,
   createRowLockLane,
@@ -805,6 +806,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
     _baseContext,
   }
   withOwnSessionVocabulary(context, config)
+  withSingletonProbe(context)
 
   populateDbDelegate(db, config, ormHandle, context, lock)
 

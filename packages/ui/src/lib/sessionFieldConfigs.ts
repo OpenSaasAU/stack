@@ -6,7 +6,6 @@ import type {
   ListIdValue,
   OpenSaasConfig,
 } from '@opensaas/stack-core'
-import { singletonRowStored } from '@opensaas/stack-core/internal'
 import type { FieldVocabulary, SessionVocabulary } from '@opensaas/stack-core/internal'
 import { applyClientValueTransforms } from './clientValueTransforms.js'
 import { jsonSafeClone } from './jsonSafeClone.js'
@@ -280,7 +279,7 @@ async function readSingletonFormRow(
   projection: FormProjection,
 ): Promise<Record<string, unknown> | null> {
   const delegate = engine.db[listKey]
-  if (!delegate.get || !(await singletonRowStored(engine, listKey))) return null
+  if (!delegate.get || !(await engine._singletonRowStored?.(listKey))) return null
   const include = Object.fromEntries(projection.relationships.map((name) => [name, true]))
   const row = await delegate.get({ include })
   if (row === null || row.id !== id) return null
@@ -297,7 +296,13 @@ async function readSingletonFormRow(
  *
  * `id` is parsed against the list's `db.idField`, as an admin URL segment is.
  * Resolves `null` when the session may not read the row, when no row has that
- * id, and when the list's key type cannot hold `id`.
+ * id, and when the list's key type cannot hold `id`. A singleton is read
+ * through `get()` only once its row is known to be stored, so the serialiser
+ * never creates it.
+ *
+ * Known limits: a delete of a singleton's row that lands between that check
+ * and `get()`, from `context.unsafe`, raw SQL or psql included, can let
+ * `get()` auto-create the row.
  *
  * @throws {SessionVocabularyUnavailableError} when `listKey` is not a list of
  *   the context's config.
