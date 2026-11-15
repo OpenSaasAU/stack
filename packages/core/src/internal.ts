@@ -85,6 +85,8 @@ export { findDatabaseConnection, connectionStringFault } from './db/url.js'
 // one process, say.
 export { processGlobal, processGlobalKey } from './lib/process-global.js'
 
+export { processLifetimeContext } from './context/process-lifetime.js'
+
 export { isRowActionAvailable } from './config/row-action-availability.js'
 export { withholdFilterFields } from './filter/collect.js'
 export { resolvePresetViews } from './config/preset-views.js'

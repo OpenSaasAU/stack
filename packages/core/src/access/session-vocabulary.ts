@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import type { FieldConfig, ListConfig, OpenSaasConfig, TypeInfo } from '../config/types.js'
 import type { AccessContext, AccessControl, OrmRow } from './types.js'
 import { checkAccess } from './engine.js'
@@ -70,11 +71,22 @@ const vocabularyPolicy: AdvertisementPolicy = {
     `[opensaas] The session vocabulary denies "${subject}": deciding its access threw.`,
 }
 
+const answering = new AsyncLocalStorage<ReadonlySet<AccessContext>>()
+
+function isAnswering(context: AccessContext): boolean {
+  return answering.getStore()?.has(context) === true
+}
+
 async function answerOrDeny(
+  context: AccessContext,
   subject: string,
   decide: () => Promise<AccessAnswer>,
 ): Promise<AccessAnswer> {
-  return await decideAdvertisement(subject, decide, 'deny', vocabularyPolicy)
+  const within = new Set(answering.getStore())
+  within.add(context)
+  return await answering.run(within, () =>
+    decideAdvertisement(subject, decide, 'deny', vocabularyPolicy),
+  )
 }
 
 function hasFilterSpec(field: FieldConfig): boolean {
@@ -121,24 +133,24 @@ function operationQuestions(
   const args = { session: context.session, context }
   return {
     query: once(() =>
-      answerOrDeny(`${listKey}.query`, async () =>
+      answerOrDeny(context, `${listKey}.query`, async () =>
         (await checkAccess(operations?.query, args)) !== false ? 'allow' : 'deny',
       ),
     ),
     create: once(() =>
-      answerOrDeny(`${listKey}.create`, () =>
+      answerOrDeny(context, `${listKey}.create`, () =>
         classifyRowIndependentCreateAccess(operations?.create, args),
       ),
     ),
     update: once(() =>
-      answerOrDeny(`${listKey}.update`, () =>
+      answerOrDeny(context, `${listKey}.update`, () =>
         classifyRowIndependentCreateAccess(potentiallyAllowed(operations?.update), args),
       ),
     ),
     delete: singleton
       ? denied
       : once(() =>
-          answerOrDeny(`${listKey}.delete`, () =>
+          answerOrDeny(context, `${listKey}.delete`, () =>
             classifyRowIndependentCreateAccess(potentiallyAllowed(operations?.delete), args),
           ),
         ),
@@ -221,7 +233,7 @@ function declaredFieldQuestions(
     once(async () => {
       if (operation !== 'read' && !storesWrites(fieldName, field, listKey, config)) return 'deny'
       if ((await scope.operation(gate)) === 'deny') return 'deny'
-      return await answerOrDeny(`${subject} (${operation})`, decide)
+      return await answerOrDeny(context, `${subject} (${operation})`, decide)
     })
   const read = ask('read', 'query', () => classifyRowIndependentRead(field.access, args))
   const filterSpec = once(async () =>
@@ -384,7 +396,7 @@ async function resolveOperationForRow(
   stored: { row: OrmRow; id: string | number },
 ): Promise<AccessAnswer> {
   if (answer !== 'row-dependent') return answer
-  return await answerOrDeny(`${listKey}.${operation} (row)`, async () =>
+  return await answerOrDeny(context, `${listKey}.${operation} (row)`, async () =>
     (await writeTargetAllows(context, config, listKey, stored.row, stored.id, operation))
       ? 'allow'
       : 'deny',
@@ -469,7 +481,7 @@ export async function resolveSessionVocabularyForItem(
         operations.update === 'deny'
           ? 'deny'
           : entry.update === 'row-dependent'
-            ? await answerOrDeny(`${listKey}.${name} (update, row)`, () =>
+            ? await answerOrDeny(context, `${listKey}.${name} (update, row)`, () =>
                 classifyWriteForRow(field.access, 'update', args, ruleRow),
               )
             : entry.update
@@ -482,34 +494,37 @@ export async function resolveSessionVocabularyForItem(
   )
 }
 
-/**
- * {@link sessionVocabularyQuestions} bound to `context`, kept per list for
- * the life of the returned function, so each answer is asked at most once.
- */
-export function bindSessionVocabulary(
-  context: AccessContext,
-  config: OpenSaasConfig,
-): (listKey: string) => SessionVocabularyQuestions | null {
-  const memo = new Map<string, SessionVocabularyQuestions | null>()
-  return (listKey) => {
-    const known = memo.get(listKey)
-    if (known !== undefined) return known
-    const questions = sessionVocabularyQuestions(context, config, listKey)
-    memo.set(listKey, questions)
-    return questions
-  }
+type QuestionsOf = (listKey: string) => SessionVocabularyQuestions | null
+
+interface BoundVocabulary {
+  readonly questionsOf: QuestionsOf
+  readonly invalidate: () => void
 }
 
 /**
- * `context`, given its own {@link bindSessionVocabulary} questions and memo,
- * the vocabulary assembled from them, and
- * {@link resolveSessionVocabularyForItem} over it.
+ * {@link sessionVocabularyQuestions} bound to `context`, kept per list until
+ * `invalidate` is called, so each answer is asked at most once in between.
  */
-export function withOwnSessionVocabulary<TContext extends AccessContext>(
+function bindSessionVocabulary(context: AccessContext, config: OpenSaasConfig): BoundVocabulary {
+  const memo = new Map<string, SessionVocabularyQuestions | null>()
+  return {
+    questionsOf: (listKey) => {
+      const known = memo.get(listKey)
+      if (known !== undefined) return known
+      const questions = sessionVocabularyQuestions(context, config, listKey)
+      memo.set(listKey, questions)
+      return questions
+    },
+    invalidate: () => memo.clear(),
+  }
+}
+
+function attachSessionVocabulary<TContext extends AccessContext>(
   context: TContext,
   config: OpenSaasConfig,
+  bound: BoundVocabulary,
 ): TContext {
-  const questionsOf = bindSessionVocabulary(context, config)
+  const { questionsOf } = bound
   const vocabularyOf = async (listKey: string): Promise<SessionVocabulary | null> =>
     (await questionsOf(listKey)?.whole()) ?? null
   context._sessionVocabularyQuestions = questionsOf
@@ -519,5 +534,79 @@ export function withOwnSessionVocabulary<TContext extends AccessContext>(
     if (vocabulary === null) return null
     return await resolveSessionVocabularyForItem(context, config, vocabulary, id)
   }
+  context._invalidateSessionVocabulary = bound.invalidate
   return context
+}
+
+/**
+ * `context`, given its own memo of the {@link SessionVocabularyQuestions} of
+ * each list, the vocabulary assembled from them, and
+ * {@link resolveSessionVocabularyForItem} over it. A write that succeeds
+ * through `context` clears the memo (ADR-0084).
+ */
+export function withOwnSessionVocabulary<TContext extends AccessContext>(
+  context: TContext,
+  config: OpenSaasConfig,
+): TContext {
+  return attachSessionVocabulary(context, config, bindSessionVocabulary(context, config))
+}
+
+/**
+ * `context`, answering each ask of its vocabulary afresh: for a context held
+ * for the life of the process, whose memo would outlive every data change a
+ * rule reads (ADR-0084).
+ */
+export function withUnmemoisedSessionVocabulary<TContext extends AccessContext>(
+  context: TContext,
+  config: OpenSaasConfig,
+): TContext {
+  return attachSessionVocabulary(context, config, {
+    questionsOf: (listKey) => sessionVocabularyQuestions(context, config, listKey),
+    invalidate: () => undefined,
+  })
+}
+
+/**
+ * `derived`, a context a `resolveOutput` hook of a read through `parent` is
+ * handed, sharing `parent`'s answers except while one of `parent`'s rules is
+ * being asked: an ask made inside that is answered by `derived`'s own memo,
+ * because `parent`'s answer may be the one waiting on it. A write through
+ * `derived` clears both memos (ADR-0084).
+ */
+export function withDerivedSessionVocabulary<TContext extends AccessContext>(
+  derived: TContext,
+  parent: AccessContext,
+  config: OpenSaasConfig,
+): TContext {
+  const shared = parent._sessionVocabularyQuestions
+  if (shared === undefined) return withOwnSessionVocabulary(derived, config)
+  let own: BoundVocabulary | undefined
+  return attachSessionVocabulary(derived, config, {
+    questionsOf: (listKey) => {
+      if (!isAnswering(parent)) return shared(listKey)
+      own ??= bindSessionVocabulary(derived, config)
+      return own.questionsOf(listKey)
+    },
+    invalidate: () => {
+      own?.invalidate()
+      parent._invalidateSessionVocabulary?.()
+    },
+  })
+}
+
+/**
+ * Make a write through `derived` also clear `receiver`'s memo, for a context
+ * derived from `receiver` with `sudo()` or `withSession()` or for a write's
+ * `afterTransaction` context.
+ */
+export function invalidatesSessionVocabularyOf<TContext extends AccessContext>(
+  derived: TContext,
+  receiver: AccessContext,
+): TContext {
+  const own = derived._invalidateSessionVocabulary
+  derived._invalidateSessionVocabulary = () => {
+    own?.()
+    receiver._invalidateSessionVocabulary?.()
+  }
+  return derived
 }
