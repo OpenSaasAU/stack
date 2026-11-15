@@ -38,9 +38,11 @@ export { isHookOnlyField } from './access/field-access.js'
 
 export type {
   AccessAnswer,
+  FieldQuestions,
   FieldVocabulary,
   ListOperation,
   SessionVocabulary,
+  SessionVocabularyQuestions,
 } from './access/session-vocabulary.js'
 
 // Config-shape sub-types consumed by sibling packages (not part of the consumer surface)

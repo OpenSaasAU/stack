@@ -12,6 +12,7 @@ import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '../lib/pageSize.js'
 import { jsonSafeClone } from '../lib/jsonSafeClone.js'
 import { applyClientValueTransforms } from '../lib/clientValueTransforms.js'
 import { readSessionVocabulary, withheldFieldNames } from '../lib/sessionFieldConfigs.js'
+import { fieldReadable, vocabularyQuestionsOrDeny } from '../lib/vocabularyQuestions.js'
 import { EmptyState } from './EmptyState.js'
 import { UnavailableState } from './UnavailableState.js'
 import { PageHeader } from './PageHeader.js'
@@ -177,10 +178,10 @@ async function resolveRecordLabels(
       let rows: Array<Record<string, unknown>> = []
       if (looked.length > 0) {
         try {
-          const vocabulary = (await context._sessionVocabulary?.(relatedListKey)) ?? null
-          if (vocabulary !== null && vocabulary.operations.query !== 'deny') {
+          const questions = vocabularyQuestionsOrDeny(context, relatedListKey)
+          if (questions !== null && (await questions.operation('query')) !== 'deny') {
             const labelField = getLabelFieldName(relatedListConfig)
-            const labelReadable = vocabulary.fields.get(labelField)?.read === 'allow'
+            const labelReadable = await fieldReadable(questions, labelField)
             const read = context.db[relatedListKey].where({
               id: { in: looked.map(({ value }) => value) },
             })

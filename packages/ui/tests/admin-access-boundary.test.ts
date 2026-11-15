@@ -16,8 +16,6 @@ const EVALUATORS = new Set([
   'isListQueryStaticallyDenied',
 ])
 
-const RULE_KEYS = new Set(['operation', 'read', 'create', 'update', 'delete', 'write'])
-
 const WRITE_AFFORDANCES = [
   'components/Dashboard.tsx',
   'components/ItemForm.tsx',
@@ -26,7 +24,7 @@ const WRITE_AFFORDANCES = [
 ]
 
 interface Offence {
-  readonly rule: 'evaluator' | 'rule-read' | 'access-destructure'
+  readonly rule: 'evaluator' | 'access-read' | 'access-destructure'
   readonly at: string
 }
 
@@ -79,7 +77,10 @@ function bindingKey(element: ts.BindingElement): string | undefined {
   return undefined
 }
 
-/** Every place `source` names an access evaluator or reads an access rule off a config. */
+/**
+ * Every place `source` names an access evaluator or reads `access` off
+ * anything but a `ui` config, whatever it then does with it.
+ */
 function offencesIn(fileName: string, text: string): Offence[] {
   const source = parse(fileName, text)
   const offences: Offence[] = []
@@ -92,14 +93,12 @@ function offencesIn(fileName: string, text: string): Offence[] {
     if (ts.isIdentifier(node) && isEvaluatorName(node.text)) report('evaluator', node)
     if (ts.isStringLiteralLike(node) && isEvaluatorName(node.text)) report('evaluator', node)
 
-    const name = memberName(node)
     if (
-      name !== undefined &&
-      RULE_KEYS.has(name) &&
       (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) &&
-      memberName(unwrap(node.expression)) === 'access'
+      memberName(node) === 'access' &&
+      memberName(unwrap(node.expression)) !== 'ui'
     ) {
-      report('rule-read', node)
+      report('access-read', node)
     }
 
     if (ts.isBindingElement(node) && bindingKey(node) === 'access') {
@@ -168,6 +167,13 @@ describe('the boundary scan', () => {
     ['a renamed destructured access', `const { access: rules } = field`],
     ['a nested destructured access', `const { access: { operation } } = listConfig`],
     ['a destructured access parameter', `function f({ access }: Props) { return access }`],
+    ['an aliased access', `const rules = field.access`],
+    ['an optional aliased access', `const rules = listConfig?.access`],
+    ['a whole-object access read', `Object.values(field.access ?? {})`],
+    ['a bracketed whole-object access read', `Object.keys(listConfig['access'])`],
+    ['an access passed along', `decide(listConfig.access, session)`],
+    ['an access spread', `const copy = { ...field.access }`],
+    ['an access read through an alias of its rule', `const rules = field.access; rules.read`],
   ])('catches %s', (_label, text) => {
     expect(offencesIn('scratch.tsx', text)).not.toEqual([])
   })

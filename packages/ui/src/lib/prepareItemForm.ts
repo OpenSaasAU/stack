@@ -10,8 +10,10 @@ import {
   formValuesForSession,
   readSessionVocabulary,
   serializeFieldsForSession,
+  SessionVocabularyUnavailableError,
   withheldFieldNames,
 } from './sessionFieldConfigs.js'
+import { fieldReadable, vocabularyQuestionsOrDeny } from './vocabularyQuestions.js'
 
 /**
  * One record's id as the string the client form carries. An `int autoincrement`
@@ -112,15 +114,17 @@ export async function prepareItemForm(
       const relatedListConfig = config.lists[relatedListName]
 
       try {
-        const [vocabulary, relatedVocabulary] = await Promise.all([
+        const related = vocabularyQuestionsOrDeny(context, relatedListName)
+        if (related === null) throw new SessionVocabularyUnavailableError(relatedListName)
+        const [vocabulary, relatedQuery] = await Promise.all([
           vocabularyPromise,
-          readSessionVocabulary(context, relatedListName),
+          related.operation('query'),
         ])
         if (withheldFieldNames(vocabulary, [fieldName], operation).has(fieldName)) return null
-        if (relatedVocabulary.operations.query === 'deny') return [fieldName, []] as const
+        if (relatedQuery === 'deny') return [fieldName, []] as const
         const labelField = getLabelFieldName(relatedListConfig)
         const options = await getRelationshipOptions(context, config, relatedListName, {
-          labelReadable: relatedVocabulary.fields.get(labelField)?.read === 'allow',
+          labelReadable: await fieldReadable(related, labelField),
           selectedIds: extractSelectedIds(itemData[fieldName], fieldConfigAny.many),
         })
         return [fieldName, options] as const

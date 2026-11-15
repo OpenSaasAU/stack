@@ -331,6 +331,15 @@ export interface AccessContext<DB = AccessControlledDB> {
     listKey: string,
   ) => Promise<import('./session-vocabulary.js').SessionVocabulary | null>
   /**
+   * The questions `_sessionVocabulary(listKey)` answers, asked one at a time:
+   * each answer asks only the rules it needs, and shares its memo with
+   * `_sessionVocabulary`. `null` for a list the config does not declare.
+   * @internal
+   */
+  _sessionVocabularyQuestions?: (
+    listKey: string,
+  ) => import('./session-vocabulary.js').SessionVocabularyQuestions | null
+  /**
    * `_sessionVocabulary(listKey)` with its row-dependent write answers (a
    * field's `update`, the list's `update` and `delete`) resolved for the row
    * whose id is `id`, against that row as stored, as the write decides them.

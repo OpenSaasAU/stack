@@ -17,7 +17,7 @@ import {
   timestamp,
   virtual,
 } from '@opensaas/stack-core/fields'
-import { createTestDatabase, type TestDatabase } from '@opensaas/stack-core/testing'
+import { createTestDatabase, type TestDatabase, untypedRule } from '@opensaas/stack-core/testing'
 import { RELATIONSHIP_OPTIONS_MAX_TAKE } from '@opensaas/stack-core/internal'
 import { notFound, redirect } from 'next/navigation.js'
 import { ListView } from '../../src/components/ListView.js'
@@ -47,15 +47,9 @@ let readsFail = false
 let controlFlow: () => void = () => undefined
 let countedReadRules = 0
 
-function returnsNull(): boolean
-function returnsNull(): boolean | null {
-  return null
-}
+const returnsNull = untypedRule(() => null)
 
-function returnsUndefined(): boolean
-function returnsUndefined(): boolean | undefined {
-  return undefined
-}
+const returnsUndefined = untypedRule(() => undefined)
 
 function titlesOf(value: unknown): string[] {
   if (!Array.isArray(value)) return []
@@ -1509,6 +1503,8 @@ describe('ListView reads the related list’s vocabulary for links and labels (#
         ...engine,
         _sessionVocabulary: async (asked) =>
           asked === listKey ? ((await engine._sessionVocabulary?.(asked)) ?? null) : null,
+        _sessionVocabularyQuestions: (asked) =>
+          asked === listKey ? (engine._sessionVocabularyQuestions?.(asked) ?? null) : null,
       })
       const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
       try {

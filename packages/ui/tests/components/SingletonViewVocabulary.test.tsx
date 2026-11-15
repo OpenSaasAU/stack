@@ -4,7 +4,7 @@ import { cleanup, render, screen } from '@testing-library/react'
 import { engineContextOf } from '@opensaas/stack-core'
 import type { OpenSaasConfig, OperationAccess, Session } from '@opensaas/stack-core'
 import { text } from '@opensaas/stack-core/fields'
-import { createTestDatabase } from '@opensaas/stack-core/testing'
+import { createTestDatabase, untypedRule } from '@opensaas/stack-core/testing'
 import { SingletonView } from '../../src/components/SingletonView.js'
 
 vi.mock('next/navigation.js', async (importOriginal) => ({
@@ -23,11 +23,10 @@ const BOOT = 120_000
 
 type RuleArgs = { session: Session | null }
 
-function adminOrNothing(args: RuleArgs): boolean
-function adminOrNothing({ session }: RuleArgs): boolean | null | undefined {
+const adminOrNothing = untypedRule(({ session }: RuleArgs) => {
   if (session?.role === 'admin') return true
   return session?.role === 'returns-null' ? null : undefined
-}
+})
 
 const serverAction = async () => null
 

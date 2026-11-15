@@ -3,7 +3,7 @@ import * as React from 'react'
 import type { OpenSaasConfig, Session } from '@opensaas/stack-core'
 import { engineContextOf } from '@opensaas/stack-core'
 import { integer, relationship, text } from '@opensaas/stack-core/fields'
-import { createTestDatabase, type TestDatabase } from '@opensaas/stack-core/testing'
+import { createTestDatabase, type TestDatabase, untypedRule } from '@opensaas/stack-core/testing'
 import { RelationshipTable } from '../../src/components/RelationshipTable.js'
 import type { RelationshipTableClientProps } from '../../src/components/RelationshipTableClient.js'
 import type { RelationshipTableSection } from '../../src/lib/deriveItemView.js'
@@ -21,11 +21,10 @@ const isAdmin = ({ session }: RuleArgs): boolean => session?.role === 'admin'
 
 const ownsTask = ({ session, item }: RuleArgs): boolean => item?.assignee === session?.userId
 
-function adminOrNothing(args: RuleArgs): boolean
-function adminOrNothing({ session }: RuleArgs): boolean | null | undefined {
+const adminOrNothing = untypedRule(({ session }: RuleArgs) => {
   if (session?.role === 'admin') return true
   return session?.role === 'returns-null' ? null : undefined
-}
+})
 
 function makeConfig(): OpenSaasConfig {
   return {

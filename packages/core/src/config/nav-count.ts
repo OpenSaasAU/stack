@@ -1,4 +1,5 @@
 import type { AccessContext } from '../access/types.js'
+import { rethrowControlFlow } from '../access/decide-advertisement.js'
 import type { AggregateBuild } from '../secured/aggregate.js'
 import type { ListConfig, OpenSaasConfig, TypeInfo } from './types.js'
 
@@ -37,18 +38,20 @@ export async function resolveNavCounts(
 
   await Promise.all(
     optedIn.map(async (listKey) => {
-      const vocabulary = (await context._sessionVocabulary?.(listKey)) ?? null
-      if (vocabulary === null || vocabulary.operations.query === 'deny') return
       const delegate: CountDelegate | undefined = context.db?.[listKey]
-      if (!delegate?.aggregate) return
       // A single list's count failing (a DB hiccup, a throwing access filter or
       // hook) must not blank the whole admin chrome — `AdminUI` awaits this
       // before rendering the shell. Degrade like the sibling `ListView`: log and
-      // omit just that badge. Other lists' counts are unaffected.
+      // omit just that badge. Other lists' counts are unaffected. A framework's
+      // control flow (`redirect()`, `notFound()`) still reaches the framework.
       try {
+        const questions = context._sessionVocabularyQuestions?.(listKey) ?? null
+        if (questions === null || (await questions.operation('query')) === 'deny') return
+        if (!delegate?.aggregate) return
         const reduced = await delegate.aggregate((aggregate) => ({ total: aggregate.count() }))
         counts[listKey] = reduced.total
       } catch (error) {
+        rethrowControlFlow(error)
         console.error(`Failed to resolve nav count for ${listKey}:`, error)
       }
     }),

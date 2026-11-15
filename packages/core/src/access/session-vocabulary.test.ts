@@ -5,7 +5,7 @@ import { InvalidFieldAccessResultError } from './errors.js'
 import type { AccessAnswer, FieldVocabulary, SessionVocabulary } from './session-vocabulary.js'
 import { engineContextOf, type AnyStackContext } from '../context/engine-context.js'
 import { relationship, text, virtual } from '../fields/index.js'
-import { createTestDatabase, type TestDatabase } from '../testing/context.js'
+import { createTestDatabase, untypedRule, type TestDatabase } from '../testing/index.js'
 
 const BOOT = 120_000
 
@@ -18,15 +18,9 @@ const sessions = [
   ['admin', admin],
 ] as const
 
-function returnsNull(): boolean
-function returnsNull(): boolean | null {
-  return null
-}
+const returnsNull = untypedRule(() => null)
 
-function returnsUndefined(): boolean
-function returnsUndefined(): boolean | undefined {
-  return undefined
-}
+const returnsUndefined = untypedRule(() => undefined)
 
 function returnsFilter(): boolean
 function returnsFilter(): boolean | { title: { equals: string } } {

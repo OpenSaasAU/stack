@@ -33,11 +33,19 @@ export async function decideAdvertisement<T>(
   try {
     return await decide()
   } catch (err) {
-    const controlFlow = controlFlowIn(err)
-    if (controlFlow !== undefined) throw controlFlow.thrown
+    rethrowControlFlow(err)
     console.warn(policy.warning(subject), err)
     return denied
   }
+}
+
+/**
+ * Rethrow `thrown` when it is, or is caused by, a framework's control flow as
+ * {@link decideAdvertisement} recognises it; return otherwise.
+ */
+export function rethrowControlFlow(thrown: unknown): void {
+  const controlFlow = controlFlowIn(thrown)
+  if (controlFlow !== undefined) throw controlFlow.thrown
 }
 
 const NEXT_CONTROL_FLOW_DIGEST_PREFIXES: readonly string[] = [

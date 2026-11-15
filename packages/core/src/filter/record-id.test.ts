@@ -12,9 +12,35 @@ const BOOT = 120_000
 const reader: Session = { role: 'reader' }
 const admin: Session = { role: 'admin' }
 
+const watchedAsks: string[] = []
+
+function watched(name: string): () => boolean {
+  return () => {
+    watchedAsks.push(name)
+    return true
+  }
+}
+
 const config: OpenSaasConfig = {
   db: { provider: 'postgresql' },
   lists: {
+    Watched: {
+      fields: {
+        other: text({ access: { read: watched('other.read'), update: watched('other.update') } }),
+        owner: relationship({
+          ref: 'Owner',
+          access: { read: watched('owner.read'), create: watched('owner.create') },
+        }),
+      },
+      access: {
+        operation: {
+          query: watched('query'),
+          create: watched('create'),
+          update: watched('update'),
+          delete: watched('delete'),
+        },
+      },
+    },
     User: {
       fields: {
         name: text({ validation: { isRequired: true } }),
@@ -233,6 +259,19 @@ describe('isFieldFilterableById', () => {
       context,
     })
   }
+
+  test(
+    'asks only the list query rule and the one field read rule',
+    async () => {
+      watchedAsks.length = 0
+      const context = engineContextOf(database.context(reader))
+      expect(
+        await isFieldFilterableById(config.lists.Watched, 'Watched', 'owner', config, { context }),
+      ).toBe(true)
+      expect(watchedAsks.sort()).toEqual(['owner.read', 'query'])
+    },
+    BOOT,
+  )
 
   test(
     'is true for a readable to-one relationship and false for any other field',

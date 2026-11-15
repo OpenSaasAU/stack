@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { cleanup, render, screen } from '@testing-library/react'
 import type { OpenSaasConfig, Session } from '@opensaas/stack-core'
 import { text } from '@opensaas/stack-core/fields'
-import { createTestDatabase, type TestDatabase } from '@opensaas/stack-core/testing'
+import { createTestDatabase, type TestDatabase, untypedRule } from '@opensaas/stack-core/testing'
 import { Dashboard } from '../../src/components/Dashboard.js'
 import { ItemForm } from '../../src/components/ItemForm.js'
 
@@ -25,11 +25,10 @@ const BOOT = 120_000
 
 type RuleArgs = { session: Session | null }
 
-function adminOrNothing(args: RuleArgs): boolean
-function adminOrNothing({ session }: RuleArgs): boolean | null | undefined {
+const adminOrNothing = untypedRule(({ session }: RuleArgs) => {
   if (session?.role === 'admin') return true
   return session?.role === 'returns-null' ? null : undefined
-}
+})
 
 const config: OpenSaasConfig = {
   db: { provider: 'postgresql' },

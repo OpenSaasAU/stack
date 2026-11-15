@@ -1,7 +1,7 @@
 import type { ListConfig, OpenSaasConfig } from '../config/types.js'
 import type { AccessContext } from '../access/types.js'
 import type { SessionVocabulary } from '../access/session-vocabulary.js'
-import { filterSpecsOf } from '../access/vocabulary-filter-specs.js'
+import { fieldFilterSpecOf, filterSpecsOf } from '../access/vocabulary-filter-specs.js'
 import {
   EngineContextUnavailableError,
   engineContextOf,
@@ -153,9 +153,9 @@ export async function isFieldFilterableById(
   args: FilterAccessArgs,
 ): Promise<boolean> {
   if (!Object.hasOwn(listConfig.fields, fieldName)) return false
-  const vocabulary = await vocabularyOf(listKey, args)
-  if (vocabulary === null) return false
-  return filterSpecsOf(vocabulary).get(fieldName)?.toIdCondition !== undefined
+  const field = engineOf(args.context)?._sessionVocabularyQuestions?.(listKey)?.field(fieldName)
+  if (field === undefined) return false
+  return (await fieldFilterSpecOf(field))?.toIdCondition !== undefined
 }
 
 /**

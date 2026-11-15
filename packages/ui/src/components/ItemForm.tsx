@@ -309,10 +309,6 @@ export async function ItemForm({
     )
   }
 
-  // Edit mode: derive the item-view layout from the list shape. When the list
-  // has one or more to-many relationships rendered as Relationship tables, use
-  // the derived layout; otherwise (no tables, or create) fall through to the
-  // single details-card path below — byte-identical to the pre-#734 form.
   if (mode === 'create' && !(await operationAvailable(appContext, listKey, 'create'))) {
     return (
       <div className="max-w-4xl p-4 md:p-8">
