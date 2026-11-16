@@ -11,14 +11,39 @@ This example demonstrates how to use custom field components in OpenSaas Stack u
 
 The `ColorPickerField` component is registered globally and used for multiple fields:
 
+Registration lives in a `'use client'` module, `lib/register-fields.ts`, that imports from
+`@opensaas/stack-ui/fields` (the package root reaches server code, which `next build --webpack`
+refuses to put in a client bundle):
+
 ```typescript
-// Register globally in opensaas.config.ts
-import { registerFieldComponent } from "@opensaas/stack-ui";
-import { ColorPickerField } from "./components/ColorPickerField";
+// lib/register-fields.ts
+'use client'
 
-registerFieldComponent("color", ColorPickerField);
+import { registerFieldComponent } from '@opensaas/stack-ui/fields'
+import { ColorPickerField } from '../components/ColorPickerField'
 
-// Use in field configs - just specify the fieldType
+registerFieldComponent('color', ColorPickerField)
+```
+
+A client component renders it, so the registration reaches the browser; a side-effect import from
+the server-component page would do nothing:
+
+```tsx
+// app/admin/[[...admin]]/FieldRegistration.tsx
+'use client'
+
+import '../../../lib/register-fields'
+
+export function FieldRegistration() {
+  return null
+}
+```
+
+`app/admin/[[...admin]]/page.tsx` renders `<FieldRegistration />` beside `<AdminUI />`. The
+config then names the registered type:
+
+```typescript
+// opensaas.config.ts
 fields: {
   favoriteColor: text({
     ui: { fieldType: "color" }  // References the globally registered "color" component

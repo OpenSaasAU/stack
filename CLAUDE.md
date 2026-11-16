@@ -921,7 +921,7 @@ See `docs/agents/comments.md` for worked before/after examples of applying this 
 3. **Register UI component** (optional, for admin UI):
 
    ```typescript
-   import { registerFieldComponent } from '@opensaas/stack-ui'
+   import { registerFieldComponent } from '@opensaas/stack-ui/fields'
    import { MyCustomFieldComponent } from './components/MyCustomField'
 
    registerFieldComponent('myCustom', MyCustomFieldComponent)
@@ -1000,7 +1000,7 @@ The UI layer uses a component registry pattern to avoid switch statements and en
 1. **Global Registration** - Register a component for reuse across multiple fields:
 
    ```typescript
-   import { registerFieldComponent } from '@opensaas/stack-ui'
+   import { registerFieldComponent } from '@opensaas/stack-ui/fields'
    import { ColorPickerField } from './components/ColorPickerField'
 
    // Register once at app startup
@@ -1119,7 +1119,7 @@ packages/my-field/
    // lib/register-fields.ts
    'use client'
 
-   import { registerFieldComponent } from '@opensaas/stack-ui'
+   import { registerFieldComponent } from '@opensaas/stack-ui/fields'
    import { MyFieldComponent } from '@my-org/my-field'
 
    registerFieldComponent('myField', MyFieldComponent)
@@ -1150,6 +1150,11 @@ packages/my-field/
    ```
 
    `pnpm check:client-side-effect-imports` fails on the broken shape.
+
+   A `'use client'` module imports from client-safe subpaths only — `@opensaas/stack-ui/fields`,
+   `@opensaas/stack-ui/cells`, `@opensaas/stack-ui/primitives`, `@opensaas/stack-core/client-safe` — never a
+   package root, whose graph reaches Node builtins that `next build --webpack` refuses to bundle.
+   `pnpm check:client-server-graph` fails on that shape.
 
 4. **FieldConfig Extensibility** - Core types support third-party fields:
    ```typescript

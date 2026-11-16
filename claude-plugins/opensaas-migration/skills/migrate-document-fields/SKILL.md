@@ -71,7 +71,7 @@ In the admin page (`app/admin/[[...admin]]/page.tsx` or similar):
 // lib/register-fields.ts
 'use client'
 
-import { registerFieldComponent } from '@opensaas/stack-ui'
+import { registerFieldComponent } from '@opensaas/stack-ui/fields'
 import { TiptapField } from '@opensaas/stack-tiptap'
 
 registerFieldComponent('richText', TiptapField)

@@ -257,7 +257,7 @@ export default async function AdminPage({ params, searchParams }: AdminPageProps
 Extend or override field components:
 
 ```tsx
-import { registerFieldComponent } from '@opensaas/stack-ui'
+import { registerFieldComponent } from '@opensaas/stack-ui/fields'
 import { ColorPickerField } from './components/ColorPickerField'
 
 // Register globally

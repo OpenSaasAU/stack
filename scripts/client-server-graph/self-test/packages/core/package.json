@@ -1,0 +1,14 @@
+{
+  "name": "@fixture/core",
+  "private": true,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./client-safe": {
+      "types": "./dist/client-safe.d.ts",
+      "default": "./dist/client-safe.js"
+    }
+  }
+}

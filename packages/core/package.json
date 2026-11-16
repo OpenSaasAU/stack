@@ -41,6 +41,10 @@
       "types": "./dist/db/client.d.ts",
       "default": "./dist/db/client.js"
     },
+    "./client-safe": {
+      "types": "./dist/client-safe.d.ts",
+      "default": "./dist/client-safe.js"
+    },
     "./dev-database": {
       "types": "./dist/db/dev-database.d.ts",
       "default": "./dist/db/dev-database.js"

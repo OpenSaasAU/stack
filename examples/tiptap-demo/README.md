@@ -58,7 +58,7 @@ This example demonstrates how to use the `@opensaas/stack-tiptap` package to add
 // lib/register-fields.ts
 'use client'
 
-import { registerFieldComponent } from '@opensaas/stack-ui'
+import { registerFieldComponent } from '@opensaas/stack-ui/fields'
 import { TiptapField } from '@opensaas/stack-tiptap'
 
 registerFieldComponent('richText', TiptapField)
@@ -171,7 +171,7 @@ To add more Tiptap extensions, create a custom field component:
 
 ```typescript
 import { TiptapField } from '@opensaas/stack-tiptap'
-import { registerFieldComponent } from '@opensaas/stack-ui'
+import { registerFieldComponent } from '@opensaas/stack-ui/fields'
 
 // Register custom editor with additional extensions
 registerFieldComponent('richTextExtended', CustomTiptapField)
