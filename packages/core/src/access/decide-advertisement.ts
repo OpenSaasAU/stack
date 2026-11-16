@@ -87,6 +87,18 @@ export function controlFlowFromRethrow(rethrow: (thrown: unknown) => void): Cont
   }
 }
 
+/**
+ * A {@link ControlFlowPredicate} recognising what `first` or `second`
+ * recognises. A predicate that throws recognises nothing and is reported once,
+ * so neither can make the combination throw.
+ */
+export function eitherControlFlow(
+  first: ControlFlowPredicate,
+  second: ControlFlowPredicate | undefined,
+): ControlFlowPredicate {
+  return (thrown) => recognises(first, thrown) || recognises(second, thrown)
+}
+
 const NEXT_CONTROL_FLOW_DIGEST_PREFIXES: readonly string[] = [
   'NEXT_REDIRECT',
   'NEXT_HTTP_ERROR_FALLBACK',
@@ -101,6 +113,25 @@ const MAX_CAUSE_DEPTH = 16
 
 const REACT_POSTPONE = Symbol.for('react.postpone')
 
+const reportedFailures = new WeakSet<ControlFlowPredicate>()
+
+function recognises(predicate: ControlFlowPredicate | undefined, thrown: unknown): boolean {
+  if (predicate === undefined) return false
+  try {
+    return predicate(thrown) === true
+  } catch (failure) {
+    if (!reportedFailures.has(predicate)) {
+      reportedFailures.add(predicate)
+      console.error(
+        '[opensaas] isFrameworkControlFlow threw, so the value it was asked about is treated ' +
+          'as not control flow. Reported once per predicate.',
+        failure,
+      )
+    }
+    return false
+  }
+}
+
 function controlFlowIn(
   thrown: unknown,
   isFrameworkControlFlow: ControlFlowPredicate | undefined,
@@ -108,7 +139,7 @@ function controlFlowIn(
   const seen = new Set<unknown>()
   let current = thrown
   for (let depth = 0; depth <= MAX_CAUSE_DEPTH && !seen.has(current); depth++) {
-    if (isControlFlow(current) || isFrameworkControlFlow?.(current) === true) {
+    if (isControlFlow(current) || recognises(isFrameworkControlFlow, current)) {
       return { thrown: current }
     }
     if (!(current instanceof Error) || !('cause' in current)) return undefined

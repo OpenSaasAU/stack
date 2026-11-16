@@ -245,7 +245,7 @@ exports[`generateContext > matches the full snapshot for a Next project 1`] = `
 import { getContext as getOpensaasContext, requireOrmHandle } from '@opensaas/stack-core'
 import { resolveRuntimeConnection } from '@opensaas/stack-core/client'
 import { originTripwire } from '@opensaas/stack-core/origin'
-import { controlFlowFromRethrow, processGlobal, processLifetimeContext } from '@opensaas/stack-core/internal'
+import { controlFlowFromRethrow, eitherControlFlow, processGlobal, processLifetimeContext } from '@opensaas/stack-core/internal'
 import type { Session as OpensaasSession, OpenSaasConfig } from '@opensaas/stack-core'
 import postgres from '@prisma/orm-postgres/runtime'
 import { contractFromJson } from '@prisma/orm-postgres/static'
@@ -375,8 +375,7 @@ async function getConfig() {
       ...(isNextControlFlow === undefined
         ? {}
         : {
-            isFrameworkControlFlow: (thrown: unknown) =>
-              isNextControlFlow(thrown) || appConfig.isFrameworkControlFlow?.(thrown) === true,
+            isFrameworkControlFlow: eitherControlFlow(isNextControlFlow, appConfig.isFrameworkControlFlow),
           }),
       _tables: { dependencies: dependencyTable, constraints: constraintMap },
     }

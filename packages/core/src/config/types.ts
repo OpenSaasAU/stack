@@ -3975,6 +3975,10 @@ export interface OpenSaasConfig {
    * with the built-in check, an `Error` whose `cause` chain reaches a
    * recognised value has that value rethrown, not the wrapper.
    *
+   * A predicate that throws recognises nothing: the built-in check still
+   * applies, a rule's own throw still denies and is logged, and the
+   * predicate's failure is reported to `console.error` once per predicate.
+   *
    * The generated context sets this to Next.js's own `unstable_rethrow` when
    * the project depends on `next` and `next/navigation` loads, OR'ed with any
    * predicate declared here.

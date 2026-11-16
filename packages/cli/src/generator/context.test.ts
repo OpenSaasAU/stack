@@ -1,7 +1,7 @@
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
-import { describe, it, expect } from 'vitest'
+import { afterEach, describe, it, expect } from 'vitest'
 import type { ContractData, OpenSaasConfig } from '@opensaas/stack-core'
 import { deriveContract } from '@opensaas/stack-core'
 import { text } from '@opensaas/stack-core/fields'
@@ -197,16 +197,22 @@ describe('generateContext', () => {
     const context = generateContext(config, data, {}, { next: true })
 
     expect(context).toContain(
-      "import { controlFlowFromRethrow, processGlobal, processLifetimeContext } from '@opensaas/stack-core/internal'",
+      "import { controlFlowFromRethrow, eitherControlFlow, processGlobal, processLifetimeContext } from '@opensaas/stack-core/internal'",
     )
     expect(context).toContain("const { unstable_rethrow } = await import('next/navigation')")
     expect(context).toContain('return controlFlowFromRethrow(unstable_rethrow)')
-    expect(context).toContain(
-      'isNextControlFlow(thrown) || appConfig.isFrameworkControlFlow?.(thrown) === true',
-    )
     expect(context).toMatch(
       /const isNextControlFlow = await loadNextControlFlow\(\)\s*resolvedConfig = \{\s*\.\.\.appConfig,[\s\S]*?isFrameworkControlFlow:[\s\S]*?_tables:/,
     )
+  })
+
+  it('ORs the app’s predicate through core’s guard, so a throwing one cannot escape the wrapper', () => {
+    const context = generateContext(config, data, {}, { next: true })
+
+    expect(context).toContain(
+      'isFrameworkControlFlow: eitherControlFlow(isNextControlFlow, appConfig.isFrameworkControlFlow)',
+    )
+    expect(context).not.toContain('appConfig.isFrameworkControlFlow?.(thrown)')
   })
 
   it('imports next/navigation only lazily, so the bundle still loads where Next cannot be resolved', () => {
@@ -224,8 +230,15 @@ describe('generateContext', () => {
 })
 
 describe('projectDependsOnNext', () => {
+  const projectDirs: string[] = []
+
+  afterEach(() => {
+    for (const dir of projectDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true })
+  })
+
   function projectWith(manifest: string | null): string {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'opensaas-next-detect-'))
+    projectDirs.push(dir)
     if (manifest !== null) fs.writeFileSync(path.join(dir, 'package.json'), manifest, 'utf-8')
     return dir
   }

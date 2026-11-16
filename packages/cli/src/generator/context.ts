@@ -56,6 +56,9 @@ export function projectDependsOnNext(projectDir: string): boolean {
 //   aliasing it per layer, and plain Node cannot resolve it at all (`next`
 //   has no `exports` map, ADR-0054). So it is imported lazily, and a host
 //   that cannot load it keeps core's built-in recognition alone.
+// - Detection reads the project's own `package.json` only: a workspace that
+//   declares `next` only at its root gets no injection and keeps the
+//   built-in recognition alone.
 const NEXT_CONTROL_FLOW_LOADER = `
 /**
  * Next's own recognition of its control flow, so a redirect() or notFound()
@@ -86,8 +89,7 @@ function resolvedConfigSource(framework: ContextFramework): string {
       ...(isNextControlFlow === undefined
         ? {}
         : {
-            isFrameworkControlFlow: (thrown: unknown) =>
-              isNextControlFlow(thrown) || appConfig.isFrameworkControlFlow?.(thrown) === true,
+            isFrameworkControlFlow: eitherControlFlow(isNextControlFlow, appConfig.isFrameworkControlFlow),
           }),
       _tables: { dependencies: dependencyTable, constraints: constraintMap },
     }`
@@ -213,7 +215,7 @@ export function generateContext(
 import { getContext as getOpensaasContext, requireOrmHandle } from '@opensaas/stack-core'
 import { resolveRuntimeConnection } from '@opensaas/stack-core/client'
 import { originTripwire } from '@opensaas/stack-core/origin'
-import { ${framework.next ? 'controlFlowFromRethrow, ' : ''}processGlobal, processLifetimeContext } from '@opensaas/stack-core/internal'
+import { ${framework.next ? 'controlFlowFromRethrow, eitherControlFlow, ' : ''}processGlobal, processLifetimeContext } from '@opensaas/stack-core/internal'
 import type { Session as OpensaasSession, OpenSaasConfig } from '@opensaas/stack-core'
 import postgres from '@prisma/orm-postgres/runtime'
 import { contractFromJson } from '@prisma/orm-postgres/static'

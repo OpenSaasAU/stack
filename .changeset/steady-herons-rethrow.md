@@ -5,7 +5,7 @@
 
 Make the framework control-flow rethrow predicate injectable
 
-A new `isFrameworkControlFlow` config option recognises a host framework's control flow thrown from inside an access rule, so the Session vocabulary, MCP's advertised vocabulary and the admin's nav counts let it propagate instead of folding it into a logged deny. It is OR'ed with the built-in recognition of Next.js's digests and React's postpone, and the `cause` walk applies to both.
+A new `isFrameworkControlFlow` config option recognises a host framework's control flow thrown from inside an access rule, so the Session vocabulary, MCP's advertised vocabulary and the admin's nav counts let it propagate instead of folding it into a logged deny. It is OR'ed with the built-in recognition of Next.js's digests and React's postpone, and the `cause` walk applies to both. A predicate that throws recognises nothing and is reported once, so a rule's own throw still denies.
 
 ```typescript
 export default config({

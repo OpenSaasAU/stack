@@ -118,7 +118,7 @@ Admin UI customization options.
 
 ##### `isFrameworkControlFlow`
 
-`(thrown: unknown) => boolean` — recognises a host framework's control flow (a redirect, a not-found, a rendering bailout) thrown from inside an access rule, so the Session vocabulary, MCP's advertised vocabulary and the admin's nav counts let it propagate to the framework instead of folding it into a logged deny. It is added to the built-in recognition of Next.js's control-flow digests and React's postpone, never in place of it, and an `Error` whose `cause` chain reaches a recognised value has that value rethrown.
+`(thrown: unknown) => boolean` — recognises a host framework's control flow (a redirect, a not-found, a rendering bailout) thrown from inside an access rule, so the Session vocabulary, MCP's advertised vocabulary and the admin's nav counts let it propagate to the framework instead of folding it into a logged deny. It is added to the built-in recognition of Next.js's control-flow digests and React's postpone, never in place of it, and an `Error` whose `cause` chain reaches a recognised value has that value rethrown. A predicate that throws recognises nothing: the built-in recognition still applies, a rule's own throw still denies and is logged, and the predicate's failure is written to `console.error` once per predicate.
 
 The generated `.opensaas/context.ts` sets this to Next.js's own `unstable_rethrow` when the project's `package.json` declares `next`, OR'ed with any predicate the config declares. It loads `next/navigation` lazily, so a script that loads the bundle under plain Node, where that module does not resolve, keeps the built-in recognition alone. Declare one yourself only for another framework:
 

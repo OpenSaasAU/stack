@@ -10,6 +10,7 @@ import { text, virtual } from '../fields/index.js'
 import { createMcpHandlers } from '../mcp/handler.js'
 import { mcpListReachable } from '../mcp/reachability.js'
 import { createTestDatabase, ormClientFor, type TestDatabase } from '../testing/context.js'
+import { withOwnSessionVocabulary } from './session-vocabulary.js'
 
 /**
  * An injected `isFrameworkControlFlow` reaches every place an access question
@@ -108,6 +109,23 @@ function defaultContext(session: Session | null = author): StackContext {
   )
 }
 
+const predicateFailure = new Error('predicate failed')
+
+function throwingPredicateContext(session: Session | null = author): StackContext {
+  return getContext(
+    schemaConfig(() => {
+      throw predicateFailure
+    }),
+    ormClientFor(database.data, database.client.orm),
+    session,
+    undefined,
+    false,
+    undefined,
+    undefined,
+    database.client,
+  )
+}
+
 async function whileSignalling<T>(run: () => Promise<T>): Promise<T> {
   signalling = true
   try {
@@ -152,6 +170,36 @@ describe('the Session vocabulary', () => {
         expect(warn).toHaveBeenCalled()
       } finally {
         warn.mockRestore()
+      }
+    },
+    BOOT,
+  )
+
+  test(
+    'propagates through every question when only the config handed in carries the predicate',
+    async () => {
+      const { _config: _withoutOwnConfig, ...engine } = engineContextOf(injectedContext())
+      const bare: AccessContext = { ...engine, _resolveOutputChain: [] }
+      await expectPropagated(withOwnSessionVocabulary(bare, schemaConfig(isSignedOut)))
+    },
+    BOOT,
+  )
+
+  test(
+    'denies and logs, without escaping, when the injected predicate throws',
+    async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+      const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      try {
+        const vocabulary = await whileSignalling(
+          async () =>
+            await engineContextOf(throwingPredicateContext())._sessionVocabulary?.('Gated'),
+        )
+        expect(vocabulary?.operations.query).toBe('deny')
+        expect(warn).toHaveBeenCalled()
+      } finally {
+        warn.mockRestore()
+        error.mockRestore()
       }
     },
     BOOT,
@@ -221,6 +269,28 @@ describe('nav counts', () => {
   )
 
   test(
+    'omit the badge and log, without escaping, when the injected predicate throws',
+    async () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+      try {
+        const counts = await whileSignalling(() =>
+          resolveNavCounts(engineContextOf(throwingPredicateContext()), schemaConfig()),
+        )
+        expect(counts).toEqual({})
+        expect(error).toHaveBeenCalledWith(
+          expect.stringContaining('isFrameworkControlFlow threw'),
+          predicateFailure,
+        )
+      } finally {
+        error.mockRestore()
+        warn.mockRestore()
+      }
+    },
+    BOOT,
+  )
+
+  test(
     'omit the badge and log when nothing is injected',
     async () => {
       const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
@@ -270,7 +340,7 @@ describe('MCP', () => {
   )
 
   test(
-    'tools/list does not fold an injected control-flow throw into an omitted tool',
+    'tools/list does not fold an injected control-flow throw into an omitted tool (the outer 500 is #2429)',
     async () => {
       const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
