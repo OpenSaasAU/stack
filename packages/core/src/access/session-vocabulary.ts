@@ -9,7 +9,11 @@ import {
   classifyWriteForRow,
 } from './field-access.js'
 import { NO_RULE_VIEWS, ruleRowOf } from './rule-item.js'
-import { decideAdvertisement, type AdvertisementPolicy } from './decide-advertisement.js'
+import {
+  controlFlowPredicateOf,
+  decideAdvertisement,
+  type AdvertisementPolicy,
+} from './decide-advertisement.js'
 import { isComputedField } from '../config/field-kind.js'
 import { ownsForeignKey } from '../context/junction.js'
 import { resolveListTimestamps } from '../contract/derive.js'
@@ -79,13 +83,20 @@ function isAnswering(context: AccessContext): boolean {
 
 async function answerOrDeny(
   context: AccessContext,
+  config: OpenSaasConfig,
   subject: string,
   decide: () => Promise<AccessAnswer>,
 ): Promise<AccessAnswer> {
   const within = new Set(answering.getStore())
   within.add(context)
   return await answering.run(within, () =>
-    decideAdvertisement(subject, decide, 'deny', vocabularyPolicy),
+    decideAdvertisement(
+      subject,
+      decide,
+      'deny',
+      vocabularyPolicy,
+      controlFlowPredicateOf(context, config),
+    ),
   )
 }
 
@@ -117,6 +128,7 @@ const allowed = async (): Promise<AccessAnswer> => 'allow'
 
 function operationQuestions(
   context: AccessContext,
+  config: OpenSaasConfig,
   listKey: string,
   listConfig: ListConfig<TypeInfo>,
   singleton: boolean,
@@ -133,24 +145,24 @@ function operationQuestions(
   const args = { session: context.session, context }
   return {
     query: once(() =>
-      answerOrDeny(context, `${listKey}.query`, async () =>
+      answerOrDeny(context, config, `${listKey}.query`, async () =>
         (await checkAccess(operations?.query, args)) !== false ? 'allow' : 'deny',
       ),
     ),
     create: once(() =>
-      answerOrDeny(context, `${listKey}.create`, () =>
+      answerOrDeny(context, config, `${listKey}.create`, () =>
         classifyRowIndependentCreateAccess(operations?.create, args),
       ),
     ),
     update: once(() =>
-      answerOrDeny(context, `${listKey}.update`, () =>
+      answerOrDeny(context, config, `${listKey}.update`, () =>
         classifyRowIndependentCreateAccess(potentiallyAllowed(operations?.update), args),
       ),
     ),
     delete: singleton
       ? denied
       : once(() =>
-          answerOrDeny(context, `${listKey}.delete`, () =>
+          answerOrDeny(context, config, `${listKey}.delete`, () =>
             classifyRowIndependentCreateAccess(potentiallyAllowed(operations?.delete), args),
           ),
         ),
@@ -233,7 +245,7 @@ function declaredFieldQuestions(
     once(async () => {
       if (operation !== 'read' && !storesWrites(fieldName, field, listKey, config)) return 'deny'
       if ((await scope.operation(gate)) === 'deny') return 'deny'
-      return await answerOrDeny(context, `${subject} (${operation})`, decide)
+      return await answerOrDeny(context, config, `${subject} (${operation})`, decide)
     })
   const read = ask('read', 'query', () => classifyRowIndependentRead(field.access, args))
   const filterSpec = once(async () =>
@@ -243,6 +255,7 @@ function declaredFieldQuestions(
           async () => field.getFilterSpec?.(fieldName, listKey, config),
           undefined,
           vocabularyPolicy,
+          controlFlowPredicateOf(context, config),
         )
       : undefined,
   )
@@ -352,7 +365,7 @@ export function sessionVocabularyQuestions(
   if (!Object.hasOwn(config.lists, listKey)) return null
   const listConfig = config.lists[listKey]
   const composable = !listConfig.isSingleton
-  const operations = operationQuestions(context, listKey, listConfig, !composable)
+  const operations = operationQuestions(context, config, listKey, listConfig, !composable)
   const operation = (asked: ListOperation) => operations[asked]()
   const scope: ListScope = { context, config, listKey, composable, operation }
   const fields = new Map<string, FieldQuestions>([
@@ -396,7 +409,7 @@ async function resolveOperationForRow(
   stored: { row: OrmRow; id: string | number },
 ): Promise<AccessAnswer> {
   if (answer !== 'row-dependent') return answer
-  return await answerOrDeny(context, `${listKey}.${operation} (row)`, async () =>
+  return await answerOrDeny(context, config, `${listKey}.${operation} (row)`, async () =>
     (await writeTargetAllows(context, config, listKey, stored.row, stored.id, operation))
       ? 'allow'
       : 'deny',
@@ -481,7 +494,7 @@ export async function resolveSessionVocabularyForItem(
         operations.update === 'deny'
           ? 'deny'
           : entry.update === 'row-dependent'
-            ? await answerOrDeny(context, `${listKey}.${name} (update, row)`, () =>
+            ? await answerOrDeny(context, config, `${listKey}.${name} (update, row)`, () =>
                 classifyWriteForRow(field.access, 'update', args, ruleRow),
               )
             : entry.update

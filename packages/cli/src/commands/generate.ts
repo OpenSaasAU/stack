@@ -11,6 +11,7 @@ import {
   writeTypes,
   writeLists,
   writeContext,
+  projectDependsOnNext,
   writePluginTypes,
   writeTables,
   resolveOutputPaths,
@@ -324,10 +325,16 @@ export async function generateCommand(
       )
       writeLists(config, paths.lists, generatedTables.dependencies)
       writeTables(generatedTables, paths.tables)
-      writeContext(config, contractData, paths.context, {
-        configImport: crossReferences.configImport,
-        contractJsonImport: crossReferences.contractJsonImport,
-      })
+      writeContext(
+        config,
+        contractData,
+        paths.context,
+        {
+          configImport: crossReferences.configImport,
+          contractJsonImport: crossReferences.contractJsonImport,
+        },
+        { next: projectDependsOnNext(cwd) },
+      )
       writePluginTypes(config, paths.pluginTypes)
 
       bundleSpinner.succeed(chalk.green('Bundle generation complete'))

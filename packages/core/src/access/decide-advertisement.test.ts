@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
-import { decideAdvertisement, type AdvertisementPolicy } from './decide-advertisement.js'
+import {
+  controlFlowFromRethrow,
+  decideAdvertisement,
+  eitherControlFlow,
+  rethrowControlFlow,
+  type AdvertisementPolicy,
+  type ControlFlowPredicate,
+} from './decide-advertisement.js'
 
 const policy: AdvertisementPolicy = { warning: (subject) => `denied "${subject}"` }
 
@@ -138,5 +145,194 @@ describe('decideAdvertisement', () => {
     )
     expect(answer).toBe('deny')
     expect(warn).toHaveBeenCalledOnce()
+  })
+})
+
+class SignedOut extends Error {}
+
+const isSignedOut = (thrown: unknown): boolean => thrown instanceof SignedOut
+
+describe('decideAdvertisement with an injected control-flow predicate', () => {
+  async function decideWith(thrown: unknown, isFrameworkControlFlow?: ControlFlowPredicate) {
+    return await decideAdvertisement(
+      'List.field',
+      async () => {
+        throw thrown
+      },
+      'deny',
+      policy,
+      isFrameworkControlFlow,
+    )
+  }
+
+  test('rethrows what the predicate recognises, without logging', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const signal = new SignedOut('signed out')
+    await expect(decideWith(signal, isSignedOut)).rejects.toBe(signal)
+    expect(warn).not.toHaveBeenCalled()
+  })
+
+  test('denies the same throw when nothing is injected', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const signal = new SignedOut('signed out')
+    expect(await decideWith(signal)).toBe('deny')
+    expect(warn).toHaveBeenCalledWith('denied "List.field"', signal)
+  })
+
+  test('rethrows the recognised cause of a wrapping Error', async () => {
+    const signal = new SignedOut('signed out')
+    await expect(
+      decideWith(
+        new Error('outer', { cause: new Error('middle', { cause: signal }) }),
+        isSignedOut,
+      ),
+    ).rejects.toBe(signal)
+  })
+
+  test('keeps the built-in recognition beside the injected predicate', async () => {
+    const redirect = new ControlFlow('NEXT_REDIRECT;replace;/sign-in;307;')
+    await expect(decideWith(redirect, () => false)).rejects.toBe(redirect)
+  })
+
+  test('denies a throw neither recognises', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    expect(await decideWith(new Error('rule failed'), isSignedOut)).toBe('deny')
+    expect(warn).toHaveBeenCalledOnce()
+  })
+})
+
+describe('rethrowControlFlow', () => {
+  test('rethrows what an injected predicate recognises', () => {
+    const signal = new SignedOut('signed out')
+    expect(() => rethrowControlFlow(signal, isSignedOut)).toThrow(signal)
+  })
+
+  test('returns for an ordinary throw', () => {
+    expect(() => rethrowControlFlow(new Error('rule failed'), isSignedOut)).not.toThrow()
+  })
+
+  test('returns for an ordinary throw when the predicate itself throws', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    expect(() => rethrowControlFlow(new Error('rule failed'), throwingPredicate())).not.toThrow()
+  })
+
+  test('still rethrows a built-in digest when the predicate itself throws', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const redirect = new ControlFlow('NEXT_REDIRECT;replace;/sign-in;307;')
+    expect(() => rethrowControlFlow(redirect, throwingPredicate())).toThrow(redirect)
+  })
+})
+
+const predicateFailure = new Error('predicate failed')
+
+function throwingPredicate(): ControlFlowPredicate {
+  return () => {
+    throw predicateFailure
+  }
+}
+
+describe('a predicate that throws', () => {
+  async function decideWith(thrown: unknown, isFrameworkControlFlow: ControlFlowPredicate) {
+    return await decideAdvertisement(
+      'List.field',
+      async () => {
+        throw thrown
+      },
+      'deny',
+      policy,
+      isFrameworkControlFlow,
+    )
+  }
+
+  test('counts as not recognising, so an ordinary rule throw denies and is logged', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const failure = new Error('rule failed')
+    expect(await decideWith(failure, throwingPredicate())).toBe('deny')
+    expect(warn).toHaveBeenCalledWith('denied "List.field"', failure)
+  })
+
+  test('leaves a built-in digest propagating', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const redirect = new ControlFlow('NEXT_REDIRECT;replace;/sign-in;307;')
+    await expect(decideWith(redirect, throwingPredicate())).rejects.toBe(redirect)
+  })
+
+  test('is logged once, naming the option, however often it fails', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const predicate = throwingPredicate()
+    await decideWith(new Error('first'), predicate)
+    await decideWith(new Error('second'), predicate)
+    expect(error).toHaveBeenCalledOnce()
+    expect(error).toHaveBeenCalledWith(
+      expect.stringContaining('isFrameworkControlFlow threw'),
+      predicateFailure,
+    )
+  })
+})
+
+describe('eitherControlFlow', () => {
+  test('recognises what either predicate recognises', () => {
+    const either = eitherControlFlow(isSignedOut, (thrown) => thrown === 'other')
+    expect(either(new SignedOut('signed out'))).toBe(true)
+    expect(either('other')).toBe(true)
+    expect(either(new Error('rule failed'))).toBe(false)
+  })
+
+  test('takes the first alone when there is no second', () => {
+    expect(eitherControlFlow(isSignedOut, undefined)(new SignedOut('signed out'))).toBe(true)
+  })
+
+  test('treats a throwing second predicate as not recognising, without throwing', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const either = eitherControlFlow(isSignedOut, throwingPredicate())
+    expect(either(new Error('rule failed'))).toBe(false)
+    expect(either(new SignedOut('signed out'))).toBe(true)
+  })
+})
+
+describe('controlFlowFromRethrow', () => {
+  /** The shape of Next's `unstable_rethrow`: throw the value, else recurse into its cause. */
+  function rethrowLike(recognises: (thrown: unknown) => boolean): (thrown: unknown) => void {
+    const rethrow = (thrown: unknown): void => {
+      if (recognises(thrown)) throw thrown
+      if (thrown instanceof Error && 'cause' in thrown) rethrow(thrown.cause)
+    }
+    return rethrow
+  }
+
+  const predicate = controlFlowFromRethrow(rethrowLike(isSignedOut))
+
+  test('recognises a value the rethrow throws back', () => {
+    expect(predicate(new SignedOut('signed out'))).toBe(true)
+  })
+
+  test('does not recognise a value the rethrow returns for', () => {
+    expect(predicate(new Error('rule failed'))).toBe(false)
+  })
+
+  test('does not recognise a wrapper whose cause the rethrow throws, so the cause propagates', async () => {
+    const signal = new SignedOut('signed out')
+    const wrapper = new Error('wrapped', { cause: signal })
+    expect(predicate(wrapper)).toBe(false)
+    await expect(
+      decideAdvertisement(
+        'List.field',
+        async () => {
+          throw wrapper
+        },
+        'deny',
+        policy,
+        predicate,
+      ),
+    ).rejects.toBe(signal)
+  })
+
+  test('does not recognise anything when the rethrow itself fails', () => {
+    const failing = controlFlowFromRethrow(() => {
+      throw new RangeError('Maximum call stack size exceeded')
+    })
+    expect(failing(new Error('rule failed'))).toBe(false)
   })
 })

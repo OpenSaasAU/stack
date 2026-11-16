@@ -10,7 +10,7 @@ import { isRelationshipField } from '../fields/index.js'
 import { isClientSafeError } from '../lib/client-safe-error.js'
 import { McpToolError } from './tool-error.js'
 import type { McpSession, McpSessionProvider } from './types.js'
-import { decideAdvertisement } from '../access/decide-advertisement.js'
+import { controlFlowPredicateOf, decideAdvertisement } from '../access/decide-advertisement.js'
 import { mcpAdvertisement } from './advertise.js'
 import { McpWriteRefusedError, assertWritableData, generateFieldSchemas } from './field-schema.js'
 import { ownsForeignKey } from '../context/junction.js'
@@ -437,6 +437,7 @@ async function handleToolsList(
           }),
         'deny',
         mcpAdvertisement,
+        controlFlowPredicateOf(context, config),
       )
 
       if (operationClassification !== 'deny') {

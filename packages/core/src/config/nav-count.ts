@@ -1,5 +1,5 @@
 import type { AccessContext } from '../access/types.js'
-import { rethrowControlFlow } from '../access/decide-advertisement.js'
+import { controlFlowPredicateOf, rethrowControlFlow } from '../access/decide-advertisement.js'
 import type { AggregateBuild } from '../secured/aggregate.js'
 import type { ListConfig, OpenSaasConfig, TypeInfo } from './types.js'
 
@@ -55,7 +55,7 @@ export async function resolveNavCounts(
         const reduced = await delegate.aggregate((aggregate) => ({ total: aggregate.count() }))
         counts[listKey] = reduced.total
       } catch (error) {
-        rethrowControlFlow(error)
+        rethrowControlFlow(error, controlFlowPredicateOf(context, config))
         console.error(`Failed to resolve nav count for ${listKey}:`, error)
       }
     }),
