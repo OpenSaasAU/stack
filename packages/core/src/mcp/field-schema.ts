@@ -1,7 +1,7 @@
 import type { FieldConfig, OpenSaasConfig } from '../config/types.js'
 import type { AccessContext, Session } from '../access/types.js'
 import { classifyRowIndependentWrite } from '../access/field-access.js'
-import { decideAdvertisement } from '../access/decide-advertisement.js'
+import { controlFlowPredicateOf, decideAdvertisement } from '../access/decide-advertisement.js'
 import { mcpAdvertisement } from './advertise.js'
 import { ownsForeignKey } from '../context/junction.js'
 import { mcpListReachable } from './reachability.js'
@@ -228,6 +228,7 @@ export async function generateFieldSchemas(
       () => classifyRowIndependentWrite(fieldConfig.access, operation, { session, context }),
       'deny',
       mcpAdvertisement,
+      controlFlowPredicateOf(context, config),
     )
     if (classification === 'deny') {
       if (isRequired) deniedRequiredField ??= fieldName

@@ -3,7 +3,7 @@ import type { FieldConfig, ListConfig, OpenSaasConfig, RelationshipField } from 
 import { getRelatedListConfig } from '../access/engine.js'
 import { classifyRowIndependentRead } from '../access/field-access.js'
 import { getListDependencies } from '../access/declared-dependencies.js'
-import { decideAdvertisement } from '../access/decide-advertisement.js'
+import { controlFlowPredicateOf, decideAdvertisement } from '../access/decide-advertisement.js'
 import { mcpAdvertisement } from './advertise.js'
 import type { Refinement, SecuredRefinement } from '../secured/include.js'
 import type { SecuredQuery } from '../secured/read.js'
@@ -186,6 +186,7 @@ async function advertisableFields(
       () => decideField(fieldName, fieldConfig, config, session, context, options),
       null,
       mcpAdvertisement,
+      controlFlowPredicateOf(context, config),
     )
     if (decided) advertisable.push(decided)
   }
