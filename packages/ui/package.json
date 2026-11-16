@@ -28,6 +28,10 @@
       "types": "./dist/components/fields/index.d.ts",
       "default": "./dist/components/fields/index.js"
     },
+    "./cells": {
+      "types": "./dist/components/cells/index.d.ts",
+      "default": "./dist/components/cells/index.js"
+    },
     "./standalone": {
       "types": "./dist/components/standalone/index.d.ts",
       "default": "./dist/components/standalone/index.js"

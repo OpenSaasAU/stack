@@ -1,6 +1,7 @@
 'use client'
 
-import { registerFieldComponent, registerCellComponent } from '@opensaas/stack-ui'
+import { registerCellComponent } from '@opensaas/stack-ui/cells'
+import { registerFieldComponent } from '@opensaas/stack-ui/fields'
 import { EmbeddingField } from './EmbeddingField.js'
 import { EmbeddingCell } from './EmbeddingCell.js'
 

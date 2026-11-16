@@ -38,7 +38,7 @@ The following peer dependencies are required:
 // lib/register-fields.ts
 'use client'
 
-import { registerFieldComponent } from '@opensaas/stack-ui'
+import { registerFieldComponent } from '@opensaas/stack-ui/fields'
 import { TiptapField } from '@opensaas/stack-tiptap'
 
 registerFieldComponent('richText', TiptapField)
@@ -272,7 +272,7 @@ export function CustomTiptapField({ value, onChange }: TiptapFieldProps) {
 Then use it in your config:
 
 ```typescript
-import { registerFieldComponent } from '@opensaas/stack-ui'
+import { registerFieldComponent } from '@opensaas/stack-ui/fields'
 import { CustomTiptapField } from './components/CustomTiptapField'
 
 // Global registration

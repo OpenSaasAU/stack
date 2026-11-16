@@ -70,7 +70,7 @@ Due to Next.js server/client boundaries, you need to register the Tiptap compone
 // lib/register-fields.ts
 'use client'
 
-import { registerFieldComponent } from '@opensaas/stack-ui'
+import { registerFieldComponent } from '@opensaas/stack-ui/fields'
 import { TiptapField } from '@opensaas/stack-tiptap'
 
 registerFieldComponent('richText', TiptapField)
@@ -381,7 +381,7 @@ Then register and use it:
 // lib/register-fields.ts
 'use client'
 
-import { registerFieldComponent } from '@opensaas/stack-ui'
+import { registerFieldComponent } from '@opensaas/stack-ui/fields'
 import { TiptapField } from '@opensaas/stack-tiptap'
 import { ExtendedTiptapField } from '../components/ExtendedTiptapField'
 
@@ -583,7 +583,7 @@ Registers a custom component for the `richText` field type.
 ```typescript
 'use client'
 
-import { registerFieldComponent } from '@opensaas/stack-ui'
+import { registerFieldComponent } from '@opensaas/stack-ui/fields'
 import { TiptapField } from '@opensaas/stack-tiptap'
 
 registerFieldComponent('richText', TiptapField)

@@ -85,7 +85,9 @@ This gives you a complete admin interface with:
 
 ## Package Exports
 
-The UI package uses multiple export paths for different levels of abstraction:
+The UI package uses multiple export paths for different levels of abstraction. A `'use client'`
+module imports from `/primitives`, `/fields`, `/cells` or `/standalone`, never the main export: that
+one reaches `AdminUI` and the server graph, which `next build --webpack` refuses to bundle.
 
 ```typescript
 // Main export - Full admin UI and utilities
@@ -96,6 +98,9 @@ import { Button, Card, Input, Table } from '@opensaas/stack-ui/primitives'
 
 // Field components - Individual field inputs
 import { TextField, SelectField, RelationshipField } from '@opensaas/stack-ui/fields'
+
+// Cell components and their registry
+import { TextCell, registerCellComponent } from '@opensaas/stack-ui/cells'
 
 // Standalone components - Composable CRUD components
 import { ItemCreateForm, ItemEditForm, ListTable } from '@opensaas/stack-ui/standalone'
@@ -1204,7 +1209,7 @@ Register a component globally to use it across multiple fields:
 // lib/register-fields.ts
 'use client'
 
-import { registerFieldComponent } from '@opensaas/stack-ui'
+import { registerFieldComponent } from '@opensaas/stack-ui/fields'
 import { ColorPickerField } from './components/ColorPickerField'
 
 registerFieldComponent('color', ColorPickerField)
@@ -1494,7 +1499,7 @@ Then register it:
 // lib/register-fields.ts
 'use client'
 
-import { registerFieldComponent } from '@opensaas/stack-ui'
+import { registerFieldComponent } from '@opensaas/stack-ui/fields'
 import { ColorPickerField } from '@/components/ColorPickerField'
 
 registerFieldComponent('color', ColorPickerField)

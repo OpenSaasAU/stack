@@ -1,6 +1,6 @@
 'use client'
 
-import { registerFieldComponent } from '@opensaas/stack-ui'
+import { registerFieldComponent } from '@opensaas/stack-ui/fields'
 import { ColorPickerField } from '../components/ColorPickerField'
 import { SlugField } from '../components/SlugField'
 

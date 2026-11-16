@@ -38,6 +38,12 @@ Field components for forms:
 - `PasswordField`, `SelectField`, `RelationshipField`
 - `FieldRenderer` - Renders field based on config (uses registry)
 
+### Cells (`/cells`)
+
+List-table cell components and their registry (`registerCellComponent`, `getCellComponent`). Like
+`/fields`, it is safe to import from a `'use client'` module; the root entry is not, because it reaches
+`AdminUI` and the server graph behind it.
+
 ### Standalone (`/standalone`)
 
 Composable CRUD components:
@@ -191,7 +197,7 @@ Third-party fields register components on client side:
 ```typescript
 // lib/register-fields.ts
 'use client'
-import { registerFieldComponent } from '@opensaas/stack-ui'
+import { registerFieldComponent } from '@opensaas/stack-ui/fields'
 import { RichTextField } from '@opensaas/stack-tiptap'
 registerFieldComponent('richText', RichTextField)
 ```
@@ -271,7 +277,7 @@ Out control only renders with a handler. See `examples/starter`, `examples/start
 ```typescript
 // lib/register-fields.ts
 'use client'
-import { registerFieldComponent } from '@opensaas/stack-ui'
+import { registerFieldComponent } from '@opensaas/stack-ui/fields'
 import { ColorPickerField } from './components/ColorPickerField'
 
 registerFieldComponent('color', ColorPickerField)

@@ -1,6 +1,6 @@
 'use client'
 
-import { registerFieldComponent } from '@opensaas/stack-ui'
+import { registerFieldComponent } from '@opensaas/stack-ui/fields'
 import { JsonEditor } from '../components/JsonEditor'
 import { TaxonomyField } from '../components/TaxonomyField'
 

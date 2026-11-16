@@ -123,7 +123,7 @@ Create a registration file that runs on the client:
 // lib/register-fields.ts
 'use client'
 
-import { registerFieldComponent } from '@opensaas/stack-ui'
+import { registerFieldComponent } from '@opensaas/stack-ui/fields'
 import { ColorPickerField } from '../components/ColorPickerField'
 
 // Register the component with a custom type name

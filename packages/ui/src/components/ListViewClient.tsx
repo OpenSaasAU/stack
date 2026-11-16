@@ -64,7 +64,7 @@ import {
   serializeFilterQuery,
   type FilterFieldSuggestion,
   type FilterToken,
-} from '@opensaas/stack-core'
+} from '@opensaas/stack-core/client-safe'
 
 /** Where a to-many count links: the other list's URL key and its field naming this list. */
 export interface CountFilterLink {

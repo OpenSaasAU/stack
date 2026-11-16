@@ -16,7 +16,7 @@ import {
   type FilterOperator,
   type FilterTerm,
   type FilterToken,
-} from '@opensaas/stack-core'
+} from '@opensaas/stack-core/client-safe'
 import { formatFieldName } from './utils.js'
 
 export type FilterFields = ReadonlyMap<string, FilterFieldSuggestion>

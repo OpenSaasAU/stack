@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import Link from 'next/link.js'
-import { getUrlKey } from '@opensaas/stack-core'
+import { getUrlKey } from '@opensaas/stack-core/client-safe'
 import type { CellComponentProps, CellValue } from './registry.js'
 
 /**

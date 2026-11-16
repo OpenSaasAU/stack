@@ -28,6 +28,7 @@
     "check:doc-node-version": "node scripts/check-doc-node-version.mjs",
     "check:doc-prisma-pins": "node scripts/check-doc-prisma-pins.mjs",
     "check:client-side-effect-imports": "node scripts/check-client-side-effect-imports.mjs",
+    "check:client-server-graph": "node scripts/check-client-server-graph.mjs",
     "release": "node scripts/security-audit.mjs --report-only && pnpm check:published-ranges && pnpm build && changeset publish",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",

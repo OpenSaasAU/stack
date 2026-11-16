@@ -3,7 +3,7 @@
 import * as React from 'react'
 import { getFieldComponent } from './registry.js'
 import { resolveFieldLabel } from '../../lib/utils.js'
-import { getUrlKey } from '@opensaas/stack-core'
+import { getUrlKey } from '@opensaas/stack-core/client-safe'
 import type { SerializableFieldConfig } from '../../lib/serializeFieldConfig.js'
 import type { ServerActionInput } from '../../server/types.js'
 
