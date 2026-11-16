@@ -19,7 +19,10 @@
 //     entries on CLIENT_ENTRIES, which promise the same thing without the
 //     directive. Tests are not roots.
 //   - `@/` resolves against the nearest package.json directory, trying `src/`
-//     first. No other path alias is resolved.
+//     first. No other path alias is resolved: a specifier that is neither
+//     relative, `@/`, nor a valid npm package name (`~/x`, `#x`) is a finding,
+//     as is a relative or `@/` import that resolves to no file, so an alias the
+//     checker cannot follow fails loudly instead of passing as a package.
 //   - The walk reads TypeScript source, not built output: a workspace import is
 //     mapped through the target package.json `exports` from `dist/` back to
 //     `src/`. A subpath whose built path has no source twin is not followed.
@@ -31,7 +34,11 @@
 //     so the walk stops there.
 //   - Third-party packages are not walked. One is a finding only when it is on
 //     SERVER_ONLY_PACKAGES; any other is trusted to ship a browser build.
-//   - `require()` calls and non-literal dynamic imports are not followed.
+//   - Edges are static imports and re-exports, `import()` with a literal first
+//     argument (options or not), `require('…')` and `import x = require('…')`.
+//     An `import()` or `require()` whose specifier is not a literal is not
+//     followed.
+//   - A resolved file that is not a script (`.css`, `.json`, …) is a leaf.
 
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { builtinModules } from 'node:module'
@@ -44,7 +51,14 @@ const repoRoot = path.resolve(fileURLToPath(import.meta.url), '../..')
 const SOURCE_EXTENSIONS = ['.ts', '.tsx', '.mts', '.js', '.jsx', '.mjs']
 const SKIP_DIRECTORIES = new Set(['node_modules', 'dist', '__tests__', 'tests', 'e2e'])
 const APPLICATION_ROOTS = ['examples', 'packages/create-opensaas-app/templates']
-const CLIENT_ENTRIES = ['packages/core/src/client-safe.ts']
+const CLIENT_ENTRIES = [
+  'packages/core/src/client-safe.ts',
+  'packages/ui/src/components/fields/index.ts',
+  'packages/ui/src/components/cells/index.ts',
+  'packages/ui/src/primitives/index.ts',
+  'packages/ui/src/components/standalone/index.ts',
+]
+const PACKAGE_SPECIFIER = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*(?:\/.*)?$/
 const TEST_FILE = /\.(test|spec|browser\.test)\.[cm]?[jt]sx?$/
 const BUILTINS = new Set(builtinModules.flatMap((name) => [name, name.split('/')[0]]))
 const SERVER_ONLY_PACKAGES = [
@@ -220,9 +234,17 @@ function valueImportsOf(file) {
         imports.push({ specifier: node.moduleSpecifier.text, names: valueNames(node) })
       }
     } else if (
+      ts.isImportEqualsDeclaration(node) &&
+      !node.isTypeOnly &&
+      ts.isExternalModuleReference(node.moduleReference) &&
+      ts.isStringLiteralLike(node.moduleReference.expression)
+    ) {
+      imports.push({ specifier: node.moduleReference.expression.text, names: ['*'] })
+    } else if (
       ts.isCallExpression(node) &&
-      node.expression.kind === ts.SyntaxKind.ImportKeyword &&
-      node.arguments.length === 1 &&
+      (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
+        (ts.isIdentifier(node.expression) && node.expression.text === 'require')) &&
+      node.arguments.length >= 1 &&
       ts.isStringLiteralLike(node.arguments[0])
     ) {
       imports.push({ specifier: node.arguments[0].text, names: ['*'] })
@@ -242,19 +264,28 @@ function projectRootOf(file) {
   }
 }
 
+const UNRESOLVED = 'a module this checker cannot resolve'
+
+function localEdge(file) {
+  return file ? { file } : { external: UNRESOLVED }
+}
+
 function resolveEdge(specifier, importer, packages) {
   if (specifier.startsWith('.')) {
-    return { file: resolveFile(path.resolve(path.dirname(importer), specifier)) }
+    return localEdge(resolveFile(path.resolve(path.dirname(importer), specifier)))
   }
   if (specifier.startsWith('@/')) {
     const root = projectRootOf(importer)
-    if (!root) return { file: null }
     const rest = specifier.slice(2)
-    return { file: resolveFile(path.join(root, 'src', rest)) ?? resolveFile(path.join(root, rest)) }
+    return localEdge(
+      root && (resolveFile(path.join(root, 'src', rest)) ?? resolveFile(path.join(root, rest))),
+    )
   }
   const workspace = resolveWorkspaceImport(specifier, packages)
   if (workspace !== undefined) return { file: workspace }
-  return { external: classifyExternal(specifier) }
+  const builtinOrServer = classifyExternal(specifier)
+  if (builtinOrServer) return { external: builtinOrServer }
+  return PACKAGE_SPECIFIER.test(specifier) ? {} : { external: UNRESOLVED }
 }
 
 function walk(root, packages, inventory) {
@@ -267,6 +298,7 @@ function walk(root, packages, inventory) {
   }
   while (queue.length > 0) {
     const file = queue.shift()
+    if (!SOURCE_EXTENSIONS.includes(path.extname(file))) continue
     const { directive, imports } = valueImportsOf(file)
     if (directive === 'server' && file !== root) continue
     for (const { specifier, names } of imports) {
@@ -298,8 +330,11 @@ function check(packagesDir, applicationDirs = [], entries = []) {
       if (valueImportsOf(file).directive === 'client') roots.push(file)
     }
   }
+  roots.sort()
   const inventory = new Set()
-  const findings = roots.flatMap((root) => walk(root, packages, inventory))
+  const findings = roots
+    .flatMap((root) => walk(root, packages, inventory))
+    .sort((a, b) => a.root.localeCompare(b.root))
   return { roots, findings, inventory }
 }
 
@@ -319,19 +354,48 @@ function report(findings) {
 
 const args = process.argv.slice(2)
 
+const SELF_TEST_BAD = [
+  'bad-builtin.tsx',
+  'bad-dynamic.tsx',
+  'bad-import-attributes.tsx',
+  'bad-import-equals.ts',
+  'bad-import-options.tsx',
+  'bad-mixed-type.tsx',
+  'bad-re-export.ts',
+  'bad-require.ts',
+  'bad-root-import.tsx',
+  'bad-server-package.tsx',
+  'bad-transitive.tsx',
+  'bad-unknown-alias.tsx',
+]
+const SELF_TEST_GOOD = [
+  'good-asset.tsx',
+  'good-client-safe.tsx',
+  'good-server-action.tsx',
+  'good-third-party.tsx',
+  'good-type-only.tsx',
+]
+
 if (args.includes('--self-test')) {
   const fixtures = path.join(repoRoot, 'scripts/client-server-graph/self-test/packages')
   const { roots, findings } = check(fixtures)
-  const bad = new Set(findings.map((f) => path.basename(f.root)))
-  const expectedBad = roots.map((r) => path.basename(r)).filter((name) => name.startsWith('bad-'))
+  const discovered = new Set(roots.map((r) => path.basename(r)))
+  const reported = new Set(findings.map((f) => path.basename(f.root)))
   const problems = []
-  for (const name of expectedBad) {
-    if (!bad.has(name)) problems.push(`expected a finding for ${name}, got none`)
+  for (const name of [...SELF_TEST_BAD, ...SELF_TEST_GOOD]) {
+    if (!discovered.has(name)) problems.push(`${name} is not discovered as a 'use client' root`)
   }
-  for (const name of bad) {
-    if (!name.startsWith('bad-')) problems.push(`expected no finding for ${name}, got one`)
+  for (const name of SELF_TEST_BAD) {
+    if (!reported.has(name)) problems.push(`expected a finding for ${name}, got none`)
   }
-  if (expectedBad.length === 0) problems.push('no bad-* roots found among the fixtures')
+  for (const name of reported) {
+    if (!SELF_TEST_BAD.includes(name)) problems.push(`expected no finding for ${name}, got one`)
+  }
+  for (const name of discovered) {
+    if (!SELF_TEST_BAD.includes(name) && !SELF_TEST_GOOD.includes(name)) {
+      problems.push(`${name} is a root on neither expected list`)
+    }
+  }
   if (problems.length > 0) {
     console.error('Self-test failed:\n')
     for (const problem of problems) console.error(`  - ${problem}`)
@@ -339,7 +403,7 @@ if (args.includes('--self-test')) {
     process.exit(1)
   }
   console.log(
-    `Self-test passed: ${expectedBad.length} bad client graphs reported, ${roots.length - expectedBad.length} good ones cleared.`,
+    `Self-test passed: ${SELF_TEST_BAD.length} bad client graphs reported, ${SELF_TEST_GOOD.length} good ones cleared.`,
   )
   process.exit(0)
 }
@@ -361,5 +425,5 @@ if (findings.length > 0) {
 }
 
 console.log(
-  `No client module reaches server-only code (${roots.length} roots: 'use client' modules under packages/*/src, ${APPLICATION_ROOTS.join(', ')}, and ${CLIENT_ENTRIES.join(', ')}).`,
+  `No client module reaches server-only code (${roots.length} roots: 'use client' modules under packages/*/src and ${APPLICATION_ROOTS.join(', ')}, plus ${CLIENT_ENTRIES.length} client entries).`,
 )

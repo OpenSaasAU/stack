@@ -35,6 +35,9 @@ export default [
       'examples/*/migrations/**',
       // The nightly cold-clone scaffold, when one has been run locally.
       '.cold-clone/**',
+      // Deliberately bad client graphs (`require`, `import x = require`) that
+      // `pnpm check:client-server-graph --self-test` must report.
+      'scripts/client-server-graph/self-test/**',
       // Doc-block compile check scratch (ESLint 9 flat config does not read .gitignore)
       'packages/rag/.doc-blocks-check-*/**',
     ],

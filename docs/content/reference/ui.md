@@ -90,14 +90,19 @@ module imports from `/primitives`, `/fields`, `/cells` or `/standalone`, never t
 one reaches `AdminUI` and the server graph, which `next build --webpack` refuses to bundle.
 
 ```typescript
-// Main export - Full admin UI and utilities
-import { AdminUI, registerFieldComponent } from '@opensaas/stack-ui'
+// Main export - Full admin UI (a server component) and utilities
+import { AdminUI } from '@opensaas/stack-ui'
 
 // Primitives - shadcn/ui components
 import { Button, Card, Input, Table } from '@opensaas/stack-ui/primitives'
 
-// Field components - Individual field inputs
-import { TextField, SelectField, RelationshipField } from '@opensaas/stack-ui/fields'
+// Field components - Individual field inputs, and the registry a 'use client' module registers with
+import {
+  TextField,
+  SelectField,
+  RelationshipField,
+  registerFieldComponent,
+} from '@opensaas/stack-ui/fields'
 
 // Cell components and their registry
 import { TextCell, registerCellComponent } from '@opensaas/stack-ui/cells'
