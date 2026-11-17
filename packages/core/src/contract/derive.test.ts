@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest'
+import { z } from 'zod'
 import type { BaseFieldConfig, OpenSaasConfig, TypeInfo } from '../config/types.js'
 import {
   decimal,
@@ -403,6 +404,74 @@ describe('deriveContract — relations', () => {
         unique: true,
       },
     ])
+  })
+})
+
+describe('deriveContract — names from the List member table', () => {
+  test('resolves index columns and one-to-one ends on a config validation would refuse', () => {
+    const data = single({
+      models: {
+        fields: {
+          owner: relationship({ ref: 'Owner.model' }),
+          title: text(),
+        },
+        db: { indexes: [{ fields: ['owner', 'title'] }] },
+      },
+      Owner: { fields: { model: relationship({ ref: 'models.owner' }) } },
+    })
+    const models = data.models.find((model) => model.name === 'models')
+    const owner = data.models.find((model) => model.name === 'Owner')
+    expect(models?.indexes.map((index) => index.columns)).toEqual([['ownerId', 'title']])
+    expect(owner?.relations).toEqual([
+      {
+        name: 'model',
+        target: 'models',
+        kind: 'hasOne',
+        column: 'ownerId',
+        oneToOne: true,
+        synthetic: false,
+      },
+    ])
+  })
+})
+
+describe('deriveContract — refusal order', () => {
+  test("an early list's db.indexes refusal comes before a later list's member collision", () => {
+    expect(() =>
+      single({
+        A: { fields: { title: text() }, db: { indexes: [{ fields: ['nope'] }] } },
+        Post: { fields: { author: relationship({ ref: 'User' }), authorId: text() } },
+        User: { fields: { name: text() } },
+      }),
+    ).toThrow('Model-level index db.indexes[0] on list "A" references unknown field "nope"')
+  })
+
+  test("an early list's db.indexes refusal comes before a later synthetic claim's collision", () => {
+    expect(() =>
+      single({
+        A: { fields: { title: text() }, db: { indexes: [{ fields: ['nope'] }] } },
+        Post: { fields: { category: relationship({ ref: 'Category' }) } },
+        Category: { fields: { from_Post_category: text() } },
+      }),
+    ).toThrow('Model-level index db.indexes[0] on list "A" references unknown field "nope"')
+  })
+})
+
+describe('deriveContract — a stored-nothing field in db.indexes', () => {
+  test('a computed descriptor without the virtual flag is refused by name', () => {
+    const computed: BaseFieldConfig<TypeInfo> = {
+      type: 'calc',
+      outputType: 'string',
+      getZodSchema: () => z.string().optional(),
+      getContractField: () => ({ kind: 'computed' }),
+    }
+    expect(() =>
+      single({
+        A: { fields: { title: text(), calc: computed }, db: { indexes: [{ fields: ['calc'] }] } },
+      }),
+    ).toThrow(
+      'Model-level index db.indexes[0] on list "A" references virtual field "calc", which has no database column',
+    )
   })
 })
 
