@@ -1,7 +1,6 @@
 import type { Session, AccessContext, AccessControl } from './types.js'
 import type { FieldAccess, FieldAccessControl } from './types.js'
 import type { FieldConfig, OpenSaasConfig } from '../config/types.js'
-import { isComputedField } from '../config/field-kind.js'
 // `ValidationError` is referenced only inside function bodies (call-time), never
 // at module-evaluation time, so the field-access ⇄ hooks import cycle is safe
 // under ESM live bindings.
@@ -9,7 +8,12 @@ import { ValidationError } from '../hooks/index.js'
 import { InvalidFieldAccessResultError } from './errors.js'
 import { checkAccess } from './engine.js'
 import { guardedRuleItem, NO_RULE_VIEWS, ruleRowOf, type RuleRow } from './rule-item.js'
-import { resolveListMember, resolveListMembers, type ListMembers } from '../members/list-members.js'
+import {
+  resolveListMembers,
+  unhandledMember,
+  type DeclaredFieldMember,
+  type ListMembers,
+} from '../members/list-members.js'
 
 function isHookOnlyAccess(fieldAccess: FieldAccess | undefined): boolean {
   return fieldAccess?.write === 'hooks'
@@ -399,41 +403,45 @@ export function writeRuleRow(
   return item ? ruleRowOf(item, NO_RULE_VIEWS, fieldConfigs, config, listKey) : undefined
 }
 
-type WriteOwner = { fieldName: string; access?: FieldAccess }
+type WriteOwners = {
+  foreignKeyOwners: ReadonlyMap<string, string>
+  splitColumnOwners: ReadonlyMap<string, string>
+}
 
-function writeOwnersOf(members: ListMembers): {
-  foreignKeyOwners: Map<string, WriteOwner>
-  splitColumnOwners: Map<string, WriteOwner>
-} {
-  const foreignKeyOwners = new Map<string, WriteOwner>()
-  const splitColumnOwners = new Map<string, WriteOwner>()
-  const ownerOf = (fieldName: string): WriteOwner => {
-    const owner = members.members.get(fieldName)
-    return { fieldName, access: owner?.kind === 'field' ? owner.field.access : undefined }
-  }
+const writeOwnersByList = new WeakMap<ListMembers, WriteOwners>()
+
+function writeOwnersOf(members: ListMembers): WriteOwners {
+  const known = writeOwnersByList.get(members)
+  if (known !== undefined) return known
+  const built = buildWriteOwners(members)
+  writeOwnersByList.set(members, built)
+  return built
+}
+
+function buildWriteOwners(members: ListMembers): WriteOwners {
+  const foreignKeyOwners = new Map<string, string>()
+  const splitColumnOwners = new Map<string, string>()
   for (const member of members.members.values()) {
     switch (member.kind) {
       case 'field':
         if (member.storage.kind === 'columns') {
           // A part named like its field resolves as the field, not as a partColumn.
           for (const part of member.storage.parts) {
-            if (part.name === member.name) splitColumnOwners.set(part.name, ownerOf(member.name))
+            if (part.name === member.name) splitColumnOwners.set(part.name, member.name)
           }
         }
         break
       case 'foreignKey':
-        foreignKeyOwners.set(member.name, ownerOf(member.field))
+        foreignKeyOwners.set(member.name, member.field)
         break
       case 'partColumn':
-        splitColumnOwners.set(member.name, ownerOf(member.field))
+        splitColumnOwners.set(member.name, member.field)
         break
       case 'syntheticBackRelation':
       case 'systemField':
         break
-      default: {
-        const unhandled: never = member
-        return unhandled
-      }
+      default:
+        return unhandledMember(member)
     }
   }
   return { foreignKeyOwners, splitColumnOwners }
@@ -441,16 +449,6 @@ function writeOwnersOf(members: ListMembers): {
 
 export async function filterWritableFields<T extends Record<string, unknown>>(
   data: T,
-  fieldConfigs: Record<
-    string,
-    {
-      access?: FieldAccess
-      type?: string
-      getColumnNames?: (fieldName: string) => string[]
-      virtual?: boolean
-      getContractField?: FieldConfig['getContractField']
-    }
-  >,
   operation: 'create' | 'update',
   args: {
     session: Session | null
@@ -469,11 +467,16 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
   },
 ): Promise<Partial<T>> {
   const filtered: Record<string, unknown> = {}
+  const members = resolveListMembers(args.config, args.listName)
+  const declaredField = (name: string): DeclaredFieldMember | undefined => {
+    const member = members.members.get(name)
+    return member?.kind === 'field' ? member : undefined
+  }
   const checkArgs = {
     ...args,
     ruleRow: writeRuleRow(
       args.item,
-      fieldConfigs as Record<string, FieldConfig>,
+      args.config.lists[args.listName].fields,
       args.config,
       args.listName,
     ),
@@ -484,22 +487,20 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
   // reachability half is `lowerRelationInput`'s (#1331). A part column is
   // produced by `splitColumns` after validation (#789), so a caller naming one
   // is refused below.
-  const { foreignKeyOwners, splitColumnOwners } = writeOwnersOf(
-    resolveListMembers(args.config, args.listName),
-  )
+  const { foreignKeyOwners, splitColumnOwners } = writeOwnersOf(members)
 
   for (const key of Object.keys(args.inputData ?? {})) {
     const owner = splitColumnOwners.get(key)
-    if (owner && owner.fieldName !== key) {
+    if (owner !== undefined && owner !== key) {
       throw new ValidationError([
-        `Cannot ${operation} "${key}": it is a storage column of "${owner.fieldName}". ` +
-          `Write "${owner.fieldName}" instead; use context.unsafe to write columns directly.`,
+        `Cannot ${operation} "${key}": it is a storage column of "${owner}". ` +
+          `Write "${owner}" instead; use context.unsafe to write columns directly.`,
       ])
     }
   }
 
   const owningField = (key: string): string =>
-    foreignKeyOwners.get(key)?.fieldName ?? splitColumnOwners.get(key)?.fieldName ?? key
+    foreignKeyOwners.get(key) ?? splitColumnOwners.get(key) ?? key
   const callerFields = new Set(Object.keys(args.inputData ?? {}).map(owningField))
 
   const suppliedFields = new Set(
@@ -509,25 +510,26 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
   )
 
   for (const fieldName of callerFields) {
-    if (Object.hasOwn(data, fieldName) || Object.hasOwn(fieldConfigs, fieldName) === false) continue
+    const declared = declaredField(fieldName)
+    if (Object.hasOwn(data, fieldName) || declared === undefined) continue
     if (!suppliedFields.has(fieldName)) continue
-    const fieldConfig = fieldConfigs[fieldName]
-    if (isComputedField(fieldConfig, fieldName, args.listName, args.config)) continue
+    if (declared.storage.kind === 'computed') continue
     const keyed = [...Object.keys(data)].some((key) => owningField(key) === fieldName)
     if (keyed) continue
-    if (!(await checkFieldAccess(fieldConfig.access, operation, { ...checkArgs }))) {
+    if (!(await checkFieldAccess(declared.field.access, operation, { ...checkArgs }))) {
       throw new ValidationError([`Cannot ${operation} "${fieldName}": field-level access denied.`])
     }
   }
 
   for (const [fieldName, value] of Object.entries(data)) {
-    const fieldConfig = Object.hasOwn(fieldConfigs, fieldName) ? fieldConfigs[fieldName] : undefined
+    const declared = declaredField(fieldName)
+    const fieldConfig = declared?.field
     const callerSupplied =
       args.inputData === undefined ||
       callerFields.has(owningField(fieldName)) ||
       args.defaultedFields?.has(fieldName) === true
 
-    if (resolveListMember(args.config, args.listName, fieldName)?.kind === 'systemField') {
+    if (members.members.get(fieldName)?.kind === 'systemField') {
       throw new ValidationError([
         `Cannot ${operation} "${fieldName}": it is system-managed and cannot be written` +
           (fieldName === 'id'
@@ -558,47 +560,28 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
     // contract descriptor a third-party field can declare without it
     // (issue #1531) — doesn't store in the database, so it is skipped here;
     // its resolveInput hook still runs as a separate side-effect step.
-    if (fieldConfig && isComputedField(fieldConfig, fieldName, args.listName, args.config)) {
-      continue
-    }
+    if (declared?.storage.kind === 'computed') continue
 
     // A directly-written foreign-key column (`authorId`) — gated by the OWNING
     // relationship field's write access, same as `connect` (#1326). Denied
     // (non-sudo) throws rather than being silently dropped; allowed (or sudo)
     // passes through unchanged, so the column is not a way around the
     // relationship field's write gate.
-    const foreignKeyOwner = foreignKeyOwners.get(fieldName)
-    if (foreignKeyOwner) {
+    // Caller-supplied part columns were refused above, so a part column here
+    // came from a hook or `splitColumns`; the owning field's write access still
+    // applies when the caller named that field, since the `keyed` skip above
+    // ran no check.
+    const columnOwner = foreignKeyOwners.get(fieldName) ?? splitColumnOwners.get(fieldName)
+    if (columnOwner !== undefined) {
       const canWrite =
         !callerSupplied ||
-        (await checkFieldAccess(foreignKeyOwner.access, operation, {
+        (await checkFieldAccess(declaredField(columnOwner)?.field.access, operation, {
           ...checkArgs,
           inputData: args.inputData,
         }))
       if (!canWrite) {
         throw new ValidationError([
-          `Cannot ${operation} "${foreignKeyOwner.fieldName}" (via column "${fieldName}"): ` +
-            `field-level access denied.`,
-        ])
-      }
-      filtered[fieldName] = value
-      continue
-    }
-
-    // Caller-supplied part columns were refused above, so these came from a
-    // hook or `splitColumns`; the owning field's write access still applies
-    // when the caller named that field, since the `keyed` skip above ran no check.
-    const splitColumnOwner = splitColumnOwners.get(fieldName)
-    if (splitColumnOwner) {
-      const canWrite =
-        !callerSupplied ||
-        (await checkFieldAccess(splitColumnOwner.access, operation, {
-          ...checkArgs,
-          inputData: args.inputData,
-        }))
-      if (!canWrite) {
-        throw new ValidationError([
-          `Cannot ${operation} "${splitColumnOwner.fieldName}" (via column "${fieldName}"): ` +
+          `Cannot ${operation} "${columnOwner}" (via column "${fieldName}"): ` +
             `field-level access denied.`,
         ])
       }
@@ -607,7 +590,7 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
     }
 
     // #564 — undeclared data keys must fail CLOSED.
-    // A key with no entry in `fieldConfigs` is not a field the list config
+    // A key that is not a declared field is not a field the list config
     // exposes. The generated Prisma model has MORE fields than the config
     // declares (e.g. back-relations like `from_Enrolment_student`), so allowing
     // an undeclared key to pass through lets a non-sudo caller reach a column

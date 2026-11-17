@@ -2,12 +2,8 @@ import { describe, expect, test } from 'vitest'
 import { z } from 'zod'
 import type { FieldConfig, OpenSaasConfig } from '../config/types.js'
 import { relationship, text } from '../fields/index.js'
-import {
-  assertListMembersResolve,
-  declaredFieldsOf,
-  relationFieldOf,
-  relationOf,
-} from './relation-member.js'
+import { assertListMembersResolve } from '../members/list-members.js'
+import { declaredFieldsOf, relationFieldOf, relationOf } from './relation-member.js'
 import { assertOrderByReachable, assertWhereReachable } from './where-reachability.js'
 
 const addressField: FieldConfig = {

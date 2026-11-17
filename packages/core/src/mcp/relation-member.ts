@@ -68,8 +68,3 @@ export function declaredFieldsOf(
   }
   return fields
 }
-
-/** Resolve every list's members once, so a config `generate` refuses fails with generate's own error. */
-export function assertListMembersResolve(config: OpenSaasConfig): void {
-  for (const listKey of Object.keys(config.lists)) resolveListMembers(config, listKey)
-}

@@ -126,24 +126,24 @@ The "Guard rails" bullets were each a restatement of an `if` a few lines further
 
 ## 5. A docblock that's pure restatement — delete it, even on an internal helper
 
-`packages/core/src/context/write-pipeline.ts`, `isSingletonList`:
+`packages/core/src/context/index.ts`, `autoCreates`:
 
 ```ts
 // before
 /**
- * Check if a list is configured as a singleton.
+ * Check whether a singleton list auto-creates its row.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-function isSingletonList(listConfig: ListConfig<any>): boolean {
-  return !!listConfig.isSingleton
+function autoCreates(listConfig: ListConfig<any>): boolean {
+  return typeof listConfig.isSingleton !== 'object' || listConfig.isSingleton.autoCreate !== false
 }
 ```
 
 ```ts
 // after
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-function isSingletonList(listConfig: ListConfig<any>): boolean {
-  return !!listConfig.isSingleton
+function autoCreates(listConfig: ListConfig<any>): boolean {
+  return typeof listConfig.isSingleton !== 'object' || listConfig.isSingleton.autoCreate !== false
 }
 ```
 

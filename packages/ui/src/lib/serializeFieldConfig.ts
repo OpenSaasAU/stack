@@ -1,9 +1,8 @@
 import type { FieldConfig, OpenSaasConfig } from '@opensaas/stack-core'
 import type { SelectOption } from '@opensaas/stack-core/fields'
 import { isRelationshipField, shouldHaveForeignKey } from '@opensaas/stack-core/fields'
-import { resolveJunctionEdge } from '@opensaas/stack-core'
 import { isHookOnlyField } from '@opensaas/stack-core/internal'
-import { resolveToManyEdgePlan } from './relationshipEdges.js'
+import { junctionEdgeForRender, resolveToManyEdgePlan } from './relationshipEdges.js'
 import type { ComponentType } from 'react'
 import type { CellComponent } from '../components/cells/registry.js'
 import { rendersAsRelationshipTable } from './deriveItemView.js'
@@ -231,7 +230,7 @@ export function markUnwritableRelationships(
       if (
         serialized.readOnlyReason === UNWRITABLE_RELATIONSHIP_REASON &&
         rendersAsRelationshipTable(fieldConfig) &&
-        resolveJunctionEdge(config, listKey, fieldName)
+        junctionEdgeForRender(config, listKey, fieldName)
       ) {
         serialized.readOnlyReason = JUNCTION_EDGE_RELATIONSHIP_REASON
       }

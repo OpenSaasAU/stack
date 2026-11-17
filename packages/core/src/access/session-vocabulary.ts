@@ -14,8 +14,7 @@ import {
   decideAdvertisement,
   type AdvertisementPolicy,
 } from './decide-advertisement.js'
-import { isComputedField } from '../config/field-kind.js'
-import { ownsForeignKey } from '../context/junction.js'
+import { resolveListMember, resolveListMembers, unhandledMember } from '../members/list-members.js'
 import { resolveListTimestamps } from '../contract/derive.js'
 import { isRelationshipField } from '../fields/index.js'
 import { columnOrderedKeys } from '../secured/read.js'
@@ -169,14 +168,20 @@ function operationQuestions(
   }
 }
 
-function storesWrites(
-  fieldName: string,
-  field: FieldConfig,
-  listKey: string,
-  config: OpenSaasConfig,
-): boolean {
-  if (isComputedField(field, fieldName, listKey, config)) return false
-  return !isRelationshipField(field) || ownsForeignKey(config, listKey, fieldName, field)
+function storesWrites(config: OpenSaasConfig, listKey: string, fieldName: string): boolean {
+  const member = resolveListMember(config, listKey, fieldName)
+  if (member?.kind !== 'field') return false
+  switch (member.storage.kind) {
+    case 'computed':
+      return false
+    case 'relation':
+      return member.storage.foreignKey !== undefined
+    case 'column':
+    case 'columns':
+      return true
+    default:
+      return unhandledMember(member.storage)
+  }
 }
 
 /**
@@ -243,7 +248,7 @@ function declaredFieldQuestions(
     decide: () => Promise<AccessAnswer>,
   ): (() => Promise<AccessAnswer>) =>
     once(async () => {
-      if (operation !== 'read' && !storesWrites(fieldName, field, listKey, config)) return 'deny'
+      if (operation !== 'read' && !storesWrites(config, listKey, fieldName)) return 'deny'
       if ((await scope.operation(gate)) === 'deny') return 'deny'
       return await answerOrDeny(context, config, `${subject} (${operation})`, decide)
     })
@@ -364,7 +369,7 @@ export function sessionVocabularyQuestions(
 ): SessionVocabularyQuestions | null {
   if (!Object.hasOwn(config.lists, listKey)) return null
   const listConfig = config.lists[listKey]
-  const composable = !listConfig.isSingleton
+  const composable = !resolveListMembers(config, listKey).singleton
   const operations = operationQuestions(context, config, listKey, listConfig, !composable)
   const operation = (asked: ListOperation) => operations[asked]()
   const scope: ListScope = { context, config, listKey, composable, operation }

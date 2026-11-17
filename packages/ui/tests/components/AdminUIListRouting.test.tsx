@@ -48,25 +48,22 @@ function routedContent(tree: React.ReactNode): React.ReactElement<Record<string,
   return boundary as React.ReactElement<Record<string, unknown>>
 }
 
-// A camelCase list key, matching what a better-auth plugin (e.g. the MCP
-// plugin's OAuth tables) derives before issue #991's auth-side fix — the
-// admin UI's routing must round-trip it regardless.
-function camelCaseListConfig(): OpenSaasConfig {
+function acronymListConfig(): OpenSaasConfig {
   return {
     db: { provider: 'postgresql' },
     lists: {
-      oauthApplication: list({ fields: { clientId: text() } }),
+      OAuthApplication: list({ fields: { clientId: text() } }),
       BlogPost: list({ fields: { title: text() } }),
     },
   }
 }
 
-describe('AdminUI list URL resolution (issue #991)', () => {
+describe('AdminUI list routing', () => {
   let harness: TestContext
   let context: AccessContext
 
   beforeAll(async () => {
-    harness = await createTestContext(camelCaseListConfig(), null)
+    harness = await createTestContext(acronymListConfig(), null)
     context = harness.context as unknown as AccessContext
   }, 120_000)
 
@@ -74,59 +71,59 @@ describe('AdminUI list URL resolution (issue #991)', () => {
     await harness?.close()
   })
 
-  it('resolves a camelCase list key from its URL segment and opens the list view', async () => {
-    const config = camelCaseListConfig()
+  it('resolves an acronym list key from its URL segment and opens the list view', async () => {
+    const config = acronymListConfig()
 
     const tree = await AdminUI({
       context,
       config,
-      params: ['oauth-application'],
+      params: ['o-auth-application'],
       basePath: '/admin',
       serverAction: noopServerAction,
     })
 
     const content = routedContent(tree)
     expect(content.type).toBe(ListView)
-    expect(content.props.listKey).toBe('oauthApplication')
+    expect(content.props.listKey).toBe('OAuthApplication')
   })
 
-  it('resolves the create route for a camelCase list key', async () => {
-    const config = camelCaseListConfig()
+  it('resolves the create route for an acronym list key', async () => {
+    const config = acronymListConfig()
 
     const tree = await AdminUI({
       context,
       config,
-      params: ['oauth-application', 'create'],
+      params: ['o-auth-application', 'create'],
       basePath: '/admin',
       serverAction: noopServerAction,
     })
 
     const content = routedContent(tree)
     expect(content.type).toBe(ItemForm)
-    expect(content.props.listKey).toBe('oauthApplication')
+    expect(content.props.listKey).toBe('OAuthApplication')
     expect(content.props.mode).toBe('create')
   })
 
-  it('resolves an item edit route for a camelCase list key', async () => {
-    const config = camelCaseListConfig()
+  it('resolves an item edit route for an acronym list key', async () => {
+    const config = acronymListConfig()
 
     const tree = await AdminUI({
       context,
       config,
-      params: ['oauth-application', '019606b0-1f36-7000-8000-0000000000ab'],
+      params: ['o-auth-application', '019606b0-1f36-7000-8000-0000000000ab'],
       basePath: '/admin',
       serverAction: noopServerAction,
     })
 
     const content = routedContent(tree)
     expect(content.type).toBe(ItemForm)
-    expect(content.props.listKey).toBe('oauthApplication')
+    expect(content.props.listKey).toBe('OAuthApplication')
     expect(content.props.mode).toBe('edit')
     expect(content.props.itemId).toBe('019606b0-1f36-7000-8000-0000000000ab')
   })
 
-  it('still resolves a PascalCase list key exactly as before', async () => {
-    const config = camelCaseListConfig()
+  it('resolves a PascalCase list key', async () => {
+    const config = acronymListConfig()
 
     const tree = await AdminUI({
       context,
@@ -142,7 +139,7 @@ describe('AdminUI list URL resolution (issue #991)', () => {
   })
 
   it('renders the dashboard at the root, not a list view', async () => {
-    const config = camelCaseListConfig()
+    const config = acronymListConfig()
 
     const tree = await AdminUI({
       context,
@@ -157,7 +154,7 @@ describe('AdminUI list URL resolution (issue #991)', () => {
   })
 
   it('falls through to the list-not-found state for a URL matching no list, instead of throwing', async () => {
-    const config = camelCaseListConfig()
+    const config = acronymListConfig()
 
     const tree = await AdminUI({
       context,

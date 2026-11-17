@@ -46,7 +46,11 @@ import {
   deleteWriteStrategy,
 } from './write-pipeline.js'
 import { resolveJunctionEdge } from './junction.js'
-import { resolveListMember, resolveListMembers } from '../members/list-members.js'
+import {
+  assertListMembersResolve,
+  resolveListMember,
+  resolveListMembers,
+} from '../members/list-members.js'
 import { parseListId, type ListIdValue } from '../contract/id-boundary.js'
 import { reportAfterTransactionFailures } from './transaction-boundary.js'
 import { isRowActionAvailable } from '../config/row-action-availability.js'
@@ -183,11 +187,6 @@ function warnIfSelectIgnored(
       `Narrow a read with \`include\`, or with \`.select()\` on the secured surface, instead. ` +
       `See https://stack.opensaas.au/docs/concepts/queries`,
   )
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-function isSingletonList(listConfig: ListConfig<any>): boolean {
-  return !!listConfig.isSingleton
 }
 
 type BackReferenceClassification =
@@ -1578,6 +1577,7 @@ export function populateDbDelegate(
   /** The row-lock lane, on a transaction-bound context alone (ADR-0047). */
   lock?: RowLockLane,
 ): void {
+  const listMembers = assertListMembersResolve(config)
   for (const [listName, listConfig] of Object.entries(config.lists)) {
     const createOp = resolvingConstraints(
       createCreate(listName, listConfig, ormHandle, context, config),
@@ -1598,7 +1598,7 @@ export function populateDbDelegate(
 
     const read = createSecuredRead({ listName, listConfig, ormHandle, context, config, lock })
 
-    if (isSingletonList(listConfig)) {
+    if (listMembers.get(listName)?.singleton === true) {
       operations.get = resolvingConstraints(
         createGet(listName, listConfig, read, context, createOp),
         config,

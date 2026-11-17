@@ -234,8 +234,8 @@ void run
   })
 
   /**
-   * `populateDbDelegate` wires the composed read in the `else` of
-   * `isSingletonList`, so a singleton carries `get` and the CRUD delegate and
+   * `populateDbDelegate` wires the composed read only on a list the List
+   * member resolver says is no singleton, so a singleton carries `get` and the CRUD delegate and
    * none of these. The type has to say the same thing, or every one of them
    * type-checks and throws `TypeError: … is not a function`.
    */

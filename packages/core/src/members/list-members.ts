@@ -344,6 +344,16 @@ export function resolveListMembers(config: OpenSaasConfig, listKey: string): Lis
   return built
 }
 
+/**
+ * Every list's members, keyed by list key. Throws generate's own error for a
+ * config `generate` refuses.
+ */
+export function assertListMembersResolve(config: OpenSaasConfig): ReadonlyMap<string, ListMembers> {
+  return new Map(
+    Object.keys(config.lists).map((listKey) => [listKey, resolveListMembers(config, listKey)]),
+  )
+}
+
 /** Every list's List members, built ungated from descriptors already read. A field with none stores nothing. */
 export function listMembersFromDescriptors(
   config: OpenSaasConfig,

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { FieldConfig, OpenSaasConfig } from '@opensaas/stack-core'
-import { json, text } from '@opensaas/stack-core/fields'
+import { json, relationship, text } from '@opensaas/stack-core/fields'
 import {
   FIELD_HOOK_ONLY_REASON,
   JUNCTION_EDGE_RELATIONSHIP_REASON,
@@ -23,13 +23,13 @@ function makeConfig(): OpenSaasConfig {
     db: { provider: 'postgresql' },
     lists: {
       User: {
-        fields: { name: { type: 'text' }, profile: { type: 'relationship', ref: 'Profile.user' } },
+        fields: { name: text(), profile: relationship({ ref: 'Profile.user' }) },
       },
       Profile: {
-        fields: { bio: { type: 'text' }, user: { type: 'relationship', ref: 'User.profile' } },
+        fields: { bio: text(), user: relationship({ ref: 'User.profile' }) },
       },
     },
-  } as unknown as OpenSaasConfig
+  }
 }
 
 describe('projectFieldConfig nullability', () => {
@@ -136,32 +136,32 @@ function junctionConfig(): OpenSaasConfig {
     lists: {
       Post: {
         fields: {
-          title: { type: 'text' },
-          tags: { type: 'relationship', ref: 'PostTag.post', many: true },
+          title: text(),
+          tags: relationship({ ref: 'PostTag.post', many: true }),
         },
       },
       Tag: {
         fields: {
-          name: { type: 'text' },
-          posts: { type: 'relationship', ref: 'PostTag.tag', many: true },
+          name: text(),
+          posts: relationship({ ref: 'PostTag.tag', many: true }),
         },
       },
       PostTag: {
         fields: {
-          post: { type: 'relationship', ref: 'Post.tags' },
-          tag: { type: 'relationship', ref: 'Tag.posts' },
+          post: relationship({ ref: 'Post.tags' }),
+          tag: relationship({ ref: 'Tag.posts' }),
         },
       },
       Author: {
         fields: {
-          name: { type: 'text' },
-          books: { type: 'relationship', ref: 'Book.author', many: true },
+          name: text(),
+          books: relationship({ ref: 'Book.author', many: true }),
         },
       },
       Book: {
         fields: {
-          title: { type: 'text' },
-          author: { type: 'relationship', ref: 'Author.books' },
+          title: text(),
+          author: relationship({ ref: 'Author.books' }),
         },
       },
       // A child row with TWO parents and an unmarked column of its own. Every
@@ -169,25 +169,25 @@ function junctionConfig(): OpenSaasConfig {
       // separates them, and nothing requires it.
       Article: {
         fields: {
-          title: { type: 'text' },
-          comments: { type: 'relationship', ref: 'Comment.article', many: true },
+          title: text(),
+          comments: relationship({ ref: 'Comment.article', many: true }),
         },
       },
       Commenter: {
         fields: {
-          name: { type: 'text' },
-          comments: { type: 'relationship', ref: 'Comment.author', many: true },
+          name: text(),
+          comments: relationship({ ref: 'Comment.author', many: true }),
         },
       },
       Comment: {
         fields: {
-          body: { type: 'text' },
-          article: { type: 'relationship', ref: 'Article.comments' },
-          author: { type: 'relationship', ref: 'Commenter.comments' },
+          body: text(),
+          article: relationship({ ref: 'Article.comments' }),
+          author: relationship({ ref: 'Commenter.comments' }),
         },
       },
     },
-  } as unknown as OpenSaasConfig
+  }
 }
 
 /**
@@ -246,6 +246,18 @@ describe('the reason a to-many is read-only names the control that can write it'
 
     expect(fields.tags.readOnly).toBe(true)
     expect(fields.tags.readOnlyReason).toBe('Locked by the workflow')
+  })
+
+  it('leaves the field read-only, without throwing, on a config generate refuses', () => {
+    const config = junctionConfig()
+    config.lists.Post.fields.ghost = relationship({ ref: 'Nowhere.posts' })
+    const fields = projectFieldConfigs(config.lists.Post.fields)
+
+    expect(() =>
+      markUnwritableRelationships(fields, 'Post', config.lists.Post.fields, config),
+    ).not.toThrow()
+    expect(fields.tags.readOnly).toBe(true)
+    expect(fields.tags.readOnlyReason).toBe(UNWRITABLE_RELATIONSHIP_REASON)
   })
 })
 

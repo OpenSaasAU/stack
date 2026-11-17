@@ -579,7 +579,7 @@ describe('Access Control', () => {
         email: text(),
       }
 
-      const result = await filterWritableFields(data, fieldConfigs, 'create', {
+      const result = await filterWritableFields(data, 'create', {
         ...onList(fieldConfigs),
         session: null,
         context: mockContext,
@@ -601,7 +601,7 @@ describe('Access Control', () => {
       }
 
       await expect(
-        filterWritableFields(data, fieldConfigs, 'create', {
+        filterWritableFields(data, 'create', {
           ...onList(fieldConfigs),
           session: null,
           context: mockContext,
@@ -630,14 +630,14 @@ describe('Access Control', () => {
       }
 
       await expect(
-        filterWritableFields(data, fieldConfigs, 'create', {
+        filterWritableFields(data, 'create', {
           ...onList(fieldConfigs),
           session: null,
           context: mockContext,
         }),
       ).rejects.toThrow(ValidationError)
       await expect(
-        filterWritableFields(data, fieldConfigs, 'create', {
+        filterWritableFields(data, 'create', {
           ...onList(fieldConfigs),
           session: null,
           context: mockContext,
@@ -661,7 +661,7 @@ describe('Access Control', () => {
       }
 
       // Allow on create
-      const createResult = await filterWritableFields(data, fieldConfigs, 'create', {
+      const createResult = await filterWritableFields(data, 'create', {
         ...onList(fieldConfigs),
         session: null,
         context: mockContext,
@@ -671,7 +671,7 @@ describe('Access Control', () => {
 
       // Deny on update — now throws instead of silently dropping the field.
       await expect(
-        filterWritableFields(data, fieldConfigs, 'update', {
+        filterWritableFields(data, 'update', {
           ...onList(fieldConfigs),
           session: null,
           context: mockContext,
@@ -692,7 +692,7 @@ describe('Access Control', () => {
         }),
       }
 
-      await filterWritableFields(data, fieldConfigs, 'update', {
+      await filterWritableFields(data, 'update', {
         ...onList(fieldConfigs),
         session: { userId: '123' },
         item,
