@@ -1,7 +1,6 @@
 import type {
   ColumnTypeDescriptor,
   ContractColumnDescriptor,
-  ContractFieldDescriptor,
   ContractRelationDescriptor,
   ExtensionDescriptor,
   FieldConfig,
@@ -12,48 +11,20 @@ import type {
   TypeInfo,
 } from '../config/types.js'
 import { isOneToOneRelationship, isRelationshipField } from '../fields/index.js'
-import {
-  claimDescribedMembers,
-  claimListMember,
-  claimOrigin,
-  refuseColumnsAliasingRelations,
-  startListMemberClaims,
-  type ListMemberClaims,
-} from '../members/claims.js'
-import { resolveIdStrategy, resolveListTimestamps } from './strategy.js'
+import { walkContractMembers, type ListMemberClaims } from '../members/claims.js'
+import { idColumn, pgType, resolveIdStrategy } from './strategy.js'
 import type {
   ContractColumn,
   ContractCompositeForeignKey,
   ContractData,
   ContractEnum,
-  ContractIdColumn,
-  ContractIdStrategy,
   ContractIndex,
   ContractModel,
-  ContractRelation,
 } from './types.js'
 
 const DEFAULT_NAMESPACE = 'public'
 
-function pgType(type: string, args?: number[]): ColumnTypeDescriptor {
-  return args && args.length > 0 ? { pack: 'pg', type, args } : { pack: 'pg', type }
-}
-
-export { resolveIdStrategy, resolveListTimestamps } from './strategy.js'
-
-export function idColumn(strategy: ContractIdStrategy): ContractIdColumn {
-  switch (strategy) {
-    case 'uuid7':
-      return { strategy, type: pgType('uuid') }
-    case 'cuid2':
-      return { strategy, type: pgType('char', [24]) }
-    case 'cuid':
-      return { strategy, type: pgType('text') }
-    case 'int autoincrement':
-    case 'singleton':
-      return { strategy, type: pgType('int') }
-  }
-}
+export { idColumn, resolveIdStrategy, resolveListTimestamps } from './strategy.js'
 
 type NativeType = {
   type: string
@@ -215,9 +186,6 @@ type ModelDraft = {
   members: ListMemberClaims
 }
 
-/** A `from_<List>_<field>` back-relation and the list-only ref that synthesised it. */
-type SyntheticRelation = { sourceList: string; sourceField: string; relation: ContractRelation }
-
 function readIsIndexed(field: FieldConfig): true | 'unique' | undefined {
   const value: unknown = 'isIndexed' in field ? field.isIndexed : undefined
   return value === true || value === 'unique' ? value : undefined
@@ -229,14 +197,12 @@ function requireList(config: OpenSaasConfig, listKey: string, from: string): voi
   }
 }
 
-function deriveRelation(
+function assertRelationEnds(
   listKey: string,
   fieldKey: string,
   field: RelationshipField,
   descriptor: ContractRelationDescriptor,
   config: OpenSaasConfig,
-  draft: ModelDraft,
-  syntheticByTarget: Map<string, SyntheticRelation[]>,
 ): void {
   const from = `List "${listKey}": fields.${fieldKey}`
   requireList(config, descriptor.target, from)
@@ -269,9 +235,18 @@ function deriveRelation(
       )
     }
   }
+}
 
-  claimDescribedMembers(listKey, draft.members, fieldKey, descriptor)
-
+function recordRelation(
+  listKey: string,
+  fieldKey: string,
+  field: RelationshipField,
+  descriptor: ContractRelationDescriptor,
+  config: OpenSaasConfig,
+  draft: ModelDraft,
+): void {
+  const targetList = config.lists[descriptor.target]
+  const inverseKey = `${descriptor.target}.${descriptor.inverse.field}`
   const { foreignKey } = descriptor
   if (foreignKey) {
     const targetStrategy = resolveIdStrategy(targetList, config)
@@ -310,22 +285,6 @@ function deriveRelation(
       oneToOne,
       synthetic: false,
     })
-    if (descriptor.inverse.synthetic) {
-      const existing = syntheticByTarget.get(descriptor.target) ?? []
-      existing.push({
-        sourceList: listKey,
-        sourceField: fieldKey,
-        relation: {
-          name: descriptor.inverse.field,
-          target: listKey,
-          kind: 'hasMany',
-          column: foreignKey.name,
-          oneToOne: false,
-          synthetic: true,
-        },
-      })
-      syntheticByTarget.set(descriptor.target, existing)
-    }
     return
   }
 
@@ -690,126 +649,113 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
   const extensions = dedupeExtensions(config.db.extensions ?? [])
   const timestampDefault = resolveTimestampDefault(config)
   const drafts = new Map<string, ModelDraft>()
-  const syntheticByTarget = new Map<string, SyntheticRelation[]>()
+  const draftOf = (listKey: string): ModelDraft => {
+    const draft = drafts.get(listKey)
+    if (draft === undefined) throw new Error(`List "${listKey}" has no model draft`)
+    return draft
+  }
 
-  for (const [listKey, listConfig] of Object.entries(config.lists)) {
-    const timestamps = resolveListTimestamps(listConfig, config.db)
-    const draft: ModelDraft = {
-      model: {
-        name: listKey,
-        ...(listConfig.db?.map !== undefined ? { table: listConfig.db.map } : {}),
-        ...(listConfig.db?.schema !== undefined && listConfig.db.schema !== DEFAULT_NAMESPACE
-          ? { namespace: listConfig.db.schema }
-          : {}),
-        singleton: listConfig.isSingleton !== undefined && listConfig.isSingleton !== false,
-        id: idColumn(resolveIdStrategy(listConfig, config)),
-        columns: [],
-        foreignKeys: [],
-        indexes: [],
-        relations: [],
-        timestamps,
-        ...(timestampDefault !== undefined && (timestamps.createdAt || timestamps.updatedAt)
-          ? { timestampType: timestampDefault }
-          : {}),
-      },
-      fieldLevelIndexes: new Map(),
-      ownedForeignKeys: new Map(),
-      multiColumnFields: new Set(),
-      members: startListMemberClaims(timestamps),
-    }
-
-    for (const [fieldKey, field] of Object.entries(listConfig.fields)) {
-      if (field.virtual) continue
+  walkContractMembers(config, {
+    startList: (listKey, listConfig, timestamps, claims) => {
+      drafts.set(listKey, {
+        model: {
+          name: listKey,
+          ...(listConfig.db?.map !== undefined ? { table: listConfig.db.map } : {}),
+          ...(listConfig.db?.schema !== undefined && listConfig.db.schema !== DEFAULT_NAMESPACE
+            ? { namespace: listConfig.db.schema }
+            : {}),
+          singleton: listConfig.isSingleton !== undefined && listConfig.isSingleton !== false,
+          id: idColumn(resolveIdStrategy(listConfig, config)),
+          columns: [],
+          foreignKeys: [],
+          indexes: [],
+          relations: [],
+          timestamps,
+          ...(timestampDefault !== undefined && (timestamps.createdAt || timestamps.updatedAt)
+            ? { timestampType: timestampDefault }
+            : {}),
+        },
+        fieldLevelIndexes: new Map(),
+        ownedForeignKeys: new Map(),
+        multiColumnFields: new Set(),
+        members: claims,
+      })
+    },
+    describe: (listKey, fieldKey, field) => {
+      if (field.virtual) return undefined
       if (!field.getContractField) {
         throw new Error(
           `Field "${listKey}.${fieldKey}" (type "${field.type}") does not implement getContractField, so its contract contribution is unknown`,
         )
       }
-      const descriptor: ContractFieldDescriptor = field.getContractField(fieldKey, listKey, config)
-      switch (descriptor.kind) {
-        case 'computed':
-          break
-        case 'column': {
-          const { kind: _kind, ...column } = descriptor
-          claimDescribedMembers(listKey, draft.members, fieldKey, descriptor)
-          const resolved = toContractColumn(listKey, fieldKey, column)
-          draft.model.columns.push(
-            timestampDefault !== undefined &&
-              field.type === 'timestamp' &&
-              column.nativeType === undefined
-              ? { ...resolved, type: timestampDefault }
-              : resolved,
-          )
-          const isIndexed = readIsIndexed(field)
-          if (isIndexed !== undefined) {
-            draft.fieldLevelIndexes.set(column.name, { fieldKey, isIndexed, implicit: false })
-          }
-          break
-        }
-        case 'columns':
-          draft.multiColumnFields.add(fieldKey)
-          for (const column of descriptor.columns) {
-            if (column.nullable === false) {
-              throw new Error(
-                `Field "${listKey}.${fieldKey}" (type "${field.type}") declares its multi-column ` +
-                  `part "${column.name}" as non-nullable. The secured surface always types a ` +
-                  `multi-column field's assembled logical key as optional on create — there is no ` +
-                  `all-parts-required case for it to satisfy a NOT NULL part with — so every part ` +
-                  `column must stay nullable. Remove nullable: false from this column.`,
-              )
-            }
-          }
-          claimDescribedMembers(listKey, draft.members, fieldKey, descriptor)
-          for (const column of descriptor.columns) {
-            draft.model.columns.push(toContractColumn(listKey, fieldKey, column))
-          }
-          break
-        case 'relation':
-          if (!isRelationshipField(field)) {
-            throw new Error(
-              `Field "${listKey}.${fieldKey}" (type "${field.type}") describes a relation but is not a relationship field`,
-            )
-          }
-          deriveRelation(listKey, fieldKey, field, descriptor, config, draft, syntheticByTarget)
-          break
+      return field.getContractField(fieldKey, listKey, config)
+    },
+    beforeClaim: (listKey, fieldKey, field, descriptor) => {
+      if (descriptor.kind === 'columns') draftOf(listKey).multiColumnFields.add(fieldKey)
+      if (descriptor.kind !== 'relation') return
+      if (!isRelationshipField(field)) {
+        throw new Error(
+          `Field "${listKey}.${fieldKey}" (type "${field.type}") describes a relation but is not a relationship field`,
+        )
       }
-    }
-
-    draft.model.indexes = deriveIndexes(listKey, listConfig, draft)
-    if (config.db.indexNaming !== undefined && config.db.indexNaming !== 'prisma7') {
-      throw new Error(
-        `db.indexNaming must be 'prisma7', received ${JSON.stringify(config.db.indexNaming)}`,
-      )
-    }
-    if (config.db.indexNaming === 'prisma7') applyPrisma7Names(draft.model)
-    drafts.set(listKey, draft)
-  }
-
-  for (const [target, relations] of syntheticByTarget) {
-    const draft = drafts.get(target)
-    if (!draft) {
-      throw new Error(
-        `Synthetic back-relation targets list "${target}", which is not in the config`,
-      )
-    }
-    for (const { sourceList, sourceField, relation } of relations) {
-      claimListMember(
-        target,
-        draft.members,
-        relation.name,
-        claimOrigin.syntheticBackRelation(sourceList, sourceField),
-      )
-      draft.model.relations.push(relation)
-    }
-  }
-
-  for (const draft of drafts.values()) {
-    refuseColumnsAliasingRelations(
-      draft.model.name,
-      draft.model.columns,
-      draft.model.relations.map((relation) => relation.name),
-    )
-  }
+      assertRelationEnds(listKey, fieldKey, field, descriptor, config)
+    },
+    beforePartClaim: (listKey, fieldKey, field, column) => {
+      if (column.nullable === false) {
+        throw new Error(
+          `Field "${listKey}.${fieldKey}" (type "${field.type}") declares its multi-column ` +
+            `part "${column.name}" as non-nullable. The secured surface always types a ` +
+            `multi-column field's assembled logical key as optional on create — there is no ` +
+            `all-parts-required case for it to satisfy a NOT NULL part with — so every part ` +
+            `column must stay nullable. Remove nullable: false from this column.`,
+        )
+      }
+    },
+    afterPartClaim: (listKey, fieldKey, _field, column) => {
+      draftOf(listKey).model.columns.push(toContractColumn(listKey, fieldKey, column))
+    },
+    afterClaim: (listKey, fieldKey, field, descriptor) => {
+      const draft = draftOf(listKey)
+      if (descriptor.kind === 'column') {
+        const { kind: _kind, ...column } = descriptor
+        const resolved = toContractColumn(listKey, fieldKey, column)
+        draft.model.columns.push(
+          timestampDefault !== undefined &&
+            field.type === 'timestamp' &&
+            column.nativeType === undefined
+            ? { ...resolved, type: timestampDefault }
+            : resolved,
+        )
+        const isIndexed = readIsIndexed(field)
+        if (isIndexed !== undefined) {
+          draft.fieldLevelIndexes.set(column.name, { fieldKey, isIndexed, implicit: false })
+        }
+      }
+      if (descriptor.kind === 'relation' && isRelationshipField(field)) {
+        recordRelation(listKey, fieldKey, field, descriptor, config, draft)
+      }
+    },
+    endList: (listKey, listConfig) => {
+      const draft = draftOf(listKey)
+      draft.model.indexes = deriveIndexes(listKey, listConfig, draft)
+      if (config.db.indexNaming !== undefined && config.db.indexNaming !== 'prisma7') {
+        throw new Error(
+          `db.indexNaming must be 'prisma7', received ${JSON.stringify(config.db.indexNaming)}`,
+        )
+      }
+      if (config.db.indexNaming === 'prisma7') applyPrisma7Names(draft.model)
+    },
+    afterSyntheticClaim: (target, synthetic) => {
+      draftOf(target).model.relations.push({
+        name: synthetic.name,
+        target: synthetic.sourceList,
+        kind: 'hasMany',
+        column: synthetic.foreignKey,
+        oneToOne: false,
+        synthetic: true,
+      })
+    },
+  })
 
   for (const [listKey, draft] of drafts) {
     const composite = deriveCompositeForeignKeys(listKey, config, drafts)

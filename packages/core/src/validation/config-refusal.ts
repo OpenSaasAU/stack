@@ -38,4 +38,6 @@ export interface ConfigRefusal {
   reason: ConfigRefusalReason
   /** Ready to print: names the list, the entry and the fix. */
   message: string
+  /** The error the refusal reports, when it reports one. */
+  cause?: unknown
 }

@@ -1,40 +1,33 @@
 // What each usable name on a list is: its List members.
 import { isComputedField } from '../config/field-kind.js'
-import type {
-  ContractFieldDescriptor,
-  ContractRelationDescriptor,
-  FieldConfig,
-  OpenSaasConfig,
-} from '../config/types.js'
+import type { ContractFieldDescriptor, FieldConfig, OpenSaasConfig } from '../config/types.js'
 import { resolveIdStrategy, resolveListTimestamps } from '../contract/strategy.js'
 import type { ConfigRefusal, ConfigRefusalReason } from '../validation/config-refusal.js'
 import { refuseNonPascalListKeys } from '../validation/database-config.js'
+import { validateExtensionPacks } from '../validation/extension-packs.js'
 import { validateConfigFields } from '../validation/field-config.js'
 import { validateFieldNames } from '../validation/field-names.js'
 import { refuseNonIdentifierListKeys } from '../validation/identifier-names.js'
 import { validateRelations } from '../validation/relations.js'
 import {
-  claimDescribedMembers,
-  claimListMember,
-  claimOrigin,
   MemberClaimRefusal,
-  refuseColumnsAliasingRelations,
-  startListMemberClaims,
   systemFieldsOf,
-  type ListMemberClaims,
+  walkContractMembers,
   type SystemFieldName,
 } from './claims.js'
 
 export type { SystemFieldName } from './claims.js'
 
+export type MemberColumn = { name: string; column: string }
+
 export type DeclaredFieldStorage =
   | { kind: 'column'; column: string }
-  | { kind: 'columns'; parts: readonly string[] }
+  | { kind: 'columns'; parts: readonly MemberColumn[] }
   | {
       kind: 'relation'
       relatedList: string
       many: boolean
-      foreignKey: string | undefined
+      foreignKey: MemberColumn | undefined
       inverse: { field: string; synthetic: boolean }
     }
   | { kind: 'computed' }
@@ -99,20 +92,23 @@ const NAME_RELATION_REFUSALS: ReadonlySet<ConfigRefusalReason> = new Set([
 
 type SyntheticEntry = { name: string; sourceList: string; sourceField: string }
 
-type DescribedField = { field: FieldConfig; descriptor: ContractFieldDescriptor }
-
 type ConfigState = {
-  described: OpenSaasConfig
   refusal: Error | undefined
-  descriptors: Map<string, ReadonlyMap<string, DescribedField>>
+  descriptors: WeakMap<FieldConfig, Map<string, ContractFieldDescriptor>>
   synthetics: ReadonlyMap<string, readonly SyntheticEntry[]> | undefined
   lists: Map<string, ListMembers>
+}
+
+class DescriptorFailure extends Error {
+  constructor(readonly original: unknown) {
+    super('getContractField failed')
+  }
 }
 
 const states = new WeakMap<OpenSaasConfig, ConfigState>()
 
 function refusalError(refusal: ConfigRefusal): Error {
-  return new Error(refusal.message, { cause: refusal })
+  return new Error(refusal.message, { cause: refusal.cause ?? refusal })
 }
 
 function validationRefusal(config: OpenSaasConfig): Error | undefined {
@@ -124,33 +120,10 @@ function validationRefusal(config: OpenSaasConfig): Error | undefined {
     ...refuseNonPascalListKeys(config),
     ...refuseNonIdentifierListKeys(config),
     ...validateFieldNames(config),
+    ...validateExtensionPacks(config).filter((entry) => entry.reason === 'field-descriptor-error'),
     ...validateRelations(config).filter((entry) => NAME_RELATION_REFUSALS.has(entry.reason)),
   ]
   return refusal === undefined ? undefined : refusalError(refusal)
-}
-
-function describedOnce(field: FieldConfig): FieldConfig {
-  const describe = field.getContractField
-  if (describe === undefined) return field
-  let described: ContractFieldDescriptor | undefined
-  const getContractField: FieldConfig['getContractField'] = (fieldKey, listKey, config) =>
-    (described ??= describe.call(field, fieldKey, listKey, config))
-  return new Proxy(field, {
-    get: (target, key, receiver) =>
-      key === 'getContractField' ? getContractField : Reflect.get(target, key, receiver),
-  })
-}
-
-function describedConfig(config: OpenSaasConfig): OpenSaasConfig {
-  const lists: OpenSaasConfig['lists'] = {}
-  for (const [listKey, listConfig] of Object.entries(config.lists)) {
-    const fields: Record<string, FieldConfig> = {}
-    for (const [fieldKey, field] of Object.entries(listConfig.fields)) {
-      fields[fieldKey] = describedOnce(field)
-    }
-    lists[listKey] = { ...listConfig, fields }
-  }
-  return { ...config, lists }
 }
 
 function listConfigOf(config: OpenSaasConfig, listKey: string): OpenSaasConfig['lists'][string] {
@@ -160,35 +133,30 @@ function listConfigOf(config: OpenSaasConfig, listKey: string): OpenSaasConfig['
   return config.lists[listKey]
 }
 
-function describeField(
+function describe(
   config: OpenSaasConfig,
+  state: ConfigState,
   listKey: string,
   fieldKey: string,
   field: FieldConfig,
 ): ContractFieldDescriptor {
-  if (isComputedField(field, fieldKey, undefined, undefined) || !field.getContractField) {
-    return { kind: 'computed' }
-  }
-  return field.getContractField(fieldKey, listKey, config)
-}
-
-function descriptorsOf(
-  config: OpenSaasConfig,
-  state: ConfigState,
-  listKey: string,
-): ReadonlyMap<string, DescribedField> {
-  const known = state.descriptors.get(listKey)
+  const key = `${listKey}.${fieldKey}`
+  const known = state.descriptors.get(field)?.get(key)
   if (known !== undefined) return known
-  const described = listConfigOf(state.described, listKey).fields
-  const descriptors = new Map<string, DescribedField>()
-  for (const [fieldKey, field] of Object.entries(listConfigOf(config, listKey).fields)) {
-    descriptors.set(fieldKey, {
-      field,
-      descriptor: describeField(state.described, listKey, fieldKey, described[fieldKey]),
-    })
+  let descriptor: ContractFieldDescriptor
+  if (isComputedField(field, fieldKey, undefined, undefined) || !field.getContractField) {
+    descriptor = { kind: 'computed' }
+  } else {
+    try {
+      descriptor = field.getContractField(fieldKey, listKey, config)
+    } catch (error) {
+      throw new DescriptorFailure(error)
+    }
   }
-  state.descriptors.set(listKey, descriptors)
-  return descriptors
+  const byKey = state.descriptors.get(field) ?? new Map<string, ContractFieldDescriptor>()
+  byKey.set(key, descriptor)
+  state.descriptors.set(field, byKey)
+  return descriptor
 }
 
 function syntheticsOf(
@@ -197,8 +165,9 @@ function syntheticsOf(
 ): ReadonlyMap<string, readonly SyntheticEntry[]> {
   if (state.synthetics !== undefined) return state.synthetics
   const byTarget = new Map<string, SyntheticEntry[]>()
-  for (const sourceList of Object.keys(config.lists)) {
-    for (const [sourceField, { descriptor }] of descriptorsOf(config, state, sourceList)) {
+  for (const [sourceList, listConfig] of Object.entries(config.lists)) {
+    for (const [sourceField, field] of Object.entries(listConfig.fields)) {
+      const descriptor = describe(config, state, sourceList, sourceField, field)
       if (descriptor.kind !== 'relation' || !descriptor.inverse.synthetic) continue
       const entries = byTarget.get(descriptor.target) ?? []
       entries.push({ name: descriptor.inverse.field, sourceList, sourceField })
@@ -209,72 +178,18 @@ function syntheticsOf(
   return byTarget
 }
 
-function storedColumns(
-  descriptors: ReadonlyMap<string, DescribedField>,
-): Array<{ name: string; map?: string }> {
-  return [...descriptors.values()].flatMap(
-    ({ descriptor }): Array<{ name: string; map?: string }> => {
-      switch (descriptor.kind) {
-        case 'column':
-          return [descriptor]
-        case 'columns':
-          return descriptor.columns
-        case 'relation':
-          return descriptor.foreignKey === undefined ? [] : [descriptor.foreignKey]
-        case 'computed':
-          return []
-      }
-    },
-  )
-}
-
-function relationNames(
-  descriptors: ReadonlyMap<string, DescribedField>,
-  synthetics: readonly SyntheticEntry[],
-): string[] {
-  const declared = [...descriptors].flatMap(([fieldKey, { descriptor }]) =>
-    descriptor.kind === 'relation' ? [fieldKey] : [],
-  )
-  return [...declared, ...synthetics.map((entry) => entry.name)]
-}
-
-function claimMembers(config: OpenSaasConfig, state: ConfigState): void {
-  const claimsByList = new Map<string, ListMemberClaims>()
-  for (const [listKey, listConfig] of Object.entries(config.lists)) {
-    const claims = startListMemberClaims(resolveListTimestamps(listConfig, config.db))
-    claimsByList.set(listKey, claims)
-    for (const [fieldKey, { descriptor }] of descriptorsOf(config, state, listKey)) {
-      claimDescribedMembers(listKey, claims, fieldKey, descriptor)
-    }
-  }
-  const synthetics = syntheticsOf(config, state)
-  for (const [target, entries] of synthetics) {
-    const claims = claimsByList.get(target)
-    if (claims === undefined) continue
-    for (const entry of entries) {
-      claimListMember(
-        target,
-        claims,
-        entry.name,
-        claimOrigin.syntheticBackRelation(entry.sourceList, entry.sourceField),
-      )
-    }
-  }
-  for (const listKey of Object.keys(config.lists)) {
-    const descriptors = descriptorsOf(config, state, listKey)
-    refuseColumnsAliasingRelations(
-      listKey,
-      storedColumns(descriptors),
-      relationNames(descriptors, synthetics.get(listKey) ?? []),
-    )
-  }
-}
-
 function claimRefusal(config: OpenSaasConfig, state: ConfigState): Error | undefined {
   try {
-    claimMembers(config, state)
+    walkContractMembers(config, {
+      describe: (listKey, fieldKey, field) => describe(config, state, listKey, fieldKey, field),
+    })
   } catch (error) {
     if (error instanceof MemberClaimRefusal) return error
+    if (error instanceof DescriptorFailure) {
+      return error.original instanceof Error
+        ? error.original
+        : new Error(String(error.original), { cause: error.original })
+    }
     throw error
   }
   return undefined
@@ -283,11 +198,9 @@ function claimRefusal(config: OpenSaasConfig, state: ConfigState): Error | undef
 function stateOf(config: OpenSaasConfig): ConfigState {
   const known = states.get(config)
   if (known !== undefined) return known
-  const described = describedConfig(config)
   const state: ConfigState = {
-    described,
-    refusal: validationRefusal(described),
-    descriptors: new Map(),
+    refusal: validationRefusal(config),
+    descriptors: new WeakMap(),
     synthetics: undefined,
     lists: new Map(),
   }
@@ -296,14 +209,8 @@ function stateOf(config: OpenSaasConfig): ConfigState {
   return state
 }
 
-function relationStorage(descriptor: ContractRelationDescriptor): DeclaredFieldStorage {
-  return {
-    kind: 'relation',
-    relatedList: descriptor.target,
-    many: descriptor.many,
-    foreignKey: descriptor.foreignKey?.name,
-    inverse: descriptor.inverse,
-  }
+function memberColumn(column: { name: string; map?: string }): MemberColumn {
+  return { name: column.name, column: column.map ?? column.name }
 }
 
 function storageOf(descriptor: ContractFieldDescriptor): DeclaredFieldStorage {
@@ -311,9 +218,16 @@ function storageOf(descriptor: ContractFieldDescriptor): DeclaredFieldStorage {
     case 'column':
       return { kind: 'column', column: descriptor.map ?? descriptor.name }
     case 'columns':
-      return { kind: 'columns', parts: descriptor.columns.map((column) => column.name) }
+      return { kind: 'columns', parts: descriptor.columns.map(memberColumn) }
     case 'relation':
-      return relationStorage(descriptor)
+      return {
+        kind: 'relation',
+        relatedList: descriptor.target,
+        many: descriptor.many,
+        foreignKey:
+          descriptor.foreignKey === undefined ? undefined : memberColumn(descriptor.foreignKey),
+        inverse: descriptor.inverse,
+      }
     case 'computed':
       return { kind: 'computed' }
   }
@@ -325,38 +239,35 @@ function buildListMembers(
   listKey: string,
 ): ListMembers {
   const listConfig = listConfigOf(config, listKey)
-  const descriptors = descriptorsOf(config, state, listKey)
+  const fields = Object.entries(listConfig.fields).map(([fieldKey, field]) => ({
+    fieldKey,
+    field,
+    descriptor: describe(config, state, listKey, fieldKey, field),
+  }))
   const members = new Map<string, ListMember>()
   const add = (member: ListMember): void => {
     if (!members.has(member.name)) members.set(member.name, member)
   }
 
-  for (const [fieldKey, { field, descriptor }] of descriptors) {
+  for (const { fieldKey, field, descriptor } of fields) {
     add({ kind: 'field', name: fieldKey, field, storage: storageOf(descriptor) })
   }
 
   const systemFields = systemFieldsOf(resolveListTimestamps(listConfig, config.db))
   for (const name of systemFields) add({ kind: 'systemField', name })
 
-  for (const [fieldKey, { descriptor }] of descriptors) {
+  for (const { fieldKey, descriptor } of fields) {
     if (descriptor.kind === 'relation' && descriptor.foreignKey !== undefined) {
-      const { foreignKey } = descriptor
       add({
         kind: 'foreignKey',
-        name: foreignKey.name,
         field: fieldKey,
         relatedList: descriptor.target,
-        column: foreignKey.map ?? foreignKey.name,
+        ...memberColumn(descriptor.foreignKey),
       })
     }
     if (descriptor.kind === 'columns') {
-      for (const column of descriptor.columns) {
-        add({
-          kind: 'partColumn',
-          name: column.name,
-          field: fieldKey,
-          column: column.map ?? column.name,
-        })
+      for (const part of descriptor.columns) {
+        add({ kind: 'partColumn', field: fieldKey, ...memberColumn(part) })
       }
     }
   }

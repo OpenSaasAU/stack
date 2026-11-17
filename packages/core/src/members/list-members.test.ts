@@ -36,9 +36,34 @@ function partsField(...parts: Array<Part | ((fieldKey: string) => Part)>): Field
 const addressField = partsField({ name: 'address_line' }, { name: 'address_city', map: 'city' })
 
 const moneyField = partsField(
-  (fieldKey) => ({ name: fieldKey }),
+  (fieldKey) => ({ name: fieldKey, map: `${fieldKey}_amount` }),
   (fieldKey) => ({ name: `${fieldKey}_currency` }),
 )
+
+class SecretField implements FieldConfig {
+  type = 'secret'
+  #output = 'string'
+  #parts = ['secret_hash', 'secret_salt']
+
+  get outputType(): string {
+    return this.#output
+  }
+
+  getZodSchema() {
+    return z.string().optional()
+  }
+
+  getContractField(): ContractFieldDescriptor {
+    return {
+      kind: 'columns',
+      columns: this.#parts.map((name) => ({
+        name,
+        type: { pack: 'pg', type: 'text' },
+        nullable: true,
+      })),
+    }
+  }
+}
 
 class ColourField implements FieldConfig {
   type = 'colour'
@@ -89,7 +114,18 @@ function fixture(): OpenSaasConfig {
         },
       },
       Category: {
-        fields: { name: text(), colour: new ColourField() },
+        fields: {
+          name: text(),
+          colour: new ColourField(),
+          frozen: Object.freeze(text({ db: { map: 'frozen_text' } })),
+          secret: new SecretField(),
+        },
+      },
+      Ticket: {
+        fields: {
+          owner: relationship({ ref: 'Author' }),
+          ownerId: virtual({ type: 'string', hooks: { resolveOutput: () => 'owner' } }),
+        },
       },
       Settings: {
         isSingleton: true,
@@ -141,7 +177,7 @@ describe('resolveListMember', () => {
           kind: 'relation',
           relatedList: 'Category',
           many: false,
-          foreignKey: 'categoryId',
+          foreignKey: { name: 'categoryId', column: 'categoryId' },
           inverse: { field: 'from_Post_category', synthetic: true },
         },
       },
@@ -162,7 +198,7 @@ describe('resolveListMember', () => {
           kind: 'relation',
           relatedList: 'Author',
           many: false,
-          foreignKey: 'authorId',
+          foreignKey: { name: 'authorId', column: 'author_ref' },
         },
       },
     ],
@@ -189,7 +225,12 @@ describe('resolveListMember', () => {
       'the owning side of a one-to-one',
       {
         kind: 'field',
-        storage: { kind: 'relation', relatedList: 'Profile', many: false, foreignKey: 'profileId' },
+        storage: {
+          kind: 'relation',
+          relatedList: 'Profile',
+          many: false,
+          foreignKey: { name: 'profileId', column: 'profileId' },
+        },
       },
     ],
     [
@@ -217,7 +258,16 @@ describe('resolveListMember', () => {
       'Post',
       'address',
       'a multi-column field with distinct part names',
-      { kind: 'field', storage: { kind: 'columns', parts: ['address_line', 'address_city'] } },
+      {
+        kind: 'field',
+        storage: {
+          kind: 'columns',
+          parts: [
+            { name: 'address_line', column: 'address_line' },
+            { name: 'address_city', column: 'city' },
+          ],
+        },
+      },
     ],
     [
       'Post',
@@ -235,14 +285,24 @@ describe('resolveListMember', () => {
     [
       'Post',
       'price',
-      'a multi-column field whose first part shares its name',
-      { kind: 'field', storage: { kind: 'columns', parts: ['price', 'price_currency'] } },
+      'a multi-column field whose mapped first part shares its name',
+      {
+        kind: 'field',
+        storage: {
+          kind: 'columns',
+          parts: [
+            { name: 'price', column: 'price_amount' },
+            { name: 'price_currency', column: 'price_currency' },
+          ],
+        },
+      },
     ],
+    ['Post', 'price_amount', 'the physical spelling of that first part', undefined],
     [
       'Post',
       'price_currency',
       'the remaining part of that field',
-      { kind: 'partColumn', field: 'price' },
+      { kind: 'partColumn', field: 'price', column: 'price_currency' },
     ],
     ['Post', 'summary', 'a virtual field', { kind: 'field', storage: { kind: 'computed' } }],
     ['Post', 'id', 'the id', { kind: 'systemField' }],
@@ -263,6 +323,39 @@ describe('resolveListMember', () => {
       'a class-instance field whose members sit on its prototype',
       { kind: 'field', storage: { kind: 'column', column: 'colour' } },
     ],
+    [
+      'Category',
+      'frozen',
+      'a frozen field',
+      { kind: 'field', storage: { kind: 'column', column: 'frozen_text' } },
+    ],
+    [
+      'Category',
+      'secret',
+      'a class field with #private members',
+      {
+        kind: 'field',
+        storage: {
+          kind: 'columns',
+          parts: [
+            { name: 'secret_hash', column: 'secret_hash' },
+            { name: 'secret_salt', column: 'secret_salt' },
+          ],
+        },
+      },
+    ],
+    [
+      'Category',
+      'secret_salt',
+      'a part of the #private field',
+      { kind: 'partColumn', field: 'secret', column: 'secret_salt' },
+    ],
+    [
+      'Ticket',
+      'ownerId',
+      'a computed field keyed like an owned foreign key, resolved declared-first (OpenSaasAU/stack#2445)',
+      { kind: 'field', storage: { kind: 'computed' } },
+    ],
     ['Settings', 'siteName', "a singleton's field", { kind: 'field', storage: { kind: 'column' } }],
     ['Category', 'categoryId', 'the far side of a list-only ref', undefined],
   ]
@@ -279,7 +372,10 @@ describe('resolveListMember', () => {
   it('lists a part that shares its field name among that field’s parts', () => {
     expect(storageOf(resolveListMember(config, 'Post', 'price'))).toEqual({
       kind: 'columns',
-      parts: ['price', 'price_currency'],
+      parts: [
+        { name: 'price', column: 'price_amount' },
+        { name: 'price_currency', column: 'price_currency' },
+      ],
     })
   })
 
@@ -334,24 +430,29 @@ describe('resolveListMembers', () => {
     expect(fromCopy.members).toEqual(members.members)
   })
 
-  it('resolves a Synthetic back-relation by lookup, describing each field once', () => {
-    const own = fixture()
-    const calls = new Map<string, number>()
-    for (const [listKey, listConfig] of Object.entries(own.lists)) {
-      for (const [fieldKey, field] of Object.entries(listConfig.fields)) {
-        const describe = field.getContractField
-        if (describe === undefined) continue
-        const key = `${listKey}.${fieldKey}`
-        const counted: FieldConfig['getContractField'] = (...args) => {
-          calls.set(key, (calls.get(key) ?? 0) + 1)
-          return describe.apply(field, args)
-        }
-        listConfig.fields[fieldKey] = new Proxy(field, {
-          get: (target, property, receiver) =>
-            property === 'getContractField' ? counted : Reflect.get(target, property, receiver),
-        })
+  it('resolves a Synthetic back-relation by lookup, describing nothing after the first round', () => {
+    let calls = 0
+    const counted = (field: FieldConfig): FieldConfig => {
+      const describe = field.getContractField
+      return {
+        ...field,
+        getContractField: (fieldKey, listKey, config) => {
+          calls += 1
+          if (describe === undefined) throw new Error('no descriptor')
+          return describe(fieldKey, listKey, config)
+        },
       }
     }
+    const own = withLists({
+      Post: {
+        fields: {
+          title: counted(text()),
+          category: counted(relationship({ ref: 'Category' })),
+          price: counted(moneyField),
+        },
+      },
+      Category: { fields: { name: counted(text()) } },
+    })
 
     const resolveEverywhere = (): void => {
       for (const listKey of Object.keys(own.lists)) {
@@ -359,21 +460,14 @@ describe('resolveListMembers', () => {
       }
     }
     resolveEverywhere()
-    const afterFirst = new Map(calls)
-    expect([...afterFirst.keys()].sort()).toEqual(
-      Object.entries(own.lists)
-        .flatMap(([listKey, listConfig]) =>
-          Object.keys(listConfig.fields).map((fieldKey) => `${listKey}.${fieldKey}`),
-        )
-        .sort(),
-    )
-    expect(new Set(afterFirst.values())).toEqual(new Set([1]))
+    const afterFirst = calls
+    expect(afterFirst).toBeGreaterThan(0)
     for (let round = 0; round < 5; round += 1) resolveEverywhere()
 
     expect(resolveListMember(own, 'Category', 'from_Post_category')?.kind).toBe(
       'syntheticBackRelation',
     )
-    expect(calls).toEqual(afterFirst)
+    expect(calls).toBe(afterFirst)
   })
 
   it('throws for a list the config does not have', () => {
@@ -393,6 +487,7 @@ const NAME_REFUSALS: ReadonlySet<ConfigRefusalReason> = new Set([
   'self-referencing-field',
   'foreign-key-on-both-sides',
   'non-owning-side-nullability',
+  'field-descriptor-error',
 ])
 
 function generateError(refused: OpenSaasConfig): string {
@@ -569,6 +664,23 @@ describe('a config generate refuses', () => {
       'Category',
     ],
     [
+      'a field whose getContractField throws',
+      withLists({
+        Doc: {
+          fields: {
+            vec: {
+              type: 'vec',
+              getZodSchema: () => z.string().optional(),
+              getContractField: () => {
+                throw new Error('dimensions must be positive')
+              },
+            },
+          },
+        },
+      }),
+      'Doc',
+    ],
+    [
       'a list key that is not PascalCase, beside a reserved field name',
       withLists({ post: { fields: { AND: text() } } }),
       'post',
@@ -631,22 +743,51 @@ describe('a config generate refuses', () => {
   it('lets an error that is not a refusal through, without memoising it', () => {
     let broken = true
     const flaky: FieldConfig = {
-      type: 'flaky',
-      getZodSchema: () => z.string().optional(),
-      getContractField: (fieldKey) => {
-        if (broken) throw new TypeError('descriptor failed')
-        return {
-          kind: 'column',
-          name: fieldKey,
-          type: { pack: 'pg', type: 'text' },
-          nullable: true,
-        }
+      get type(): string {
+        if (broken) throw new TypeError('type unavailable')
+        return 'text'
       },
+      getZodSchema: () => z.string().optional(),
+      getContractField: (fieldKey) => ({
+        kind: 'column',
+        name: fieldKey,
+        type: { pack: 'pg', type: 'text' },
+        nullable: true,
+      }),
     }
     const own = withLists({ Post: { fields: { flaky } } })
     expect(() => resolveListMembers(own, 'Post')).toThrow(TypeError)
     broken = false
     expect(resolveListMember(own, 'Post', 'flaky')?.kind).toBe('field')
+  })
+
+  it("keeps a field's descriptor error as the cause of generate's refusal", () => {
+    const failure = new Error('dimensions must be positive')
+    const refused = withLists({
+      Doc: {
+        fields: {
+          vec: {
+            type: 'vec',
+            getZodSchema: () => z.string().optional(),
+            getContractField: () => {
+              throw failure
+            },
+          },
+        },
+      },
+    })
+    const caught = (): unknown => {
+      try {
+        resolveListMembers(refused, 'Doc')
+      } catch (error) {
+        return error
+      }
+      return undefined
+    }
+    const first = caught()
+    expect(first).toBeInstanceOf(Error)
+    expect(first instanceof Error ? first.cause : undefined).toBe(failure)
+    expect(caught()).toBe(first)
   })
 })
 
@@ -716,7 +857,11 @@ describe('the resolver module', () => {
     ].find((candidate) => existsSync(candidate) && statSync(candidate).isFile())
   }
 
-  function importGraphOf(entry: string): { bare: Set<string>; unresolved: string[] } {
+  function importGraphOf(entry: string): {
+    files: Set<string>
+    bare: Set<string>
+    unresolved: string[]
+  } {
     const seen = new Set<string>()
     const bare = new Set<string>()
     const unresolved: string[] = []
@@ -736,7 +881,7 @@ describe('the resolver module', () => {
         else pending.push(resolved)
       }
     }
-    return { bare, unresolved }
+    return { files: seen, bare, unresolved }
   }
 
   it('reads side-effect, double-quoted, re-exported and dynamic imports', () => {
@@ -765,7 +910,9 @@ describe('the resolver module', () => {
   })
 
   it('reaches no Node builtin through any value import', () => {
-    const { bare, unresolved } = importGraphOf(path.join(here, 'list-members.ts'))
+    const { files, bare, unresolved } = importGraphOf(path.join(here, 'list-members.ts'))
+    expect(files.has(path.resolve(here, '../contract/strategy.ts'))).toBe(true)
+    expect(files.has(path.resolve(here, '../contract/derive.ts'))).toBe(false)
     expect(unresolved).toEqual([])
     expect([...bare].filter((specifier) => builtins.has(specifier))).toEqual([])
     expect([...bare].filter((specifier) => !ALLOWED_PACKAGES.has(specifier))).toEqual([])

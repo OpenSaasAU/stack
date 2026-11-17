@@ -1,5 +1,5 @@
 import type { OpenSaasConfig } from '../config/types.js'
-import { idColumn, resolveIdStrategy } from './derive.js'
+import { idColumn, resolveIdStrategy } from './strategy.js'
 import type { ContractIdColumn } from './types.js'
 
 /**

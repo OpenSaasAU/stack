@@ -1,5 +1,29 @@
-import type { DatabaseConfig, ListConfig, OpenSaasConfig, TypeInfo } from '../config/types.js'
-import type { ContractIdStrategy, ContractTimestamps } from './types.js'
+import type {
+  ColumnTypeDescriptor,
+  DatabaseConfig,
+  ListConfig,
+  OpenSaasConfig,
+  TypeInfo,
+} from '../config/types.js'
+import type { ContractIdColumn, ContractIdStrategy, ContractTimestamps } from './types.js'
+
+export function pgType(type: string, args?: number[]): ColumnTypeDescriptor {
+  return args && args.length > 0 ? { pack: 'pg', type, args } : { pack: 'pg', type }
+}
+
+export function idColumn(strategy: ContractIdStrategy): ContractIdColumn {
+  switch (strategy) {
+    case 'uuid7':
+      return { strategy, type: pgType('uuid') }
+    case 'cuid2':
+      return { strategy, type: pgType('char', [24]) }
+    case 'cuid':
+      return { strategy, type: pgType('text') }
+    case 'int autoincrement':
+    case 'singleton':
+      return { strategy, type: pgType('int') }
+  }
+}
 
 export function resolveIdStrategy(
   listConfig: ListConfig<TypeInfo>,
