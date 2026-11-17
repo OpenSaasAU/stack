@@ -18,6 +18,7 @@ import {
 } from '../context/plugin-field-write.js'
 import { readPluginOwnedRow, HandlelessPluginFieldReadError } from '../context/plugin-field-read.js'
 import type { AccessContext, FieldAccess } from './types.js'
+import { resolveListMembers, type ListMembers } from '../members/list-members.js'
 
 /**
  * Generic core wiring for multi-column fields (the contract storage
@@ -42,6 +43,13 @@ function multiColumnField(access?: FieldAccess): FieldConfig {
   return {
     type: 'multiColumn',
     access,
+    getContractField: () => ({
+      kind: 'columns',
+      columns: [
+        { name: 'm_url', type: { pack: 'pg', type: 'text' }, nullable: true },
+        { name: 'm_size', type: { pack: 'pg', type: 'int' }, nullable: true },
+      ],
+    }),
     getColumnNames: () => COLUMNS,
     assembleColumns: (_fieldName: string, row: Record<string, unknown>) => {
       const url = row.m_url
@@ -63,6 +71,10 @@ function multiColumnField(access?: FieldAccess): FieldConfig {
   } as unknown as FieldConfig
 }
 
+function membersOf(fields: Record<string, FieldConfig>): ListMembers {
+  return resolveListMembers({ db: { provider: 'postgresql' }, lists: { Post: { fields } } }, 'Post')
+}
+
 function makeContext(overrides: { isSudo?: boolean } = {}): AccessContext {
   return {
     session: null,
@@ -80,8 +92,7 @@ describe('multi-column read assembly (filterReadableFields)', () => {
     const result = await filterReadableFields(
       row,
       // title is a plain field
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- inline field configs
-      { ...fields, title: { type: 'text' } as any },
+      { ...fields, title: text() },
       { session: null, context: makeContext() },
       undefined,
       0,
@@ -123,8 +134,7 @@ describe('multi-column read assembly (filterReadableFields)', () => {
     const row = { id: 'd', title: 'no media columns' }
     const result = await filterReadableFields(
       row,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- inline field configs
-      { ...fields, title: { type: 'text' } as any },
+      { ...fields, title: text() },
       { session: null, context: makeContext() },
       undefined,
       0,
@@ -175,8 +185,7 @@ describe('multi-column resolveInput (executeFieldResolveInputHooks) does NOT spl
     const result = await executeFieldResolveInputHooks(
       inputData,
       { ...inputData },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- inline field configs
-      { ...fields, title: { type: 'text' } as any },
+      { ...fields, title: text() },
       'update',
       makeContext(),
       'Post',
@@ -194,7 +203,7 @@ describe('multi-column write split (splitMultiColumnFields, AFTER validation —
     const result = await splitMultiColumnFields(
       inputData,
       { ...inputData },
-      fields,
+      membersOf(fields),
       'create',
       makeContext(),
     )
@@ -207,7 +216,7 @@ describe('multi-column write split (splitMultiColumnFields, AFTER validation —
     const result = await splitMultiColumnFields(
       inputData,
       { ...inputData },
-      fields,
+      membersOf(fields),
       'update',
       makeContext(),
     )
@@ -219,8 +228,7 @@ describe('multi-column write split (splitMultiColumnFields, AFTER validation —
     const result = await splitMultiColumnFields(
       inputData,
       { ...inputData },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- inline field configs
-      { ...fields, title: { type: 'text' } as any },
+      membersOf({ ...fields, title: text() }),
       'update',
       makeContext(),
     )
@@ -233,8 +241,7 @@ describe('multi-column write split (splitMultiColumnFields, AFTER validation —
     const result = await splitMultiColumnFields(
       inputData,
       { ...inputData },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- inline field configs
-      { ...fields, title: { type: 'text' } as any },
+      membersOf({ ...fields, title: text() }),
       'update',
       makeContext(),
     )
@@ -248,7 +255,7 @@ describe('multi-column write split (splitMultiColumnFields, AFTER validation —
     const result = await splitMultiColumnFields(
       inputData,
       { ...inputData },
-      fields,
+      membersOf(fields),
       'create',
       makeContext(),
     )
@@ -1093,7 +1100,13 @@ describe('multi-column write split respects field-level write access', () => {
     const fields = { media: multiColumnField({ update: () => false }) }
     const inputData = { media: { url: 'https://x/y.jpg', size: 99 } }
     await expect(
-      splitMultiColumnFields(inputData, { ...inputData }, fields, 'update', makeContext()),
+      splitMultiColumnFields(
+        inputData,
+        { ...inputData },
+        membersOf(fields),
+        'update',
+        makeContext(),
+      ),
     ).rejects.toThrow('Cannot update "media": field-level access denied.')
   })
 
@@ -1101,7 +1114,13 @@ describe('multi-column write split respects field-level write access', () => {
     const fields = { media: multiColumnField({ create: () => false }) }
     const inputData = { media: { url: 'https://x/y.jpg', size: 99 } }
     await expect(
-      splitMultiColumnFields(inputData, { ...inputData }, fields, 'create', makeContext()),
+      splitMultiColumnFields(
+        inputData,
+        { ...inputData },
+        membersOf(fields),
+        'create',
+        makeContext(),
+      ),
     ).rejects.toThrow('Cannot create "media": field-level access denied.')
   })
 
@@ -1110,7 +1129,7 @@ describe('multi-column write split respects field-level write access', () => {
     const result = await splitMultiColumnFields(
       {},
       { media: { url: 'https://x/y.jpg', size: 99 } },
-      fields,
+      membersOf(fields),
       'create',
       makeContext(),
     )
@@ -1123,7 +1142,7 @@ describe('multi-column write split respects field-level write access', () => {
     const result = await splitMultiColumnFields(
       inputData,
       { ...inputData },
-      fields,
+      membersOf(fields),
       'update',
       makeContext(),
     )
@@ -1138,7 +1157,7 @@ describe('multi-column write split respects field-level write access', () => {
     const result = await splitMultiColumnFields(
       inputData,
       { ...inputData },
-      fields,
+      membersOf(fields),
       'create',
       makeContext(),
     )
@@ -1151,7 +1170,7 @@ describe('multi-column write split respects field-level write access', () => {
     const result = await splitMultiColumnFields(
       inputData,
       { ...inputData },
-      fields,
+      membersOf(fields),
       'update',
       makeContext({ isSudo: true }),
     )
@@ -1164,7 +1183,7 @@ describe('multi-column write split respects field-level write access', () => {
     const result = await splitMultiColumnFields(
       inputData,
       { ...inputData },
-      fields,
+      membersOf(fields),
       'update',
       makeContext(),
     )

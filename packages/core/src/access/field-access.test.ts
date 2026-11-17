@@ -12,13 +12,8 @@ import { NO_RULE_VIEWS, ruleRowOf } from './rule-item.js'
 import { InvalidFieldAccessResultError } from './errors.js'
 import { ValidationError } from '../hooks/index.js'
 import type { FieldAccess, FieldAccessControl } from './types.js'
-import { relationship, text, virtual } from '../fields/index.js'
-import type { OpenSaasConfig } from '../config/types.js'
-
-const UNIT: { listName: string; config: OpenSaasConfig } = {
-  listName: 'Post',
-  config: { db: { provider: 'postgresql' }, lists: { Post: { fields: { title: text() } } } },
-}
+import { checkbox, relationship, text, virtual } from '../fields/index.js'
+import type { FieldConfig, OpenSaasConfig } from '../config/types.js'
 
 // A non-sudo access context. The cast is localized to test setup (mirrors the
 // existing sudo-context casts in this file): the runtime AccessContext carries
@@ -29,6 +24,31 @@ function nonSudoContext() {
     _isSudo: false,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any
+}
+
+function onList(
+  fields: Record<string, FieldConfig>,
+  lists: OpenSaasConfig['lists'] = {},
+): { listName: string; config: OpenSaasConfig } {
+  return {
+    listName: 'Post',
+    config: {
+      db: { provider: 'postgresql' },
+      lists: { User: { fields: { name: text() } }, ...lists, Post: { fields } },
+    },
+  }
+}
+
+const mediaField: FieldConfig = {
+  type: 'image',
+  outputType: 'unknown',
+  getContractField: (fieldName) => ({
+    kind: 'columns',
+    columns: [
+      { name: `${fieldName}_url`, type: { pack: 'pg', type: 'text' }, nullable: true },
+      { name: `${fieldName}_size`, type: { pack: 'pg', type: 'int' }, nullable: true },
+    ],
+  }),
 }
 
 function sudoContext() {
@@ -320,18 +340,11 @@ describe('filterWritableFields', () => {
   it('keeps a directly-written foreign-key column alongside its relationship field (#1326)', async () => {
     // Setup: Define field configs with a relationship field
     const fieldConfigs = {
-      title: {
-        type: 'text',
-      },
-      author: {
-        type: 'relationship',
-        many: false,
-      },
-      tags: {
-        type: 'relationship',
-        many: true, // Many-to-many relationships don't have foreign keys
-      },
+      title: text(),
+      author: relationship({ ref: 'User' }),
+      tags: relationship({ ref: 'Tag.post', many: true }),
     }
+    const lists = { Tag: { fields: { post: relationship({ ref: 'Post.tags' }) } } }
 
     // Data that includes both the foreign key (authorId) and other fields
     const data = {
@@ -343,7 +356,7 @@ describe('filterWritableFields', () => {
     }
 
     const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
-      ...UNIT,
+      ...onList(fieldConfigs, lists),
       session: null,
       context: {
         session: null,
@@ -362,6 +375,17 @@ describe('filterWritableFields', () => {
     // author relationship should remain
     expect(filtered).toHaveProperty('author')
     expect(filtered.author).toEqual({ connect: { id: 'user-123' } })
+
+    // tags is many: true, so `tagsId` names no foreign key and is refused as undeclared
+    const withTagsId = { ...data, tagsId: 'tag-456' }
+    await expect(
+      filterWritableFields(withTagsId, fieldConfigs, 'create', {
+        ...onList(fieldConfigs, lists),
+        session: null,
+        context: sudoContext(),
+        inputData: withTagsId,
+      }),
+    ).rejects.toThrow('"tagsId": it is not a field of this list')
   })
 
   it.each([
@@ -404,8 +428,9 @@ describe('filterWritableFields', () => {
 
   it('treats a declared createdAt as an ordinary field', async () => {
     const data = { createdAt: 'hello' }
-    const filtered = await filterWritableFields(data, { createdAt: { type: 'text' } }, 'create', {
-      ...UNIT,
+    const fields = { createdAt: text() }
+    const filtered = await filterWritableFields(data, fields, 'create', {
+      ...onList(fields),
       session: null,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       context: { session: null } as any,
@@ -416,11 +441,8 @@ describe('filterWritableFields', () => {
 
   it('should handle update operation', async () => {
     const fieldConfigs = {
-      title: { type: 'text' },
-      author: {
-        type: 'relationship',
-        many: false,
-      },
+      title: text(),
+      author: relationship({ ref: 'User' }),
     }
 
     const data = {
@@ -432,7 +454,7 @@ describe('filterWritableFields', () => {
     }
 
     const filtered = await filterWritableFields(data, fieldConfigs, 'update', {
-      ...UNIT,
+      ...onList(fieldConfigs),
       session: null,
       item: { id: 'post-123' },
       context: {
@@ -450,11 +472,8 @@ describe('filterWritableFields', () => {
 
   it('distinguishes a regular field that happens to end with "Id" from a real foreign key', async () => {
     const fieldConfigs = {
-      trackingId: { type: 'text' }, // Regular field that happens to end with "Id"
-      author: {
-        type: 'relationship',
-        many: false,
-      },
+      trackingId: text(), // Regular field that happens to end with "Id"
+      author: relationship({ ref: 'User' }),
     }
 
     const data = {
@@ -463,7 +482,7 @@ describe('filterWritableFields', () => {
     }
 
     const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
-      ...UNIT,
+      ...onList(fieldConfigs),
       session: null,
       context: {
         session: null,
@@ -483,7 +502,7 @@ describe('filterWritableFields', () => {
   // ── #564: undeclared data keys must fail CLOSED (throw) for non-sudo writes ──
 
   it('throws on an undeclared data key for a non-sudo create', async () => {
-    const fieldConfigs = { title: { type: 'text' } }
+    const fieldConfigs = { title: text() }
     const data = {
       title: 'Test',
       // Not a declared field — e.g. a Prisma back-relation the config never
@@ -493,7 +512,7 @@ describe('filterWritableFields', () => {
 
     await expect(
       filterWritableFields(data, fieldConfigs, 'create', {
-        ...UNIT,
+        ...onList(fieldConfigs),
         session: null,
         context: nonSudoContext(),
         inputData: data,
@@ -501,7 +520,7 @@ describe('filterWritableFields', () => {
     ).rejects.toThrow(ValidationError)
     await expect(
       filterWritableFields(data, fieldConfigs, 'create', {
-        ...UNIT,
+        ...onList(fieldConfigs),
         session: null,
         context: nonSudoContext(),
         inputData: data,
@@ -510,7 +529,7 @@ describe('filterWritableFields', () => {
   })
 
   it('throws on an undeclared data key for a non-sudo update', async () => {
-    const fieldConfigs = { title: { type: 'text' } }
+    const fieldConfigs = { title: text() }
     const data = {
       title: 'Updated',
       bogusKey: 'value',
@@ -518,7 +537,7 @@ describe('filterWritableFields', () => {
 
     await expect(
       filterWritableFields(data, fieldConfigs, 'update', {
-        ...UNIT,
+        ...onList(fieldConfigs),
         session: null,
         item: { id: 'post-1' },
         context: nonSudoContext(),
@@ -529,8 +548,8 @@ describe('filterWritableFields', () => {
 
   it('keeps a directly-written FK column with no field access declared, for a non-sudo write', async () => {
     const fieldConfigs = {
-      title: { type: 'text' },
-      author: { type: 'relationship', many: false },
+      title: text(),
+      author: relationship({ ref: 'User' }),
     }
     const data = {
       title: 'Test',
@@ -538,7 +557,7 @@ describe('filterWritableFields', () => {
     }
 
     const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
-      ...UNIT,
+      ...onList(fieldConfigs),
       session: null,
       context: nonSudoContext(),
       inputData: data,
@@ -548,18 +567,13 @@ describe('filterWritableFields', () => {
     expect(filtered).toHaveProperty('title', 'Test')
   })
 
-  const mediaConfigs = {
-    media: {
-      type: 'image',
-      getColumnNames: (fieldName: string) => [`${fieldName}_url`, `${fieldName}_size`],
-    },
-  }
+  const mediaConfigs = { media: mediaField }
 
   it('passes through part columns the field produced itself (not in caller input)', async () => {
     const data = { media_url: 'https://x/y.jpg', media_size: 99 }
 
     const filtered = await filterWritableFields(data, mediaConfigs, 'create', {
-      ...UNIT,
+      ...onList(mediaConfigs),
       session: null,
       context: nonSudoContext(),
       inputData: { media: { url: 'https://x/y.jpg' } },
@@ -576,7 +590,7 @@ describe('filterWritableFields', () => {
 
     await expect(
       filterWritableFields({ media_url: 'https://x/y.jpg', media_size: 1 }, configs, 'create', {
-        ...UNIT,
+        ...onList(configs),
         session: null,
         context: nonSudoContext(),
         inputData: { media: { url: 'https://x/y.jpg' } },
@@ -593,7 +607,7 @@ describe('filterWritableFields', () => {
         const data = { media_url: 'javascript:alert(1)', media_size: 5 }
 
         const result = filterWritableFields(data, mediaConfigs, operation, {
-          ...UNIT,
+          ...onList(mediaConfigs),
           session: null,
           item: operation === 'update' ? { id: 'item-1' } : undefined,
           context: makeContext(),
@@ -612,11 +626,10 @@ describe('filterWritableFields', () => {
 
   it('THROWS when a directly-written foreign-key column is supplied for a relationship whose write access is DENIED (non-sudo)', async () => {
     const fieldConfigs = {
-      author: {
-        type: 'relationship',
-        many: false,
+      author: relationship({
+        ref: 'User',
         access: { create: () => false, update: () => false },
-      },
+      }),
     }
     const data = { authorId: 'user-123' }
 
@@ -624,7 +637,7 @@ describe('filterWritableFields', () => {
     // silent drop of the key (the original defect this pins).
     await expect(
       filterWritableFields(data, fieldConfigs, 'create', {
-        ...UNIT,
+        ...onList(fieldConfigs),
         session: null,
         context: nonSudoContext(),
         inputData: data,
@@ -632,7 +645,7 @@ describe('filterWritableFields', () => {
     ).rejects.toThrow(ValidationError)
     await expect(
       filterWritableFields(data, fieldConfigs, 'create', {
-        ...UNIT,
+        ...onList(fieldConfigs),
         session: null,
         context: nonSudoContext(),
         inputData: data,
@@ -642,16 +655,15 @@ describe('filterWritableFields', () => {
 
   it('passes a directly-written foreign-key column through when the owning relationship field ALLOWS (non-sudo)', async () => {
     const fieldConfigs = {
-      author: {
-        type: 'relationship',
-        many: false,
+      author: relationship({
+        ref: 'User',
         access: { create: () => true, update: () => true },
-      },
+      }),
     }
     const data = { authorId: 'user-123' }
 
     const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
-      ...UNIT,
+      ...onList(fieldConfigs),
       session: null,
       context: nonSudoContext(),
       inputData: data,
@@ -662,16 +674,15 @@ describe('filterWritableFields', () => {
 
   it('passes a directly-written foreign-key column through under sudo regardless of denied owning-field access', async () => {
     const fieldConfigs = {
-      author: {
-        type: 'relationship',
-        many: false,
+      author: relationship({
+        ref: 'User',
         access: { create: () => false, update: () => false },
-      },
+      }),
     }
     const data = { authorId: 'user-123' }
 
     const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
-      ...UNIT,
+      ...onList(fieldConfigs),
       session: null,
       context: sudoContext(),
       inputData: data,
@@ -789,7 +800,6 @@ describe('filterWritableFields', () => {
 
     await expect(
       filterWritableFields({ title: 'x' }, config.lists.Post.fields, 'update', {
-        ...UNIT,
         ...args,
         context: nonSudoContext(),
         inputData: { title: 'x', authorId: undefined },
@@ -797,7 +807,6 @@ describe('filterWritableFields', () => {
     ).resolves.toEqual({ title: 'x' })
     await expect(
       filterWritableFields({ title: 'x' }, config.lists.Post.fields, 'update', {
-        ...UNIT,
         ...args,
         context: sudoContext(),
         inputData: { title: 'x', authorId: 'u1' },
@@ -809,17 +818,14 @@ describe('filterWritableFields', () => {
 
   it('throws when a declared field is denied by field-level access (non-sudo)', async () => {
     const fieldConfigs = {
-      title: { type: 'text' },
-      status: {
-        type: 'text',
-        access: { update: () => false, create: () => false },
-      },
+      title: text(),
+      status: text({ access: { update: () => false, create: () => false } }),
     }
     const data = { title: 'Test', status: 'published' }
 
     await expect(
       filterWritableFields(data, fieldConfigs, 'update', {
-        ...UNIT,
+        ...onList(fieldConfigs),
         session: null,
         item: { id: 'post-1' },
         context: nonSudoContext(),
@@ -832,9 +838,9 @@ describe('filterWritableFields', () => {
 
   it('throws InvalidFieldAccessResultError, not a blanket write, when field access returns a filter (non-sudo)', async () => {
     const fieldConfigs = {
-      title: { type: 'text' },
+      title: text(),
       status: {
-        type: 'text',
+        ...text(),
         access: {
           // Written as a row-scoping rule; field access does not honour filters.
           update: () => ({ status: { equals: 'draft' } }),
@@ -847,7 +853,7 @@ describe('filterWritableFields', () => {
 
     await expect(
       filterWritableFields(data, fieldConfigs, 'update', {
-        ...UNIT,
+        ...onList(fieldConfigs),
         session: null,
         item: { id: 'post-1', status: 'draft' },
         context: nonSudoContext(),
@@ -858,16 +864,13 @@ describe('filterWritableFields', () => {
 
   it('does NOT throw on a would-be-denied field under sudo', async () => {
     const fieldConfigs = {
-      title: { type: 'text' },
-      status: {
-        type: 'text',
-        access: { update: () => false, create: () => false },
-      },
+      title: text(),
+      status: text({ access: { update: () => false, create: () => false } }),
     }
     const data = { title: 'Test', status: 'published' }
 
     const filtered = await filterWritableFields(data, fieldConfigs, 'update', {
-      ...UNIT,
+      ...onList(fieldConfigs),
       session: null,
       item: { id: 'post-1' },
       context: sudoContext(),
@@ -880,8 +883,8 @@ describe('filterWritableFields', () => {
 
   it('passes a declared relationship field through to nested operations (non-sudo)', async () => {
     const fieldConfigs = {
-      title: { type: 'text' },
-      author: { type: 'relationship', many: false },
+      title: text(),
+      author: relationship({ ref: 'User' }),
     }
     const data = {
       title: 'Test',
@@ -889,7 +892,7 @@ describe('filterWritableFields', () => {
     }
 
     const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
-      ...UNIT,
+      ...onList(fieldConfigs),
       session: null,
       context: nonSudoContext(),
       inputData: data,
@@ -909,15 +912,14 @@ describe('filterWritableFields', () => {
 describe('filterWritableFields — defaultedFields exemption (opt-in via allowCreateDefault)', () => {
   it('passes a create-denied field through when it opts in with allowCreateDefault and its key is in defaultedFields', async () => {
     const fieldConfigs = {
-      emailVerified: {
-        type: 'checkbox',
+      emailVerified: checkbox({
         access: { create: () => false, update: () => false, allowCreateDefault: true },
-      },
+      }),
     }
     const data = { emailVerified: false }
 
     const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
-      ...UNIT,
+      ...onList(fieldConfigs),
       session: null,
       context: nonSudoContext(),
       inputData: {}, // the caller never supplied it — applyCreateDefaults did
@@ -933,13 +935,13 @@ describe('filterWritableFields — defaultedFields exemption (opt-in via allowCr
     // a denied session, defaultValue or not — `allowCreateDefault` is opt-in
     // precisely so this existing, deliberate behaviour is unaffected.
     const fieldConfigs = {
-      total: { type: 'text', access: { create: () => false } },
+      total: text({ access: { create: () => false } }),
     }
     const data = { total: 'unposted' }
 
     await expect(
       filterWritableFields(data, fieldConfigs, 'create', {
-        ...UNIT,
+        ...onList(fieldConfigs),
         session: null,
         context: nonSudoContext(),
         inputData: {}, // omitted — applyCreateDefaults filled it
@@ -950,16 +952,15 @@ describe('filterWritableFields — defaultedFields exemption (opt-in via allowCr
 
   it('still throws when the caller explicitly supplies an allowCreateDefault field, even if its value matches the default', async () => {
     const fieldConfigs = {
-      emailVerified: {
-        type: 'checkbox',
+      emailVerified: checkbox({
         access: { create: () => false, update: () => false, allowCreateDefault: true },
-      },
+      }),
     }
     const data = { emailVerified: false }
 
     await expect(
       filterWritableFields(data, fieldConfigs, 'create', {
-        ...UNIT,
+        ...onList(fieldConfigs),
         session: null,
         context: nonSudoContext(),
         inputData: { emailVerified: false }, // the caller DID supply it
@@ -970,16 +971,15 @@ describe('filterWritableFields — defaultedFields exemption (opt-in via allowCr
 
   it('does not exempt the field on update, even if defaultedFields somehow named it', async () => {
     const fieldConfigs = {
-      emailVerified: {
-        type: 'checkbox',
+      emailVerified: checkbox({
         access: { create: () => false, update: () => false, allowCreateDefault: true },
-      },
+      }),
     }
     const data = { emailVerified: true }
 
     await expect(
       filterWritableFields(data, fieldConfigs, 'update', {
-        ...UNIT,
+        ...onList(fieldConfigs),
         session: null,
         context: nonSudoContext(),
         inputData: { emailVerified: true },
@@ -990,16 +990,15 @@ describe('filterWritableFields — defaultedFields exemption (opt-in via allowCr
 
   it('is unaffected when defaultedFields is omitted entirely (existing callers)', async () => {
     const fieldConfigs = {
-      emailVerified: {
-        type: 'checkbox',
+      emailVerified: checkbox({
         access: { create: () => false, update: () => false, allowCreateDefault: true },
-      },
+      }),
     }
     const data = { emailVerified: false }
 
     await expect(
       filterWritableFields(data, fieldConfigs, 'create', {
-        ...UNIT,
+        ...onList(fieldConfigs),
         session: null,
         context: nonSudoContext(),
         inputData: { emailVerified: false },
@@ -1008,13 +1007,10 @@ describe('filterWritableFields — defaultedFields exemption (opt-in via allowCr
   })
 })
 
-// ── #978: under sudo, only a synthetic reverse-relation key is a recognised
-// undeclared key — anything else is refused, even under sudo ──────────────
+// ── #978: an undeclared key is refused even under sudo, a Synthetic
+// back-relation included ──────────────────────────────────────────────────
 
-describe('filterWritableFields — #978 tightened sudo undeclared-key guard', () => {
-  // A minimal config: Account is the target of ChargeRequest's list-only ref
-  // (`ref: 'Account'`, no field named on Account), so the generator
-  // synthesizes `from_ChargeRequest_account` on Account.
+describe('filterWritableFields — undeclared keys under sudo (#978)', () => {
   const config: OpenSaasConfig = {
     db: { provider: 'postgresql' },
     lists: {
@@ -1027,57 +1023,34 @@ describe('filterWritableFields — #978 tightened sudo undeclared-key guard', ()
       },
     },
   }
+  const args = { session: null, item: { id: 'a1' }, listName: 'Account', config }
 
-  it('passes a synthetic reverse-relation key through under sudo, when config/listName are supplied', async () => {
-    const fieldConfigs = { name: { type: 'text' } }
-    const data = {
-      name: 'Acme',
-      from_ChargeRequest_account: { create: { kind: 'DEPOSIT' } },
-    }
-
-    const filtered = await filterWritableFields(data, fieldConfigs, 'update', {
-      session: null,
-      item: { id: 'a1' },
-      context: sudoContext(),
-      inputData: data,
-      listName: 'Account',
-      config,
-    })
-
-    expect(filtered).toHaveProperty('name', 'Acme')
-    expect(filtered).toHaveProperty('from_ChargeRequest_account')
-  })
-
-  it('throws on a genuinely unknown key under sudo, when config/listName are supplied', async () => {
-    const fieldConfigs = { name: { type: 'text' } }
-    const data = {
-      name: 'Acme',
-      totallyBogusKey: 'value',
-    }
+  it.each([
+    ['a Synthetic back-relation', 'from_ChargeRequest_account'],
+    ['a genuinely unknown key', 'totallyBogusKey'],
+  ])('throws on %s', async (_label, key) => {
+    const data = { name: 'Acme', [key]: 'value' }
 
     await expect(
-      filterWritableFields(data, fieldConfigs, 'update', {
-        session: null,
-        item: { id: 'a1' },
+      filterWritableFields(data, config.lists.Account.fields, 'update', {
+        ...args,
         context: sudoContext(),
         inputData: data,
-        listName: 'Account',
-        config,
       }),
-    ).rejects.toThrow(/totallyBogusKey/)
+    ).rejects.toThrow(`"${key}": it is not a field of this list`)
   })
 })
 
 describe('the virtual-field write skip (issue #1531)', () => {
   it('skips a field flagged `virtual`, whose value never reaches the write', async () => {
     const fieldConfigs = {
-      title: { type: 'text' },
+      title: text(),
       summary: virtual({ type: 'string', hooks: { resolveOutput: () => '' } }),
     }
     const data = { title: 'Test', summary: 'ignored' }
 
     const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
-      ...UNIT,
+      ...onList(fieldConfigs),
       session: null,
       context: sudoContext(),
       inputData: data,
@@ -1124,8 +1097,8 @@ describe('the virtual-field write skip (issue #1531)', () => {
 
 describe('filterWritableFields — gates caller input, not hook output (issue #1643)', () => {
   const fieldConfigs = {
-    name: { type: 'text' },
-    locked: { type: 'text', access: { create: () => false, update: () => false } },
+    name: text(),
+    locked: text({ access: { create: () => false, update: () => false } }),
   }
 
   it('persists a write-denied field a hook set when the caller did not supply it', async () => {
@@ -1134,7 +1107,12 @@ describe('filterWritableFields — gates caller input, not hook output (issue #1
         { name: 'a', locked: 'server-set' },
         fieldConfigs,
         operation,
-        { ...UNIT, session: null, context: nonSudoContext(), inputData: { name: 'a' } },
+        {
+          ...onList(fieldConfigs),
+          session: null,
+          context: nonSudoContext(),
+          inputData: { name: 'a' },
+        },
       )
       expect(filtered).toEqual({ name: 'a', locked: 'server-set' })
     }
@@ -1143,7 +1121,7 @@ describe('filterWritableFields — gates caller input, not hook output (issue #1
   it('throws when the caller supplies the denied field', async () => {
     await expect(
       filterWritableFields({ locked: 'x' }, fieldConfigs, 'create', {
-        ...UNIT,
+        ...onList(fieldConfigs),
         session: null,
         context: nonSudoContext(),
         inputData: { locked: 'x' },
@@ -1154,7 +1132,7 @@ describe('filterWritableFields — gates caller input, not hook output (issue #1
   it('throws when the caller supplied the denied field and a hook removed it', async () => {
     await expect(
       filterWritableFields({ name: 'a' }, fieldConfigs, 'update', {
-        ...UNIT,
+        ...onList(fieldConfigs),
         session: null,
         context: nonSudoContext(),
         inputData: { name: 'a', locked: 'x' },
@@ -1176,13 +1154,12 @@ describe('filterWritableFields — gates caller input, not hook output (issue #1
     const base = { session: null, context: nonSudoContext(), listName: 'Post', config }
     await expect(
       filterWritableFields({ authorId: 'u1' }, rels, 'create', {
-        ...UNIT,
         ...base,
         inputData: { authorId: 'u1' },
       }),
     ).rejects.toThrow(ValidationError)
     await expect(
-      filterWritableFields({ authorId: 'u1' }, rels, 'create', { ...UNIT, ...base, inputData: {} }),
+      filterWritableFields({ authorId: 'u1' }, rels, 'create', { ...base, inputData: {} }),
     ).resolves.toEqual({ authorId: 'u1' })
   })
 })

@@ -274,11 +274,9 @@ describe('context.transaction', () => {
     test(
       'several writes on one context reuse the shape resolved at construction',
       async () => {
-        // `listConfig.db` (the namespace/schema a list's collection is reconciled
-        // against) is read at runtime ONLY by the shape derivation this test
-        // targets — nothing else in the write path touches it — so counting
-        // `get('db')` on each list config is a precise proxy for how many times
-        // that derivation ran, without reaching into a private function.
+        // Once the List member resolver's per-config memo is warm, `listConfig.db`
+        // is read at runtime only by the shape derivation this test targets, so
+        // counting `get('db')` measures how many times that derivation ran.
         const base = schemaConfig()
         let dbAccesses = 0
         const lists: OpenSaasConfig['lists'] = {}
@@ -291,7 +289,6 @@ describe('context.transaction', () => {
           })
         }
         const config: OpenSaasConfig = { ...base, lists }
-        // The List member resolver reads `db` too, once per config.
         for (const listKey of Object.keys(lists)) resolveListMembers(config, listKey)
         dbAccesses = 0
 

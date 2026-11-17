@@ -190,7 +190,6 @@ export {
   MalformedRelationInputError,
   NestedRelationInputError,
   NonOwningRelationInputError,
-  RelationTargetMissingError,
 } from './context/relationship-input.js'
 // Why an `afterTransaction` bracket reports `rolled-back` for a write whose
 // transaction committed: the predicate matched no row. Reachable so a

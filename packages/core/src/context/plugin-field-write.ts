@@ -1,7 +1,5 @@
 import type { AccessContext } from '../access/types.js'
-import type { FieldConfig } from '../config/types.js'
-import { isComputedField } from '../config/field-kind.js'
-import { isRelationshipField } from '../fields/index.js'
+import { resolveListMember, type DeclaredFieldMember } from '../members/list-members.js'
 import {
   columnEqualsPredicate,
   identityPredicate,
@@ -114,7 +112,11 @@ export interface PluginOwnedFieldWrite {
   onlyIfUnchanged?: { fieldName: string; value: string | number | boolean | null }
 }
 
-function ownedField(context: AccessContext, listName: string, fieldName: string): FieldConfig {
+function ownedField(
+  context: AccessContext,
+  listName: string,
+  fieldName: string,
+): DeclaredFieldMember {
   const refuse = (reason: string): never => {
     throw new UnknownPluginFieldWriteError(listName, fieldName, reason)
   }
@@ -124,36 +126,30 @@ function ownedField(context: AccessContext, listName: string, fieldName: string)
     return refuse('the context carries no config to resolve the field against')
   }
 
-  // `Object.hasOwn` gates both lookups: `lists` and `fields` are ordinary
-  // objects, so a bare index answers for `constructor` and every other
-  // Object.prototype key with a value that is not undefined — walking straight
-  // past a guard that only tests for undefined.
-  const list = Object.hasOwn(config.lists, listName) ? config.lists[listName] : undefined
-  if (list === undefined) return refuse(`the config declares no list "${listName}"`)
-
-  const field: FieldConfig | undefined = Object.hasOwn(list.fields, fieldName)
-    ? list.fields[fieldName]
-    : undefined
-  if (field === undefined) return refuse(`list "${listName}" declares no field "${fieldName}"`)
-
-  // A field storing nothing — the `virtual` flag, the `'virtual'` type
-  // discriminator, or a `{ kind: 'computed' }` contract descriptor a
-  // third-party field can declare without the flag (issue #1531) — has no
-  // column for this write to reach.
-  if (isComputedField(field, fieldName, listName, config)) {
-    throw new NoColumnsPluginFieldWriteError(listName, fieldName)
+  if (!Object.hasOwn(config.lists, listName)) {
+    return refuse(`the config declares no list "${listName}"`)
   }
 
-  if (isRelationshipField(field)) {
-    throw new NoColumnsPluginFieldWriteError(listName, fieldName, 'relationship')
-  }
+  const member = resolveListMember(config, listName, fieldName)
+  if (member?.kind !== 'field') return refuse(`list "${listName}" declares no field "${fieldName}"`)
 
-  return field
+  switch (member.storage.kind) {
+    case 'computed':
+      throw new NoColumnsPluginFieldWriteError(listName, fieldName)
+    case 'relation':
+      throw new NoColumnsPluginFieldWriteError(listName, fieldName, 'relationship')
+    case 'column':
+    case 'columns':
+      return member
+    default: {
+      const unhandled: never = member.storage
+      return unhandled
+    }
+  }
 }
 
 function guardColumn(context: AccessContext, listName: string, fieldName: string): string {
-  const field = ownedField(context, listName, fieldName)
-  if (field.splitColumns) {
+  if (ownedField(context, listName, fieldName).storage.kind === 'columns') {
     throw new UnknownPluginFieldWriteError(
       listName,
       fieldName,
@@ -210,7 +206,7 @@ export async function writePluginOwnedField(args: PluginOwnedFieldWrite): Promis
     throw new UndefinedPluginFieldWriteError(listName, fieldName)
   }
 
-  const fieldConfig = ownedField(context, listName, fieldName)
+  const { field: fieldConfig } = ownedField(context, listName, fieldName)
 
   const columns = fieldConfig.splitColumns
     ? fieldConfig.splitColumns(fieldName, value)

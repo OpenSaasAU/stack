@@ -134,10 +134,6 @@ export function resolveJunctionEdge(
  * and while handling a server action, so an unvalidated config must not fail
  * either: an ownership question with no answer is treated as "not this end",
  * which at worst leaves the field with its ordinary to-many treatment.
- *
- * Exported so other server-action resolvers facing the same unvalidated-config
- * requirement (`classifyBackReference` in `context/index.ts`) consult this one
- * chokepoint rather than re-deriving it (#1442).
  */
 export function ownsForeignKey(
   config: OpenSaasConfig,

@@ -1,6 +1,7 @@
 import type { OpenSaasConfig, ListConfig } from '../config/types.js'
 import type { AccessContext, OrmClient, OrmRow, TransactionOpener } from '../access/types.js'
 import { checkCreateAccess, filterWritableFields } from '../access/index.js'
+import { resolveListMembers } from '../members/list-members.js'
 import {
   executeValidate,
   executeBeforeOperation,
@@ -151,11 +152,6 @@ function warnNoTransactionCapability(listName: string, operation: WriteOperation
   )
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-function isSingletonList(listConfig: ListConfig<any>): boolean {
-  return !!listConfig.isSingleton
-}
-
 export interface WritePipelineArgs {
   listName: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
@@ -209,7 +205,7 @@ export async function runWritePipeline(args: WritePipelineArgs): Promise<OrmRow 
 
     // A payload-shape refusal, after the access gate so a denied caller learns
     // nothing about this list's fields from it (ADR-0031).
-    refuseNestedRelationInput(listName, listConfig, config, inputData)
+    refuseNestedRelationInput(listName, config, inputData)
   } catch (err) {
     context._transactionOwner?.poison(err)
     throw err
@@ -491,6 +487,7 @@ async function runWriteInTransaction(
     operation: writeOp,
     listName,
     listConfig,
+    config,
     inputData: input,
     item: originalItem,
     context,
@@ -500,7 +497,7 @@ async function runWriteInTransaction(
   // The same payload-shape refusal, over what the hooks produced: a
   // `resolveInput` that assembles a relation payload writes it into
   // the resolved data, which the pre-transaction check could not see.
-  refuseNestedRelationInput(listName, listConfig, config, splitData)
+  refuseNestedRelationInput(listName, config, splitData)
 
   // ── Phase 5: filter writable fields (field-level access, skip if sudo) ──────
   const data = await filterWritableFields(splitData, listConfig.fields, writeOp, {
@@ -519,7 +516,6 @@ async function runWriteInTransaction(
   // is the silent `null` every other denial is, before `beforeOperation` runs.
   const linked = await lowerRelationInput({
     listName,
-    listConfig,
     config,
     context,
     ormHandle: tx,
@@ -739,8 +735,9 @@ export function createWriteStrategy(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>,
+  config: OpenSaasConfig,
 ): WriteStrategy {
-  const singleton = isSingletonList(listConfig)
+  const { singleton } = resolveListMembers(config, listName)
   return {
     operation: 'create',
     runInputPhases: true,
@@ -822,7 +819,7 @@ export function deleteWriteStrategy(
     runInputPhases: false,
     async resolveTarget(collection, ops, context) {
       // Singleton lists may not be deleted (enforced even under sudo).
-      if (isSingletonList(listConfig)) {
+      if (resolveListMembers(config, listName).singleton) {
         throw new ValidationError([`Cannot delete: ${listName} is a singleton list`], {})
       }
       return resolveTarget(collection, ops, context)

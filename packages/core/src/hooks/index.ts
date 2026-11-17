@@ -3,6 +3,7 @@ import type { AccessContext } from '../access/types.js'
 import type { FieldConfig, ValidationDefaults } from '../config/types.js'
 import { validateWithZod } from '../validation/schema.js'
 import { checkFieldAccess, writeRuleRow } from '../access/field-access.js'
+import type { ListMembers } from '../members/list-members.js'
 
 export class ValidationError extends Error {
   public errors: string[]
@@ -521,15 +522,21 @@ export async function splitMultiColumnFields(
   inputData: Record<string, any>,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   resolvedData: Record<string, any>,
-  fields: Record<string, FieldConfig>,
+  members: ListMembers,
   operation: 'create' | 'update',
   context: AccessContext,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   item?: any,
 ): Promise<Record<string, unknown>> {
   let result = { ...resolvedData }
+  const fields: Record<string, FieldConfig> = {}
+  for (const member of members.members.values()) {
+    if (member.kind === 'field') fields[member.name] = member.field
+  }
 
-  for (const [fieldKey, fieldConfig] of Object.entries(fields)) {
+  for (const member of members.members.values()) {
+    if (member.kind !== 'field' || member.storage.kind !== 'columns') continue
+    const { name: fieldKey, field: fieldConfig } = member
     if (!fieldConfig.splitColumns) continue
     if (!(fieldKey in result)) continue
 

@@ -1,4 +1,4 @@
-import type { ListConfig, ValidationDefaults } from '../config/types.js'
+import type { ListConfig, OpenSaasConfig, ValidationDefaults } from '../config/types.js'
 import type { AccessContext } from '../access/types.js'
 import {
   executeResolveInput,
@@ -10,6 +10,7 @@ import {
   ValidationError,
 } from '../hooks/index.js'
 import { applyCreateDefaults } from './apply-defaults.js'
+import { resolveListMembers } from '../members/list-members.js'
 
 /**
  * The transform+validate span of a write. See the "Hook Pipeline" and "Write
@@ -23,6 +24,7 @@ export interface HookPipelineArgs {
   listName: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   listConfig: ListConfig<any>
+  config: OpenSaasConfig
   inputData: Record<string, unknown>
   item: Record<string, unknown> | undefined
   context: AccessContext
@@ -48,7 +50,7 @@ export interface HookPipeline {
 }
 
 async function runHookPipeline(args: HookPipelineArgs): Promise<HookPipelineResult> {
-  const { operation, listName, listConfig, inputData, item, context, defaults } = args
+  const { operation, listName, listConfig, config, inputData, item, context, defaults } = args
 
   let resolvedData = await executeResolveInput(
     listConfig.hooks,
@@ -133,7 +135,7 @@ async function runHookPipeline(args: HookPipelineArgs): Promise<HookPipelineResu
   const splitData = await splitMultiColumnFields(
     inputData,
     resolvedData,
-    listConfig.fields,
+    resolveListMembers(config, listName),
     operation,
     context,
     item,
