@@ -13,6 +13,12 @@ import type {
   TypeInfo,
 } from '../config/types.js'
 import { isOneToOneRelationship, isRelationshipField } from '../fields/index.js'
+import {
+  claimListMember,
+  claimOrigin,
+  startListMemberClaims,
+  type ListMemberClaims,
+} from '../members/claims.js'
 import type {
   ContractColumn,
   ContractCompositeForeignKey,
@@ -229,18 +235,11 @@ type ModelDraft = {
   /** Field key → the FK column it owns, for `db.indexes` resolution. */
   ownedForeignKeys: Map<string, string>
   multiColumnFields: Set<string>
-  /** Contract member name → what claimed it, for the collision backstop. */
-  members: Map<string, string>
+  members: ListMemberClaims
 }
 
 function claimMember(listKey: string, draft: ModelDraft, name: string, origin: string): void {
-  const existing = draft.members.get(name)
-  if (existing !== undefined) {
-    throw new Error(
-      `List "${listKey}": ${origin} derives the contract member "${name}", which ${existing} already claims on the same model`,
-    )
-  }
-  draft.members.set(name, origin)
+  claimListMember(listKey, draft.members, name, origin)
 }
 
 function refuseColumnsAliasingRelations(model: ContractModel): void {
@@ -259,7 +258,7 @@ function refuseColumnsAliasingRelations(model: ContractModel): void {
 }
 
 /** A `from_<List>_<field>` back-relation and the list-only ref that synthesised it. */
-type SyntheticRelation = { from: string; relation: ContractRelation }
+type SyntheticRelation = { sourceList: string; sourceField: string; relation: ContractRelation }
 
 function readIsIndexed(field: FieldConfig): true | 'unique' | undefined {
   const value: unknown = 'isIndexed' in field ? field.isIndexed : undefined
@@ -313,13 +312,13 @@ function deriveRelation(
     }
   }
 
-  claimMember(listKey, draft, fieldKey, `fields.${fieldKey}`)
+  claimMember(listKey, draft, fieldKey, claimOrigin.field(fieldKey))
 
   const { foreignKey } = descriptor
   if (foreignKey) {
     const targetStrategy = resolveIdStrategy(targetList, config)
     const oneToOne = isOneToOneRelationship(fieldKey, field, config)
-    claimMember(listKey, draft, foreignKey.name, `the foreign-key column of fields.${fieldKey}`)
+    claimMember(listKey, draft, foreignKey.name, claimOrigin.foreignKey(fieldKey))
     draft.model.columns.push({
       name: foreignKey.name,
       type: idColumn(targetStrategy).type,
@@ -357,7 +356,8 @@ function deriveRelation(
     if (descriptor.inverse.synthetic) {
       const existing = syntheticByTarget.get(descriptor.target) ?? []
       existing.push({
-        from: `${listKey}.${fieldKey}`,
+        sourceList: listKey,
+        sourceField: fieldKey,
         relation: {
           name: descriptor.inverse.field,
           target: listKey,
@@ -758,10 +758,8 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
       fieldLevelIndexes: new Map(),
       ownedForeignKeys: new Map(),
       multiColumnFields: new Set(),
-      members: new Map([['id', 'the id column']]),
+      members: startListMemberClaims(timestamps),
     }
-    if (timestamps.createdAt) draft.members.set('createdAt', 'the createdAt auto-timestamp')
-    if (timestamps.updatedAt) draft.members.set('updatedAt', 'the updatedAt auto-timestamp')
 
     for (const [fieldKey, field] of Object.entries(listConfig.fields)) {
       if (field.virtual) continue
@@ -776,7 +774,7 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
           break
         case 'column': {
           const { kind: _kind, ...column } = descriptor
-          claimMember(listKey, draft, column.name, `fields.${fieldKey}`)
+          claimMember(listKey, draft, column.name, claimOrigin.field(fieldKey))
           const resolved = toContractColumn(listKey, fieldKey, column)
           draft.model.columns.push(
             timestampDefault !== undefined &&
@@ -803,7 +801,7 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
                   `column must stay nullable. Remove nullable: false from this column.`,
               )
             }
-            claimMember(listKey, draft, column.name, `fields.${fieldKey}`)
+            claimMember(listKey, draft, column.name, claimOrigin.field(fieldKey))
             draft.model.columns.push(toContractColumn(listKey, fieldKey, column))
           }
           break
@@ -835,12 +833,12 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
         `Synthetic back-relation targets list "${target}", which is not in the config`,
       )
     }
-    for (const { from, relation } of relations) {
+    for (const { sourceList, sourceField, relation } of relations) {
       claimMember(
         target,
         draft,
         relation.name,
-        `the back-relation synthesised for the list-only ref on "${from}"`,
+        claimOrigin.syntheticBackRelation(sourceList, sourceField),
       )
       draft.model.relations.push(relation)
     }

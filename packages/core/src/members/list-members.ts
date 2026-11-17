@@ -5,7 +5,13 @@ import type {
   OpenSaasConfig,
 } from '../config/types.js'
 import { isComputedField } from '../config/field-kind.js'
-import { deriveContract, resolveIdStrategy, resolveListTimestamps } from '../contract/derive.js'
+import { resolveIdStrategy, resolveListTimestamps } from '../contract/derive.js'
+import {
+  claimListMember,
+  claimOrigin,
+  startListMemberClaims,
+  type ListMemberClaims,
+} from './claims.js'
 import { validateConfigFields } from '../validation/field-config.js'
 import { validateFieldNames } from '../validation/field-names.js'
 import { validateRelations } from '../validation/relations.js'
@@ -105,9 +111,62 @@ function generateRefusal(config: OpenSaasConfig): string | undefined {
   const [fieldError] = validateConfigFields(config)
   if (fieldError !== undefined) return fieldError.message
   const [refusal] = [...validateFieldNames(config), ...validateRelations(config)]
-  if (refusal !== undefined) return refusal.message
+  return refusal?.message
+}
+
+function claimDescribedMembers(
+  listKey: string,
+  claims: ListMemberClaims,
+  fieldKey: string,
+  descriptor: ContractFieldDescriptor,
+): void {
+  switch (descriptor.kind) {
+    case 'column':
+      claimListMember(listKey, claims, descriptor.name, claimOrigin.field(fieldKey))
+      return
+    case 'columns':
+      for (const column of descriptor.columns) {
+        claimListMember(listKey, claims, column.name, claimOrigin.field(fieldKey))
+      }
+      return
+    case 'relation':
+      claimListMember(listKey, claims, fieldKey, claimOrigin.field(fieldKey))
+      if (descriptor.foreignKey !== undefined) {
+        claimListMember(
+          listKey,
+          claims,
+          descriptor.foreignKey.name,
+          claimOrigin.foreignKey(fieldKey),
+        )
+      }
+      return
+    case 'computed':
+      return
+  }
+}
+
+function claimRefusal(config: OpenSaasConfig, state: ConfigState): string | undefined {
   try {
-    deriveContract(config)
+    const claimsByList = new Map<string, ListMemberClaims>()
+    for (const [listKey, listConfig] of Object.entries(config.lists)) {
+      const claims = startListMemberClaims(resolveListTimestamps(listConfig, config.db))
+      claimsByList.set(listKey, claims)
+      for (const [fieldKey, { descriptor }] of descriptorsOf(config, state, listKey)) {
+        claimDescribedMembers(listKey, claims, fieldKey, descriptor)
+      }
+    }
+    for (const [target, entries] of syntheticsOf(config, state)) {
+      const claims = claimsByList.get(target)
+      if (claims === undefined) continue
+      for (const entry of entries) {
+        claimListMember(
+          target,
+          claims,
+          entry.name,
+          claimOrigin.syntheticBackRelation(entry.sourceList, entry.sourceField),
+        )
+      }
+    }
   } catch (error) {
     return error instanceof Error ? error.message : String(error)
   }
@@ -147,6 +206,7 @@ function stateOf(config: OpenSaasConfig): ConfigState {
     synthetics: undefined,
     lists: new Map(),
   }
+  state.refusal ??= claimRefusal(config, state)
   states.set(config, state)
   return state
 }
