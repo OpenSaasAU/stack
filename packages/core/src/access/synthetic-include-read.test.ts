@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { filterReadableFields } from './field-visibility.js'
 import type { OpenSaasConfig, FieldConfig } from '../config/types.js'
 import type { AccessContext } from './types.js'
+import { integer, relationship, text } from '../fields/index.js'
 
 /**
  * Regression coverage for issue #1082, Field Visibility half.
@@ -18,7 +19,7 @@ import type { AccessContext } from './types.js'
 
 // A relationship field pointing at another list.
 function rel(ref: string, many = false): FieldConfig {
-  return { type: 'relationship', ref, many } as unknown as FieldConfig
+  return relationship({ ref, many })
 }
 
 // A virtual field computed via resolveOutput.
@@ -48,21 +49,17 @@ function makeContext(): AccessContext {
 // synthesizes `from_Bill_term` on Term, which no list config declares.
 function syntheticConfig(): OpenSaasConfig {
   return {
-    db: { provider: 'sqlite' },
+    db: { provider: 'postgresql' },
     lists: {
       Term: {
-        fields: { name: { type: 'text' } as FieldConfig },
+        fields: { name: text() },
         access: { operation: { query: () => true } },
       },
       Bill: {
         fields: {
-          amount: { type: 'integer' } as FieldConfig,
+          amount: integer(),
           term: rel('Term'),
-          internalNotes: {
-            type: 'text',
-            access: { read: () => false },
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal field config for unit test
-          } as any as FieldConfig,
+          internalNotes: text({ access: { read: () => false } }),
           label: virtualField(({ item }) => `Bill #${item.amount}`, ['amount']),
         },
         access: { operation: { query: () => true } },
@@ -185,11 +182,7 @@ describe('filterReadableFields — synthetic back-relation source field read gat
     read: (args: { item?: Record<string, unknown> }) => boolean,
   ): OpenSaasConfig {
     const config = syntheticConfig()
-    config.lists.Bill.fields.term = {
-      ...rel('Term'),
-      access: { read },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal field config for unit test
-    } as any as FieldConfig
+    config.lists.Bill.fields.term = relationship({ ref: 'Term', access: { read } })
     return config
   }
 

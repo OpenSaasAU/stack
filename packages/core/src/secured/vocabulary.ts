@@ -4,6 +4,7 @@
 // imports the ORM — the same property that keeps `../filter/` unit-testable.
 
 import type {
+  FieldConfig,
   ListConfig,
   OpenSaasConfig,
   TypeInfo,
@@ -11,13 +12,14 @@ import type {
   VectorDistanceFunction,
 } from '../config/types.js'
 import type { AccessContext, PrismaFilter, Session } from '../access/types.js'
-import {
-  assertAccessFilterConstrains,
-  checkAccess,
-  getRelatedListConfig,
-} from '../access/engine.js'
+import { assertAccessFilterConstrains, checkAccess } from '../access/engine.js'
 import { isFieldReadableForPredicate } from '../access/field-access.js'
-import { resolveQueryField, type ResolvedQueryField } from '../access/query-validation.js'
+import {
+  resolveListMember,
+  unhandledMember,
+  type DeclaredFieldMember,
+  type ListMember,
+} from '../members/list-members.js'
 import { ValidationError } from '../hooks/index.js'
 import { WHERE_MAX_NODES, WHERE_RELATION_MAX_DEPTH } from '../access/depth-limits.js'
 import { likeContainsPattern } from '../where/like.js'
@@ -380,12 +382,11 @@ export async function resolveRelatedAccessPlan(
 
 async function resolveRelation(
   key: string,
-  ref: string,
+  relatedList: string,
   condition: unknown,
   ctx: ResolveContext,
 ): Promise<WherePlan> {
-  const related = getRelatedListConfig(ref, ctx.config)
-  if (!related) throw unqueryableKey(ctx.listName, key)
+  const related = listNamed(ctx, relatedList)
   if (!isPlainObject(condition)) {
     throw malformedCondition(ctx.listName, key, 'takes some, every or none')
   }
@@ -458,26 +459,116 @@ async function resolveRelation(
   return nodes.length === 1 ? nodes[0] : { kind: 'and', nodes }
 }
 
-function isUnfilterable(resolved: ResolvedQueryField): boolean {
-  return resolved.fieldConfig?.isFilterable === false
+/** A list of the config by name, as a {@link ResolveContext} carries one. */
+export function listNamed(
+  ctx: Pick<ResolveContext, 'config'>,
+  listName: string,
+): { listName: string; listConfig: ListConfig<TypeInfo> } {
+  if (!Object.hasOwn(ctx.config.lists, listName)) {
+    throw new Error(`List "${listName}" is not in the config`)
+  }
+  return { listName, listConfig: ctx.config.lists[listName] }
+}
+
+/** The declared field `fieldKey` of the list a {@link ResolveContext} is resolving. */
+export function declaredFieldOf(
+  ctx: Pick<ResolveContext, 'listConfig'>,
+  fieldKey: string,
+): FieldConfig {
+  return ctx.listConfig.fields[fieldKey]
+}
+
+/** The List member `name` on the list being resolved, refused when there is none. */
+export function memberOf(name: string, ctx: ResolveContext): ListMember {
+  const member = resolveListMember(ctx.config, ctx.listName, name)
+  if (member === undefined) throw unqueryableKey(ctx.listName, name)
+  return member
+}
+
+/** The declared field whose access rules govern a member, wherever it is named. */
+export function memberGate(member: ListMember, ctx: ResolveContext): FieldConfig | undefined {
+  switch (member.kind) {
+    case 'field':
+      return member.field
+    case 'foreignKey':
+    case 'partColumn':
+      return declaredFieldOf(ctx, member.field)
+    case 'syntheticBackRelation':
+      return listNamed(ctx, member.sourceList).listConfig.fields[member.sourceField]
+    case 'systemField':
+      return undefined
+    default:
+      return unhandledMember(member)
+  }
+}
+
+type ForeignKeyRef = { relation: string; relatedList: string }
+
+type PredicateKey =
+  | { kind: 'column'; foreignKey: ForeignKeyRef | undefined }
+  | { kind: 'relation'; relatedList: string }
+
+function declaredPredicateKey(member: DeclaredFieldMember, ctx: ResolveContext): PredicateKey {
+  const { storage } = member
+  switch (storage.kind) {
+    case 'column':
+      return { kind: 'column', foreignKey: undefined }
+    case 'columns':
+      if (!storage.parts.some((part) => part.name === member.name)) {
+        throw unqueryableKey(ctx.listName, member.name)
+      }
+      return { kind: 'column', foreignKey: undefined }
+    case 'relation':
+      return { kind: 'relation', relatedList: storage.relatedList }
+    case 'computed':
+      throw unqueryableKey(ctx.listName, member.name)
+    default:
+      return unhandledMember(storage)
+  }
+}
+
+function predicateKeyOf(member: ListMember, ctx: ResolveContext): PredicateKey {
+  switch (member.kind) {
+    case 'field':
+      return declaredPredicateKey(member, ctx)
+    case 'foreignKey':
+      return {
+        kind: 'column',
+        foreignKey: { relation: member.field, relatedList: member.relatedList },
+      }
+    case 'partColumn':
+    case 'systemField':
+      return { kind: 'column', foreignKey: undefined }
+    case 'syntheticBackRelation':
+      throw unqueryableKey(ctx.listName, member.name)
+    default:
+      return unhandledMember(member)
+  }
+}
+
+async function refuseUnlessReadable(
+  key: string,
+  gate: FieldConfig | undefined,
+  ctx: ResolveContext,
+): Promise<void> {
+  if (gate?.isFilterable === false) throw unqueryableKey(ctx.listName, key)
+  if (!ctx.checkFieldRead || gate === undefined) return
+  const readable = await isFieldReadableForPredicate(gate.access, {
+    session: ctx.session,
+    context: ctx.context,
+  })
+  if (!readable) throw unqueryableKey(ctx.listName, key)
 }
 
 async function resolveKey(key: string, value: unknown, ctx: ResolveContext): Promise<WherePlan> {
   if (value === undefined) throw undefinedCondition(ctx.listName, key)
 
-  const resolved = resolveQueryField(key, ctx.listConfig.fields)
-  if (!resolved || isUnfilterable(resolved)) throw unqueryableKey(ctx.listName, key)
+  const member = memberOf(key, ctx)
+  const target = predicateKeyOf(member, ctx)
+  await refuseUnlessReadable(key, memberGate(member, ctx), ctx)
 
-  if (ctx.checkFieldRead && resolved.fieldConfig !== undefined) {
-    const readable = await isFieldReadableForPredicate(resolved.fieldConfig.access, {
-      session: ctx.session,
-      context: ctx.context,
-    })
-    if (!readable) throw unqueryableKey(ctx.listName, key)
-  }
-
-  if (resolved.isRelationship) {
-    return await resolveRelation(key, resolved.fieldConfig.ref, value, ctx)
+  if (target.kind === 'relation') {
+    return await resolveRelation(key, target.relatedList, value, ctx)
   }
   const scalar: WherePlan = {
     kind: 'scalar',
@@ -485,7 +576,7 @@ async function resolveKey(key: string, value: unknown, ctx: ResolveContext): Pro
     column: key,
     steps: resolveScalar(ctx.listName, key, value),
   }
-  const scope = await foreignKeyScope(key, resolved, ctx)
+  const scope = await foreignKeyScope(target.foreignKey, ctx)
   if (scope === null) return scalar
   const visible: WherePlan =
     scope.access.kind === 'false'
@@ -506,17 +597,11 @@ function matchesNull(value: unknown): boolean {
 }
 
 async function foreignKeyScope(
-  key: string,
-  resolved: ResolvedQueryField,
+  foreignKey: ForeignKeyRef | undefined,
   ctx: ResolveContext,
 ): Promise<{ access: WherePlan; exists: WherePlan } | null> {
-  const field = resolved.fieldConfig
-  if (!ctx.checkFieldRead) return null
-  if (resolved.isRelationship || field === undefined || field.type !== 'relationship') return null
-  const relation = key.slice(0, -2)
-  if (!key.endsWith('Id') || ctx.listConfig.fields[relation] !== field) return null
-  const related = getRelatedListConfig(field.ref, ctx.config)
-  if (!related) return null
+  if (!ctx.checkFieldRead || foreignKey === undefined) return null
+  const related = listNamed(ctx, foreignKey.relatedList)
   const access = await resolveRelatedAccessPlan(related, ctx)
   if (access.kind === 'true') return null
   return {
@@ -524,7 +609,7 @@ async function foreignKeyScope(
     exists: {
       kind: 'relation',
       listName: ctx.listName,
-      relation,
+      relation: foreignKey.relation,
       relatedListName: related.listName,
       quantifier: 'some',
       node: access,
@@ -534,10 +619,10 @@ async function foreignKeyScope(
 
 async function refuseUnlessForeignKeyVisible(
   key: string,
-  resolved: ResolvedQueryField,
+  foreignKey: ForeignKeyRef | undefined,
   ctx: ResolveContext,
 ): Promise<void> {
-  if ((await foreignKeyScope(key, resolved, ctx)) !== null) throw unqueryableKey(ctx.listName, key)
+  if ((await foreignKeyScope(foreignKey, ctx)) !== null) throw unqueryableKey(ctx.listName, key)
 }
 
 /**
@@ -621,29 +706,63 @@ export async function resolveOrderBy(
       if (direction !== 'asc' && direction !== 'desc') {
         throw malformedCondition(ctx.listName, key, 'takes the direction "asc" or "desc"')
       }
-      const resolved = resolveQueryField(key, ctx.listConfig.fields)
-      if (!resolved || isUnfilterable(resolved)) throw unqueryableKey(ctx.listName, key)
+      const member = memberOf(key, ctx)
+      const target = predicateKeyOf(member, ctx)
       // The read gate runs before the relationship refusal, as `resolveKey`
       // does: a read-denied key must be indistinguishable from one the list
       // does not declare, and "orderBy takes scalar columns only" would
       // otherwise confirm that a read-denied relationship exists (ADR-0031).
-      if (ctx.checkFieldRead && resolved.fieldConfig !== undefined) {
-        const readable = await isFieldReadableForPredicate(resolved.fieldConfig.access, {
-          session: ctx.session,
-          context: ctx.context,
-        })
-        if (!readable) throw unqueryableKey(ctx.listName, key)
-      }
-      if (resolved.isRelationship) {
+      await refuseUnlessReadable(key, memberGate(member, ctx), ctx)
+      if (target.kind === 'relation') {
         throw new ValidationError([
           `Cannot order "${ctx.listName}" by "${key}" — orderBy takes scalar columns only.`,
         ])
       }
-      await refuseUnlessForeignKeyVisible(key, resolved, ctx)
+      await refuseUnlessForeignKeyVisible(key, target.foreignKey, ctx)
       plans.push({ listName: ctx.listName, column: key, direction })
     }
   }
   return plans
+}
+
+type ColumnKey =
+  | { kind: 'column'; foreignKey: ForeignKeyRef | undefined }
+  | { kind: 'relation' }
+  | { kind: 'unstored' }
+
+function declaredColumnKey(member: DeclaredFieldMember): ColumnKey {
+  const { storage } = member
+  switch (storage.kind) {
+    case 'column':
+      return { kind: 'column', foreignKey: undefined }
+    case 'relation':
+      return { kind: 'relation' }
+    case 'columns':
+    case 'computed':
+      return { kind: 'unstored' }
+    default:
+      return unhandledMember(storage)
+  }
+}
+
+function columnKeyOf(member: ListMember, ctx: ResolveContext): ColumnKey {
+  switch (member.kind) {
+    case 'field':
+      return declaredColumnKey(member)
+    case 'foreignKey':
+      return {
+        kind: 'column',
+        foreignKey: { relation: member.field, relatedList: member.relatedList },
+      }
+    case 'partColumn':
+      return { kind: 'unstored' }
+    case 'systemField':
+      return { kind: 'column', foreignKey: undefined }
+    case 'syntheticBackRelation':
+      throw unqueryableKey(ctx.listName, member.name)
+    default:
+      return unhandledMember(member)
+  }
 }
 
 /** One of the list's own scalar columns, resolved from a caller's key. */
@@ -672,30 +791,16 @@ export async function resolveColumns(
   }
   const plans: ColumnPlan[] = []
   for (const key of keys) {
-    const resolved = resolveQueryField(key, ctx.listConfig.fields)
-    if (!resolved || isUnfilterable(resolved)) throw unqueryableKey(ctx.listName, key)
-    if (ctx.checkFieldRead && resolved.fieldConfig !== undefined) {
-      const readable = await isFieldReadableForPredicate(resolved.fieldConfig.access, {
-        session: ctx.session,
-        context: ctx.context,
-      })
-      if (!readable) throw unqueryableKey(ctx.listName, key)
-    }
-    if (resolved.isRelationship) {
+    const listMember = memberOf(key, ctx)
+    const target = columnKeyOf(listMember, ctx)
+    await refuseUnlessReadable(key, memberGate(listMember, ctx), ctx)
+    if (target.kind === 'relation') {
       throw new ValidationError([
         `Cannot ${member} "${ctx.listName}" by "${key}" — ${member} takes scalar columns only.`,
       ])
     }
-    // A declared field is not yet a stored column: a virtual field resolves,
-    // and so does the logical name of a field that owns several columns. A
-    // predicate and an order both catch that where they lower onto the ORM
-    // accessor, but a bare column list never lowers — so the field's own
-    // contract descriptor is asked here, and answers with the same refusal.
-    const descriptor = resolved.fieldConfig?.getContractField?.(key, ctx.listName, ctx.config)
-    if (descriptor !== undefined && descriptor.kind !== 'column') {
-      throw unqueryableKey(ctx.listName, key)
-    }
-    await refuseUnlessForeignKeyVisible(key, resolved, ctx)
+    if (target.kind === 'unstored') throw unqueryableKey(ctx.listName, key)
+    await refuseUnlessForeignKeyVisible(key, target.foreignKey, ctx)
     plans.push({ listName: ctx.listName, column: key })
   }
   return plans
@@ -749,6 +854,20 @@ function queryVector(
   return raw
 }
 
+function refuseUnlessSearchable(member: ListMember, ctx: ResolveContext): void {
+  switch (member.kind) {
+    case 'field':
+    case 'foreignKey':
+    case 'partColumn':
+    case 'systemField':
+      return
+    case 'syntheticBackRelation':
+      throw unqueryableKey(ctx.listName, member.name)
+    default:
+      return unhandledMember(member)
+  }
+}
+
 /**
  * Resolve a vector search: the field checked against the config and the
  * session, the query vector checked against the column's dimension, and
@@ -766,18 +885,12 @@ export async function resolveNearest(
   options: NearestOptions,
   ctx: ResolveContext,
 ): Promise<NearestPlan> {
-  const resolved = resolveQueryField(fieldKey, ctx.listConfig.fields)
-  if (!resolved || isUnfilterable(resolved)) throw unqueryableKey(ctx.listName, fieldKey)
+  const member = memberOf(fieldKey, ctx)
+  refuseUnlessSearchable(member, ctx)
+  const gate = memberGate(member, ctx)
+  await refuseUnlessReadable(fieldKey, gate, ctx)
 
-  if (ctx.checkFieldRead && resolved.fieldConfig !== undefined) {
-    const readable = await isFieldReadableForPredicate(resolved.fieldConfig.access, {
-      session: ctx.session,
-      context: ctx.context,
-    })
-    if (!readable) throw unqueryableKey(ctx.listName, fieldKey)
-  }
-
-  const descriptor = resolved.fieldConfig?.getVectorColumn?.(fieldKey)
+  const descriptor = gate?.getVectorColumn?.(fieldKey)
   if (descriptor === undefined) {
     throw malformedSearch(ctx.listName, `"${fieldKey}" is not a vector column`)
   }

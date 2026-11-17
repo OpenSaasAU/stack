@@ -13,19 +13,21 @@
 //   fetching every denied relation or varying the refusal by session — see
 //   {@link isOmittedBeforeQuery}.
 
-import type {
-  ContractForeignKeyDescriptor,
-  FieldConfig,
-  ListConfig,
-  TypeInfo,
-} from '../config/types.js'
-import { getRelatedListConfig, resolveSyntheticReverseRelation } from '../access/engine.js'
+import type { FieldConfig, ListConfig, TypeInfo } from '../config/types.js'
 import { classifyRowIndependentRead } from '../access/field-access.js'
 import { resolveDeclaredDependencies } from '../access/declared-dependencies.js'
-import { resolveQueryField } from '../access/query-validation.js'
+import {
+  resolveListMember,
+  resolveListMembers,
+  unhandledMember,
+  type DeclaredFieldMember,
+} from '../members/list-members.js'
 import { READ_INCLUDE_MAX_DEPTH } from '../access/depth-limits.js'
 import { AccessScopeDepthExceededError } from '../access/errors.js'
 import {
+  listNamed,
+  memberGate,
+  memberOf,
   resolveOrderBy,
   resolveRelatedAccessPlan,
   assertWhereWithinLimits,
@@ -496,31 +498,15 @@ interface IncludeTarget {
   fieldConfig: FieldConfig | undefined
   /** The declared field whose `read` rule gates this key: the key's own field, or a synthetic's source field. */
   readGate: FieldConfig | undefined
-  /** The foreign key this side owns, as the contract derives it. */
-  foreignKey: ContractForeignKeyDescriptor | undefined
-}
-
-/**
- * The foreign key the contract gives this relation, asked of the field itself
- * rather than re-derived here. Neither half is a function of the field's name
- * alone: `db: { foreignKey: { map } }` renames the physical column, and the
- * non-owning side of a one-to-one owns no column at all.
- */
-export function foreignKeyOf(
-  name: string,
-  fieldConfig: FieldConfig,
-  ctx: ResolveContext,
-): ContractForeignKeyDescriptor | undefined {
-  const descriptor = fieldConfig.getContractField?.(name, ctx.listName, ctx.config)
-  if (descriptor === undefined || descriptor.kind !== 'relation') return undefined
-  return descriptor.foreignKey
+  /** The contract member name of the foreign key this side owns. */
+  foreignKey: string | undefined
 }
 
 /** One to-one relationship field that owns a foreign-key column. */
 export interface ForeignKeyOwner {
   readonly relation: string
   readonly fieldConfig: FieldConfig
-  readonly ref: string
+  readonly relatedList: string
   readonly foreignKey: string
 }
 
@@ -537,19 +523,41 @@ export interface ForeignKeyOwner {
  */
 export function foreignKeyOwningRelations(ctx: ResolveContext): ForeignKeyOwner[] {
   const owners: ForeignKeyOwner[] = []
-  for (const [name, fieldConfig] of Object.entries(ctx.listConfig.fields)) {
-    if (fieldConfig.type !== 'relationship' || !('ref' in fieldConfig) || !fieldConfig.ref) continue
-    if ('many' in fieldConfig && fieldConfig.many === true) continue
-    const foreignKey = foreignKeyOf(name, fieldConfig, ctx)
+  for (const member of resolveListMembers(ctx.config, ctx.listName).members.values()) {
+    if (member.kind !== 'field' || member.storage.kind !== 'relation') continue
+    const { foreignKey, relatedList } = member.storage
     if (foreignKey === undefined) continue
     owners.push({
-      relation: name,
-      fieldConfig,
-      ref: fieldConfig.ref as string,
+      relation: member.name,
+      fieldConfig: member.field,
+      relatedList,
       foreignKey: foreignKey.name,
     })
   }
   return owners
+}
+
+function declaredIncludeTarget(member: DeclaredFieldMember, ctx: ResolveContext): IncludeTarget {
+  const { storage } = member
+  switch (storage.kind) {
+    case 'relation': {
+      const related = listNamed(ctx, storage.relatedList)
+      return {
+        relatedListName: related.listName,
+        relatedListConfig: related.listConfig,
+        arity: storage.many ? 'many' : 'one',
+        fieldConfig: member.field,
+        readGate: member.field,
+        foreignKey: storage.foreignKey?.name,
+      }
+    }
+    case 'column':
+    case 'columns':
+    case 'computed':
+      throw unqueryableKey(ctx.listName, member.name)
+    default:
+      return unhandledMember(storage)
+  }
 }
 
 /**
@@ -565,33 +573,28 @@ export function foreignKeyOwningRelations(ctx: ResolveContext): ForeignKeyOwner[
  * the `Known limits` note above).
  */
 function resolveIncludeTarget(name: string, ctx: ResolveContext): IncludeTarget {
-  const resolved = resolveQueryField(name, ctx.listConfig.fields)
-  if (resolved?.isRelationship === true) {
-    const related = getRelatedListConfig(resolved.fieldConfig.ref, ctx.config)
-    if (!related) throw unqueryableKey(ctx.listName, name)
-    return {
-      relatedListName: related.listName,
-      relatedListConfig: related.listConfig,
-      arity: resolved.fieldConfig.many === true ? 'many' : 'one',
-      fieldConfig: resolved.fieldConfig,
-      readGate: resolved.fieldConfig,
-      foreignKey: foreignKeyOf(name, resolved.fieldConfig, ctx),
-    }
-  }
-  if (resolved === undefined) {
-    const synthetic = resolveSyntheticReverseRelation(name, ctx.listName, ctx.config)
-    if (synthetic) {
+  const member = memberOf(name, ctx)
+  switch (member.kind) {
+    case 'field':
+      return declaredIncludeTarget(member, ctx)
+    case 'syntheticBackRelation': {
+      const source = listNamed(ctx, member.sourceList)
       return {
-        relatedListName: synthetic.sourceListName,
-        relatedListConfig: synthetic.sourceListConfig,
+        relatedListName: source.listName,
+        relatedListConfig: source.listConfig,
         arity: 'many',
         fieldConfig: undefined,
-        readGate: synthetic.sourceFieldConfig,
+        readGate: memberGate(member, ctx),
         foreignKey: undefined,
       }
     }
+    case 'foreignKey':
+    case 'partColumn':
+    case 'systemField':
+      throw unqueryableKey(ctx.listName, name)
+    default:
+      return unhandledMember(member)
   }
-  throw unqueryableKey(ctx.listName, name)
 }
 
 /**
@@ -723,7 +726,7 @@ async function resolveInclude(
     relation: request.name,
     relatedListName: target.relatedListName,
     arity: target.arity,
-    ...(target.foreignKey ? { foreignKey: target.foreignKey.name } : {}),
+    ...(target.foreignKey ? { foreignKey: target.foreignKey } : {}),
     predicates,
     accessScoped: access.kind !== 'true',
     callerRefined: request.predicates.length > 0,
@@ -926,10 +929,8 @@ export function declaredRelations(
 ): string[] {
   return [...resolveDeclaredDependencies(ctx.config, ctx.listName, selected).relations].filter(
     (name) => {
-      const fieldConfig = Object.hasOwn(ctx.listConfig.fields, name)
-        ? ctx.listConfig.fields[name]
-        : undefined
-      return fieldConfig?.type === 'relationship' && 'ref' in fieldConfig && !!fieldConfig.ref
+      const member = resolveListMember(ctx.config, ctx.listName, name)
+      return member?.kind === 'field' && member.storage.kind === 'relation'
     },
   )
 }

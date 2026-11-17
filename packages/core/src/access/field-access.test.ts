@@ -394,15 +394,36 @@ describe('filterWritableFields', () => {
     ['updatedAt', { updatedAt: new Date() }],
   ])('refuses system field %s, even under sudo', async (name, extra) => {
     const data = { title: 'Test', ...extra }
+    const fields = { title: text() }
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql', timestamps: true },
+      lists: { Post: { fields } },
+    }
     await expect(
-      filterWritableFields(data, { title: text() }, 'create', {
-        ...onList({ title: text() }),
+      filterWritableFields(data, fields, 'create', {
         session: null,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         context: { session: null, _isSudo: true } as any,
         inputData: data,
+        listName: 'Post',
+        config,
       }),
     ).rejects.toThrow(new RegExp(`"${name}": it is system-managed`))
+  })
+
+  it('refuses an undeclared createdAt as unknown on a list without timestamps', async () => {
+    const data = { title: 'Test', createdAt: new Date() }
+    const fields = { title: text() }
+    const config: OpenSaasConfig = { db: { provider: 'postgresql' }, lists: { Post: { fields } } }
+    await expect(
+      filterWritableFields(data, fields, 'create', {
+        session: null,
+        context: nonSudoContext(),
+        inputData: data,
+        listName: 'Post',
+        config,
+      }),
+    ).rejects.toThrow(/"createdAt": it is not a field of this list/)
   })
 
   it('treats a declared createdAt as an ordinary field', async () => {

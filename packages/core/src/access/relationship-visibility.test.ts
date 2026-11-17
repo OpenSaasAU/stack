@@ -82,6 +82,7 @@ describe('Relationship Access Control', () => {
             User: {
               fields: {
                 name: text(),
+                posts: relationship({ ref: 'Post.author', many: true }),
               },
               access: {
                 operation: {
@@ -130,6 +131,7 @@ describe('Relationship Access Control', () => {
               fields: {
                 name: text(),
                 email: text({ access: { read: () => false } }),
+                posts: relationship({ ref: 'Post.author', many: true }),
               },
               access: {
                 operation: {
@@ -192,6 +194,7 @@ describe('Relationship Access Control', () => {
                     { label: 'Draft', value: 'draft' },
                   ],
                 }),
+                author: relationship({ ref: 'User.posts' }),
               },
               access: {
                 operation: {
@@ -240,6 +243,7 @@ describe('Relationship Access Control', () => {
               fields: {
                 title: text(),
                 internalNotes: text({ access: { read: () => false } }),
+                author: relationship({ ref: 'User.posts' }),
               },
               access: {
                 operation: {

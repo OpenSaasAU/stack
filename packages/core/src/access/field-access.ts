@@ -9,8 +9,7 @@ import { ValidationError } from '../hooks/index.js'
 import { InvalidFieldAccessResultError } from './errors.js'
 import { checkAccess } from './engine.js'
 import { guardedRuleItem, NO_RULE_VIEWS, ruleRowOf, type RuleRow } from './rule-item.js'
-import { resolveListMembers, type ListMembers } from '../members/list-members.js'
-import { isSystemFieldName } from './system-fields.js'
+import { resolveListMember, resolveListMembers, type ListMembers } from '../members/list-members.js'
 
 function isHookOnlyAccess(fieldAccess: FieldAccess | undefined): boolean {
   return fieldAccess?.write === 'hooks'
@@ -233,7 +232,7 @@ async function evaluateRowRead(
  * has already been fetched. That leaves the predicate itself unconstrained —
  * a caller can still filter or sort by a field whose value they could never
  * read, and recover it (or its relative order) by probing. This function is
- * the pre-query counterpart, called from `query-validation.ts`'s `where`/
+ * the pre-query counterpart, called from `secured/vocabulary.ts`'s `where`/
  * `orderBy` walk for every key that resolves to a declared field.
  *
  * It delegates to the same evaluator Field Visibility uses (`checkFieldAccess`),
@@ -458,7 +457,9 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
     item?: Record<string, unknown>
     context: AccessContext & { _isSudo?: boolean }
     inputData?: Record<string, unknown>
+    /** The list being written. */
     listName: string
+    /** The full config, which says what each name on the list is. */
     config: OpenSaasConfig
     /**
      * Field keys `applyCreateDefaults` filled on this write (`create` only) —
@@ -486,8 +487,6 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
   const { foreignKeyOwners, splitColumnOwners } = writeOwnersOf(
     resolveListMembers(args.config, args.listName),
   )
-
-  const isSudo = args.context._isSudo === true
 
   for (const key of Object.keys(args.inputData ?? {})) {
     const owner = splitColumnOwners.get(key)
@@ -528,7 +527,7 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
       callerFields.has(owningField(fieldName)) ||
       args.defaultedFields?.has(fieldName) === true
 
-    if (isSystemFieldName(fieldName, fieldConfigs)) {
+    if (resolveListMember(args.config, args.listName, fieldName)?.kind === 'systemField') {
       throw new ValidationError([
         `Cannot ${operation} "${fieldName}": it is system-managed and cannot be written` +
           (fieldName === 'id'
@@ -615,15 +614,9 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
     // the config never exposed. Mirror Keystone's GraphQL-schema behaviour and
     // reject it.
     if (!fieldConfig) {
-      if (isSudo) {
-        throw new ValidationError([
-          `Cannot ${operation} "${fieldName}": it is not a field of this list. ` +
-            `Undeclared data keys are rejected, even under sudo.`,
-        ])
-      }
       throw new ValidationError([
         `Cannot ${operation} "${fieldName}": it is not a field of this list. ` +
-          `Undeclared data keys are rejected (use sudo to bypass).`,
+          `Undeclared data keys are rejected, even under sudo.`,
       ])
     }
 

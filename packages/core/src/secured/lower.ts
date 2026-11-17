@@ -101,9 +101,7 @@ function memberOf(accessor: PredicateAccessor, listName: string, name: string): 
     if (member === undefined) throw unqueryableKey(listName, name)
     return member
   } catch (error) {
-    // The accessor is a Proxy that throws for a name the model has no field for,
-    // which `resolveQueryField` admits for `createdAt` on a list without
-    // timestamps and for `<field>Id` on the inverse side of a one-to-one.
+    // The accessor is a Proxy that throws for a name the model has no field for.
     if (isUnknownFieldError(error)) throw unqueryableKey(listName, name)
     throw error
   }

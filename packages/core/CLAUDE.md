@@ -62,7 +62,7 @@ Built-in fields:
 - `field-access.ts` - Field-level rules, and the row-independent-rule classifier
 - `field-visibility.ts` - The post-query phase: strip, compute, resolve
 - `rule-item.ts` - The guarded `item` a `read` rule runs on: a reach for a relation the row does not carry, enumerating such a row, or a write through it denies that rule (ADR-0082)
-- `query-validation.ts` - `resolveQueryField`, the predicate-time check (with `isFieldReadableForPredicate` from `field-access.ts`)
+- `../members/list-members.ts` - `resolveListMembers`/`resolveListMember`: what every name on a list is (its List members). Each read position decides which kinds it accepts (`secured/vocabulary.ts`, `secured/select.ts`, `secured/include.ts`)
 - `types.ts` - Type definitions (`AccessControl`, `OperationAccess`, `FieldAccess`, `Session`, `AccessContext`)
 
 Access control functions receive `{ session, context, item, operation }` and return:

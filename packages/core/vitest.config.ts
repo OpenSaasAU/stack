@@ -35,8 +35,8 @@ export default defineConfig({
         // Re-baselined once against the corpus rewritten by guarantee
         // (#1156, ADR-0057, ADR-0002). No number here was lowered.
         //
-        // Lowest current files: query-validation.ts (stmts 78.90, branch
-        // 73.27, lines 83.63) and field-access.ts (funcs 80).
+        // Lowest files at the re-baseline: query-validation.ts, since removed
+        // (stmts 78.90, branch 73.27, lines 83.63), and field-access.ts (funcs 80).
         'src/access/**': {
           perFile: true,
           statements: 76,
