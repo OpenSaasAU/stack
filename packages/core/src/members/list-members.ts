@@ -92,6 +92,13 @@ const NAME_RELATION_REFUSALS: ReadonlySet<ConfigRefusalReason> = new Set([
 
 type SyntheticEntry = { name: string; sourceList: string; sourceField: string }
 
+/** What `field` contributes to the contract, as the member table reads it. */
+export type DescribeContractField = (
+  listKey: string,
+  fieldKey: string,
+  field: FieldConfig,
+) => ContractFieldDescriptor
+
 type ConfigState = {
   refusal: Error | undefined
   descriptors: WeakMap<FieldConfig, Map<string, ContractFieldDescriptor>>
@@ -159,23 +166,31 @@ function describe(
   return descriptor
 }
 
-function syntheticsOf(
+function syntheticsByTarget(
   config: OpenSaasConfig,
-  state: ConfigState,
-): ReadonlyMap<string, readonly SyntheticEntry[]> {
-  if (state.synthetics !== undefined) return state.synthetics
+  describeField: DescribeContractField,
+): Map<string, SyntheticEntry[]> {
   const byTarget = new Map<string, SyntheticEntry[]>()
   for (const [sourceList, listConfig] of Object.entries(config.lists)) {
     for (const [sourceField, field] of Object.entries(listConfig.fields)) {
-      const descriptor = describe(config, state, sourceList, sourceField, field)
+      const descriptor = describeField(sourceList, sourceField, field)
       if (descriptor.kind !== 'relation' || !descriptor.inverse.synthetic) continue
       const entries = byTarget.get(descriptor.target) ?? []
       entries.push({ name: descriptor.inverse.field, sourceList, sourceField })
       byTarget.set(descriptor.target, entries)
     }
   }
-  state.synthetics = byTarget
   return byTarget
+}
+
+function syntheticsOf(
+  config: OpenSaasConfig,
+  state: ConfigState,
+): ReadonlyMap<string, readonly SyntheticEntry[]> {
+  state.synthetics ??= syntheticsByTarget(config, (listKey, fieldKey, field) =>
+    describe(config, state, listKey, fieldKey, field),
+  )
+  return state.synthetics
 }
 
 function claimRefusal(config: OpenSaasConfig, state: ConfigState): Error | undefined {
@@ -235,14 +250,15 @@ function storageOf(descriptor: ContractFieldDescriptor): DeclaredFieldStorage {
 
 function buildListMembers(
   config: OpenSaasConfig,
-  state: ConfigState,
   listKey: string,
+  describeField: DescribeContractField,
+  synthetics: ReadonlyMap<string, readonly SyntheticEntry[]>,
 ): ListMembers {
   const listConfig = listConfigOf(config, listKey)
   const fields = Object.entries(listConfig.fields).map(([fieldKey, field]) => ({
     fieldKey,
     field,
-    descriptor: describe(config, state, listKey, fieldKey, field),
+    descriptor: describeField(listKey, fieldKey, field),
   }))
   const members = new Map<string, ListMember>()
   const add = (member: ListMember): void => {
@@ -272,7 +288,7 @@ function buildListMembers(
     }
   }
 
-  for (const entry of syntheticsOf(config, state).get(listKey) ?? []) {
+  for (const entry of synthetics.get(listKey) ?? []) {
     add({ kind: 'syntheticBackRelation', ...entry, many: true })
   }
 
@@ -293,9 +309,32 @@ export function resolveListMembers(config: OpenSaasConfig, listKey: string): Lis
   if (state.refusal !== undefined) throw state.refusal
   const known = state.lists.get(listKey)
   if (known !== undefined) return known
-  const built = buildListMembers(config, state, listKey)
+  const built = buildListMembers(
+    config,
+    listKey,
+    (list, fieldKey, field) => describe(config, state, list, fieldKey, field),
+    syntheticsOf(config, state),
+  )
   state.lists.set(listKey, built)
   return built
+}
+
+/**
+ * Every list's List members, built from descriptors the caller already holds
+ * rather than resolved and gated. Contract derivation reads its names from
+ * this, so it and {@link resolveListMembers} are one table.
+ */
+export function listMembersFromDescriptors(
+  config: OpenSaasConfig,
+  describeField: DescribeContractField,
+): ReadonlyMap<string, ListMembers> {
+  const synthetics = syntheticsByTarget(config, describeField)
+  return new Map(
+    Object.keys(config.lists).map((listKey) => [
+      listKey,
+      buildListMembers(config, listKey, describeField, synthetics),
+    ]),
+  )
 }
 
 /** The `default` branch of a position's exhaustive choice over a member's kind. */

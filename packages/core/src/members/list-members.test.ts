@@ -13,7 +13,12 @@ import { validateConfigFields } from '../validation/field-config.js'
 import { validateDatabaseConfig } from '../validation/database-config.js'
 import { validateRelations } from '../validation/relations.js'
 import type { ConfigRefusalReason } from '../validation/config-refusal.js'
-import { resolveListMember, resolveListMembers, type ListMember } from './list-members.js'
+import {
+  listMembersFromDescriptors,
+  resolveListMember,
+  resolveListMembers,
+  type ListMember,
+} from './list-members.js'
 
 type Part = { name: string; map?: string }
 
@@ -472,6 +477,19 @@ describe('resolveListMembers', () => {
 
   it('throws for a list the config does not have', () => {
     expect(() => resolveListMembers(config, 'Nope')).toThrow('List "Nope" is not in the config')
+  })
+
+  it('is the table contract derivation builds from the descriptors it already holds', () => {
+    const own = fixture()
+    const derived = listMembersFromDescriptors(own, (listKey, fieldKey, field) =>
+      field.virtual || !field.getContractField
+        ? { kind: 'computed' }
+        : field.getContractField(fieldKey, listKey, own),
+    )
+    expect([...derived.keys()]).toEqual(Object.keys(own.lists))
+    for (const [listKey, members] of derived) {
+      expect(members).toEqual(resolveListMembers(own, listKey))
+    }
   })
 })
 

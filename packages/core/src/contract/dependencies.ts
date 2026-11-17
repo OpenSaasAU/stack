@@ -1,6 +1,7 @@
 import type { ListConfig, OpenSaasConfig, TypeInfo } from '../config/types.js'
 import { isRelationshipField, shouldHaveForeignKey } from '../fields/index.js'
-import { resolveListTimestamps } from './derive.js'
+import { resolveListMembers, unhandledMember } from '../members/list-members.js'
+import { resolveListTimestamps } from './strategy.js'
 import type { ContractData, ContractModel } from './types.js'
 
 /**
@@ -203,31 +204,29 @@ export function deriveDependencyTable(config: OpenSaasConfig): DependencyTable {
 }
 
 /** Model field name → the OpenSaas field key it belongs to, for every stored column of one list. */
-function columnOwners(
-  config: OpenSaasConfig,
-  listKey: string,
-  listConfig: ListConfig<TypeInfo>,
-): Map<string, string> {
-  const owners = new Map<string, string>([
-    ['id', 'id'],
-    ['createdAt', 'createdAt'],
-    ['updatedAt', 'updatedAt'],
-  ])
-
-  for (const [fieldKey, fieldConfig] of Object.entries(listConfig.fields ?? {})) {
-    if (!fieldConfig || fieldConfig.virtual) continue
-    if (isRelationshipField(fieldConfig)) {
-      const column = ownedForeignKeyColumn(config, listKey, fieldKey, fieldConfig)
-      if (column) owners.set(column, fieldKey)
-      continue
+function columnOwners(config: OpenSaasConfig, listKey: string): Map<string, string> {
+  const owners = new Map<string, string>()
+  for (const member of resolveListMembers(config, listKey).members.values()) {
+    switch (member.kind) {
+      case 'systemField':
+        owners.set(member.name, member.name)
+        break
+      case 'foreignKey':
+      case 'partColumn':
+        owners.set(member.name, member.field)
+        break
+      case 'field':
+        if (member.storage.kind === 'column') owners.set(member.name, member.name)
+        if (member.storage.kind === 'columns') {
+          for (const part of member.storage.parts) owners.set(part.name, member.name)
+        }
+        break
+      case 'syntheticBackRelation':
+        break
+      default:
+        unhandledMember(member)
     }
-    if (fieldConfig.getColumnNames) {
-      for (const column of fieldConfig.getColumnNames(fieldKey)) owners.set(column, fieldKey)
-      continue
-    }
-    owners.set(fieldKey, fieldKey)
   }
-
   return owners
 }
 
@@ -296,9 +295,8 @@ export function deriveConstraintMap(config: OpenSaasConfig, contract: ContractDa
   const map: ConstraintMap = {}
 
   for (const model of contract.models) {
-    const listConfig = config.lists[model.name]
-    if (!listConfig) continue
-    const owners = columnOwners(config, model.name, listConfig)
+    if (!config.lists[model.name]) continue
+    const owners = columnOwners(config, model.name)
     const table = model.table ?? model.name
     const fieldsOf = (columns: string[]): string[] =>
       columns.map((column) => owners.get(column) ?? column)

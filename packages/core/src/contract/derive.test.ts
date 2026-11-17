@@ -406,6 +406,34 @@ describe('deriveContract — relations', () => {
   })
 })
 
+describe('deriveContract — names from the List member table', () => {
+  test('resolves index columns and one-to-one ends on a config validation would refuse', () => {
+    const data = single({
+      models: {
+        fields: {
+          owner: relationship({ ref: 'Owner.model' }),
+          title: text(),
+        },
+        db: { indexes: [{ fields: ['owner', 'title'] }] },
+      },
+      Owner: { fields: { model: relationship({ ref: 'models.owner' }) } },
+    })
+    const models = data.models.find((model) => model.name === 'models')
+    const owner = data.models.find((model) => model.name === 'Owner')
+    expect(models?.indexes.map((index) => index.columns)).toEqual([['ownerId', 'title']])
+    expect(owner?.relations).toEqual([
+      {
+        name: 'model',
+        target: 'models',
+        kind: 'hasOne',
+        column: 'ownerId',
+        oneToOne: true,
+        synthetic: false,
+      },
+    ])
+  })
+})
+
 describe('deriveContract — member collisions are refused as a backstop', () => {
   test('a field named id', () => {
     expect(() => single({ A: { fields: { id: text() } } })).toThrow(

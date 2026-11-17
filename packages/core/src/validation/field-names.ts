@@ -1,49 +1,42 @@
-import type { ContractFieldDescriptor, OpenSaasConfig, RelationshipField } from '../config/types.js'
-import {
-  getSyntheticFieldName,
-  isRelationshipField,
-  shouldHaveForeignKey,
-} from '../fields/index.js'
+import type { ContractFieldDescriptor, OpenSaasConfig } from '../config/types.js'
+import { isRelationshipField } from '../fields/index.js'
 import type { ConfigRefusal } from './config-refusal.js'
 
+type FieldConfigOf = OpenSaasConfig['lists'][string]['fields'][string]
+
 /**
- * Whether `field` owns its foreign-key column. A ref that does not resolve
- * makes `shouldHaveForeignKey` throw; that is `validateRelations`' finding,
- * so it counts as "no column" here.
+ * What a field contributes to the contract, as the member-claim walk reads
+ * it. A descriptor that cannot be produced (an unresolvable `ref`, a pack
+ * error) is another validator's finding, so it is `undefined` here.
  */
-function ownsForeignKey(
+function describe(
   config: OpenSaasConfig,
   listKey: string,
   fieldKey: string,
-  field: RelationshipField,
-): boolean {
+  field: FieldConfigOf,
+): ContractFieldDescriptor | undefined {
+  if (!field.getContractField) return undefined
   try {
-    return shouldHaveForeignKey(listKey, fieldKey, field, config)
+    return field.getContractField(fieldKey, listKey, config)
   } catch {
-    return false
+    return undefined
   }
 }
 
 /**
  * The contract member names a field claims on its model: a relationship's
- * relation name, a stored field's column name(s). A descriptor that cannot
- * be produced is `validateExtensionPacks`' finding; the field key stands in.
+ * relation name, a stored field's column name(s). A field without a
+ * descriptor is taken at its field key.
  */
 function memberNames(
   config: OpenSaasConfig,
   listKey: string,
   fieldKey: string,
-  field: OpenSaasConfig['lists'][string]['fields'][string],
+  field: FieldConfigOf,
 ): string[] {
   if (field.virtual) return []
-  if (isRelationshipField(field) || !field.getContractField) return [fieldKey]
-  let descriptor: ContractFieldDescriptor
-  try {
-    descriptor = field.getContractField(fieldKey, listKey, config)
-  } catch {
-    return [fieldKey]
-  }
-  return descriptor.kind === 'columns'
+  const descriptor = describe(config, listKey, fieldKey, field)
+  return descriptor?.kind === 'columns'
     ? descriptor.columns.map((column) => column.name)
     : [fieldKey]
 }
@@ -55,7 +48,7 @@ function refuseReservedPartColumns(
   config: OpenSaasConfig,
   listKey: string,
   fieldKey: string,
-  field: OpenSaasConfig['lists'][string]['fields'][string],
+  field: FieldConfigOf,
 ): ConfigRefusal[] {
   if (isRelationshipField(field)) return []
   const reserved = memberNames(config, listKey, fieldKey, field).find(
@@ -77,7 +70,7 @@ function refuseReservedPartColumns(
 function refuseReservedName(
   listKey: string,
   fieldKey: string,
-  field: OpenSaasConfig['lists'][string]['fields'][string],
+  field: FieldConfigOf,
 ): ConfigRefusal[] {
   if (
     LOGICAL_KEYS.has(fieldKey) ||
@@ -115,9 +108,11 @@ function refuseForeignKeyCollisions(
 ): ConfigRefusal[] {
   const ownedColumns = new Map<string, string>()
   for (const [fieldKey, field] of Object.entries(listConfig.fields)) {
-    if (!isRelationshipField(field) || field.many) continue
-    if (ownsForeignKey(config, listKey, fieldKey, field))
-      ownedColumns.set(`${fieldKey}Id`, fieldKey)
+    if (!isRelationshipField(field)) continue
+    const descriptor = describe(config, listKey, fieldKey, field)
+    if (descriptor?.kind === 'relation' && descriptor.foreignKey !== undefined) {
+      ownedColumns.set(descriptor.foreignKey.name, fieldKey)
+    }
   }
   if (ownedColumns.size === 0) return []
 
@@ -145,20 +140,23 @@ function refuseSyntheticCollisions(config: OpenSaasConfig): ConfigRefusal[] {
   const refusals: ConfigRefusal[] = []
   for (const [listKey, listConfig] of Object.entries(config.lists)) {
     for (const [fieldKey, field] of Object.entries(listConfig.fields)) {
-      if (!isRelationshipField(field) || field.ref.includes('.')) continue
-      const synthetic = getSyntheticFieldName(listKey, fieldKey)
-      if (!Object.prototype.hasOwnProperty.call(config.lists[field.ref]?.fields ?? {}, synthetic)) {
+      if (!isRelationshipField(field)) continue
+      const descriptor = describe(config, listKey, fieldKey, field)
+      if (descriptor?.kind !== 'relation' || !descriptor.inverse.synthetic) continue
+      const { target } = descriptor
+      const synthetic = descriptor.inverse.field
+      if (!Object.prototype.hasOwnProperty.call(config.lists[target]?.fields ?? {}, synthetic)) {
         continue
       }
       refusals.push({
-        listKey: field.ref,
+        listKey: target,
         entry: `fields.${synthetic}`,
         reason: 'synthetic-relation-collision',
         message:
-          `List "${field.ref}": fields.${synthetic} collides with the back-relation the list-only ref on ` +
-          `"${listKey}.${fieldKey}" synthesises on "${field.ref}". Rename fields.${synthetic}, or make the ` +
-          `relationship bidirectional (ref: '${field.ref}.<field>' on "${listKey}.${fieldKey}" with a matching ` +
-          `relationship field on "${field.ref}").`,
+          `List "${target}": fields.${synthetic} collides with the back-relation the list-only ref on ` +
+          `"${listKey}.${fieldKey}" synthesises on "${target}". Rename fields.${synthetic}, or make the ` +
+          `relationship bidirectional (ref: '${target}.<field>' on "${listKey}.${fieldKey}" with a matching ` +
+          `relationship field on "${target}").`,
       })
     }
   }

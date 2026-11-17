@@ -99,7 +99,6 @@ export interface ContractMemberWalk {
     listKey: string,
     listConfig: ListConfig<TypeInfo>,
     timestamps: ContractTimestamps,
-    claims: ListMemberClaims,
   ): void
   beforeClaim?(
     listKey: string,
@@ -125,7 +124,6 @@ export interface ContractMemberWalk {
     field: FieldConfig,
     descriptor: ContractFieldDescriptor,
   ): void
-  endList?(listKey: string, listConfig: ListConfig<TypeInfo>): void
   afterSyntheticClaim?(target: string, synthetic: SyntheticBackRelationClaim): void
 }
 
@@ -184,7 +182,7 @@ export function walkContractMembers(config: OpenSaasConfig, walk: ContractMember
     const timestamps = resolveListTimestamps(listConfig, config.db)
     const list: ListWalk = { claims: startListMemberClaims(timestamps), columns: [], relations: [] }
     lists.set(listKey, list)
-    walk.startList?.(listKey, listConfig, timestamps, list.claims)
+    walk.startList?.(listKey, listConfig, timestamps)
     for (const [fieldKey, field] of Object.entries(listConfig.fields)) {
       const descriptor = walk.describe(listKey, fieldKey, field)
       if (descriptor === undefined) continue
@@ -204,7 +202,6 @@ export function walkContractMembers(config: OpenSaasConfig, walk: ContractMember
         synthetics.set(descriptor.target, entries)
       }
     }
-    walk.endList?.(listKey, listConfig)
   }
 
   for (const [target, entries] of synthetics) {
