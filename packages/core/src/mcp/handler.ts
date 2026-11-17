@@ -6,14 +6,14 @@ import { engineContextOf, type AnyStackContext } from '../context/engine-context
 import { checkAccess } from '../access/engine.js'
 import { classifyRowIndependentCreateAccess } from '../access/field-access.js'
 import { pascalToCamel } from '../lib/case-utils.js'
-import { isRelationshipField } from '../fields/index.js'
 import { isClientSafeError } from '../lib/client-safe-error.js'
 import { McpToolError } from './tool-error.js'
 import type { McpSession, McpSessionProvider } from './types.js'
 import { controlFlowPredicateOf, decideAdvertisement } from '../access/decide-advertisement.js'
 import { mcpAdvertisement } from './advertise.js'
 import { McpWriteRefusedError, assertWritableData, generateFieldSchemas } from './field-schema.js'
-import { ownsForeignKey } from '../context/junction.js'
+import { resolveListMembers } from '../members/list-members.js'
+import { assertListMembersResolve, relationFieldOf } from './relation-member.js'
 import { listIdJsonSchema, parseListId } from '../contract/id-boundary.js'
 import { RELATION_QUANTIFIERS, SCALAR_OPERATORS } from '../secured/operators.js'
 import type { SecuredQuery } from '../secured/read.js'
@@ -195,6 +195,8 @@ export function createMcpHandlers(options: {
       })
     return { GET: notEnabledHandler, POST: notEnabledHandler, DELETE: notEnabledHandler }
   }
+
+  assertListMembersResolve(config)
 
   const basePath = config.mcp.basePath || '/api/mcp'
 
@@ -443,7 +445,6 @@ async function handleToolsList(
       if (operationClassification !== 'deny') {
         const fieldSchemas = await generateFieldSchemas(
           listKey,
-          listConfig.fields,
           config,
           'create',
           context.session,
@@ -473,7 +474,6 @@ async function handleToolsList(
     if (enabledTools.update && permitted('update')) {
       const fieldSchemas = await generateFieldSchemas(
         listKey,
-        listConfig.fields,
         config,
         'update',
         context.session,
@@ -636,22 +636,18 @@ function connectCriterion(value: unknown): Record<string, unknown> | undefined {
 function coerceConnectIds(
   data: Record<string, unknown>,
   listKey: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-  listConfig: ListConfig<any>,
   config: OpenSaasConfig,
 ): Record<string, unknown> | null {
   let coerced: Record<string, unknown> | undefined
 
-  for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
-    if (!Object.hasOwn(data, fieldName)) continue
-    if (!isRelationshipField(fieldConfig)) continue
-    if (!ownsForeignKey(config, listKey, fieldName, fieldConfig)) continue
+  for (const fieldName of Object.keys(data)) {
+    const relation = relationFieldOf(config, listKey, fieldName)
+    if (relation === undefined || !relation.ownsForeignKey) continue
 
     const criterion = connectCriterion(data[fieldName])
     if (criterion === undefined) continue
 
-    const relatedListKey = fieldConfig.ref.split('.')[0]
-    const parsed = parseListId(config, relatedListKey, criterion.id)
+    const parsed = parseListId(config, relation.relatedList, criterion.id)
     if (!parsed.ok) return null
 
     coerced ??= { ...data }
@@ -801,7 +797,7 @@ async function handleCrudTool(
           return createErrorResultResponse(`"${listKey}.skip" must not be negative.`, id)
         }
 
-        if (listConfig.isSingleton) {
+        if (resolveListMembers(config, listKey).singleton) {
           return await querySingleton(listKey, listConfig, args, config, context, id)
         }
 
@@ -864,20 +860,12 @@ async function handleCrudTool(
         if (!isPlainObject(args.data)) {
           return createErrorResultResponse('`data` must be an object of field values.', id)
         }
-        await assertWritableData(
-          args.data,
-          listKey,
-          listConfig.fields,
-          config,
-          'create',
-          context.session,
-          context,
-        )
+        await assertWritableData(args.data, listKey, config, 'create', context.session, context)
         // A `connect.id` naming a value its related list's id column cannot
         // hold answers exactly as a missing row does — the same boundary
         // coercion `where.id` gets below, applied to the write's own edges
         // (ADR-0048, Silent failure).
-        const data = coerceConnectIds(args.data, listKey, listConfig, config)
+        const data = coerceConnectIds(args.data, listKey, config)
         if (data === null) {
           return createErrorResultResponse(
             'Failed to create record. Access denied or validation failed.',
@@ -905,16 +893,8 @@ async function handleCrudTool(
         if (!isPlainObject(args.data)) {
           return createErrorResultResponse('`data` must be an object of field values.', id)
         }
-        await assertWritableData(
-          args.data,
-          listKey,
-          listConfig.fields,
-          config,
-          'update',
-          context.session,
-          context,
-        )
-        const data = coerceConnectIds(args.data, listKey, listConfig, config)
+        await assertWritableData(args.data, listKey, config, 'update', context.session, context)
+        const data = coerceConnectIds(args.data, listKey, config)
         if (data === null) {
           return createErrorResultResponse(idBoundaryRefusal('update record'), id)
         }

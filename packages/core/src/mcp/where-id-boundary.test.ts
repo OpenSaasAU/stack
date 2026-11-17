@@ -123,6 +123,20 @@ describe('coerceWhereIds', () => {
     })
   })
 
+  test('a Synthetic back-relation, a system field and a scalar relation value are left for the engine', () => {
+    expect(
+      coerceWhereIds({ from_Tally_counter: { some: { id: 'bad' } } }, config(), 'Counter'),
+    ).toEqual({ from_Tally_counter: { some: { id: 'bad' } } })
+    expect(coerceWhereIds({ counter: 'bad' }, config(), 'Tally')).toEqual({ counter: 'bad' })
+    const timestamped: OpenSaasConfig = {
+      ...config(),
+      db: { provider: 'postgresql', timestamps: true },
+    }
+    expect(coerceWhereIds({ createdAt: { gt: 'x' } }, timestamped, 'Counter')).toEqual({
+      createdAt: { gt: 'x' },
+    })
+  })
+
   test('an unknown list is passed through unchanged for downstream validation to refuse', () => {
     expect(coerceWhereIds({ id: 'anything' }, config(), 'Nope')).toEqual({ id: 'anything' })
   })
