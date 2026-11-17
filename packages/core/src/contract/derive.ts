@@ -1,6 +1,7 @@
 import type {
   ColumnTypeDescriptor,
   ContractColumnDescriptor,
+  ContractFieldDescriptor,
   ContractRelationDescriptor,
   ExtensionDescriptor,
   FieldConfig,
@@ -10,8 +11,15 @@ import type {
   RelationshipField,
   TypeInfo,
 } from '../config/types.js'
-import { isOneToOneRelationship, isRelationshipField } from '../fields/index.js'
-import { walkContractMembers, type ListMemberClaims } from '../members/claims.js'
+import { isRelationshipField } from '../fields/index.js'
+import { walkContractMembers } from '../members/claims.js'
+import {
+  listMembersFromDescriptors,
+  unhandledMember,
+  type ListMember,
+  type ListMemberTable,
+  type ListMembers,
+} from '../members/list-members.js'
 import { idColumn, pgType, resolveIdStrategy } from './strategy.js'
 import type {
   ContractColumn,
@@ -159,10 +167,6 @@ function resolveTimestampDefault(config: OpenSaasConfig): ColumnTypeDescriptor |
   return type
 }
 
-function foreignKeyColumnName(fieldKey: string): string {
-  return `${fieldKey}Id`
-}
-
 type FieldLevelIndex = {
   fieldKey: string
   isIndexed: true | 'unique'
@@ -180,10 +184,6 @@ type ModelDraft = {
   model: ContractModel
   /** Column name → the field-level `isIndexed` that already indexes it. */
   fieldLevelIndexes: Map<string, FieldLevelIndex>
-  /** Field key → the FK column it owns, for `db.indexes` resolution. */
-  ownedForeignKeys: Map<string, string>
-  multiColumnFields: Set<string>
-  members: ListMemberClaims
 }
 
 function readIsIndexed(field: FieldConfig): true | 'unique' | undefined {
@@ -237,12 +237,44 @@ function assertRelationEnds(
   }
 }
 
+type MemberTable = ReadonlyMap<string, ListMembers>
+
+function memberOf(members: MemberTable, listKey: string, name: string): ListMember | undefined {
+  return members.get(listKey)?.members.get(name)
+}
+
+function isOneToOne(members: MemberTable, descriptor: ContractRelationDescriptor): boolean {
+  const inverse = memberOf(members, descriptor.target, descriptor.inverse.field)
+  return inverse?.kind === 'field' && inverse.storage.kind === 'relation' && !inverse.storage.many
+}
+
+function inverseForeignKey(
+  listKey: string,
+  fieldKey: string,
+  members: MemberTable,
+  descriptor: ContractRelationDescriptor,
+): string {
+  const inverse = memberOf(members, descriptor.target, descriptor.inverse.field)
+  if (
+    inverse?.kind === 'field' &&
+    inverse.storage.kind === 'relation' &&
+    inverse.storage.foreignKey !== undefined
+  ) {
+    return inverse.storage.foreignKey.name
+  }
+  throw new Error(
+    `List "${listKey}": fields.${fieldKey} does not own its foreign key, and neither does ` +
+      `"${descriptor.target}.${descriptor.inverse.field}"`,
+  )
+}
+
 function recordRelation(
   listKey: string,
   fieldKey: string,
   field: RelationshipField,
   descriptor: ContractRelationDescriptor,
   config: OpenSaasConfig,
+  members: MemberTable,
   draft: ModelDraft,
 ): void {
   const targetList = config.lists[descriptor.target]
@@ -250,7 +282,6 @@ function recordRelation(
   const { foreignKey } = descriptor
   if (foreignKey) {
     const targetStrategy = resolveIdStrategy(targetList, config)
-    const oneToOne = isOneToOneRelationship(fieldKey, field, config)
     draft.model.columns.push({
       name: foreignKey.name,
       type: idColumn(targetStrategy).type,
@@ -267,7 +298,7 @@ function recordRelation(
       ...(field.db?.onDelete !== undefined ? { onDelete: field.db.onDelete } : {}),
       ...(field.db?.onUpdate !== undefined ? { onUpdate: field.db.onUpdate } : {}),
     })
-    draft.ownedForeignKeys.set(fieldKey, foreignKey.name)
+    const oneToOne = isOneToOne(members, descriptor)
     if (foreignKey.unique || foreignKey.index) {
       const explicit = field.isIndexed === 'unique' || (field.isIndexed === true && !oneToOne)
       draft.fieldLevelIndexes.set(foreignKey.name, {
@@ -292,56 +323,60 @@ function recordRelation(
     name: fieldKey,
     target: descriptor.target,
     kind: descriptor.many ? 'hasMany' : 'hasOne',
-    column: foreignKeyColumnName(descriptor.inverse.field),
+    column: inverseForeignKey(listKey, fieldKey, members, descriptor),
     oneToOne: !descriptor.many,
     synthetic: false,
   })
 }
 
 function resolveIndexColumn(
+  members: MemberTable,
   listKey: string,
-  listConfig: ListConfig<TypeInfo>,
-  draft: ModelDraft,
   entry: string,
   fieldRef: ListIndex['fields'][number],
 ): string {
   const fieldKey = typeof fieldRef === 'string' ? fieldRef : fieldRef.field
-  const field = listConfig.fields[fieldKey]
-  if (!field) {
-    if (fieldKey === 'id') return 'id'
-    if (
-      (fieldKey === 'createdAt' && draft.model.timestamps.createdAt) ||
-      (fieldKey === 'updatedAt' && draft.model.timestamps.updatedAt)
-    ) {
+  const member = memberOf(members, listKey, fieldKey)
+  const unknown = (): Error =>
+    new Error(`${entry} on list "${listKey}" references unknown field "${fieldKey}"`)
+  if (member === undefined) throw unknown()
+  switch (member.kind) {
+    case 'systemField':
+      return member.name
+    case 'foreignKey':
+    case 'partColumn':
+    case 'syntheticBackRelation':
+      throw unknown()
+    case 'field':
+      break
+    default:
+      return unhandledMember(member)
+  }
+  const { storage } = member
+  switch (storage.kind) {
+    case 'relation':
+      if (storage.many) {
+        throw new Error(
+          `${entry} on list "${listKey}" references to-many relationship field "${fieldKey}", which has no single database column`,
+        )
+      }
+      if (storage.foreignKey === undefined) {
+        throw new Error(
+          `${entry} on list "${listKey}" references relationship field "${fieldKey}", which does not own a foreign key column on this model (the other side of the relationship owns it)`,
+        )
+      }
+      return storage.foreignKey.name
+    case 'columns':
+      throw new Error(
+        `${entry} on list "${listKey}" references field "${fieldKey}", which maps to more than one database column and cannot be used in a model-level index`,
+      )
+    case 'computed':
+      throw new Error(
+        `${entry} on list "${listKey}" references virtual field "${fieldKey}", which has no database column`,
+      )
+    case 'column':
       return fieldKey
-    }
-    throw new Error(`${entry} on list "${listKey}" references unknown field "${fieldKey}"`)
   }
-  if (field.virtual) {
-    throw new Error(
-      `${entry} on list "${listKey}" references virtual field "${fieldKey}", which has no database column`,
-    )
-  }
-  if (isRelationshipField(field)) {
-    if (field.many) {
-      throw new Error(
-        `${entry} on list "${listKey}" references to-many relationship field "${fieldKey}", which has no single database column`,
-      )
-    }
-    const column = draft.ownedForeignKeys.get(fieldKey)
-    if (!column) {
-      throw new Error(
-        `${entry} on list "${listKey}" references relationship field "${fieldKey}", which does not own a foreign key column on this model (the other side of the relationship owns it)`,
-      )
-    }
-    return column
-  }
-  if (draft.multiColumnFields.has(fieldKey)) {
-    throw new Error(
-      `${entry} on list "${listKey}" references field "${fieldKey}", which maps to more than one database column and cannot be used in a model-level index`,
-    )
-  }
-  return fieldKey
 }
 
 /**
@@ -382,6 +417,7 @@ function adoptFieldLevelIndex(
 }
 
 function deriveIndexes(
+  members: MemberTable,
   listKey: string,
   listConfig: ListConfig<TypeInfo>,
   draft: ModelDraft,
@@ -395,7 +431,7 @@ function deriveIndexes(
       )
     }
     const columns = index.fields.map((fieldRef) =>
-      resolveIndexColumn(listKey, listConfig, draft, entry, fieldRef),
+      resolveIndexColumn(members, listKey, entry, fieldRef),
     )
     const unique = index.unique === true
     if (index.where !== undefined) {
@@ -440,6 +476,7 @@ function deriveCompositeForeignKeys(
   listKey: string,
   config: OpenSaasConfig,
   drafts: Map<string, ModelDraft>,
+  members: MemberTable,
 ): ContractCompositeForeignKey[] {
   const draft = drafts.get(listKey)
   const listConfig = config.lists[listKey]
@@ -467,11 +504,9 @@ function deriveCompositeForeignKeys(
         `${entry} on list "${listKey}" references list "${references.list}", which is not in the config`,
       )
     }
-    const columns = fields.map((fieldRef) =>
-      resolveIndexColumn(listKey, listConfig, draft, entry, fieldRef),
-    )
+    const columns = fields.map((fieldRef) => resolveIndexColumn(members, listKey, entry, fieldRef))
     const targetColumns = references.fields.map((fieldKey) =>
-      resolveIndexColumn(references.list, targetConfig, targetDraft, entry, fieldKey),
+      resolveIndexColumn(members, references.list, entry, fieldKey),
     )
     if (
       columns.length === 1 &&
@@ -609,6 +644,46 @@ function collectNamespaces(config: OpenSaasConfig, models: ContractModel[]): str
   return [...namespaces]
 }
 
+type DescribedFields = {
+  descriptors: Map<string, Map<string, ContractFieldDescriptor>>
+  failures: Map<string, Map<string, { error: unknown }>>
+}
+
+function describeContractFields(config: OpenSaasConfig): DescribedFields {
+  const described: DescribedFields = { descriptors: new Map(), failures: new Map() }
+  for (const [listKey, listConfig] of Object.entries(config.lists)) {
+    const descriptors = new Map<string, ContractFieldDescriptor>()
+    const failures = new Map<string, { error: unknown }>()
+    for (const [fieldKey, field] of Object.entries(listConfig.fields)) {
+      if (field.virtual) {
+        descriptors.set(fieldKey, { kind: 'computed' })
+        continue
+      }
+      if (!field.getContractField) {
+        failures.set(fieldKey, {
+          error: new Error(
+            `Field "${listKey}.${fieldKey}" (type "${field.type}") does not implement getContractField, so its contract contribution is unknown`,
+          ),
+        })
+        continue
+      }
+      try {
+        descriptors.set(fieldKey, field.getContractField(fieldKey, listKey, config))
+      } catch (error) {
+        failures.set(fieldKey, { error })
+      }
+    }
+    described.descriptors.set(listKey, descriptors)
+    described.failures.set(listKey, failures)
+  }
+  return described
+}
+
+/** The List member table contract derivation reads its names from, refusing nothing. */
+export function deriveListMemberTable(config: OpenSaasConfig): ListMemberTable {
+  return listMembersFromDescriptors(config, describeContractFields(config).descriptors)
+}
+
 /**
  * Derive the contract data a config describes (ADR-0057): one model per list
  * with its id by strategy, stored columns from each field builder's structured
@@ -649,6 +724,9 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
   const extensions = dedupeExtensions(config.db.extensions ?? [])
   const timestampDefault = resolveTimestampDefault(config)
   const drafts = new Map<string, ModelDraft>()
+  const described = describeContractFields(config)
+  const table = listMembersFromDescriptors(config, described.descriptors)
+  const members = table.lists
   const draftOf = (listKey: string): ModelDraft => {
     const draft = drafts.get(listKey)
     if (draft === undefined) throw new Error(`List "${listKey}" has no model draft`)
@@ -656,7 +734,8 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
   }
 
   walkContractMembers(config, {
-    startList: (listKey, listConfig, timestamps, claims) => {
+    synthetics: table.syntheticClaims,
+    startList: (listKey, listConfig, timestamps) => {
       drafts.set(listKey, {
         model: {
           name: listKey,
@@ -676,22 +755,15 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
             : {}),
         },
         fieldLevelIndexes: new Map(),
-        ownedForeignKeys: new Map(),
-        multiColumnFields: new Set(),
-        members: claims,
       })
     },
     describe: (listKey, fieldKey, field) => {
       if (field.virtual) return undefined
-      if (!field.getContractField) {
-        throw new Error(
-          `Field "${listKey}.${fieldKey}" (type "${field.type}") does not implement getContractField, so its contract contribution is unknown`,
-        )
-      }
-      return field.getContractField(fieldKey, listKey, config)
+      const failure = described.failures.get(listKey)?.get(fieldKey)
+      if (failure !== undefined) throw failure.error
+      return described.descriptors.get(listKey)?.get(fieldKey)
     },
     beforeClaim: (listKey, fieldKey, field, descriptor) => {
-      if (descriptor.kind === 'columns') draftOf(listKey).multiColumnFields.add(fieldKey)
       if (descriptor.kind !== 'relation') return
       if (!isRelationshipField(field)) {
         throw new Error(
@@ -732,12 +804,12 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
         }
       }
       if (descriptor.kind === 'relation' && isRelationshipField(field)) {
-        recordRelation(listKey, fieldKey, field, descriptor, config, draft)
+        recordRelation(listKey, fieldKey, field, descriptor, config, members, draft)
       }
     },
     endList: (listKey, listConfig) => {
       const draft = draftOf(listKey)
-      draft.model.indexes = deriveIndexes(listKey, listConfig, draft)
+      draft.model.indexes = deriveIndexes(members, listKey, listConfig, draft)
       if (config.db.indexNaming !== undefined && config.db.indexNaming !== 'prisma7') {
         throw new Error(
           `db.indexNaming must be 'prisma7', received ${JSON.stringify(config.db.indexNaming)}`,
@@ -758,7 +830,7 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
   })
 
   for (const [listKey, draft] of drafts) {
-    const composite = deriveCompositeForeignKeys(listKey, config, drafts)
+    const composite = deriveCompositeForeignKeys(listKey, config, drafts, members)
     if (composite.length > 0) draft.model.compositeForeignKeys = composite
   }
 

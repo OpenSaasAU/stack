@@ -18,8 +18,18 @@ export function readContractDescriptorKind(
   listKey: string,
   config: OpenSaasConfig,
 ): ContractFieldDescriptor['kind'] | undefined {
+  return readContractDescriptor(field, fieldKey, listKey, config)?.kind
+}
+
+/** A field's contract descriptor, or `undefined` when it declares none or refuses to describe itself. */
+export function readContractDescriptor(
+  field: FieldConfig,
+  fieldKey: string,
+  listKey: string,
+  config: OpenSaasConfig,
+): ContractFieldDescriptor | undefined {
   try {
-    return field.getContractField?.(fieldKey, listKey, config)?.kind
+    return field.getContractField?.(fieldKey, listKey, config)
   } catch {
     return undefined
   }

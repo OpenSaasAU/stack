@@ -1,49 +1,45 @@
-import type { ContractFieldDescriptor, OpenSaasConfig, RelationshipField } from '../config/types.js'
-import {
-  getSyntheticFieldName,
-  isRelationshipField,
-  shouldHaveForeignKey,
-} from '../fields/index.js'
+import { readContractDescriptor } from '../config/field-kind.js'
+import type { ContractFieldDescriptor, OpenSaasConfig } from '../config/types.js'
+import { isRelationshipField } from '../fields/index.js'
 import type { ConfigRefusal } from './config-refusal.js'
 
+type FieldConfigOf = OpenSaasConfig['lists'][string]['fields'][string]
+
+type ListDescriptors = ReadonlyMap<string, ContractFieldDescriptor | undefined>
+
 /**
- * Whether `field` owns its foreign-key column. A ref that does not resolve
- * makes `shouldHaveForeignKey` throw; that is `validateRelations`' finding,
- * so it counts as "no column" here.
+ * Each stored field's contract descriptor, read once. A descriptor that
+ * cannot be produced (an unresolvable `ref`, a pack error) is another
+ * validator's finding, so it is `undefined` here.
  */
-function ownsForeignKey(
-  config: OpenSaasConfig,
-  listKey: string,
-  fieldKey: string,
-  field: RelationshipField,
-): boolean {
-  try {
-    return shouldHaveForeignKey(listKey, fieldKey, field, config)
-  } catch {
-    return false
+function describeLists(config: OpenSaasConfig): Map<string, ListDescriptors> {
+  const lists = new Map<string, ListDescriptors>()
+  for (const [listKey, listConfig] of Object.entries(config.lists)) {
+    const fields = new Map<string, ContractFieldDescriptor | undefined>()
+    for (const [fieldKey, field] of Object.entries(listConfig.fields)) {
+      fields.set(
+        fieldKey,
+        field.virtual ? undefined : readContractDescriptor(field, fieldKey, listKey, config),
+      )
+    }
+    lists.set(listKey, fields)
   }
+  return lists
 }
 
 /**
  * The contract member names a field claims on its model: a relationship's
- * relation name, a stored field's column name(s). A descriptor that cannot
- * be produced is `validateExtensionPacks`' finding; the field key stands in.
+ * relation name, a stored field's column name(s). A field without a
+ * descriptor is taken at its field key.
  */
 function memberNames(
-  config: OpenSaasConfig,
-  listKey: string,
+  descriptors: ListDescriptors,
   fieldKey: string,
-  field: OpenSaasConfig['lists'][string]['fields'][string],
+  field: FieldConfigOf,
 ): string[] {
   if (field.virtual) return []
-  if (isRelationshipField(field) || !field.getContractField) return [fieldKey]
-  let descriptor: ContractFieldDescriptor
-  try {
-    descriptor = field.getContractField(fieldKey, listKey, config)
-  } catch {
-    return [fieldKey]
-  }
-  return descriptor.kind === 'columns'
+  const descriptor = descriptors.get(fieldKey)
+  return descriptor?.kind === 'columns'
     ? descriptor.columns.map((column) => column.name)
     : [fieldKey]
 }
@@ -52,13 +48,13 @@ const LOGICAL_KEYS = new Set(['AND', 'OR', 'NOT'])
 const RELATION_OPERATORS = new Set(['some', 'every', 'none'])
 
 function refuseReservedPartColumns(
-  config: OpenSaasConfig,
+  descriptors: ListDescriptors,
   listKey: string,
   fieldKey: string,
-  field: OpenSaasConfig['lists'][string]['fields'][string],
+  field: FieldConfigOf,
 ): ConfigRefusal[] {
   if (isRelationshipField(field)) return []
-  const reserved = memberNames(config, listKey, fieldKey, field).find(
+  const reserved = memberNames(descriptors, fieldKey, field).find(
     (name) => name !== fieldKey && LOGICAL_KEYS.has(name),
   )
   if (reserved === undefined) return []
@@ -77,7 +73,7 @@ function refuseReservedPartColumns(
 function refuseReservedName(
   listKey: string,
   fieldKey: string,
-  field: OpenSaasConfig['lists'][string]['fields'][string],
+  field: FieldConfigOf,
 ): ConfigRefusal[] {
   if (
     LOGICAL_KEYS.has(fieldKey) ||
@@ -109,21 +105,23 @@ function refuseReservedName(
 }
 
 function refuseForeignKeyCollisions(
-  config: OpenSaasConfig,
+  descriptors: ListDescriptors,
   listKey: string,
   listConfig: OpenSaasConfig['lists'][string],
 ): ConfigRefusal[] {
   const ownedColumns = new Map<string, string>()
   for (const [fieldKey, field] of Object.entries(listConfig.fields)) {
-    if (!isRelationshipField(field) || field.many) continue
-    if (ownsForeignKey(config, listKey, fieldKey, field))
-      ownedColumns.set(`${fieldKey}Id`, fieldKey)
+    if (!isRelationshipField(field)) continue
+    const descriptor = descriptors.get(fieldKey)
+    if (descriptor?.kind === 'relation' && descriptor.foreignKey !== undefined) {
+      ownedColumns.set(descriptor.foreignKey.name, fieldKey)
+    }
   }
   if (ownedColumns.size === 0) return []
 
   const refusals: ConfigRefusal[] = []
   for (const [fieldKey, field] of Object.entries(listConfig.fields)) {
-    for (const name of memberNames(config, listKey, fieldKey, field)) {
+    for (const name of memberNames(descriptors, fieldKey, field)) {
       const owner = ownedColumns.get(name)
       if (owner === undefined || owner === fieldKey) continue
       refusals.push({
@@ -141,24 +139,30 @@ function refuseForeignKeyCollisions(
   return refusals
 }
 
-function refuseSyntheticCollisions(config: OpenSaasConfig): ConfigRefusal[] {
+function refuseSyntheticCollisions(
+  config: OpenSaasConfig,
+  described: ReadonlyMap<string, ListDescriptors>,
+): ConfigRefusal[] {
   const refusals: ConfigRefusal[] = []
   for (const [listKey, listConfig] of Object.entries(config.lists)) {
     for (const [fieldKey, field] of Object.entries(listConfig.fields)) {
-      if (!isRelationshipField(field) || field.ref.includes('.')) continue
-      const synthetic = getSyntheticFieldName(listKey, fieldKey)
-      if (!Object.prototype.hasOwnProperty.call(config.lists[field.ref]?.fields ?? {}, synthetic)) {
+      if (!isRelationshipField(field)) continue
+      const descriptor = described.get(listKey)?.get(fieldKey)
+      if (descriptor?.kind !== 'relation' || !descriptor.inverse.synthetic) continue
+      const { target } = descriptor
+      const synthetic = descriptor.inverse.field
+      if (!Object.prototype.hasOwnProperty.call(config.lists[target]?.fields ?? {}, synthetic)) {
         continue
       }
       refusals.push({
-        listKey: field.ref,
+        listKey: target,
         entry: `fields.${synthetic}`,
         reason: 'synthetic-relation-collision',
         message:
-          `List "${field.ref}": fields.${synthetic} collides with the back-relation the list-only ref on ` +
-          `"${listKey}.${fieldKey}" synthesises on "${field.ref}". Rename fields.${synthetic}, or make the ` +
-          `relationship bidirectional (ref: '${field.ref}.<field>' on "${listKey}.${fieldKey}" with a matching ` +
-          `relationship field on "${field.ref}").`,
+          `List "${target}": fields.${synthetic} collides with the back-relation the list-only ref on ` +
+          `"${listKey}.${fieldKey}" synthesises on "${target}". Rename fields.${synthetic}, or make the ` +
+          `relationship bidirectional (ref: '${target}.<field>' on "${listKey}.${fieldKey}" with a matching ` +
+          `relationship field on "${target}").`,
       })
     }
   }
@@ -178,13 +182,15 @@ function refuseSyntheticCollisions(config: OpenSaasConfig): ConfigRefusal[] {
  */
 export function validateFieldNames(config: OpenSaasConfig): ConfigRefusal[] {
   const refusals: ConfigRefusal[] = []
+  const described = describeLists(config)
   for (const [listKey, listConfig] of Object.entries(config.lists)) {
+    const descriptors = described.get(listKey) ?? new Map()
     for (const [fieldKey, field] of Object.entries(listConfig.fields)) {
       refusals.push(...refuseReservedName(listKey, fieldKey, field))
-      refusals.push(...refuseReservedPartColumns(config, listKey, fieldKey, field))
+      refusals.push(...refuseReservedPartColumns(descriptors, listKey, fieldKey, field))
     }
-    refusals.push(...refuseForeignKeyCollisions(config, listKey, listConfig))
+    refusals.push(...refuseForeignKeyCollisions(descriptors, listKey, listConfig))
   }
-  refusals.push(...refuseSyntheticCollisions(config))
+  refusals.push(...refuseSyntheticCollisions(config, described))
   return refusals
 }

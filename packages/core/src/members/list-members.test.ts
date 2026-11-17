@@ -7,7 +7,7 @@ import { afterAll, describe, expect, it } from 'vitest'
 import ts from 'typescript'
 import { z } from 'zod'
 import type { ContractFieldDescriptor, FieldConfig, OpenSaasConfig } from '../config/types.js'
-import { deriveContract } from '../contract/derive.js'
+import { deriveContract, deriveListMemberTable } from '../contract/derive.js'
 import { relationship, text, timestamp, virtual } from '../fields/index.js'
 import { validateConfigFields } from '../validation/field-config.js'
 import { validateDatabaseConfig } from '../validation/database-config.js'
@@ -472,6 +472,15 @@ describe('resolveListMembers', () => {
 
   it('throws for a list the config does not have', () => {
     expect(() => resolveListMembers(config, 'Nope')).toThrow('List "Nope" is not in the config')
+  })
+
+  it('is the table contract derivation reads its names from', () => {
+    const own = fixture()
+    const derived = deriveListMemberTable(own).lists
+    expect([...derived.keys()]).toEqual(Object.keys(own.lists))
+    for (const [listKey, members] of derived) {
+      expect(members).toEqual(resolveListMembers(own, listKey))
+    }
   })
 })
 
