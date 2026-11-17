@@ -263,8 +263,8 @@ ordinary field-access-denial behavior), the row itself still returns.
 
 Naming a read-denied field in a composed read's `where` or `orderBy` is a
 different thing: that takes the **predicate-time read check**
-(`validateQueryFieldReadAccess` in
-`packages/core/src/access/query-validation.ts`), which throws a
+(`isFieldReadableForPredicate`, called from
+`packages/core/src/secured/vocabulary.ts`), which throws a
 `ValidationError` up front rather than stripping anything. Without it a
 withheld value could be recovered by probing a query that returns no row
 carrying it — an `aggregate` count, say (ADR-0031).

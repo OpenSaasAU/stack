@@ -3,7 +3,12 @@
 // See ADR-0082.
 
 import type { FieldConfig, OpenSaasConfig } from '../config/types.js'
-import { getSyntheticFieldName } from '../fields/index.js'
+import {
+  resolveListMembers,
+  unhandledMember,
+  type ListMember,
+  type ListMembers,
+} from '../members/list-members.js'
 
 /** What a level's `read` rules and hooks see in place of a caller-shaped relation. */
 export interface RuleView {
@@ -38,30 +43,35 @@ type RelationKeys = ReadonlyMap<string, string | undefined>
 
 const NO_RELATIONS: RelationKeys = new Map()
 
-const relationKeysByConfig = new WeakMap<OpenSaasConfig, ReadonlyMap<string, RelationKeys>>()
+function relatedListOf(member: ListMember): string | undefined {
+  switch (member.kind) {
+    case 'field':
+      return member.storage.kind === 'relation' ? member.storage.relatedList : undefined
+    case 'syntheticBackRelation':
+      return member.sourceList
+    case 'foreignKey':
+    case 'partColumn':
+    case 'systemField':
+      return undefined
+    default:
+      return unhandledMember(member)
+  }
+}
 
-function relationKeysByList(config: OpenSaasConfig): ReadonlyMap<string, RelationKeys> {
-  const known = relationKeysByConfig.get(config)
+const relationKeysByMembers = new WeakMap<ListMembers, RelationKeys>()
+
+function relationKeysOf(config: OpenSaasConfig, listKey: string): RelationKeys {
+  if (!Object.hasOwn(config.lists, listKey)) return NO_RELATIONS
+  const listMembers = resolveListMembers(config, listKey)
+  const known = relationKeysByMembers.get(listMembers)
   if (known !== undefined) return known
-  const byList = new Map<string, Map<string, string | undefined>>()
-  const keysOf = (listKey: string): Map<string, string | undefined> => {
-    const keys = byList.get(listKey) ?? new Map<string, string | undefined>()
-    byList.set(listKey, keys)
-    return keys
+  const keys = new Map<string, string>()
+  for (const member of listMembers.members.values()) {
+    const relatedList = relatedListOf(member)
+    if (relatedList !== undefined) keys.set(member.name, relatedList)
   }
-  for (const [listKey, listConfig] of Object.entries(config.lists)) {
-    for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
-      if (fieldConfig.type !== 'relationship' || !('ref' in fieldConfig)) continue
-      if (typeof fieldConfig.ref !== 'string') continue
-      const [relatedList, relatedField] = fieldConfig.ref.split('.')
-      keysOf(listKey).set(fieldName, relatedList)
-      if (relatedField === undefined) {
-        keysOf(relatedList).set(getSyntheticFieldName(listKey, fieldName), listKey)
-      }
-    }
-  }
-  relationKeysByConfig.set(config, byList)
-  return byList
+  relationKeysByMembers.set(listMembers, keys)
+  return keys
 }
 
 function relationKeysOfFields(fieldConfigs: Record<string, FieldConfig>): RelationKeys {
@@ -138,9 +148,7 @@ function isFixedProperty(target: object, key: string | symbol): boolean {
 function scopeUnder(scope: RowScope, key: string | symbol): RowScope {
   const relatedList = typeof key === 'string' ? scope.relations.get(key) : undefined
   const relations =
-    scope.config && relatedList
-      ? (relationKeysByList(scope.config).get(relatedList) ?? NO_RELATIONS)
-      : NO_RELATIONS
+    scope.config && relatedList ? relationKeysOf(scope.config, relatedList) : NO_RELATIONS
   return { relations, config: scope.config }
 }
 
@@ -267,9 +275,7 @@ export function guardedRuleItem(row: RuleRow): {
 } {
   const { target, fieldConfigs, config, listKey } = row
   const relations =
-    config && listKey
-      ? (relationKeysByList(config).get(listKey) ?? NO_RELATIONS)
-      : relationKeysOfFields(fieldConfigs)
+    config && listKey ? relationKeysOf(config, listKey) : relationKeysOfFields(fieldConfigs)
   const evaluation: Evaluation = { tripped: false }
   return {
     item: new Proxy(target, new Guard(evaluation, { relations, config }, 'root')),

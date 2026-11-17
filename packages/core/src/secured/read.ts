@@ -11,7 +11,6 @@ import {
   checkAccess,
   checkRowRead,
   filterReadableFields,
-  getRelatedListConfig,
   NO_RULE_VIEWS,
   ruleRowOf,
   type RuleView,
@@ -27,6 +26,7 @@ import {
   type WhereCombinators,
 } from './lower.js'
 import {
+  relatedListOf,
   resolveColumns,
   resolveNearest,
   resolveOrderBy,
@@ -1015,13 +1015,8 @@ async function narrowUnincludedForeignKeys(
     if (alreadyIncluded.has(owner.relation)) continue
     if (!rawRows.some((row) => owner.foreignKey in row)) continue
 
-    const related = getRelatedListConfig(owner.ref, binding.config)
-    if (!related) continue
-
-    const access = await resolveRelatedAccessPlan(
-      { listName: related.listName, listConfig: related.listConfig },
-      ctx,
-    )
+    const related = relatedListOf(ctx, owner.relatedList)
+    const access = await resolveRelatedAccessPlan(related, ctx)
 
     for (let i = 0; i < filteredRows.length; i++) {
       const raw = rawRows[i]

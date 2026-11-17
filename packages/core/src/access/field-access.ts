@@ -10,7 +10,7 @@ import { InvalidFieldAccessResultError } from './errors.js'
 import { checkAccess, resolveSyntheticReverseRelation } from './engine.js'
 import { guardedRuleItem, NO_RULE_VIEWS, ruleRowOf, type RuleRow } from './rule-item.js'
 import { shouldHaveForeignKey } from '../fields/index.js'
-import { isSystemFieldName } from './system-fields.js'
+import { resolveListMembers, type SystemFieldName } from '../members/list-members.js'
 
 function isHookOnlyAccess(fieldAccess: FieldAccess | undefined): boolean {
   return fieldAccess?.write === 'hooks'
@@ -265,7 +265,7 @@ async function evaluateRowRead(
  * has already been fetched. That leaves the predicate itself unconstrained —
  * a caller can still filter or sort by a field whose value they could never
  * read, and recover it (or its relative order) by probing. This function is
- * the pre-query counterpart, called from `query-validation.ts`'s `where`/
+ * the pre-query counterpart, called from `secured/vocabulary.ts`'s `where`/
  * `orderBy` walk for every key that resolves to a declared field.
  *
  * It delegates to the same evaluator Field Visibility uses (`checkFieldAccess`),
@@ -510,6 +510,11 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
   }
 
   const isSudo = args.context._isSudo === true
+  const systemFields: ReadonlySet<string> = new Set<SystemFieldName>(
+    args.config && args.listName
+      ? resolveListMembers(args.config, args.listName).systemFields
+      : ['id'],
+  )
 
   for (const key of Object.keys(args.inputData ?? {})) {
     const owner = splitColumnOwners.get(key)
@@ -550,7 +555,7 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
       callerFields.has(owningField(fieldName)) ||
       args.defaultedFields?.has(fieldName) === true
 
-    if (isSystemFieldName(fieldName, fieldConfigs)) {
+    if (systemFields.has(fieldName)) {
       throw new ValidationError([
         `Cannot ${operation} "${fieldName}": it is system-managed and cannot be written` +
           (fieldName === 'id'

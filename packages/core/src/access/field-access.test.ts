@@ -368,14 +368,36 @@ describe('filterWritableFields', () => {
     ['updatedAt', { updatedAt: new Date() }],
   ])('refuses system field %s, even under sudo', async (name, extra) => {
     const data = { title: 'Test', ...extra }
+    const fields = { title: text() }
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql', timestamps: true },
+      lists: { Post: { fields } },
+    }
     await expect(
-      filterWritableFields(data, { title: { type: 'text' } }, 'create', {
+      filterWritableFields(data, fields, 'create', {
         session: null,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         context: { session: null, _isSudo: true } as any,
         inputData: data,
+        listName: 'Post',
+        config,
       }),
     ).rejects.toThrow(new RegExp(`"${name}": it is system-managed`))
+  })
+
+  it('refuses an undeclared createdAt as unknown on a list without timestamps', async () => {
+    const data = { title: 'Test', createdAt: new Date() }
+    const fields = { title: text() }
+    const config: OpenSaasConfig = { db: { provider: 'postgresql' }, lists: { Post: { fields } } }
+    await expect(
+      filterWritableFields(data, fields, 'create', {
+        session: null,
+        context: nonSudoContext(),
+        inputData: data,
+        listName: 'Post',
+        config,
+      }),
+    ).rejects.toThrow(/"createdAt": it is not a field of this list/)
   })
 
   it('treats a declared createdAt as an ordinary field', async () => {
@@ -983,19 +1005,18 @@ describe('filterWritableFields — #978 tightened sudo undeclared-key guard', ()
   // A minimal config: Account is the target of ChargeRequest's list-only ref
   // (`ref: 'Account'`, no field named on Account), so the generator
   // synthesizes `from_ChargeRequest_account` on Account.
-  const config = {
-    db: { provider: 'sqlite', url: 'file:./dev.db' },
+  const config: OpenSaasConfig = {
+    db: { provider: 'postgresql' },
     lists: {
-      Account: { fields: { name: { type: 'text' } } },
+      Account: { fields: { name: text() } },
       ChargeRequest: {
         fields: {
-          kind: { type: 'text' },
-          account: { type: 'relationship', ref: 'Account' },
+          kind: text(),
+          account: relationship({ ref: 'Account' }),
         },
       },
     },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } as any
+  }
 
   it('passes a synthetic reverse-relation key through under sudo, when config/listName are supplied', async () => {
     const fieldConfigs = { name: { type: 'text' } }
@@ -1147,14 +1168,15 @@ describe('filterWritableFields — gates caller input, not hook output (issue #1
 
   it('refuses a caller-supplied foreign key but persists a hook-set one', async () => {
     const rels = {
-      author: { type: 'relationship', ref: 'User.posts', access: { create: () => false } },
+      author: relationship({ ref: 'User.posts', access: { create: () => false } }),
     }
-    const config = {
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql' },
       lists: {
-        User: { fields: { posts: { type: 'relationship', ref: 'Post.author', many: true } } },
+        User: { fields: { posts: relationship({ ref: 'Post.author', many: true }) } },
         Post: { fields: rels },
       },
-    } as unknown as OpenSaasConfig
+    }
     const base = { session: null, context: nonSudoContext(), listName: 'Post', config }
     await expect(
       filterWritableFields({ authorId: 'u1' }, rels, 'create', {

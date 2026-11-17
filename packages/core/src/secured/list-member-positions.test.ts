@@ -235,7 +235,10 @@ describe('an undeclared createdAt/updatedAt on a list with timestamps off (#2390
     'id stays a system field everywhere',
     async () => {
       const db = database.context(open).db
-      const rows = await db.Note.select('id').orderBy({ id: 'asc' }).where({ id: { not: null } }).all()
+      const rows = await db.Note.select('id')
+        .orderBy({ id: 'asc' })
+        .where({ id: { not: null } })
+        .all()
       expect(rows).toHaveLength(1)
       await expect(db.Note.create({ data: { title: 't', id: 'x' } })).rejects.toThrow(
         /"id": it is system-managed/,
@@ -344,13 +347,14 @@ describe('a relationship', () => {
     'an unknown name is refused, and a scalar is not includable',
     async () => {
       const db = database.context(open).db
-      await expect(db.Item.where({ nope: { equals: 1 } }).all()).rejects.toThrow(
-        UNQUERYABLE('Item', 'nope'),
-      )
+      for (const key of ['nope', 'constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+        await expect(
+          db.Item.where(Object.fromEntries([[key, { equals: 1 }]])).all(),
+        ).rejects.toThrow(UNQUERYABLE('Item', key))
+        await expect(db.Item.select(key).all()).rejects.toThrow(UNQUERYABLE('Item', key))
+      }
       await expect(db.Item.include('title').all()).rejects.toThrow(UNQUERYABLE('Item', 'title'))
-      await expect(db.Item.include('ownerId').all()).rejects.toThrow(
-        UNQUERYABLE('Item', 'ownerId'),
-      )
+      await expect(db.Item.include('ownerId').all()).rejects.toThrow(UNQUERYABLE('Item', 'ownerId'))
     },
     BOOT,
   )
