@@ -4,20 +4,29 @@ import type { ConfigRefusal } from './config-refusal.js'
 
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/
 
+export function refuseNonIdentifierListKeys(config: OpenSaasConfig): ConfigRefusal[] {
+  return Object.keys(config.lists).flatMap(refuseNonIdentifierListKey)
+}
+
+function refuseNonIdentifierListKey(listKey: string): ConfigRefusal[] {
+  if (IDENTIFIER.test(listKey)) return []
+  return [
+    {
+      listKey,
+      entry: 'lists',
+      reason: 'non-identifier-name',
+      message:
+        `List key ${JSON.stringify(listKey)} is not a valid identifier. A list key becomes a contract model ` +
+        `name, so it must match ${IDENTIFIER} — rename the list to a PascalCase name such as "Post".`,
+    },
+  ]
+}
+
 export function refuseNonIdentifierNames(config: OpenSaasConfig): ConfigRefusal[] {
   const refusals: ConfigRefusal[] = []
 
   for (const [listKey, listConfig] of Object.entries(config.lists)) {
-    if (!IDENTIFIER.test(listKey)) {
-      refusals.push({
-        listKey,
-        entry: 'lists',
-        reason: 'non-identifier-name',
-        message:
-          `List key ${JSON.stringify(listKey)} is not a valid identifier. A list key becomes a contract model ` +
-          `name, so it must match ${IDENTIFIER} — rename the list to a PascalCase name such as "Post".`,
-      })
-    }
+    refusals.push(...refuseNonIdentifierListKey(listKey))
 
     for (const [fieldKey, field] of Object.entries(listConfig.fields)) {
       if (field.virtual || isRelationshipField(field) || !field.getContractField) continue

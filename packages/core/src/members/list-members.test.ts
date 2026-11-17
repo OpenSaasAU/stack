@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { builtinModules } from 'node:module'
 import path from 'node:path'
@@ -6,12 +6,13 @@ import { fileURLToPath } from 'node:url'
 import { afterAll, describe, expect, it } from 'vitest'
 import ts from 'typescript'
 import { z } from 'zod'
-import type { FieldConfig, OpenSaasConfig } from '../config/types.js'
+import type { ContractFieldDescriptor, FieldConfig, OpenSaasConfig } from '../config/types.js'
 import { deriveContract } from '../contract/derive.js'
 import { relationship, text, timestamp, virtual } from '../fields/index.js'
 import { validateConfigFields } from '../validation/field-config.js'
 import { validateDatabaseConfig } from '../validation/database-config.js'
 import { validateRelations } from '../validation/relations.js'
+import type { ConfigRefusalReason } from '../validation/config-refusal.js'
 import { resolveListMember, resolveListMembers, type ListMember } from './list-members.js'
 
 type Part = { name: string; map?: string }
@@ -38,6 +39,22 @@ const moneyField = partsField(
   (fieldKey) => ({ name: fieldKey }),
   (fieldKey) => ({ name: `${fieldKey}_currency` }),
 )
+
+class ColourField implements FieldConfig {
+  type = 'colour'
+
+  get outputType(): string {
+    return 'string'
+  }
+
+  getZodSchema() {
+    return z.string().optional()
+  }
+
+  getContractField(fieldKey: string): ContractFieldDescriptor {
+    return { kind: 'column', name: fieldKey, type: { pack: 'pg', type: 'text' }, nullable: true }
+  }
+}
 
 function fixture(): OpenSaasConfig {
   return {
@@ -72,7 +89,7 @@ function fixture(): OpenSaasConfig {
         },
       },
       Category: {
-        fields: { name: text() },
+        fields: { name: text(), colour: new ColourField() },
       },
       Settings: {
         isSingleton: true,
@@ -240,6 +257,12 @@ describe('resolveListMember', () => {
       { kind: 'field', storage: { kind: 'column' } },
     ],
     ['Profile', 'updatedAt', 'the auto updatedAt beside it', { kind: 'systemField' }],
+    [
+      'Category',
+      'colour',
+      'a class-instance field whose members sit on its prototype',
+      { kind: 'field', storage: { kind: 'column', column: 'colour' } },
+    ],
     ['Settings', 'siteName', "a singleton's field", { kind: 'field', storage: { kind: 'column' } }],
     ['Category', 'categoryId', 'the far side of a list-only ref', undefined],
   ]
@@ -319,13 +342,14 @@ describe('resolveListMembers', () => {
         const describe = field.getContractField
         if (describe === undefined) continue
         const key = `${listKey}.${fieldKey}`
-        listConfig.fields[fieldKey] = {
-          ...field,
-          getContractField: (...args) => {
-            calls.set(key, (calls.get(key) ?? 0) + 1)
-            return describe(...args)
-          },
+        const counted: FieldConfig['getContractField'] = (...args) => {
+          calls.set(key, (calls.get(key) ?? 0) + 1)
+          return describe.apply(field, args)
         }
+        listConfig.fields[fieldKey] = new Proxy(field, {
+          get: (target, property, receiver) =>
+            property === 'getContractField' ? counted : Reflect.get(target, property, receiver),
+        })
       }
     }
 
@@ -357,10 +381,30 @@ describe('resolveListMembers', () => {
   })
 })
 
+const NAME_REFUSALS: ReadonlySet<ConfigRefusalReason> = new Set([
+  'invalid-list-key',
+  'non-identifier-name',
+  'reserved-field-name',
+  'foreign-key-column-collision',
+  'synthetic-relation-collision',
+  'unknown-relationship-target',
+  'inverse-mismatch',
+  'many-to-many',
+  'self-referencing-field',
+  'foreign-key-on-both-sides',
+  'non-owning-side-nullability',
+])
+
 function generateError(refused: OpenSaasConfig): string {
-  const [fieldError] = validateConfigFields(refused)
+  const [fieldError] = validateConfigFields(refused).filter(
+    (error) => error.missingMember === 'getContractField',
+  )
   if (fieldError !== undefined) return fieldError.message
-  const [refusal] = [...validateDatabaseConfig(refused), ...validateRelations(refused)]
+  const [refusal] = [...validateDatabaseConfig(refused), ...validateRelations(refused)].filter(
+    (entry) =>
+      NAME_REFUSALS.has(entry.reason) &&
+      (entry.reason !== 'non-identifier-name' || entry.entry === 'lists'),
+  )
   if (refusal !== undefined) return refusal.message
   try {
     deriveContract(refused)
@@ -524,11 +568,85 @@ describe('a config generate refuses', () => {
       }),
       'Category',
     ],
+    [
+      'a list key that is not PascalCase, beside a reserved field name',
+      withLists({ post: { fields: { AND: text() } } }),
+      'post',
+    ],
+    [
+      'a list key that is not an identifier',
+      withLists({ 'Blog-Post': { fields: { title: text() } } }),
+      'Blog-Post',
+    ],
+    [
+      'a column stored under the name of a relation on the same list',
+      withLists({
+        Post: {
+          fields: {
+            author: relationship({ ref: 'User.posts' }),
+            slug: text({ db: { map: 'author' } }),
+          },
+        },
+        User: { fields: { posts: relationship({ ref: 'Post.author', many: true }) } },
+      }),
+      'Post',
+    ],
   ]
 
   it.each(rows)('%s throws the message generate gives', (_description, refused, listKey) => {
     const message = generateError(refused)
     expect(() => resolveListMembers(refused, listKey)).toThrow(message)
+  })
+
+  it('rethrows the same error object on every call', () => {
+    const refused = withLists({ Post: { fields: { id: text() } } })
+    const caught = (): unknown => {
+      try {
+        resolveListMembers(refused, 'Post')
+      } catch (error) {
+        return error
+      }
+      return undefined
+    }
+    const first = caught()
+    expect(first).toBeInstanceOf(Error)
+    expect(caught()).toBe(first)
+  })
+
+  it('leaves a refusal that changes no name to generate', () => {
+    const accepted = withLists({
+      Post: {
+        fields: {
+          author: relationship({ ref: 'Author', db: { isNullable: false, onDelete: 'setNull' } }),
+        },
+      },
+      Author: { fields: { name: text() } },
+    })
+    expect(validateRelations(accepted).map((entry) => entry.reason)).toEqual([
+      'set-null-on-required-relation',
+    ])
+    expect(resolveListMember(accepted, 'Post', 'authorId')?.kind).toBe('foreignKey')
+  })
+
+  it('lets an error that is not a refusal through, without memoising it', () => {
+    let broken = true
+    const flaky: FieldConfig = {
+      type: 'flaky',
+      getZodSchema: () => z.string().optional(),
+      getContractField: (fieldKey) => {
+        if (broken) throw new TypeError('descriptor failed')
+        return {
+          kind: 'column',
+          name: fieldKey,
+          type: { pack: 'pg', type: 'text' },
+          nullable: true,
+        }
+      },
+    }
+    const own = withLists({ Post: { fields: { flaky } } })
+    expect(() => resolveListMembers(own, 'Post')).toThrow(TypeError)
+    broken = false
+    expect(resolveListMember(own, 'Post', 'flaky')?.kind).toBe('field')
   })
 })
 
@@ -584,24 +702,41 @@ describe('the resolver module', () => {
     return specifiers
   }
 
-  function bareImportsOf(entry: string): Set<string> {
+  const ALLOWED_PACKAGES = new Set(['bcryptjs', 'zod'])
+
+  function resolveRelative(from: string, specifier: string): string | undefined {
+    const base = path.resolve(path.dirname(from), specifier)
+    const stem = base.replace(/\.js$/, '')
+    return [
+      `${stem}.ts`,
+      `${stem}.tsx`,
+      base,
+      path.join(base, 'index.ts'),
+      path.join(base, 'index.tsx'),
+    ].find((candidate) => existsSync(candidate) && statSync(candidate).isFile())
+  }
+
+  function importGraphOf(entry: string): { bare: Set<string>; unresolved: string[] } {
     const seen = new Set<string>()
     const bare = new Set<string>()
+    const unresolved: string[] = []
     const pending = [entry]
     while (pending.length > 0) {
       const file = pending.pop()
       if (file === undefined || seen.has(file)) continue
       seen.add(file)
+      if (!/\.tsx?$/.test(file)) continue
       for (const specifier of valueSpecifiersOf(file)) {
         if (!specifier.startsWith('.')) {
           bare.add(specifier)
           continue
         }
-        const resolved = path.resolve(path.dirname(file), specifier.replace(/\.js$/, '.ts'))
-        if (existsSync(resolved)) pending.push(resolved)
+        const resolved = resolveRelative(file, specifier)
+        if (resolved === undefined) unresolved.push(`${file}: ${specifier}`)
+        else pending.push(resolved)
       }
     }
-    return bare
+    return { bare, unresolved }
   }
 
   it('reads side-effect, double-quoted, re-exported and dynamic imports', () => {
@@ -623,9 +758,16 @@ describe('the resolver module', () => {
     )
   })
 
+  it('reports a relative import it cannot resolve', () => {
+    const file = path.join(scratch, 'unresolved.ts')
+    writeFileSync(file, "import './missing.js'\nimport './unresolved'\n")
+    expect(importGraphOf(file).unresolved).toEqual([`${file}: ./missing.js`])
+  })
+
   it('reaches no Node builtin through any value import', () => {
-    const bare = [...bareImportsOf(path.join(here, 'list-members.ts'))]
-    expect(bare.length).toBeGreaterThan(0)
-    expect(bare.filter((specifier) => builtins.has(specifier))).toEqual([])
+    const { bare, unresolved } = importGraphOf(path.join(here, 'list-members.ts'))
+    expect(unresolved).toEqual([])
+    expect([...bare].filter((specifier) => builtins.has(specifier))).toEqual([])
+    expect([...bare].filter((specifier) => !ALLOWED_PACKAGES.has(specifier))).toEqual([])
   })
 })

@@ -3,7 +3,6 @@ import type {
   ContractColumnDescriptor,
   ContractFieldDescriptor,
   ContractRelationDescriptor,
-  DatabaseConfig,
   ExtensionDescriptor,
   FieldConfig,
   ListConfig,
@@ -14,11 +13,14 @@ import type {
 } from '../config/types.js'
 import { isOneToOneRelationship, isRelationshipField } from '../fields/index.js'
 import {
+  claimDescribedMembers,
   claimListMember,
   claimOrigin,
+  refuseColumnsAliasingRelations,
   startListMemberClaims,
   type ListMemberClaims,
 } from '../members/claims.js'
+import { resolveIdStrategy, resolveListTimestamps } from './strategy.js'
 import type {
   ContractColumn,
   ContractCompositeForeignKey,
@@ -29,7 +31,6 @@ import type {
   ContractIndex,
   ContractModel,
   ContractRelation,
-  ContractTimestamps,
 } from './types.js'
 
 const DEFAULT_NAMESPACE = 'public'
@@ -37,6 +38,8 @@ const DEFAULT_NAMESPACE = 'public'
 function pgType(type: string, args?: number[]): ColumnTypeDescriptor {
   return args && args.length > 0 ? { pack: 'pg', type, args } : { pack: 'pg', type }
 }
+
+export { resolveIdStrategy, resolveListTimestamps } from './strategy.js'
 
 export function idColumn(strategy: ContractIdStrategy): ContractIdColumn {
   switch (strategy) {
@@ -49,32 +52,6 @@ export function idColumn(strategy: ContractIdStrategy): ContractIdColumn {
     case 'int autoincrement':
     case 'singleton':
       return { strategy, type: pgType('int') }
-  }
-}
-
-export function resolveIdStrategy(
-  listConfig: ListConfig<TypeInfo>,
-  config: OpenSaasConfig,
-): ContractIdStrategy {
-  if (listConfig.isSingleton) return 'singleton'
-  return listConfig.db?.idField ?? config.db.idField ?? 'uuid7'
-}
-
-/**
- * Which auto-timestamp columns a list carries: `db.timestamps` per list over
- * the config default, off by default (ADR-0004). A declared `createdAt`/
- * `updatedAt` field replaces the auto-timestamp column, as the generator has
- * always allowed.
- */
-export function resolveListTimestamps(
-  listConfig: ListConfig<TypeInfo>,
-  dbConfig: DatabaseConfig,
-): ContractTimestamps {
-  const enabled = listConfig.db?.timestamps ?? dbConfig.timestamps ?? false
-  if (!enabled) return { createdAt: false, updatedAt: false }
-  return {
-    createdAt: !Object.prototype.hasOwnProperty.call(listConfig.fields, 'createdAt'),
-    updatedAt: !Object.prototype.hasOwnProperty.call(listConfig.fields, 'updatedAt'),
   }
 }
 
@@ -238,25 +215,6 @@ type ModelDraft = {
   members: ListMemberClaims
 }
 
-function claimMember(listKey: string, draft: ModelDraft, name: string, origin: string): void {
-  claimListMember(listKey, draft.members, name, origin)
-}
-
-function refuseColumnsAliasingRelations(model: ContractModel): void {
-  const relationNames = new Set(model.relations.map((relation) => relation.name))
-  for (const column of model.columns) {
-    const physical = column.map ?? column.name
-    if (relationNames.has(physical)) {
-      throw new Error(
-        `List "${model.name}": column "${column.name}" is stored as "${physical}", which is also the ` +
-          `name of the relation "${physical}" on the same list. An include is aliased by relation ` +
-          `name and a scalar by physical column name, so the two would collide (#1236, ADR-0069). ` +
-          `Pick a different db.map or db.foreignKey.map.`,
-      )
-    }
-  }
-}
-
 /** A `from_<List>_<field>` back-relation and the list-only ref that synthesised it. */
 type SyntheticRelation = { sourceList: string; sourceField: string; relation: ContractRelation }
 
@@ -312,13 +270,12 @@ function deriveRelation(
     }
   }
 
-  claimMember(listKey, draft, fieldKey, claimOrigin.field(fieldKey))
+  claimDescribedMembers(listKey, draft.members, fieldKey, descriptor)
 
   const { foreignKey } = descriptor
   if (foreignKey) {
     const targetStrategy = resolveIdStrategy(targetList, config)
     const oneToOne = isOneToOneRelationship(fieldKey, field, config)
-    claimMember(listKey, draft, foreignKey.name, claimOrigin.foreignKey(fieldKey))
     draft.model.columns.push({
       name: foreignKey.name,
       type: idColumn(targetStrategy).type,
@@ -774,7 +731,7 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
           break
         case 'column': {
           const { kind: _kind, ...column } = descriptor
-          claimMember(listKey, draft, column.name, claimOrigin.field(fieldKey))
+          claimDescribedMembers(listKey, draft.members, fieldKey, descriptor)
           const resolved = toContractColumn(listKey, fieldKey, column)
           draft.model.columns.push(
             timestampDefault !== undefined &&
@@ -801,7 +758,9 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
                   `column must stay nullable. Remove nullable: false from this column.`,
               )
             }
-            claimMember(listKey, draft, column.name, claimOrigin.field(fieldKey))
+          }
+          claimDescribedMembers(listKey, draft.members, fieldKey, descriptor)
+          for (const column of descriptor.columns) {
             draft.model.columns.push(toContractColumn(listKey, fieldKey, column))
           }
           break
@@ -834,9 +793,9 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
       )
     }
     for (const { sourceList, sourceField, relation } of relations) {
-      claimMember(
+      claimListMember(
         target,
-        draft,
+        draft.members,
         relation.name,
         claimOrigin.syntheticBackRelation(sourceList, sourceField),
       )
@@ -844,7 +803,13 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
     }
   }
 
-  for (const draft of drafts.values()) refuseColumnsAliasingRelations(draft.model)
+  for (const draft of drafts.values()) {
+    refuseColumnsAliasingRelations(
+      draft.model.name,
+      draft.model.columns,
+      draft.model.relations.map((relation) => relation.name),
+    )
+  }
 
   for (const [listKey, draft] of drafts) {
     const composite = deriveCompositeForeignKeys(listKey, config, drafts)
