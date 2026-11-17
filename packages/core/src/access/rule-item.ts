@@ -43,7 +43,7 @@ type RelationKeys = ReadonlyMap<string, string | undefined>
 
 const NO_RELATIONS: RelationKeys = new Map()
 
-function relatedListOf(member: ListMember): string | undefined {
+function reachedListOf(member: ListMember): string | undefined {
   switch (member.kind) {
     case 'field':
       return member.storage.kind === 'relation' ? member.storage.relatedList : undefined
@@ -67,7 +67,7 @@ function relationKeysOf(config: OpenSaasConfig, listKey: string): RelationKeys {
   if (known !== undefined) return known
   const keys = new Map<string, string>()
   for (const member of listMembers.members.values()) {
-    const relatedList = relatedListOf(member)
+    const relatedList = reachedListOf(member)
     if (relatedList !== undefined) keys.set(member.name, relatedList)
   }
   relationKeysByMembers.set(listMembers, keys)

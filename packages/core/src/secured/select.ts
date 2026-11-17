@@ -23,7 +23,7 @@ import {
   type ListMember,
 } from '../members/list-members.js'
 import { ValidationError } from '../hooks/index.js'
-import { unqueryableKey, type ResolveContext } from './vocabulary.js'
+import { memberGate, memberOf, unqueryableKey, type ResolveContext } from './vocabulary.js'
 import type { IncludePlan } from './include.js'
 
 /**
@@ -99,27 +99,20 @@ function dependencyColumns(member: ListMember): readonly string[] {
   }
 }
 
-/** What `.select()` may name, with the field whose `read` rule governs it. */
-function selectedMember(
-  name: string,
-  ctx: ResolveContext,
-): { columns: readonly string[]; gate: FieldConfig | undefined } {
-  const member = resolveListMember(ctx.config, ctx.listName, name)
-  if (member === undefined) throw unqueryableKey(ctx.listName, name)
+/** The contract columns `.select()` projects for `member`, or a refusal. */
+function selectedColumns(member: ListMember, ctx: ResolveContext): readonly string[] {
   switch (member.kind) {
     case 'field':
-      if (member.storage.kind === 'relation') throw new RelationSelectError(ctx.listName, name)
-      return { columns: declaredColumns(member), gate: member.field }
-    case 'foreignKey':
-      return {
-        columns: [member.name],
-        gate: ctx.config.lists[ctx.listName].fields[member.field],
+      if (member.storage.kind === 'relation') {
+        throw new RelationSelectError(ctx.listName, member.name)
       }
+      return declaredColumns(member)
+    case 'foreignKey':
     case 'systemField':
-      return { columns: [member.name], gate: undefined }
+      return [member.name]
     case 'partColumn':
     case 'syntheticBackRelation':
-      throw unqueryableKey(ctx.listName, name)
+      throw unqueryableKey(ctx.listName, member.name)
     default:
       return unhandledMember(member)
   }
@@ -177,9 +170,9 @@ export async function resolveProjection(
   let rowDependent = false
 
   for (const name of fields) {
-    const member = selectedMember(name, ctx)
-    for (const column of member.columns) columns.add(column)
-    if (await readsTheRow(member.gate, ctx)) rowDependent = true
+    const member = memberOf(name, ctx)
+    for (const column of selectedColumns(member, ctx)) columns.add(column)
+    if (await readsTheRow(memberGate(member, ctx), ctx)) rowDependent = true
     selected.add(name)
   }
 

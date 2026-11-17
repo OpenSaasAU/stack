@@ -25,7 +25,9 @@ import {
 import { READ_INCLUDE_MAX_DEPTH } from '../access/depth-limits.js'
 import { AccessScopeDepthExceededError } from '../access/errors.js'
 import {
-  relatedListOf,
+  listNamed,
+  memberGate,
+  memberOf,
   resolveOrderBy,
   resolveRelatedAccessPlan,
   assertWhereWithinLimits,
@@ -522,12 +524,14 @@ export interface ForeignKeyOwner {
 export function foreignKeyOwningRelations(ctx: ResolveContext): ForeignKeyOwner[] {
   const owners: ForeignKeyOwner[] = []
   for (const member of resolveListMembers(ctx.config, ctx.listName).members.values()) {
-    if (member.kind !== 'foreignKey') continue
+    if (member.kind !== 'field' || member.storage.kind !== 'relation') continue
+    const { foreignKey, relatedList } = member.storage
+    if (foreignKey === undefined) continue
     owners.push({
-      relation: member.field,
-      fieldConfig: ctx.config.lists[ctx.listName].fields[member.field],
-      relatedList: member.relatedList,
-      foreignKey: member.name,
+      relation: member.name,
+      fieldConfig: member.field,
+      relatedList,
+      foreignKey: foreignKey.name,
     })
   }
   return owners
@@ -537,7 +541,7 @@ function declaredIncludeTarget(member: DeclaredFieldMember, ctx: ResolveContext)
   const { storage } = member
   switch (storage.kind) {
     case 'relation': {
-      const related = relatedListOf(ctx, storage.relatedList)
+      const related = listNamed(ctx, storage.relatedList)
       return {
         relatedListName: related.listName,
         relatedListConfig: related.listConfig,
@@ -569,19 +573,18 @@ function declaredIncludeTarget(member: DeclaredFieldMember, ctx: ResolveContext)
  * the `Known limits` note above).
  */
 function resolveIncludeTarget(name: string, ctx: ResolveContext): IncludeTarget {
-  const member = resolveListMember(ctx.config, ctx.listName, name)
-  if (member === undefined) throw unqueryableKey(ctx.listName, name)
+  const member = memberOf(name, ctx)
   switch (member.kind) {
     case 'field':
       return declaredIncludeTarget(member, ctx)
     case 'syntheticBackRelation': {
-      const source = relatedListOf(ctx, member.sourceList)
+      const source = listNamed(ctx, member.sourceList)
       return {
         relatedListName: source.listName,
         relatedListConfig: source.listConfig,
         arity: 'many',
         fieldConfig: undefined,
-        readGate: source.listConfig.fields[member.sourceField],
+        readGate: memberGate(member, ctx),
         foreignKey: undefined,
       }
     }

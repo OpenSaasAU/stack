@@ -8,7 +8,11 @@ import { createTestDatabase, type TestDatabase } from '../testing/context.js'
 const BOOT = 120_000
 const OPEN = { query: () => true, create: () => true, update: () => true, delete: () => true }
 
-const queried = { Profile: 0, Org: 0 }
+const queried = { Profile: 0, Org: 0, Item: 0 }
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
 
 function mediaField(): FieldConfig {
   const field = json()
@@ -23,8 +27,11 @@ function mediaField(): FieldConfig {
   field.getColumnNames = () => columns
   field.assembleColumns = (_fieldName, row) => ({ name: row[columns[0]], size: row[columns[1]] })
   field.splitColumns = (_fieldName, value) => {
-    const media = (value ?? null) as { name?: string; size?: number } | null
-    return { [columns[0]]: media?.name ?? null, [columns[1]]: media?.size ?? null }
+    const media: Record<string, unknown> = isRecord(value) ? value : {}
+    return {
+      [columns[0]]: typeof media.name === 'string' ? media.name : null,
+      [columns[1]]: typeof media.size === 'number' ? media.size : null,
+    }
   }
   return field
 }
@@ -72,7 +79,15 @@ const config: OpenSaasConfig = {
         owner: relationship({ ref: 'Org' }),
         media: mediaField(),
       },
-      access: { operation: OPEN },
+      access: {
+        operation: {
+          ...OPEN,
+          query: () => {
+            queried.Item += 1
+            return true
+          },
+        },
+      },
     },
     Note: {
       fields: { title: text() },
@@ -118,6 +133,7 @@ beforeEach(async () => {
   await sudo.db.Note.create({ data: { title: 'n' } })
   queried.Profile = 0
   queried.Org = 0
+  queried.Item = 0
 })
 
 describe('a foreign-key name on the side of a one-to-one that does not own it (#2388)', () => {
@@ -302,7 +318,11 @@ describe('a Synthetic back-relation', () => {
     async () => {
       const db = database.context(open).db
       const orgs = await db.Org.orderBy({ handle: 'asc' }).include('from_Item_owner').all()
-      expect(orgs.map((org) => (org.from_Item_owner as unknown[]).length)).toEqual([2, 1])
+      expect(
+        orgs.map((org) =>
+          Array.isArray(org.from_Item_owner) ? org.from_Item_owner.length : undefined,
+        ),
+      ).toEqual([2, 1])
     },
     BOOT,
   )
@@ -318,6 +338,7 @@ describe('a Synthetic back-relation', () => {
       await expect(db.Org.orderBy({ [key]: 'asc' }).all()).rejects.toThrow(UNQUERYABLE('Org', key))
       await expect(db.Org.select(key).all()).rejects.toThrow(UNQUERYABLE('Org', key))
       await expect(db.Org.distinct(key).all()).rejects.toThrow(UNQUERYABLE('Org', key))
+      expect(queried.Item).toBe(0)
     },
     BOOT,
   )
@@ -347,11 +368,21 @@ describe('a relationship', () => {
     'an unknown name is refused, and a scalar is not includable',
     async () => {
       const db = database.context(open).db
-      for (const key of ['nope', 'constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+      for (const key of [
+        'nope',
+        'constructor',
+        'constructorId',
+        '__proto__',
+        'toString',
+        'hasOwnProperty',
+      ]) {
         await expect(
           db.Item.where(Object.fromEntries([[key, { equals: 1 }]])).all(),
         ).rejects.toThrow(UNQUERYABLE('Item', key))
         await expect(db.Item.select(key).all()).rejects.toThrow(UNQUERYABLE('Item', key))
+        await expect(db.Item.orderBy(Object.fromEntries([[key, 'asc']])).all()).rejects.toThrow(
+          UNQUERYABLE('Item', key),
+        )
       }
       await expect(db.Item.include('title').all()).rejects.toThrow(UNQUERYABLE('Item', 'title'))
       await expect(db.Item.include('ownerId').all()).rejects.toThrow(UNQUERYABLE('Item', 'ownerId'))

@@ -26,7 +26,7 @@ import {
   type WhereCombinators,
 } from './lower.js'
 import {
-  relatedListOf,
+  listNamed,
   resolveColumns,
   resolveNearest,
   resolveOrderBy,
@@ -1015,7 +1015,7 @@ async function narrowUnincludedForeignKeys(
     if (alreadyIncluded.has(owner.relation)) continue
     if (!rawRows.some((row) => owner.foreignKey in row)) continue
 
-    const related = relatedListOf(ctx, owner.relatedList)
+    const related = listNamed(ctx, owner.relatedList)
     const access = await resolveRelatedAccessPlan(related, ctx)
 
     for (let i = 0; i < filteredRows.length; i++) {
