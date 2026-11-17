@@ -1,12 +1,35 @@
-import type { FieldConfig, OpenSaasConfig } from '../config/types.js'
+import type { OpenSaasConfig } from '../config/types.js'
 import type { AccessContext, Session } from '../access/types.js'
 import { classifyRowIndependentWrite } from '../access/field-access.js'
 import { controlFlowPredicateOf, decideAdvertisement } from '../access/decide-advertisement.js'
 import { mcpAdvertisement } from './advertise.js'
-import { ownsForeignKey } from '../context/junction.js'
 import { mcpListReachable } from './reachability.js'
-import { isRelationshipField, isZonelessNativeType } from '../fields/index.js'
+import { declaredFieldsOf, relationFieldOf } from './relation-member.js'
+import { isZonelessNativeType } from '../fields/index.js'
 import { listIdJsonSchema } from '../contract/id-boundary.js'
+
+function connectSchema(config: OpenSaasConfig, relatedList: string): Record<string, unknown> {
+  // `null` is the only spelling that clears the edge — nested `disconnect`
+  // is refused (ADR-0050) — so the schema has to admit it alongside `connect`.
+  // `connect.id` is the RELATED list's own id, at its own type (ADR-0048).
+  // `required` and `additionalProperties` constrain the object form only, so
+  // `null` still validates (`MalformedRelationInputError` refuses a second key).
+  return {
+    type: ['object', 'null'],
+    description:
+      'Link this record to a row of the related list with { "connect": { "id": "..." } }, or clear the link with null.',
+    properties: {
+      connect: {
+        type: 'object',
+        properties: { id: listIdJsonSchema(config, relatedList) },
+        required: ['id'],
+        additionalProperties: false,
+      },
+    },
+    required: ['connect'],
+    additionalProperties: false,
+  }
+}
 
 /** JSON Schema for one field's own value, as the `create`/`update` `data` schema advertises it. */
 export function fieldToJsonSchema(
@@ -14,7 +37,9 @@ export function fieldToJsonSchema(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Field configs have varying structures
   fieldConfig: any,
   config: OpenSaasConfig,
+  relatedList?: string,
 ): Record<string, unknown> {
+  if (relatedList !== undefined) return connectSchema(config, relatedList)
   const baseSchema: Record<string, unknown> = {}
 
   switch (fieldConfig.type) {
@@ -52,37 +77,6 @@ export function fieldToJsonSchema(
         baseSchema.enum = fieldConfig.options.map((opt: { value: string }) => opt.value)
       }
       break
-    case 'relationship': {
-      // `null` is the only spelling that clears the edge — nested `disconnect`
-      // is refused (ADR-0050) — so the schema has to admit it alongside
-      // `connect`, or a client cannot express half of what the write surface
-      // supports.
-      baseSchema.type = ['object', 'null']
-      baseSchema.description =
-        'Link this record to a row of the related list with { "connect": { "id": "..." } }, or clear the link with null.'
-      // `connect.id` is the RELATED list's own id, at its own type (ADR-0048)
-      // — an integer-keyed related list must validate an integer here exactly
-      // as `where.id` does on that list's own tools.
-      const relatedListKey: string = fieldConfig.ref.split('.')[0]
-      baseSchema.properties = {
-        connect: {
-          type: 'object',
-          properties: {
-            id: listIdJsonSchema(config, relatedListKey),
-          },
-          required: ['id'],
-          additionalProperties: false,
-        },
-      }
-      // `connect` is the object form's only key, and `id` its only criterion:
-      // a second key beside either is refused rather than narrowed to the part
-      // the engine recognises (`MalformedRelationInputError`). `required` and
-      // `additionalProperties` constrain the object form only, so `null`
-      // — the other half of the union above — still validates.
-      baseSchema.required = ['connect']
-      baseSchema.additionalProperties = false
-      break
-    }
     default:
       baseSchema.type = 'string'
   }
@@ -128,34 +122,19 @@ export class McpWriteRefusedError extends Error {
 export async function assertWritableData(
   data: Record<string, unknown>,
   listKey: string,
-  fields: Record<string, FieldConfig>,
   config: OpenSaasConfig,
   operation: 'create' | 'update',
   session: Session | null,
   context: AccessContext,
 ): Promise<void> {
-  const fieldSchemas = await generateFieldSchemas(
-    listKey,
-    fields,
-    config,
-    operation,
-    session,
-    context,
-  )
+  const fieldSchemas = await generateFieldSchemas(listKey, config, operation, session, context)
   const available = Object.keys(fieldSchemas.properties)
   const advertised = new Set(available)
 
   for (const fieldName of Object.keys(data)) {
     if (advertised.has(fieldName)) continue
 
-    const fieldConfig = fields[fieldName]
-    if (
-      fieldConfig &&
-      isRelationshipField(fieldConfig) &&
-      !ownsForeignKey(config, listKey, fieldName, fieldConfig)
-    ) {
-      continue
-    }
+    if (relationFieldOf(config, listKey, fieldName)?.ownsForeignKey === false) continue
 
     throw new McpWriteRefusedError(
       `"${listKey}" has no field "${fieldName}" to ${operation}. Available fields: ${available.join(', ')}.`,
@@ -165,7 +144,6 @@ export async function assertWritableData(
 
 export async function generateFieldSchemas(
   listKey: string,
-  fields: Record<string, FieldConfig>,
   config: OpenSaasConfig,
   operation: 'create' | 'update',
   session: Session | null,
@@ -179,19 +157,15 @@ export async function generateFieldSchemas(
   const required: string[] = []
   let deniedRequiredField: string | null = null
 
-  for (const [fieldName, fieldConfig] of Object.entries(fields)) {
+  for (const [fieldName, fieldConfig] of declaredFieldsOf(config, listKey)) {
     if (fieldName === 'id') continue
 
     // A relationship whose foreign key lives on the related row — a to-many,
     // and the non-owning end of a one-to-one — has no column here to lower a
     // `connect` onto, so the engine refuses it (ADR-0050). Advertising it would
     // invite a tool call that can only fail.
-    if (
-      isRelationshipField(fieldConfig) &&
-      !ownsForeignKey(config, listKey, fieldName, fieldConfig)
-    ) {
-      continue
-    }
+    const relation = relationFieldOf(config, listKey, fieldName)
+    if (relation?.ownsForeignKey === false) continue
 
     // `validation.isRequired` is an application-layer check; `db.isNullable:
     // false` is a column-level one — either makes a denied write break every
@@ -214,8 +188,8 @@ export async function generateFieldSchemas(
         fieldConfig.db?.isNullable === false)
 
     if (
-      isRelationshipField(fieldConfig) &&
-      !(await mcpListReachable(config, fieldConfig.ref.split('.')[0]!, context, {
+      relation !== undefined &&
+      !(await mcpListReachable(config, relation.relatedList, context, {
         requireReadTool: false,
       }))
     ) {
@@ -235,7 +209,7 @@ export async function generateFieldSchemas(
       continue
     }
 
-    properties[fieldName] = fieldToJsonSchema(fieldName, fieldConfig, config)
+    properties[fieldName] = fieldToJsonSchema(fieldName, fieldConfig, config, relation?.relatedList)
 
     if (isRequired) required.push(fieldName)
   }

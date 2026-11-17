@@ -9,8 +9,7 @@
 import type { OpenSaasConfig } from '../config/types.js'
 import type { AccessContext, Session } from '../access/types.js'
 import { classifyRowIndependentRead } from '../access/field-access.js'
-import { isRelationshipField } from '../fields/index.js'
-import { ownsForeignKey } from '../context/junction.js'
+import { relationOf } from './relation-member.js'
 import { listIdColumn, parseListId, type ListIdValue } from '../contract/id-boundary.js'
 import { RELATION_QUANTIFIERS } from '../secured/operators.js'
 
@@ -33,7 +32,8 @@ export async function foreignKeyVisibility(
   const hidden = new Set<string>()
   for (const [listKey, listConfig] of Object.entries(config.lists)) {
     for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
-      if (!isRelationshipField(fieldConfig) || fieldConfig.access === undefined) continue
+      if (fieldConfig.access === undefined) continue
+      if (relationOf(config, listKey, fieldName)?.via !== 'field') continue
       const answer = await classifyRowIndependentRead(fieldConfig.access, { session, context })
       if (answer !== 'allow') hidden.add(`${listKey}.${fieldName}`)
     }
@@ -89,23 +89,6 @@ function coerceIdCondition(
     operators[operator] = parsedId
   }
   return operators
-}
-
-/** The related list a foreign-key column (`authorId`) points at, when `key` names one this list owns. */
-function foreignKeyRelation(
-  config: OpenSaasConfig,
-  listKey: string,
-  key: string,
-  visible: ForeignKeyVisibility,
-): string | undefined {
-  if (!key.endsWith('Id') || Object.hasOwn(config.lists[listKey]?.fields ?? {}, key))
-    return undefined
-  const fieldName = key.slice(0, -2)
-  const fieldConfig = config.lists[listKey]?.fields[fieldName]
-  if (!isRelationshipField(fieldConfig)) return undefined
-  if (!visible(listKey, fieldName)) return undefined
-  if (!ownsForeignKey(config, listKey, fieldName, fieldConfig)) return undefined
-  return fieldConfig.ref.split('.')[0]
 }
 
 /** AND/OR/NOT's own value: one predicate, or a list of them (the same normalisation `whereArgument`'s `branches` applies). */
@@ -170,19 +153,19 @@ export function coerceWhereIds(
       continue
     }
 
-    const foreignKeyOwner = foreignKeyRelation(config, listKey, key, visible)
-    if (foreignKeyOwner !== undefined) {
-      if (value === null) continue
-      const coerced = coerceIdCondition(value, config, foreignKeyOwner, true)
+    const relation = relationOf(config, listKey, key)
+    if (relation === undefined) continue
+
+    if (relation.via === 'foreignKey') {
+      if (!visible(listKey, relation.field) || value === null) continue
+      const coerced = coerceIdCondition(value, config, relation.relatedList, true)
       if (coerced === null) return null
       result[key] = coerced
       continue
     }
 
-    const fieldConfig = listConfig.fields[key]
-    if (!isRelationshipField(fieldConfig) || !isPlainObject(value)) continue
-
-    const relatedListKey = fieldConfig.ref.split('.')[0]
+    if (!isPlainObject(value)) continue
+    const relatedListKey = relation.relatedList
     const nested: Record<string, unknown> = { ...value }
     let changed = false
     for (const quantifier of RELATION_QUANTIFIERS) {
