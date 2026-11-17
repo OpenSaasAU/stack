@@ -1,11 +1,6 @@
-import {
-  resolveJunctionEdge,
-  type DatabaseConfig,
-  type FieldConfig,
-  type ListConfig,
-  type OpenSaasConfig,
-} from '@opensaas/stack-core'
+import type { DatabaseConfig, FieldConfig, ListConfig, OpenSaasConfig } from '@opensaas/stack-core'
 import { computeDefaultColumns, withStructuralTimestampDefaults } from './defaultColumns.js'
+import { junctionEdgeForRender } from './relationshipEdges.js'
 
 /**
  * The container arrangement of an item view, DERIVED from the number of
@@ -250,7 +245,7 @@ export function deriveItemViewLayout(config: OpenSaasConfig, listKey: string): I
       continue
     }
 
-    const isJunctionEdge = resolveJunctionEdge(config, listKey, fieldName) !== null
+    const isJunctionEdge = junctionEdgeForRender(config, listKey, fieldName) !== null
     const overrides = readRelationshipItemView(field, isJunctionEdge)
     const ref = typeof field.ref === 'string' ? field.ref : ''
     const [relatedListKey, backReferenceField] = ref.split('.')

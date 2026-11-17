@@ -247,6 +247,18 @@ describe('the reason a to-many is read-only names the control that can write it'
     expect(fields.tags.readOnly).toBe(true)
     expect(fields.tags.readOnlyReason).toBe('Locked by the workflow')
   })
+
+  it('leaves the field read-only, without throwing, on a config generate refuses', () => {
+    const config = junctionConfig()
+    config.lists.Post.fields.ghost = relationship({ ref: 'Nowhere.posts' })
+    const fields = projectFieldConfigs(config.lists.Post.fields)
+
+    expect(() =>
+      markUnwritableRelationships(fields, 'Post', config.lists.Post.fields, config),
+    ).not.toThrow()
+    expect(fields.tags.readOnly).toBe(true)
+    expect(fields.tags.readOnlyReason).toBe(UNWRITABLE_RELATIONSHIP_REASON)
+  })
 })
 
 describe('projectFieldConfig hook-only fields', () => {

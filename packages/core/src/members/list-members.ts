@@ -298,6 +298,16 @@ export function resolveListMembers(config: OpenSaasConfig, listKey: string): Lis
   return built
 }
 
+/**
+ * Every list's members, keyed by list key. Throws generate's own error for a
+ * config `generate` refuses.
+ */
+export function assertListMembersResolve(config: OpenSaasConfig): ReadonlyMap<string, ListMembers> {
+  return new Map(
+    Object.keys(config.lists).map((listKey) => [listKey, resolveListMembers(config, listKey)]),
+  )
+}
+
 /** The `default` branch of a position's exhaustive choice over a member's kind. */
 export function unhandledMember(member: never): never {
   throw new Error(`Unhandled List member: ${JSON.stringify(member)}`)

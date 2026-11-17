@@ -1,21 +1,6 @@
 import type { ContractFieldDescriptor, FieldConfig, OpenSaasConfig } from './types.js'
 
 /**
- * The parts of a field config {@link isComputedField} and
- * {@link readContractDescriptorKind} need — deliberately narrower than
- * `FieldConfig` (whose `type` is required) so a caller already holding a
- * partial/structural field shape can pass it straight through with no cast.
- * `filterWritableFields` (`../access/field-access.ts`) is exactly this: its
- * own `fieldConfigs` parameter is typed as the minimal structural shape its
- * unit tests construct by hand, never the full `FieldConfig`.
- */
-type FieldKindInput = {
-  virtual?: boolean
-  type?: string
-  getContractField?: FieldConfig['getContractField']
-}
-
-/**
  * The `kind` of a field's contract descriptor, or `undefined` when it
  * declares none or refuses to describe itself.
  *
@@ -28,7 +13,7 @@ type FieldKindInput = {
  * answer for which "no" is the safe default.
  */
 export function readContractDescriptorKind(
-  field: FieldKindInput,
+  field: FieldConfig,
   fieldKey: string,
   listKey: string,
   config: OpenSaasConfig,
@@ -49,10 +34,9 @@ export function readContractDescriptorKind(
  * shape core's own builder produces.
  *
  * This is the one predicate every caller that needs this answer shares —
- * `validateFieldConfig`, `writePluginOwnedField`'s field lookup,
- * `filterWritableFields`'s virtual-field skip, Field Visibility's
- * virtual-field pass, and the CLI's contract-remainder and `needs` rendering
- * all previously carried their own copy of it (issue #1531).
+ * `validateFieldConfig`, the List member resolver's descriptor read, Field
+ * Visibility's virtual-field pass, and the CLI's contract-remainder and
+ * `needs` rendering (issue #1531).
  *
  * Pass `alreadyRead` when the caller already read the field's descriptor for
  * another reason (the CLI reads it once per field to also render `columns`,
@@ -74,7 +58,7 @@ export function readContractDescriptorKind(
  * the common case.
  */
 export function isComputedField(
-  field: FieldKindInput,
+  field: FieldConfig,
   fieldKey: string,
   listKey: string | undefined,
   config: OpenSaasConfig | undefined,

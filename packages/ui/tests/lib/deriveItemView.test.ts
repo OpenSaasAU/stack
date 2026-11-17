@@ -319,15 +319,25 @@ describe('deriveItemViewLayout', () => {
     expect(section.disconnectable).toBe(false)
   })
 
-  it('refuses a list-only to-many, which names no back-reference, as generate does', () => {
-    const config = makeConfig({
+  // A list-only to-many is a config `generate` refuses; the item view still
+  // renders it rather than failing the page.
+  const listOnlyTeam = (): OpenSaasConfig =>
+    makeConfig({
       Team: {
         fields: { members: relationship({ ref: 'Member', many: true }) },
       },
       Member: { fields: { name: text() } },
     })
 
-    expect(() => deriveItemViewLayout(config, 'Team')).toThrow(/implicit many-to-many/)
+  it('marks a list-only ref (no back-reference) as not disconnectable', () => {
+    const [section] = deriveItemViewLayout(listOnlyTeam(), 'Team').sections
+    expect(section.disconnectable).toBe(false)
+  })
+
+  it('falls back to id when a related list has no curated columns', () => {
+    const [section] = deriveItemViewLayout(listOnlyTeam(), 'Team').sections
+    expect(section.backReferenceField).toBeUndefined()
+    expect(section.columns).toEqual(['name'])
   })
 
   const teamWithMembers = (

@@ -1,6 +1,23 @@
-import type { FieldConfig, OpenSaasConfig } from '@opensaas/stack-core'
+import type { FieldConfig, JunctionEdge, OpenSaasConfig } from '@opensaas/stack-core'
 import { resolveJunctionEdge } from '@opensaas/stack-core'
 import { isRelationshipField, shouldHaveForeignKey } from '@opensaas/stack-core/fields'
+
+/**
+ * `resolveJunctionEdge` throws generate's own refusal on a config `generate`
+ * refuses. This runs while rendering a page, so an unvalidated config answers
+ * "not an edge", leaving the field read-only rather than failing the render.
+ */
+export function junctionEdgeForRender(
+  config: OpenSaasConfig,
+  listKey: string,
+  fieldName: string,
+): JunctionEdge | null {
+  try {
+    return resolveJunctionEdge(config, listKey, fieldName)
+  } catch {
+    return null
+  }
+}
 
 /**
  * Whether a field declares `validation: { isRequired: true }`.
@@ -85,7 +102,7 @@ export function resolveToManyEdgePlan(
     return null
   }
 
-  if (resolveJunctionEdge(config, listKey, fieldName)) return null
+  if (junctionEdgeForRender(config, listKey, fieldName)) return null
 
   return { relatedListKey, backReferenceField }
 }

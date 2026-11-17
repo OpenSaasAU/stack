@@ -48,9 +48,6 @@ function routedContent(tree: React.ReactNode): React.ReactElement<Record<string,
   return boundary as React.ReactElement<Record<string, unknown>>
 }
 
-// A list key with a run of capitals, as a better-auth plugin's OAuth tables
-// derive: its URL segment (`o-auth-application`) differs from its spelling,
-// and the admin UI's routing must round-trip it to the config's own key.
 function acronymListConfig(): OpenSaasConfig {
   return {
     db: { provider: 'postgresql' },
@@ -61,7 +58,7 @@ function acronymListConfig(): OpenSaasConfig {
   }
 }
 
-describe('AdminUI list URL resolution (issue #991)', () => {
+describe('AdminUI list routing', () => {
   let harness: TestContext
   let context: AccessContext
 
@@ -125,7 +122,7 @@ describe('AdminUI list URL resolution (issue #991)', () => {
     expect(content.props.itemId).toBe('019606b0-1f36-7000-8000-0000000000ab')
   })
 
-  it('still resolves a PascalCase list key exactly as before', async () => {
+  it('resolves a PascalCase list key', async () => {
     const config = acronymListConfig()
 
     const tree = await AdminUI({

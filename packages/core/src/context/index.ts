@@ -46,7 +46,11 @@ import {
   deleteWriteStrategy,
 } from './write-pipeline.js'
 import { resolveJunctionEdge } from './junction.js'
-import { resolveListMember, resolveListMembers } from '../members/list-members.js'
+import {
+  assertListMembersResolve,
+  resolveListMember,
+  resolveListMembers,
+} from '../members/list-members.js'
 import { parseListId, type ListIdValue } from '../contract/id-boundary.js'
 import { reportAfterTransactionFailures } from './transaction-boundary.js'
 import { isRowActionAvailable } from '../config/row-action-availability.js'
@@ -279,13 +283,8 @@ function assertIdentityWhere(
   )
 }
 
-function autoCreates(
-  config: OpenSaasConfig,
-  listName: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-  listConfig: ListConfig<any>,
-): boolean {
-  if (!resolveListMembers(config, listName).singleton) return false
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+function autoCreates(listConfig: ListConfig<any>): boolean {
   return typeof listConfig.isSingleton !== 'object' || listConfig.isSingleton.autoCreate !== false
 }
 
@@ -1578,6 +1577,7 @@ export function populateDbDelegate(
   /** The row-lock lane, on a transaction-bound context alone (ADR-0047). */
   lock?: RowLockLane,
 ): void {
+  const listMembers = assertListMembersResolve(config)
   for (const [listName, listConfig] of Object.entries(config.lists)) {
     const createOp = resolvingConstraints(
       createCreate(listName, listConfig, ormHandle, context, config),
@@ -1598,9 +1598,9 @@ export function populateDbDelegate(
 
     const read = createSecuredRead({ listName, listConfig, ormHandle, context, config, lock })
 
-    if (resolveListMembers(config, listName).singleton) {
+    if (listMembers.get(listName)?.singleton === true) {
       operations.get = resolvingConstraints(
-        createGet(listName, listConfig, read, context, config, createOp),
+        createGet(listName, listConfig, read, context, createOp),
         config,
       )
     } else {
@@ -1808,7 +1808,6 @@ function createGet(
   listConfig: ListConfig<any>,
   read: SecuredQuery,
   context: AccessContext,
-  config: OpenSaasConfig,
   createFn: (args: { data: Record<string, unknown> }) => Promise<OrmRow | null>,
 ) {
   return async (args?: {
@@ -1827,7 +1826,7 @@ function createGet(
     const item = await scoped.first()
     if (item) return item
 
-    if (!autoCreates(config, listName, listConfig)) return null
+    if (!autoCreates(listConfig)) return null
 
     // `first()` conflates denied with absent, and auto-create must fire only on
     // absent — a denied session that provoked a create would both write a row it

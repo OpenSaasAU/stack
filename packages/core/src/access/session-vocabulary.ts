@@ -14,7 +14,7 @@ import {
   decideAdvertisement,
   type AdvertisementPolicy,
 } from './decide-advertisement.js'
-import { resolveListMember, resolveListMembers } from '../members/list-members.js'
+import { resolveListMember, resolveListMembers, unhandledMember } from '../members/list-members.js'
 import { resolveListTimestamps } from '../contract/derive.js'
 import { isRelationshipField } from '../fields/index.js'
 import { columnOrderedKeys } from '../secured/read.js'
@@ -179,10 +179,8 @@ function storesWrites(config: OpenSaasConfig, listKey: string, fieldName: string
     case 'column':
     case 'columns':
       return true
-    default: {
-      const unhandled: never = member.storage
-      return unhandled
-    }
+    default:
+      return unhandledMember(member.storage)
   }
 }
 

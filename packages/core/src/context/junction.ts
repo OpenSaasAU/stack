@@ -2,6 +2,7 @@ import type { FieldConfig, OpenSaasConfig } from '../config/types.js'
 import {
   resolveListMember,
   resolveListMembers,
+  unhandledMember,
   type DeclaredFieldStorage,
   type ListMember,
 } from '../members/list-members.js'
@@ -114,10 +115,8 @@ export function resolveJunctionEdge(
       case 'columns':
         if (carriesOwnData(member.name, member.field)) return null
         continue
-      default: {
-        const unhandled: never = member.storage
-        return unhandled
-      }
+      default:
+        return unhandledMember(member.storage)
     }
   }
 

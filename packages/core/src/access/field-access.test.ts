@@ -1157,6 +1157,29 @@ describe('filterWritableFields — gates caller input, not hook output (issue #1
       filterWritableFields({ authorId: 'u1' }, 'create', { ...base, inputData: {} }),
     ).resolves.toEqual({ authorId: 'u1' })
   })
+
+  it("gates a foreign-key column by its owning field's access as it stands at each write", async () => {
+    const author = relationship({ ref: 'User.posts', access: { create: () => true } })
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql' },
+      lists: {
+        User: { fields: { posts: relationship({ ref: 'Post.author', many: true }) } },
+        Post: { fields: { author } },
+      },
+    }
+    const write = () =>
+      filterWritableFields({ authorId: 'u1' }, 'create', {
+        session: null,
+        context: nonSudoContext(),
+        listName: 'Post',
+        config,
+        inputData: { authorId: 'u1' },
+      })
+
+    await expect(write()).resolves.toEqual({ authorId: 'u1' })
+    author.access = { create: () => false }
+    await expect(write()).rejects.toThrow(ValidationError)
+  })
 })
 
 describe('a rule that catches the poison on `item`', () => {
