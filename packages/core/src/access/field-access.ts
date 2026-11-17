@@ -9,7 +9,7 @@ import { ValidationError } from '../hooks/index.js'
 import { InvalidFieldAccessResultError } from './errors.js'
 import { checkAccess } from './engine.js'
 import { guardedRuleItem, NO_RULE_VIEWS, ruleRowOf, type RuleRow } from './rule-item.js'
-import { resolveListMember, resolveListMembers, type ListMembers } from '../members/list-members.js'
+import { resolveListMembers, type ListMembers } from '../members/list-members.js'
 
 function isHookOnlyAccess(fieldAccess: FieldAccess | undefined): boolean {
   return fieldAccess?.write === 'hooks'
@@ -401,10 +401,22 @@ export function writeRuleRow(
 
 type WriteOwner = { fieldName: string; access?: FieldAccess }
 
-function writeOwnersOf(members: ListMembers): {
-  foreignKeyOwners: Map<string, WriteOwner>
-  splitColumnOwners: Map<string, WriteOwner>
-} {
+type WriteOwners = {
+  foreignKeyOwners: ReadonlyMap<string, WriteOwner>
+  splitColumnOwners: ReadonlyMap<string, WriteOwner>
+}
+
+const writeOwnersByList = new WeakMap<ListMembers, WriteOwners>()
+
+function writeOwnersOf(members: ListMembers): WriteOwners {
+  const known = writeOwnersByList.get(members)
+  if (known !== undefined) return known
+  const built = buildWriteOwners(members)
+  writeOwnersByList.set(members, built)
+  return built
+}
+
+function buildWriteOwners(members: ListMembers): WriteOwners {
   const foreignKeyOwners = new Map<string, WriteOwner>()
   const splitColumnOwners = new Map<string, WriteOwner>()
   const ownerOf = (fieldName: string): WriteOwner => {
@@ -441,16 +453,6 @@ function writeOwnersOf(members: ListMembers): {
 
 export async function filterWritableFields<T extends Record<string, unknown>>(
   data: T,
-  fieldConfigs: Record<
-    string,
-    {
-      access?: FieldAccess
-      type?: string
-      getColumnNames?: (fieldName: string) => string[]
-      virtual?: boolean
-      getContractField?: FieldConfig['getContractField']
-    }
-  >,
   operation: 'create' | 'update',
   args: {
     session: Session | null
@@ -469,14 +471,11 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
   },
 ): Promise<Partial<T>> {
   const filtered: Record<string, unknown> = {}
+  const members = resolveListMembers(args.config, args.listName)
+  const fieldConfigs = args.config.lists[args.listName].fields
   const checkArgs = {
     ...args,
-    ruleRow: writeRuleRow(
-      args.item,
-      fieldConfigs as Record<string, FieldConfig>,
-      args.config,
-      args.listName,
-    ),
+    ruleRow: writeRuleRow(args.item, fieldConfigs, args.config, args.listName),
   }
 
   // A directly-written foreign-key column is the same edge `connect` lowers to
@@ -484,9 +483,7 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
   // reachability half is `lowerRelationInput`'s (#1331). A part column is
   // produced by `splitColumns` after validation (#789), so a caller naming one
   // is refused below.
-  const { foreignKeyOwners, splitColumnOwners } = writeOwnersOf(
-    resolveListMembers(args.config, args.listName),
-  )
+  const { foreignKeyOwners, splitColumnOwners } = writeOwnersOf(members)
 
   for (const key of Object.keys(args.inputData ?? {})) {
     const owner = splitColumnOwners.get(key)
@@ -527,7 +524,7 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
       callerFields.has(owningField(fieldName)) ||
       args.defaultedFields?.has(fieldName) === true
 
-    if (resolveListMember(args.config, args.listName, fieldName)?.kind === 'systemField') {
+    if (members.members.get(fieldName)?.kind === 'systemField') {
       throw new ValidationError([
         `Cannot ${operation} "${fieldName}": it is system-managed and cannot be written` +
           (fieldName === 'id'
@@ -607,7 +604,7 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
     }
 
     // #564 — undeclared data keys must fail CLOSED.
-    // A key with no entry in `fieldConfigs` is not a field the list config
+    // A key that is not a declared field is not a field the list config
     // exposes. The generated Prisma model has MORE fields than the config
     // declares (e.g. back-relations like `from_Enrolment_student`), so allowing
     // an undeclared key to pass through lets a non-sudo caller reach a column

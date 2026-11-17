@@ -17,12 +17,18 @@ function config(): OpenSaasConfig {
         fields: {
           name: text(),
           posts: relationship({ ref: 'Post.author', many: true }),
-          // A list-only ref names no back-reference to write through.
-          drafts: relationship({ ref: 'Post', many: true }),
+          // A back-reference that cannot be cleared leaves no edge to write.
+          drafts: relationship({ ref: 'Draft.owner', many: true }),
         },
       },
       Post: {
         fields: { title: text(), author: relationship({ ref: 'User.posts' }) },
+      },
+      Draft: {
+        fields: {
+          title: text(),
+          owner: relationship({ ref: 'User.drafts', db: { isNullable: false } }),
+        },
       },
       // An edge across an explicit junction: its rows are created and deleted
       // under the junction's own access, never written by an update.
@@ -50,7 +56,7 @@ describe('resolveToManyEdgePlan (ADR-0050)', () => {
     })
   })
 
-  it('refuses a list-only ref, a to-one, and a field that is not there', () => {
+  it('refuses a to-many with no clearable back-reference, a to-one, and a field that is not there', () => {
     expect(resolveToManyEdgePlan(config(), 'User', 'drafts')).toBeNull()
     expect(resolveToManyEdgePlan(config(), 'Post', 'author')).toBeNull()
     expect(resolveToManyEdgePlan(config(), 'User', 'name')).toBeNull()

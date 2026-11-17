@@ -500,7 +500,7 @@ async function runWriteInTransaction(
   refuseNestedRelationInput(listName, config, splitData)
 
   // ── Phase 5: filter writable fields (field-level access, skip if sudo) ──────
-  const data = await filterWritableFields(splitData, listConfig.fields, writeOp, {
+  const data = await filterWritableFields(splitData, writeOp, {
     session: context.session,
     item: originalItem,
     context: { ...context, _isSudo: context._isSudo },

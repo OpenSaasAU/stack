@@ -355,7 +355,7 @@ describe('filterWritableFields', () => {
       },
     }
 
-    const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
+    const filtered = await filterWritableFields(data, 'create', {
       ...onList(fieldConfigs, lists),
       session: null,
       context: {
@@ -379,7 +379,7 @@ describe('filterWritableFields', () => {
     // tags is many: true, so `tagsId` names no foreign key and is refused as undeclared
     const withTagsId = { ...data, tagsId: 'tag-456' }
     await expect(
-      filterWritableFields(withTagsId, fieldConfigs, 'create', {
+      filterWritableFields(withTagsId, 'create', {
         ...onList(fieldConfigs, lists),
         session: null,
         context: sudoContext(),
@@ -400,7 +400,7 @@ describe('filterWritableFields', () => {
       lists: { Post: { fields } },
     }
     await expect(
-      filterWritableFields(data, fields, 'create', {
+      filterWritableFields(data, 'create', {
         session: null,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         context: { session: null, _isSudo: true } as any,
@@ -416,7 +416,7 @@ describe('filterWritableFields', () => {
     const fields = { title: text() }
     const config: OpenSaasConfig = { db: { provider: 'postgresql' }, lists: { Post: { fields } } }
     await expect(
-      filterWritableFields(data, fields, 'create', {
+      filterWritableFields(data, 'create', {
         session: null,
         context: nonSudoContext(),
         inputData: data,
@@ -429,7 +429,7 @@ describe('filterWritableFields', () => {
   it('treats a declared createdAt as an ordinary field', async () => {
     const data = { createdAt: 'hello' }
     const fields = { createdAt: text() }
-    const filtered = await filterWritableFields(data, fields, 'create', {
+    const filtered = await filterWritableFields(data, 'create', {
       ...onList(fields),
       session: null,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -453,7 +453,7 @@ describe('filterWritableFields', () => {
       },
     }
 
-    const filtered = await filterWritableFields(data, fieldConfigs, 'update', {
+    const filtered = await filterWritableFields(data, 'update', {
       ...onList(fieldConfigs),
       session: null,
       item: { id: 'post-123' },
@@ -481,7 +481,7 @@ describe('filterWritableFields', () => {
       authorId: 'user-456', // The author relationship's foreign-key column (#1326)
     }
 
-    const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
+    const filtered = await filterWritableFields(data, 'create', {
       ...onList(fieldConfigs),
       session: null,
       context: {
@@ -511,7 +511,7 @@ describe('filterWritableFields', () => {
     }
 
     await expect(
-      filterWritableFields(data, fieldConfigs, 'create', {
+      filterWritableFields(data, 'create', {
         ...onList(fieldConfigs),
         session: null,
         context: nonSudoContext(),
@@ -519,7 +519,7 @@ describe('filterWritableFields', () => {
       }),
     ).rejects.toThrow(ValidationError)
     await expect(
-      filterWritableFields(data, fieldConfigs, 'create', {
+      filterWritableFields(data, 'create', {
         ...onList(fieldConfigs),
         session: null,
         context: nonSudoContext(),
@@ -536,7 +536,7 @@ describe('filterWritableFields', () => {
     }
 
     await expect(
-      filterWritableFields(data, fieldConfigs, 'update', {
+      filterWritableFields(data, 'update', {
         ...onList(fieldConfigs),
         session: null,
         item: { id: 'post-1' },
@@ -556,7 +556,7 @@ describe('filterWritableFields', () => {
       authorId: 'user-1', // No `access` on `author` — `checkFieldAccess` allows (#1326)
     }
 
-    const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
+    const filtered = await filterWritableFields(data, 'create', {
       ...onList(fieldConfigs),
       session: null,
       context: nonSudoContext(),
@@ -572,7 +572,7 @@ describe('filterWritableFields', () => {
   it('passes through part columns the field produced itself (not in caller input)', async () => {
     const data = { media_url: 'https://x/y.jpg', media_size: 99 }
 
-    const filtered = await filterWritableFields(data, mediaConfigs, 'create', {
+    const filtered = await filterWritableFields(data, 'create', {
       ...onList(mediaConfigs),
       session: null,
       context: nonSudoContext(),
@@ -589,7 +589,7 @@ describe('filterWritableFields', () => {
     }
 
     await expect(
-      filterWritableFields({ media_url: 'https://x/y.jpg', media_size: 1 }, configs, 'create', {
+      filterWritableFields({ media_url: 'https://x/y.jpg', media_size: 1 }, 'create', {
         ...onList(configs),
         session: null,
         context: nonSudoContext(),
@@ -606,7 +606,7 @@ describe('filterWritableFields', () => {
       it(`THROWS when a caller supplies a raw part column (${label}, ${operation})`, async () => {
         const data = { media_url: 'javascript:alert(1)', media_size: 5 }
 
-        const result = filterWritableFields(data, mediaConfigs, operation, {
+        const result = filterWritableFields(data, operation, {
           ...onList(mediaConfigs),
           session: null,
           item: operation === 'update' ? { id: 'item-1' } : undefined,
@@ -636,7 +636,7 @@ describe('filterWritableFields', () => {
     // Throws ValidationError, and the message names the owning field — never a
     // silent drop of the key (the original defect this pins).
     await expect(
-      filterWritableFields(data, fieldConfigs, 'create', {
+      filterWritableFields(data, 'create', {
         ...onList(fieldConfigs),
         session: null,
         context: nonSudoContext(),
@@ -644,7 +644,7 @@ describe('filterWritableFields', () => {
       }),
     ).rejects.toThrow(ValidationError)
     await expect(
-      filterWritableFields(data, fieldConfigs, 'create', {
+      filterWritableFields(data, 'create', {
         ...onList(fieldConfigs),
         session: null,
         context: nonSudoContext(),
@@ -662,7 +662,7 @@ describe('filterWritableFields', () => {
     }
     const data = { authorId: 'user-123' }
 
-    const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
+    const filtered = await filterWritableFields(data, 'create', {
       ...onList(fieldConfigs),
       session: null,
       context: nonSudoContext(),
@@ -681,7 +681,7 @@ describe('filterWritableFields', () => {
     }
     const data = { authorId: 'user-123' }
 
-    const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
+    const filtered = await filterWritableFields(data, 'create', {
       ...onList(fieldConfigs),
       session: null,
       context: sudoContext(),
@@ -710,7 +710,7 @@ describe('filterWritableFields', () => {
     const data = { name: 'Ada', profileId: 'p1' }
 
     await expect(
-      filterWritableFields(data, config.lists.User.fields, 'create', {
+      filterWritableFields(data, 'create', {
         session: null,
         context: nonSudoContext(),
         inputData: data,
@@ -719,7 +719,7 @@ describe('filterWritableFields', () => {
       }),
     ).rejects.toThrow(ValidationError)
     await expect(
-      filterWritableFields(data, config.lists.User.fields, 'create', {
+      filterWritableFields(data, 'create', {
         session: null,
         context: nonSudoContext(),
         inputData: data,
@@ -741,7 +741,7 @@ describe('filterWritableFields', () => {
     }
     const data = { userId: 'u1' }
 
-    const filtered = await filterWritableFields(data, config.lists.Profile.fields, 'create', {
+    const filtered = await filterWritableFields(data, 'create', {
       session: null,
       context: nonSudoContext(),
       inputData: data,
@@ -769,7 +769,7 @@ describe('filterWritableFields', () => {
 
     for (const inputData of spellings) {
       const messages: string[] = []
-      await filterWritableFields({ title: 'x' }, config.lists.Post.fields, 'update', {
+      await filterWritableFields({ title: 'x' }, 'update', {
         session: null,
         item: { id: 'post-1' },
         context: nonSudoContext(),
@@ -799,14 +799,14 @@ describe('filterWritableFields', () => {
     const args = { session: null, item: { id: 'post-1' }, listName: 'Post', config }
 
     await expect(
-      filterWritableFields({ title: 'x' }, config.lists.Post.fields, 'update', {
+      filterWritableFields({ title: 'x' }, 'update', {
         ...args,
         context: nonSudoContext(),
         inputData: { title: 'x', authorId: undefined },
       }),
     ).resolves.toEqual({ title: 'x' })
     await expect(
-      filterWritableFields({ title: 'x' }, config.lists.Post.fields, 'update', {
+      filterWritableFields({ title: 'x' }, 'update', {
         ...args,
         context: sudoContext(),
         inputData: { title: 'x', authorId: 'u1' },
@@ -824,7 +824,7 @@ describe('filterWritableFields', () => {
     const data = { title: 'Test', status: 'published' }
 
     await expect(
-      filterWritableFields(data, fieldConfigs, 'update', {
+      filterWritableFields(data, 'update', {
         ...onList(fieldConfigs),
         session: null,
         item: { id: 'post-1' },
@@ -852,7 +852,7 @@ describe('filterWritableFields', () => {
     const data = { title: 'Test', status: 'published' }
 
     await expect(
-      filterWritableFields(data, fieldConfigs, 'update', {
+      filterWritableFields(data, 'update', {
         ...onList(fieldConfigs),
         session: null,
         item: { id: 'post-1', status: 'draft' },
@@ -869,7 +869,7 @@ describe('filterWritableFields', () => {
     }
     const data = { title: 'Test', status: 'published' }
 
-    const filtered = await filterWritableFields(data, fieldConfigs, 'update', {
+    const filtered = await filterWritableFields(data, 'update', {
       ...onList(fieldConfigs),
       session: null,
       item: { id: 'post-1' },
@@ -891,7 +891,7 @@ describe('filterWritableFields', () => {
       author: { connect: { id: 'user-1' } },
     }
 
-    const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
+    const filtered = await filterWritableFields(data, 'create', {
       ...onList(fieldConfigs),
       session: null,
       context: nonSudoContext(),
@@ -918,7 +918,7 @@ describe('filterWritableFields — defaultedFields exemption (opt-in via allowCr
     }
     const data = { emailVerified: false }
 
-    const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
+    const filtered = await filterWritableFields(data, 'create', {
       ...onList(fieldConfigs),
       session: null,
       context: nonSudoContext(),
@@ -940,7 +940,7 @@ describe('filterWritableFields — defaultedFields exemption (opt-in via allowCr
     const data = { total: 'unposted' }
 
     await expect(
-      filterWritableFields(data, fieldConfigs, 'create', {
+      filterWritableFields(data, 'create', {
         ...onList(fieldConfigs),
         session: null,
         context: nonSudoContext(),
@@ -959,7 +959,7 @@ describe('filterWritableFields — defaultedFields exemption (opt-in via allowCr
     const data = { emailVerified: false }
 
     await expect(
-      filterWritableFields(data, fieldConfigs, 'create', {
+      filterWritableFields(data, 'create', {
         ...onList(fieldConfigs),
         session: null,
         context: nonSudoContext(),
@@ -978,7 +978,7 @@ describe('filterWritableFields — defaultedFields exemption (opt-in via allowCr
     const data = { emailVerified: true }
 
     await expect(
-      filterWritableFields(data, fieldConfigs, 'update', {
+      filterWritableFields(data, 'update', {
         ...onList(fieldConfigs),
         session: null,
         context: nonSudoContext(),
@@ -997,7 +997,7 @@ describe('filterWritableFields — defaultedFields exemption (opt-in via allowCr
     const data = { emailVerified: false }
 
     await expect(
-      filterWritableFields(data, fieldConfigs, 'create', {
+      filterWritableFields(data, 'create', {
         ...onList(fieldConfigs),
         session: null,
         context: nonSudoContext(),
@@ -1032,7 +1032,7 @@ describe('filterWritableFields — undeclared keys under sudo (#978)', () => {
     const data = { name: 'Acme', [key]: 'value' }
 
     await expect(
-      filterWritableFields(data, config.lists.Account.fields, 'update', {
+      filterWritableFields(data, 'update', {
         ...args,
         context: sudoContext(),
         inputData: data,
@@ -1049,7 +1049,7 @@ describe('the virtual-field write skip (issue #1531)', () => {
     }
     const data = { title: 'Test', summary: 'ignored' }
 
-    const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
+    const filtered = await filterWritableFields(data, 'create', {
       ...onList(fieldConfigs),
       session: null,
       context: sudoContext(),
@@ -1082,7 +1082,7 @@ describe('the virtual-field write skip (issue #1531)', () => {
     }
     const data = { title: 'Test', summary: 'ignored' }
 
-    const filtered = await filterWritableFields(data, config.lists.Post.fields, 'create', {
+    const filtered = await filterWritableFields(data, 'create', {
       session: null,
       context: sudoContext(),
       inputData: data,
@@ -1103,24 +1103,19 @@ describe('filterWritableFields — gates caller input, not hook output (issue #1
 
   it('persists a write-denied field a hook set when the caller did not supply it', async () => {
     for (const operation of ['create', 'update'] as const) {
-      const filtered = await filterWritableFields(
-        { name: 'a', locked: 'server-set' },
-        fieldConfigs,
-        operation,
-        {
-          ...onList(fieldConfigs),
-          session: null,
-          context: nonSudoContext(),
-          inputData: { name: 'a' },
-        },
-      )
+      const filtered = await filterWritableFields({ name: 'a', locked: 'server-set' }, operation, {
+        ...onList(fieldConfigs),
+        session: null,
+        context: nonSudoContext(),
+        inputData: { name: 'a' },
+      })
       expect(filtered).toEqual({ name: 'a', locked: 'server-set' })
     }
   })
 
   it('throws when the caller supplies the denied field', async () => {
     await expect(
-      filterWritableFields({ locked: 'x' }, fieldConfigs, 'create', {
+      filterWritableFields({ locked: 'x' }, 'create', {
         ...onList(fieldConfigs),
         session: null,
         context: nonSudoContext(),
@@ -1131,7 +1126,7 @@ describe('filterWritableFields — gates caller input, not hook output (issue #1
 
   it('throws when the caller supplied the denied field and a hook removed it', async () => {
     await expect(
-      filterWritableFields({ name: 'a' }, fieldConfigs, 'update', {
+      filterWritableFields({ name: 'a' }, 'update', {
         ...onList(fieldConfigs),
         session: null,
         context: nonSudoContext(),
@@ -1153,13 +1148,13 @@ describe('filterWritableFields — gates caller input, not hook output (issue #1
     }
     const base = { session: null, context: nonSudoContext(), listName: 'Post', config }
     await expect(
-      filterWritableFields({ authorId: 'u1' }, rels, 'create', {
+      filterWritableFields({ authorId: 'u1' }, 'create', {
         ...base,
         inputData: { authorId: 'u1' },
       }),
     ).rejects.toThrow(ValidationError)
     await expect(
-      filterWritableFields({ authorId: 'u1' }, rels, 'create', { ...base, inputData: {} }),
+      filterWritableFields({ authorId: 'u1' }, 'create', { ...base, inputData: {} }),
     ).resolves.toEqual({ authorId: 'u1' })
   })
 })

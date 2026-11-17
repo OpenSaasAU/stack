@@ -185,11 +185,6 @@ function warnIfSelectIgnored(
   )
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-function isSingletonList(listConfig: ListConfig<any>): boolean {
-  return !!listConfig.isSingleton
-}
-
 type BackReferenceClassification =
   | { kind: 'owning'; relatedList: string; foreignKey: string }
   | { kind: 'nonOwning' }
@@ -284,8 +279,13 @@ function assertIdentityWhere(
   )
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-function autoCreates(listConfig: ListConfig<any>): boolean {
+function autoCreates(
+  config: OpenSaasConfig,
+  listName: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+  listConfig: ListConfig<any>,
+): boolean {
+  if (!resolveListMembers(config, listName).singleton) return false
   return typeof listConfig.isSingleton !== 'object' || listConfig.isSingleton.autoCreate !== false
 }
 
@@ -1598,9 +1598,9 @@ export function populateDbDelegate(
 
     const read = createSecuredRead({ listName, listConfig, ormHandle, context, config, lock })
 
-    if (isSingletonList(listConfig)) {
+    if (resolveListMembers(config, listName).singleton) {
       operations.get = resolvingConstraints(
-        createGet(listName, listConfig, read, context, createOp),
+        createGet(listName, listConfig, read, context, config, createOp),
         config,
       )
     } else {
@@ -1808,6 +1808,7 @@ function createGet(
   listConfig: ListConfig<any>,
   read: SecuredQuery,
   context: AccessContext,
+  config: OpenSaasConfig,
   createFn: (args: { data: Record<string, unknown> }) => Promise<OrmRow | null>,
 ) {
   return async (args?: {
@@ -1826,7 +1827,7 @@ function createGet(
     const item = await scoped.first()
     if (item) return item
 
-    if (!autoCreates(listConfig)) return null
+    if (!autoCreates(config, listName, listConfig)) return null
 
     // `first()` conflates denied with absent, and auto-create must fire only on
     // absent — a denied session that provoked a create would both write a row it
