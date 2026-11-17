@@ -3,9 +3,9 @@ import type { AccessContext, Session } from '../access/types.js'
 import { classifyRowIndependentWrite } from '../access/field-access.js'
 import { controlFlowPredicateOf, decideAdvertisement } from '../access/decide-advertisement.js'
 import { mcpAdvertisement } from './advertise.js'
-import { ownsForeignKey } from '../context/junction.js'
 import { mcpListReachable } from './reachability.js'
-import { isRelationshipField, isZonelessNativeType } from '../fields/index.js'
+import { relationMember } from './relation-member.js'
+import { isZonelessNativeType } from '../fields/index.js'
 import { listIdJsonSchema } from '../contract/id-boundary.js'
 
 /** JSON Schema for one field's own value, as the `create`/`update` `data` schema advertises it. */
@@ -148,11 +148,9 @@ export async function assertWritableData(
   for (const fieldName of Object.keys(data)) {
     if (advertised.has(fieldName)) continue
 
-    const fieldConfig = fields[fieldName]
     if (
-      fieldConfig &&
-      isRelationshipField(fieldConfig) &&
-      !ownsForeignKey(config, listKey, fieldName, fieldConfig)
+      Object.hasOwn(fields, fieldName) &&
+      relationMember(config, listKey, fieldName)?.ownsForeignKey === false
     ) {
       continue
     }
@@ -186,12 +184,8 @@ export async function generateFieldSchemas(
     // and the non-owning end of a one-to-one — has no column here to lower a
     // `connect` onto, so the engine refuses it (ADR-0050). Advertising it would
     // invite a tool call that can only fail.
-    if (
-      isRelationshipField(fieldConfig) &&
-      !ownsForeignKey(config, listKey, fieldName, fieldConfig)
-    ) {
-      continue
-    }
+    const relation = relationMember(config, listKey, fieldName)
+    if (relation?.ownsForeignKey === false) continue
 
     // `validation.isRequired` is an application-layer check; `db.isNullable:
     // false` is a column-level one — either makes a denied write break every
@@ -214,8 +208,8 @@ export async function generateFieldSchemas(
         fieldConfig.db?.isNullable === false)
 
     if (
-      isRelationshipField(fieldConfig) &&
-      !(await mcpListReachable(config, fieldConfig.ref.split('.')[0]!, context, {
+      relation !== undefined &&
+      !(await mcpListReachable(config, relation.relatedList, context, {
         requireReadTool: false,
       }))
     ) {

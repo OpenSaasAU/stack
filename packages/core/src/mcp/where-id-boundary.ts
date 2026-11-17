@@ -10,7 +10,7 @@ import type { OpenSaasConfig } from '../config/types.js'
 import type { AccessContext, Session } from '../access/types.js'
 import { classifyRowIndependentRead } from '../access/field-access.js'
 import { isRelationshipField } from '../fields/index.js'
-import { ownsForeignKey } from '../context/junction.js'
+import { resolveListMember } from '../members/list-members.js'
 import { listIdColumn, parseListId, type ListIdValue } from '../contract/id-boundary.js'
 import { RELATION_QUANTIFIERS } from '../secured/operators.js'
 
@@ -91,21 +91,37 @@ function coerceIdCondition(
   return operators
 }
 
-/** The related list a foreign-key column (`authorId`) points at, when `key` names one this list owns. */
-function foreignKeyRelation(
+type IdPosition =
+  | { kind: 'foreignKey'; relatedList: string }
+  | { kind: 'relation'; relatedList: string }
+  | undefined
+
+function idPosition(
   config: OpenSaasConfig,
   listKey: string,
   key: string,
   visible: ForeignKeyVisibility,
-): string | undefined {
-  if (!key.endsWith('Id') || Object.hasOwn(config.lists[listKey]?.fields ?? {}, key))
-    return undefined
-  const fieldName = key.slice(0, -2)
-  const fieldConfig = config.lists[listKey]?.fields[fieldName]
-  if (!isRelationshipField(fieldConfig)) return undefined
-  if (!visible(listKey, fieldName)) return undefined
-  if (!ownsForeignKey(config, listKey, fieldName, fieldConfig)) return undefined
-  return fieldConfig.ref.split('.')[0]
+): IdPosition {
+  const member = resolveListMember(config, listKey, key)
+  if (member === undefined) return undefined
+  switch (member.kind) {
+    case 'foreignKey':
+      return visible(listKey, member.field)
+        ? { kind: 'foreignKey', relatedList: member.relatedList }
+        : undefined
+    case 'field':
+      return member.storage.kind === 'relation'
+        ? { kind: 'relation', relatedList: member.storage.relatedList }
+        : undefined
+    case 'partColumn':
+    case 'syntheticBackRelation':
+    case 'systemField':
+      return undefined
+    default: {
+      const unhandled: never = member
+      return unhandled
+    }
+  }
 }
 
 /** AND/OR/NOT's own value: one predicate, or a list of them (the same normalisation `whereArgument`'s `branches` applies). */
@@ -170,19 +186,19 @@ export function coerceWhereIds(
       continue
     }
 
-    const foreignKeyOwner = foreignKeyRelation(config, listKey, key, visible)
-    if (foreignKeyOwner !== undefined) {
+    const position = idPosition(config, listKey, key, visible)
+    if (position === undefined) continue
+
+    if (position.kind === 'foreignKey') {
       if (value === null) continue
-      const coerced = coerceIdCondition(value, config, foreignKeyOwner, true)
+      const coerced = coerceIdCondition(value, config, position.relatedList, true)
       if (coerced === null) return null
       result[key] = coerced
       continue
     }
 
-    const fieldConfig = listConfig.fields[key]
-    if (!isRelationshipField(fieldConfig) || !isPlainObject(value)) continue
-
-    const relatedListKey = fieldConfig.ref.split('.')[0]
+    if (!isPlainObject(value)) continue
+    const relatedListKey = position.relatedList
     const nested: Record<string, unknown> = { ...value }
     let changed = false
     for (const quantifier of RELATION_QUANTIFIERS) {
