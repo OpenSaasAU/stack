@@ -533,18 +533,6 @@ export function foreignKeyOwningRelations(ctx: ResolveContext): ForeignKeyOwner[
   return owners
 }
 
-/**
- * Resolve an include key against the list config. A synthetic back-relation
- * (`from_<SourceList>_<field>`, what a list-only `ref` puts on the target
- * list) resolves to the declared field it stands for, so it is scoped by the
- * source list's `query` access exactly as a declared relation would be
- * (ADR-0061). Anything else — an undeclared key, a scalar, the foreign-key
- * column a to-one implies — is refused with the message an undeclared key
- * gets, so this refusal carries no more than the key's own name back: a
- * read-gated relation resolves here exactly as a readable one does, and the
- * omission that follows is the only thing that separates them (ADR-0031, and
- * the `Known limits` note above).
- */
 function declaredIncludeTarget(member: DeclaredFieldMember, ctx: ResolveContext): IncludeTarget {
   const { storage } = member
   switch (storage.kind) {
@@ -568,6 +556,18 @@ function declaredIncludeTarget(member: DeclaredFieldMember, ctx: ResolveContext)
   }
 }
 
+/**
+ * Resolve an include key against the list config. A synthetic back-relation
+ * (`from_<SourceList>_<field>`, what a list-only `ref` puts on the target
+ * list) resolves to the declared field it stands for, so it is scoped by the
+ * source list's `query` access exactly as a declared relation would be
+ * (ADR-0061). Anything else — an undeclared key, a scalar, the foreign-key
+ * column a to-one implies — is refused with the message an undeclared key
+ * gets, so this refusal carries no more than the key's own name back: a
+ * read-gated relation resolves here exactly as a readable one does, and the
+ * omission that follows is the only thing that separates them (ADR-0031, and
+ * the `Known limits` note above).
+ */
 function resolveIncludeTarget(name: string, ctx: ResolveContext): IncludeTarget {
   const member = resolveListMember(ctx.config, ctx.listName, name)
   if (member === undefined) throw unqueryableKey(ctx.listName, name)
