@@ -5,6 +5,7 @@ import { text } from '../fields/index.js'
 import { isSerializationFailure } from '../lib/database-errors.js'
 import { createTestContext, ormClientFor, type TestContext } from '../testing/context.js'
 import type { StackContext } from '../types/context.js'
+import { resolveListMembers } from '../members/list-members.js'
 import { getContext, OrmHandleUnresolvableError, TransactionUnavailableError } from './index.js'
 
 /**
@@ -290,6 +291,8 @@ describe('context.transaction', () => {
           })
         }
         const config: OpenSaasConfig = { ...base, lists }
+        for (const listKey of Object.keys(lists)) resolveListMembers(config, listKey)
+        dbAccesses = 0
 
         const orm = ormClientFor(harness.data, harness.client.orm)
         const context = getContext(

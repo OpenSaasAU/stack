@@ -2,8 +2,17 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { hookPipeline } from './hook-pipeline.js'
 import { ValidationError } from '../hooks/index.js'
 import { text } from '../fields/index.js'
-import type { ListConfig } from '../config/types.js'
+import type { ListConfig, OpenSaasConfig } from '../config/types.js'
 import type { AccessContext } from '../access/types.js'
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+function withConfig(listName: string, listConfig: ListConfig<any>) {
+  const config: OpenSaasConfig = {
+    db: { provider: 'postgresql' },
+    lists: { [listName]: listConfig },
+  }
+  return { listConfig, config }
+}
 
 /**
  * Unit tests for the Hook Pipeline — the module that owns the transform+validate
@@ -97,7 +106,7 @@ describe('Hook Pipeline — span order', () => {
     const { resolvedData } = await hookPipeline.run({
       operation: 'create',
       listName: 'Post',
-      listConfig,
+      ...withConfig('Post', listConfig),
       inputData: { title: 'hi' },
       item: undefined,
       context,
@@ -124,7 +133,7 @@ describe('Hook Pipeline — span order', () => {
     const { resolvedData } = await hookPipeline.run({
       operation: 'update',
       listName: 'Post',
-      listConfig,
+      ...withConfig('Post', listConfig),
       inputData: { title: 'new' },
       item: existing,
       context,
@@ -149,7 +158,7 @@ describe('Hook Pipeline — validation throws (NOT silent)', () => {
       hookPipeline.run({
         operation: 'create',
         listName: 'Post',
-        listConfig,
+        ...withConfig('Post', listConfig),
         inputData: { title: 'hi' },
         item: undefined,
         context,
@@ -167,7 +176,7 @@ describe('Hook Pipeline — validation throws (NOT silent)', () => {
       hookPipeline.run({
         operation: 'create',
         listName: 'Post',
-        listConfig,
+        ...withConfig('Post', listConfig),
         inputData: { title: 'hi' },
         item: undefined,
         context,
@@ -184,7 +193,7 @@ describe('Hook Pipeline — validation throws (NOT silent)', () => {
       hookPipeline.run({
         operation: 'create',
         listName: 'Post',
-        listConfig,
+        ...withConfig('Post', listConfig),
         inputData: {}, // title is required but absent
         item: undefined,
         context,
@@ -222,7 +231,7 @@ describe('Hook Pipeline — resolvedData threading', () => {
     const { resolvedData } = await hookPipeline.run({
       operation: 'create',
       listName: 'Post',
-      listConfig,
+      ...withConfig('Post', listConfig),
       inputData: { title: 'hello' },
       item: undefined,
       context,
@@ -246,7 +255,7 @@ describe('Hook Pipeline — resolvedData threading', () => {
     const { resolvedData } = await hookPipeline.run({
       operation: 'create',
       listName: 'Post',
-      listConfig,
+      ...withConfig('Post', listConfig),
       inputData,
       item: undefined,
       context: makeContext(),
@@ -262,6 +271,13 @@ describe('Hook Pipeline — multi-column fields', () => {
     fields: {
       price: {
         type: 'money',
+        getContractField: () => ({
+          kind: 'columns',
+          columns: [
+            { name: 'amt', type: { pack: 'pg', type: 'int' }, nullable: true },
+            { name: 'cur', type: { pack: 'pg', type: 'text' }, nullable: true },
+          ],
+        }),
         getColumnNames: () => ['amt', 'cur'],
         splitColumns: (_key: string, value: unknown) => {
           const v = value as { amt: number; cur: string }
@@ -275,7 +291,7 @@ describe('Hook Pipeline — multi-column fields', () => {
     const { resolvedData, splitData } = await hookPipeline.run({
       operation: 'create',
       listName: 'Pay',
-      listConfig,
+      ...withConfig('Pay', listConfig),
       inputData: { price: { amt: 5, cur: 'AUD' } },
       item: undefined,
       context: makeContext(),

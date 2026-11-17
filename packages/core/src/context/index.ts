@@ -1,7 +1,6 @@
-import type { OpenSaasConfig, ListConfig, RelationshipField } from '../config/types.js'
+import type { OpenSaasConfig, ListConfig } from '../config/types.js'
 import type { Session, AccessContext, AccessControlledDB, StorageUtils } from '../access/index.js'
 import { checkAccess } from '../access/index.js'
-import { resolveSyntheticReverseRelation } from '../access/engine.js'
 import { ValidationError, DatabaseError } from '../hooks/index.js'
 import { databaseErrorMessage, normalizeDatabaseError } from '../lib/prisma-errors.js'
 import { isClientSafeError } from '../lib/client-safe-error.js'
@@ -46,8 +45,8 @@ import {
   updateWriteStrategy,
   deleteWriteStrategy,
 } from './write-pipeline.js'
-import { resolveJunctionEdge, ownsForeignKey } from './junction.js'
-import { isRelationshipField } from '../fields/index.js'
+import { resolveJunctionEdge } from './junction.js'
+import { resolveListMember, resolveListMembers } from '../members/list-members.js'
 import { parseListId, type ListIdValue } from '../contract/id-boundary.js'
 import { reportAfterTransactionFailures } from './transaction-boundary.js'
 import { isRowActionAvailable } from '../config/row-action-availability.js'
@@ -192,32 +191,36 @@ function isSingletonList(listConfig: ListConfig<any>): boolean {
 }
 
 type BackReferenceClassification =
-  { kind: 'owning'; field: RelationshipField } | { kind: 'nonOwning' } | { kind: 'notRelationship' }
+  | { kind: 'owning'; relatedList: string; foreignKey: string }
+  | { kind: 'nonOwning' }
+  | { kind: 'notRelationship' }
 
-/**
- * Whether `fieldName` on `listKey` owns a foreign-key column — the property
- * `removeRelated`/`createRelated`/`linkRelated` actually need, rather than
- * `many`, which is only a proxy for it: a non-owning to-one (the inverse half
- * of a one-to-one) has `many` falsy exactly like an owning one, and a
- * synthetic `from_<List>_<field>` back-relation is never declared, so it is
- * never itself in `listConfig.fields` (#1442).
- */
 function classifyBackReference(
   listKey: string,
   fieldName: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-  listConfig: ListConfig<any>,
   config: OpenSaasConfig,
 ): BackReferenceClassification {
-  const field = listConfig.fields[fieldName]
-  if (isRelationshipField(field)) {
-    return ownsForeignKey(config, listKey, fieldName, field)
-      ? { kind: 'owning', field }
-      : { kind: 'nonOwning' }
+  const member = resolveListMember(config, listKey, fieldName)
+  if (member === undefined) return { kind: 'notRelationship' }
+  switch (member.kind) {
+    case 'field': {
+      const { storage } = member
+      if (storage.kind !== 'relation') return { kind: 'notRelationship' }
+      return storage.foreignKey === undefined
+        ? { kind: 'nonOwning' }
+        : { kind: 'owning', relatedList: storage.relatedList, foreignKey: storage.foreignKey.name }
+    }
+    case 'syntheticBackRelation':
+      return { kind: 'nonOwning' }
+    case 'foreignKey':
+    case 'partColumn':
+    case 'systemField':
+      return { kind: 'notRelationship' }
+    default: {
+      const unhandled: never = member
+      return unhandled
+    }
   }
-  return resolveSyntheticReverseRelation(fieldName, listKey, config) !== null
-    ? { kind: 'nonOwning' }
-    : { kind: 'notRelationship' }
 }
 
 /**
@@ -282,10 +285,8 @@ function assertIdentityWhere(
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-function shouldAutoCreate(listConfig: ListConfig<any>): boolean {
-  if (!listConfig.isSingleton) return false
-  if (typeof listConfig.isSingleton === 'boolean') return true
-  return listConfig.isSingleton.autoCreate !== false
+function autoCreates(listConfig: ListConfig<any>): boolean {
+  return typeof listConfig.isSingleton !== 'object' || listConfig.isSingleton.autoCreate !== false
 }
 
 /**
@@ -1013,7 +1014,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
           if (!props.field) {
             return { removed: false, error: 'Missing back-reference field for disconnect' }
           }
-          const backRef = classifyBackReference(props.listKey, props.field, listConfig, config)
+          const backRef = classifyBackReference(props.listKey, props.field, config)
           if (backRef.kind === 'notRelationship') {
             return {
               removed: false,
@@ -1040,9 +1041,8 @@ export function getContext<TConfig extends OpenSaasConfig>(
             // owning foreign-key column `<field>Id` (relationship-input.ts),
             // which is the key a bare read (no `include`) returns it under.
             const fieldName = props.field
-            const foreignKeyColumn = `${fieldName}Id`
-            const parentListKey = backRef.field.ref.split('.')[0]
-            const expectedParentId = parseId(parentListKey, props.parentId)
+            const foreignKeyColumn = backRef.foreignKey
+            const expectedParentId = parseId(backRef.relatedList, props.parentId)
             if (expectedParentId === null) {
               return { removed: false, error: 'Access denied or operation failed' }
             }
@@ -1138,7 +1138,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
         }
         const data: Record<string, unknown> = { ...props.data }
         if (props.field && props.parentId) {
-          const backRef = classifyBackReference(props.listKey, props.field, listConfig, config)
+          const backRef = classifyBackReference(props.listKey, props.field, config)
           // The back-reference must name a relationship field on this list; a
           // non-relationship field would otherwise receive a nonsensical
           // { connect } value. Also hardening — the drawer only ever passes a
@@ -1161,7 +1161,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
                 `Link the parent from the side that holds the column.`,
             }
           }
-          const parentId = parseId(backRef.field.ref.split('.')[0], props.parentId)
+          const parentId = parseId(backRef.relatedList, props.parentId)
           if (parentId === null) {
             return { created: false, error: 'Access denied or operation failed' }
           }
@@ -1242,7 +1242,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
     // update returns `null`, surfaced as `{ linked: false }` with a generic
     // reason.
     if (props.action === 'linkRelated') {
-      const backRef = classifyBackReference(props.listKey, props.field, listConfig, config)
+      const backRef = classifyBackReference(props.listKey, props.field, config)
       if (backRef.kind === 'notRelationship') {
         return {
           linked: false,
@@ -1258,7 +1258,7 @@ export function getContext<TConfig extends OpenSaasConfig>(
         }
       }
       const relatedId = parseId(props.listKey, props.id)
-      const parentId = parseId(backRef.field.ref.split('.')[0], props.parentId)
+      const parentId = parseId(backRef.relatedList, props.parentId)
       if (relatedId === null || parentId === null) {
         return { linked: false, error: 'Access denied or operation failed' }
       }
@@ -1689,7 +1689,7 @@ function createCreate(
   // Thin adapter over the Write Pipeline: pick the create strategy, run the
   // canonical secured write sequence, return its result.
   return async (args: { data: Record<string, unknown> }) => {
-    assertWriteArgs(args, listName, 'create', isSingletonList(listConfig))
+    assertWriteArgs(args, listName, 'create', resolveListMembers(config, listName).singleton)
     return runWritePipeline({
       listName,
       listConfig,
@@ -1697,7 +1697,7 @@ function createCreate(
       context,
       config,
       inputData: args.data,
-      strategy: createWriteStrategy(listName, listConfig),
+      strategy: createWriteStrategy(listName, listConfig, config),
     })
   }
 }
@@ -1715,7 +1715,7 @@ function createUpdate(
   return async (args: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
     // Runs before the pipeline's access gate — a `where` the engine cannot
     // lower is the caller's own shape error, not a denial.
-    assertWriteArgs(args, listName, 'update', isSingletonList(listConfig))
+    assertWriteArgs(args, listName, 'update', resolveListMembers(config, listName).singleton)
     assertIdentityWhere(args.where, listName, 'update')
 
     return runWritePipeline({
@@ -1741,7 +1741,7 @@ function createDelete(
   // Thin adapter over the Write Pipeline: pick the delete strategy, run the
   // canonical secured write sequence, return its result.
   return async (args: { where: Record<string, unknown> }) => {
-    assertWriteArgs(args, listName, 'delete', isSingletonList(listConfig))
+    assertWriteArgs(args, listName, 'delete', resolveListMembers(config, listName).singleton)
     assertIdentityWhere(args.where, listName, 'delete')
 
     return runWritePipeline({
@@ -1826,7 +1826,7 @@ function createGet(
     const item = await scoped.first()
     if (item) return item
 
-    if (!shouldAutoCreate(listConfig)) return null
+    if (!autoCreates(listConfig)) return null
 
     // `first()` conflates denied with absent, and auto-create must fire only on
     // absent — a denied session that provoked a create would both write a row it

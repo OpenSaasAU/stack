@@ -12,7 +12,15 @@ import {
 import { InvalidCreateAccessResultError, UndefinedAccessFilterError } from './errors.js'
 import type { AccessControl, FieldAccess, AccessContext } from './types.js'
 import { ValidationError } from '../hooks/index.js'
-import { integer, text } from '../fields/index.js'
+import { integer, select, text } from '../fields/index.js'
+import type { FieldConfig, OpenSaasConfig } from '../config/types.js'
+
+function onList(fields: Record<string, FieldConfig>): { listName: string; config: OpenSaasConfig } {
+  return {
+    listName: 'User',
+    config: { db: { provider: 'postgresql' }, lists: { User: { fields } } },
+  }
+}
 
 describe('Access Control', () => {
   const mockContext: AccessContext = {
@@ -567,11 +575,12 @@ describe('Access Control', () => {
       }
 
       const fieldConfigs = {
-        name: { type: 'text' },
-        email: { type: 'text' },
+        name: text(),
+        email: text(),
       }
 
       const result = await filterWritableFields(data, fieldConfigs, 'create', {
+        ...onList(fieldConfigs),
         session: null,
         context: mockContext,
       })
@@ -588,11 +597,12 @@ describe('Access Control', () => {
       }
 
       const fieldConfigs = {
-        name: { type: 'text' },
+        name: text(),
       }
 
       await expect(
         filterWritableFields(data, fieldConfigs, 'create', {
+          ...onList(fieldConfigs),
           session: null,
           context: mockContext,
         }),
@@ -609,24 +619,26 @@ describe('Access Control', () => {
       }
 
       const fieldConfigs = {
-        name: { type: 'text' },
-        email: { type: 'text' },
-        role: {
-          type: 'select',
+        name: text(),
+        email: text(),
+        role: select({
+          options: [{ label: 'Admin', value: 'admin' }],
           access: {
             create: async () => false,
           },
-        },
+        }),
       }
 
       await expect(
         filterWritableFields(data, fieldConfigs, 'create', {
+          ...onList(fieldConfigs),
           session: null,
           context: mockContext,
         }),
       ).rejects.toThrow(ValidationError)
       await expect(
         filterWritableFields(data, fieldConfigs, 'create', {
+          ...onList(fieldConfigs),
           session: null,
           context: mockContext,
         }),
@@ -640,17 +652,17 @@ describe('Access Control', () => {
       }
 
       const fieldConfigs = {
-        email: {
-          type: 'text',
+        email: text({
           access: {
             create: async () => true,
             update: async () => false,
           },
-        },
+        }),
       }
 
       // Allow on create
       const createResult = await filterWritableFields(data, fieldConfigs, 'create', {
+        ...onList(fieldConfigs),
         session: null,
         context: mockContext,
       })
@@ -660,6 +672,7 @@ describe('Access Control', () => {
       // Deny on update — now throws instead of silently dropping the field.
       await expect(
         filterWritableFields(data, fieldConfigs, 'update', {
+          ...onList(fieldConfigs),
           session: null,
           context: mockContext,
         }),
@@ -672,15 +685,15 @@ describe('Access Control', () => {
       const accessFn = vi.fn(async () => true)
 
       const fieldConfigs = {
-        name: {
-          type: 'text',
+        name: text({
           access: {
             update: accessFn,
           },
-        },
+        }),
       }
 
       await filterWritableFields(data, fieldConfigs, 'update', {
+        ...onList(fieldConfigs),
         session: { userId: '123' },
         item,
         context: mockContext,

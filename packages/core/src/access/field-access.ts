@@ -1,15 +1,15 @@
 import type { Session, AccessContext, AccessControl } from './types.js'
 import type { FieldAccess, FieldAccessControl } from './types.js'
-import type { FieldConfig, OpenSaasConfig, RelationshipField } from '../config/types.js'
+import type { FieldConfig, OpenSaasConfig } from '../config/types.js'
 import { isComputedField } from '../config/field-kind.js'
 // `ValidationError` is referenced only inside function bodies (call-time), never
 // at module-evaluation time, so the field-access ⇄ hooks import cycle is safe
 // under ESM live bindings.
 import { ValidationError } from '../hooks/index.js'
 import { InvalidFieldAccessResultError } from './errors.js'
-import { checkAccess, resolveSyntheticReverseRelation } from './engine.js'
+import { checkAccess } from './engine.js'
 import { guardedRuleItem, NO_RULE_VIEWS, ruleRowOf, type RuleRow } from './rule-item.js'
-import { shouldHaveForeignKey } from '../fields/index.js'
+import { resolveListMembers, type ListMembers } from '../members/list-members.js'
 import { isSystemFieldName } from './system-fields.js'
 
 function isHookOnlyAccess(fieldAccess: FieldAccess | undefined): boolean {
@@ -19,38 +19,6 @@ function isHookOnlyAccess(fieldAccess: FieldAccess | undefined): boolean {
 /** Whether `field` is declared Hook-only (`access: { write: 'hooks' }`, ADR-0076). */
 export function isHookOnlyField(field: FieldConfig): boolean {
   return isHookOnlyAccess(field.access)
-}
-
-/**
- * Whether `fieldConfig`'s side of a to-one relationship owns the `<field>Id`
- * column at all — false on the non-owning side of a one-to-one (ADR-0064),
- * where the column lives on the OTHER list's model instead. Without config
- * context (a direct unit test of this function, which passes a bare
- * `{ type: 'relationship', many: false }`) there is nothing to resolve
- * ownership against, so this assumes FK-owning — the heuristic
- * `filterWritableFields` used before it could ask the field itself (#1326).
- */
-function ownsForeignKeyColumn(
-  fieldName: string,
-  fieldConfig: { many?: boolean; ref?: string },
-  listName: string | undefined,
-  config: OpenSaasConfig | undefined,
-): boolean {
-  if (fieldConfig.many) return false
-  if (!listName || !config || typeof fieldConfig.ref !== 'string') return true
-  try {
-    // `filterWritableFields`'s fieldConfigs type is deliberately looser than
-    // RelationshipField (see its own doc); a field actually built by
-    // relationship() satisfies the real shape.
-    return shouldHaveForeignKey(
-      listName,
-      fieldName,
-      fieldConfig as unknown as RelationshipField,
-      config,
-    )
-  } catch {
-    return true
-  }
 }
 
 /**
@@ -432,6 +400,46 @@ export function writeRuleRow(
   return item ? ruleRowOf(item, NO_RULE_VIEWS, fieldConfigs, config, listKey) : undefined
 }
 
+type WriteOwner = { fieldName: string; access?: FieldAccess }
+
+function writeOwnersOf(members: ListMembers): {
+  foreignKeyOwners: Map<string, WriteOwner>
+  splitColumnOwners: Map<string, WriteOwner>
+} {
+  const foreignKeyOwners = new Map<string, WriteOwner>()
+  const splitColumnOwners = new Map<string, WriteOwner>()
+  const ownerOf = (fieldName: string): WriteOwner => {
+    const owner = members.members.get(fieldName)
+    return { fieldName, access: owner?.kind === 'field' ? owner.field.access : undefined }
+  }
+  for (const member of members.members.values()) {
+    switch (member.kind) {
+      case 'field':
+        if (member.storage.kind === 'columns') {
+          // A part named like its field resolves as the field, not as a partColumn.
+          for (const part of member.storage.parts) {
+            if (part.name === member.name) splitColumnOwners.set(part.name, ownerOf(member.name))
+          }
+        }
+        break
+      case 'foreignKey':
+        foreignKeyOwners.set(member.name, ownerOf(member.field))
+        break
+      case 'partColumn':
+        splitColumnOwners.set(member.name, ownerOf(member.field))
+        break
+      case 'syntheticBackRelation':
+      case 'systemField':
+        break
+      default: {
+        const unhandled: never = member
+        return unhandled
+      }
+    }
+  }
+  return { foreignKeyOwners, splitColumnOwners }
+}
+
 export async function filterWritableFields<T extends Record<string, unknown>>(
   data: T,
   fieldConfigs: Record<
@@ -450,17 +458,8 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
     item?: Record<string, unknown>
     context: AccessContext & { _isSudo?: boolean }
     inputData?: Record<string, unknown>
-    /**
-     * The list being written and the full config — used ONLY to recognise a
-     * synthetic reverse-relation key (`from_<List>_<field>`, #978) among the
-     * undeclared keys sudo would otherwise pass through unchecked. The write
-     * pipeline supplies these; a direct unit test that omits them keeps the
-     * pre-#978 sudo
-     * behaviour of passing any undeclared key through, since it has no config
-     * to resolve a synthetic key against.
-     */
-    listName?: string
-    config?: OpenSaasConfig
+    listName: string
+    config: OpenSaasConfig
     /**
      * Field keys `applyCreateDefaults` filled on this write (`create` only) —
      * see the check below and `applyCreateDefaults`'s own doc comment.
@@ -479,35 +478,14 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
     ),
   }
 
-  // A to-one relationship's foreign-key column (`<field>Id`) is not its own
-  // declared field, but writing it directly is a legitimate spelling of the
-  // same edge `connect` lowers to (ADR-0050) — gated below by the OWNING
-  // relationship field's write access, exactly like `connect` is (#1326).
-  //
-  // That is one of the two access components ADR-0050 pairs. The other —
-  // reachability, `query` access on the TARGET row — is applied to both
-  // spellings by `lowerRelationInput`, which runs after this filter (#1331).
-  const foreignKeyOwners = new Map<string, { fieldName: string; access?: FieldAccess }>()
-  // Raw per-part columns of a multi-column field, mapped to the owning field.
-  // `splitColumns` produces them after validation (#789); a caller naming one
-  // would skip the logical field's validation and hooks, so it is refused below.
-  const splitColumnOwners = new Map<string, { fieldName: string; access?: FieldAccess }>()
-  for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
-    if (fieldConfig.type === 'relationship') {
-      // A to-one relationship owns a `<field>Id` column UNLESS it is the
-      // non-owning side of a one-to-one (ADR-0064) — `ownsForeignKeyColumn`
-      // asks the field itself rather than assuming every to-one does (#1326).
-      const relConfig = fieldConfig as { many?: boolean; ref?: string }
-      if (ownsForeignKeyColumn(fieldName, relConfig, args.listName, args.config)) {
-        foreignKeyOwners.set(`${fieldName}Id`, { fieldName, access: fieldConfig.access })
-      }
-    }
-    if (typeof fieldConfig.getColumnNames === 'function') {
-      for (const column of fieldConfig.getColumnNames(fieldName)) {
-        splitColumnOwners.set(column, { fieldName, access: fieldConfig.access })
-      }
-    }
-  }
+  // A directly-written foreign-key column is the same edge `connect` lowers to
+  // (ADR-0050), gated by the owning relationship's write access (#1326); the
+  // reachability half is `lowerRelationInput`'s (#1331). A part column is
+  // produced by `splitColumns` after validation (#789), so a caller naming one
+  // is refused below.
+  const { foreignKeyOwners, splitColumnOwners } = writeOwnersOf(
+    resolveListMembers(args.config, args.listName),
+  )
 
   const isSudo = args.context._isSudo === true
 
@@ -638,27 +616,10 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
     // reject it.
     if (!fieldConfig) {
       if (isSudo) {
-        // #978 — sudo bypasses ACCESS CONTROL, not the hooks/validation a
-        // recognised relation is entitled to. A synthetic reverse-relation key
-        // (a list-only ref's back-relation) is handed to the caller unchanged,
-        // exactly as a declared relationship field is. Any other
-        // undeclared key has no such route to hooks — passing it straight to
-        // Prisma is the same silent-bypass shape this issue closed for
-        // relations, so it is refused even under sudo. `listName`/`config`
-        // are omitted only by direct unit tests of this function, which keep
-        // the pre-#978 blanket sudo passthrough since they have no config to
-        // resolve a synthetic key against.
-        if (args.listName && args.config) {
-          const synthetic = resolveSyntheticReverseRelation(fieldName, args.listName, args.config)
-          if (!synthetic) {
-            throw new ValidationError([
-              `Cannot ${operation} "${fieldName}": it is not a field of this list. ` +
-                `Undeclared data keys are rejected, even under sudo.`,
-            ])
-          }
-        }
-        filtered[fieldName] = value
-        continue
+        throw new ValidationError([
+          `Cannot ${operation} "${fieldName}": it is not a field of this list. ` +
+            `Undeclared data keys are rejected, even under sudo.`,
+        ])
       }
       throw new ValidationError([
         `Cannot ${operation} "${fieldName}": it is not a field of this list. ` +

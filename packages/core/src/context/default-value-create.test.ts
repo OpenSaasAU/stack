@@ -6,6 +6,15 @@ import type { ListConfig, OpenSaasConfig } from '../config/types.js'
 import type { AccessContext } from '../access/types.js'
 import { createTestContext, type TestContext } from '../testing/context.js'
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
+function withConfig(listName: string, listConfig: ListConfig<any>) {
+  const config: OpenSaasConfig = {
+    db: { provider: 'postgresql' },
+    lists: { [listName]: listConfig },
+  }
+  return { listConfig, config }
+}
+
 /**
  * #615: a field's `defaultValue` is applied to an omitted input BEFORE
  * validation on create (resolve-then-validate, Keystone parity). The Prisma
@@ -66,7 +75,7 @@ describe('#615 Hook Pipeline — defaultValue applied before validation (create)
     const { resolvedData } = await hookPipeline.run({
       operation: 'create',
       listName: 'Thing',
-      listConfig: makeListConfig(),
+      ...withConfig('Thing', makeListConfig()),
       // `name` is provided (required, no default); everything else omitted.
       inputData: { name: 'given' },
       item: undefined,
@@ -86,7 +95,7 @@ describe('#615 Hook Pipeline — defaultValue applied before validation (create)
     const { resolvedData } = await hookPipeline.run({
       operation: 'create',
       listName: 'Thing',
-      listConfig: makeListConfig(),
+      ...withConfig('Thing', makeListConfig()),
       inputData: { name: 'given', kind: 'TRIAL', count: 99, active: false },
       item: undefined,
       context: makeContext(),
@@ -110,7 +119,7 @@ describe('#615 Hook Pipeline — defaultValue applied before validation (create)
     const { resolvedData } = await hookPipeline.run({
       operation: 'create',
       listName: 'Thing',
-      listConfig,
+      ...withConfig('Thing', listConfig),
       inputData: { note: null },
       item: undefined,
       context: makeContext(),
@@ -123,7 +132,7 @@ describe('#615 Hook Pipeline — defaultValue applied before validation (create)
     const { resolvedData } = await hookPipeline.run({
       operation: 'update',
       listName: 'Thing',
-      listConfig: makeListConfig(),
+      ...withConfig('Thing', makeListConfig()),
       inputData: { name: 'changed' },
       item: { id: '1', name: 'old', kind: 'TRIAL', label: 'x', count: 1, active: false },
       context: makeContext(),
@@ -138,7 +147,7 @@ describe('#615 Hook Pipeline — defaultValue applied before validation (create)
       hookPipeline.run({
         operation: 'create',
         listName: 'Thing',
-        listConfig: makeListConfig(),
+        ...withConfig('Thing', makeListConfig()),
         inputData: {}, // `name` is required and has no default
         item: undefined,
         context: makeContext(),

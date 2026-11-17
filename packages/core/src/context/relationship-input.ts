@@ -1,8 +1,7 @@
-import type { OpenSaasConfig, ListConfig, RelationshipField } from '../config/types.js'
+import type { OpenSaasConfig } from '../config/types.js'
 import type { AccessContext, OrmClient } from '../access/types.js'
 import { assertAccessFilterConstrains, checkAccess } from '../access/index.js'
-import { resolveSyntheticReverseRelation } from '../access/engine.js'
-import { shouldHaveForeignKey } from '../fields/index.js'
+import { resolveListMember } from '../members/list-members.js'
 import {
   firstMatching,
   identityPredicate,
@@ -228,9 +227,8 @@ function foreignKeyIdOf(
  * references; `foreignKey` is that same column named directly, which is the
  * other spelling of the same edge and owes the same two access components
  * (ADR-0050); `inverse` is a relationship the other side keys, including a
- * synthetic `from_<List>_<field>` back-relation, which a list-only `ref`
- * elsewhere in the config creates undeclared on its target and which reaches a
- * sudo payload through `filterWritableFields`.
+ * Synthetic back-relation. `column` is everything the field write gate
+ * settles instead.
  *
  * The `owning`/`inverse` split is the whole arity rule of ADR-0050: an edge is
  * a foreign-key assignment on the row being written, and only one end of a
@@ -242,61 +240,37 @@ type PayloadKey =
   | { kind: 'foreignKey'; column: string; target: string; field: string }
   | { kind: 'inverse' }
 
-/**
- * The relationship field that owns `fieldKey` as its foreign-key column, when
- * `fieldKey` is one. The contract names that column `<field>Id`
- * (`contract/derive.ts`), so the owner is read back off the same convention
- * the column was emitted under. A list cannot declare a field of its own by
- * that name — `claimMember` in `contract/derive.ts` refuses the collision — so
- * the two readings of one key never have to be ranked.
- */
-function foreignKeyColumn(
-  fieldKey: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-  listConfig: ListConfig<any>,
-  listName: string,
-  config: OpenSaasConfig,
-): PayloadKey | null {
-  if (!fieldKey.endsWith('Id') || fieldKey.length <= 2) return null
-  const owner = fieldKey.slice(0, -2)
-  const field = listConfig.fields[owner]
-  if (field?.type !== 'relationship') return null
-
-  const relation = field as RelationshipField
-  if (!shouldHaveForeignKey(listName, owner, relation, config)) return null
-  return {
-    kind: 'foreignKey',
-    column: fieldKey,
-    target: relation.ref.split('.')[0],
-    field: owner,
-  }
-}
-
-function classifyKey(
-  fieldKey: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-  listConfig: ListConfig<any>,
-  listName: string,
-  config: OpenSaasConfig,
-): PayloadKey {
-  const field = Object.hasOwn(listConfig.fields, fieldKey) ? listConfig.fields[fieldKey] : undefined
-  if (field?.type !== 'relationship') {
-    if (field === undefined) {
-      const column = foreignKeyColumn(fieldKey, listConfig, listName, config)
-      if (column !== null) return column
+function classifyKey(fieldKey: string, listName: string, config: OpenSaasConfig): PayloadKey {
+  const member = resolveListMember(config, listName, fieldKey)
+  if (member === undefined) return { kind: 'column' }
+  switch (member.kind) {
+    case 'field': {
+      const { storage } = member
+      if (storage.kind !== 'relation') return { kind: 'column' }
+      if (storage.foreignKey === undefined) return { kind: 'inverse' }
+      return {
+        kind: 'owning',
+        column: storage.foreignKey.name,
+        target: storage.relatedList,
+        field: fieldKey,
+      }
     }
-    return resolveSyntheticReverseRelation(fieldKey, listName, config) === null
-      ? { kind: 'column' }
-      : { kind: 'inverse' }
-  }
-
-  const relation = field as RelationshipField
-  if (!shouldHaveForeignKey(listName, fieldKey, relation, config)) return { kind: 'inverse' }
-  return {
-    kind: 'owning',
-    column: `${fieldKey}Id`,
-    target: relation.ref.split('.')[0],
-    field: fieldKey,
+    case 'foreignKey':
+      return {
+        kind: 'foreignKey',
+        column: member.name,
+        target: member.relatedList,
+        field: member.field,
+      }
+    case 'syntheticBackRelation':
+      return { kind: 'inverse' }
+    case 'partColumn':
+    case 'systemField':
+      return { kind: 'column' }
+    default: {
+      const unhandled: never = member
+      return unhandled
+    }
   }
 }
 
@@ -359,14 +333,12 @@ export function snapshotCallerInput(inputData: Record<string, unknown>): Record<
  */
 function refuseDoubleSpelledEdge(
   listName: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-  listConfig: ListConfig<any>,
   config: OpenSaasConfig,
   data: Record<string, unknown>,
 ): void {
   for (const [fieldKey, value] of Object.entries(data)) {
     if (value === undefined) continue
-    const key = classifyKey(fieldKey, listConfig, listName, config)
+    const key = classifyKey(fieldKey, listName, config)
     if (key.kind !== 'foreignKey') continue
     if (data[key.field] !== undefined) {
       throw new ConflictingRelationInputError(listName, key.field, key.column)
@@ -388,16 +360,14 @@ function refuseDoubleSpelledEdge(
  */
 export function refuseNestedRelationInput(
   listName: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-  listConfig: ListConfig<any>,
   config: OpenSaasConfig,
   data: Record<string, unknown> | undefined,
 ): void {
   if (data === undefined) return
-  refuseDoubleSpelledEdge(listName, listConfig, config, data)
+  refuseDoubleSpelledEdge(listName, config, data)
 
   for (const [fieldKey, value] of Object.entries(data)) {
-    const key = classifyKey(fieldKey, listConfig, listName, config)
+    const key = classifyKey(fieldKey, listName, config)
     if (key.kind === 'column') continue
 
     // A foreign-key column holds an id rather than relation input, so only its
@@ -476,8 +446,6 @@ async function reachable(
 
 export interface LowerRelationInputArgs {
   listName: string
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-  listConfig: ListConfig<any>
   config: OpenSaasConfig
   context: AccessContext
   /** The transaction handle the write itself runs on, so both statements share it. */
@@ -505,11 +473,11 @@ export interface LowerRelationInputArgs {
  * the caller could not make anyway.
  */
 export async function lowerRelationInput(args: LowerRelationInputArgs): Promise<RelationLowering> {
-  const { listName, listConfig, config, data, inputData } = args
+  const { listName, config, data, inputData } = args
   let lowered: Record<string, unknown> | undefined
 
   for (const [fieldKey, value] of Object.entries(inputData)) {
-    const key = classifyKey(fieldKey, listConfig, listName, config)
+    const key = classifyKey(fieldKey, listName, config)
     if (key.kind !== 'owning' && key.kind !== 'foreignKey') continue
     const id = key.kind === 'owning' ? connectId(value) : foreignKeyIdOf(listName, key, value)
     if (id === undefined || id === null) continue
@@ -519,7 +487,7 @@ export async function lowerRelationInput(args: LowerRelationInputArgs): Promise<
   }
 
   for (const [fieldKey, value] of Object.entries(data)) {
-    const key = classifyKey(fieldKey, listConfig, listName, config)
+    const key = classifyKey(fieldKey, listName, config)
     if (key.kind === 'column') continue
     if (key.kind === 'inverse') {
       if (value === undefined) continue
