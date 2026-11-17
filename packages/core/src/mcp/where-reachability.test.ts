@@ -2,7 +2,12 @@ import { describe, expect, test } from 'vitest'
 import { z } from 'zod'
 import type { FieldConfig, OpenSaasConfig } from '../config/types.js'
 import { relationship, text } from '../fields/index.js'
-import { relationMember } from './relation-member.js'
+import {
+  assertListMembersResolve,
+  declaredFieldsOf,
+  relationFieldOf,
+  relationOf,
+} from './relation-member.js'
 import { assertOrderByReachable, assertWhereReachable } from './where-reachability.js'
 
 const addressField: FieldConfig = {
@@ -50,7 +55,7 @@ const without = (listKey: string): ReadonlySet<string> =>
 const refusal = (listKey: string, key: string): string =>
   `Cannot query "${listKey}" — "${key}" is not a queryable field of this list.`
 
-describe('assertWhereReachable', () => {
+describe('assertWhereReachable (MCP side; full context.db parity lands with #2402)', () => {
   test('an owned foreign key is refused when its related list is unreachable', () => {
     expect(() =>
       assertWhereReachable({ authorId: { equals: 'u1' } }, config(), 'Post', without('User')),
@@ -131,24 +136,69 @@ describe('assertOrderByReachable', () => {
   })
 })
 
-describe('relationMember', () => {
-  test('answers only for a declared relationship field, with its ownership', () => {
-    expect(relationMember(config(), 'Post', 'author')).toEqual({
+describe('relationOf', () => {
+  test('answers for a declared relation and an owned foreign key, through what, with ownership', () => {
+    expect(relationOf(config(), 'Post', 'author')).toEqual({
+      via: 'field',
+      field: 'author',
       relatedList: 'User',
+      many: false,
       ownsForeignKey: true,
     })
-    expect(relationMember(config(), 'User', 'posts')).toEqual({
+    expect(relationOf(config(), 'Post', 'authorId')).toEqual({
+      via: 'foreignKey',
+      field: 'author',
+      relatedList: 'User',
+      many: false,
+      ownsForeignKey: true,
+    })
+    expect(relationOf(config(), 'User', 'posts')).toEqual({
+      via: 'field',
+      field: 'posts',
       relatedList: 'Post',
+      many: true,
       ownsForeignKey: false,
     })
-    expect(relationMember(config(), 'User', 'profile')).toEqual({
+    expect(relationOf(config(), 'User', 'profile')).toMatchObject({
+      via: 'field',
       relatedList: 'Profile',
       ownsForeignKey: false,
     })
-    for (const name of ['title', 'authorId', 'id', 'nope']) {
-      expect(relationMember(config(), 'Post', name)).toBeUndefined()
+    for (const name of ['title', 'id', 'nope']) {
+      expect(relationOf(config(), 'Post', name)).toBeUndefined()
     }
-    expect(relationMember(config(), 'Category', 'address_line')).toBeUndefined()
-    expect(relationMember(config(), 'Category', 'from_Post_category')).toBeUndefined()
+    expect(relationOf(config(), 'User', 'profileId')).toBeUndefined()
+    expect(relationOf(config(), 'Category', 'address_line')).toBeUndefined()
+    expect(relationOf(config(), 'Category', 'from_Post_category')).toBeUndefined()
+  })
+
+  test('relationFieldOf answers for a declared relation field only', () => {
+    expect(relationFieldOf(config(), 'Post', 'author')?.relatedList).toBe('User')
+    expect(relationFieldOf(config(), 'Post', 'authorId')).toBeUndefined()
+  })
+
+  test('declaredFieldsOf lists declared fields in order, and nothing derived', () => {
+    expect(declaredFieldsOf(config(), 'Post').map(([name]) => name)).toEqual([
+      'title',
+      'author',
+      'category',
+    ])
+  })
+})
+
+describe('assertListMembersResolve', () => {
+  test('passes a config generate accepts', () => {
+    expect(() => assertListMembersResolve(config())).not.toThrow()
+  })
+
+  test("throws generate's own refusal for a config generate refuses", () => {
+    const refused: OpenSaasConfig = {
+      db: { provider: 'postgresql' },
+      lists: {
+        Tag: { fields: { posts: relationship({ ref: 'Note.tags', many: true }) } },
+        Note: { fields: { tags: relationship({ ref: 'Tag.posts', many: true }) } },
+      },
+    }
+    expect(() => assertListMembersResolve(refused)).toThrow(/many/i)
   })
 })

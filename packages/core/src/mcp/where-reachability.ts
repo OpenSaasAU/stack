@@ -1,7 +1,7 @@
 import type { OpenSaasConfig } from '../config/types.js'
-import { resolveListMember } from '../members/list-members.js'
 import { RELATION_QUANTIFIERS } from '../secured/operators.js'
 import { unqueryableKey } from '../secured/vocabulary.js'
+import { relationOf } from './relation-member.js'
 
 const LOGICAL_OPERATORS: ReadonlySet<string> = new Set(['AND', 'OR', 'NOT'])
 
@@ -10,22 +10,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 function relationTarget(config: OpenSaasConfig, listKey: string, key: string): string | undefined {
-  const member = resolveListMember(config, listKey, key)
-  if (member === undefined) return undefined
-  switch (member.kind) {
-    case 'field':
-      return member.storage.kind === 'relation' ? member.storage.relatedList : undefined
-    case 'foreignKey':
-      return member.relatedList
-    case 'partColumn':
-    case 'syntheticBackRelation':
-    case 'systemField':
-      return undefined
-    default: {
-      const unhandled: never = member
-      return unhandled
-    }
-  }
+  return relationOf(config, listKey, key)?.relatedList
 }
 
 /**

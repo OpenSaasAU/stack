@@ -1670,14 +1670,7 @@ describe('the MCP surface', () => {
           (brittle as { properties: Record<string, unknown> }).properties.brittle,
         ).toBeUndefined()
 
-        const data = await generateFieldSchemas(
-          'Brittle',
-          config.lists.Brittle.fields,
-          config,
-          'update',
-          null,
-          context,
-        )
+        const data = await generateFieldSchemas('Brittle', config, 'update', null, context)
         expect(data.properties.title).toBeDefined()
         expect(data.properties.brittle).toBeUndefined()
       },

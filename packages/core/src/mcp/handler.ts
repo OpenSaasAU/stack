@@ -13,7 +13,7 @@ import { controlFlowPredicateOf, decideAdvertisement } from '../access/decide-ad
 import { mcpAdvertisement } from './advertise.js'
 import { McpWriteRefusedError, assertWritableData, generateFieldSchemas } from './field-schema.js'
 import { resolveListMembers } from '../members/list-members.js'
-import { relationMember } from './relation-member.js'
+import { assertListMembersResolve, relationFieldOf } from './relation-member.js'
 import { listIdJsonSchema, parseListId } from '../contract/id-boundary.js'
 import { RELATION_QUANTIFIERS, SCALAR_OPERATORS } from '../secured/operators.js'
 import type { SecuredQuery } from '../secured/read.js'
@@ -195,6 +195,8 @@ export function createMcpHandlers(options: {
       })
     return { GET: notEnabledHandler, POST: notEnabledHandler, DELETE: notEnabledHandler }
   }
+
+  assertListMembersResolve(config)
 
   const basePath = config.mcp.basePath || '/api/mcp'
 
@@ -443,7 +445,6 @@ async function handleToolsList(
       if (operationClassification !== 'deny') {
         const fieldSchemas = await generateFieldSchemas(
           listKey,
-          listConfig.fields,
           config,
           'create',
           context.session,
@@ -473,7 +474,6 @@ async function handleToolsList(
     if (enabledTools.update && permitted('update')) {
       const fieldSchemas = await generateFieldSchemas(
         listKey,
-        listConfig.fields,
         config,
         'update',
         context.session,
@@ -636,15 +636,12 @@ function connectCriterion(value: unknown): Record<string, unknown> | undefined {
 function coerceConnectIds(
   data: Record<string, unknown>,
   listKey: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-  listConfig: ListConfig<any>,
   config: OpenSaasConfig,
 ): Record<string, unknown> | null {
   let coerced: Record<string, unknown> | undefined
 
-  for (const fieldName of Object.keys(listConfig.fields)) {
-    if (!Object.hasOwn(data, fieldName)) continue
-    const relation = relationMember(config, listKey, fieldName)
+  for (const fieldName of Object.keys(data)) {
+    const relation = relationFieldOf(config, listKey, fieldName)
     if (relation === undefined || !relation.ownsForeignKey) continue
 
     const criterion = connectCriterion(data[fieldName])
@@ -863,20 +860,12 @@ async function handleCrudTool(
         if (!isPlainObject(args.data)) {
           return createErrorResultResponse('`data` must be an object of field values.', id)
         }
-        await assertWritableData(
-          args.data,
-          listKey,
-          listConfig.fields,
-          config,
-          'create',
-          context.session,
-          context,
-        )
+        await assertWritableData(args.data, listKey, config, 'create', context.session, context)
         // A `connect.id` naming a value its related list's id column cannot
         // hold answers exactly as a missing row does — the same boundary
         // coercion `where.id` gets below, applied to the write's own edges
         // (ADR-0048, Silent failure).
-        const data = coerceConnectIds(args.data, listKey, listConfig, config)
+        const data = coerceConnectIds(args.data, listKey, config)
         if (data === null) {
           return createErrorResultResponse(
             'Failed to create record. Access denied or validation failed.',
@@ -904,16 +893,8 @@ async function handleCrudTool(
         if (!isPlainObject(args.data)) {
           return createErrorResultResponse('`data` must be an object of field values.', id)
         }
-        await assertWritableData(
-          args.data,
-          listKey,
-          listConfig.fields,
-          config,
-          'update',
-          context.session,
-          context,
-        )
-        const data = coerceConnectIds(args.data, listKey, listConfig, config)
+        await assertWritableData(args.data, listKey, config, 'update', context.session, context)
+        const data = coerceConnectIds(args.data, listKey, config)
         if (data === null) {
           return createErrorResultResponse(idBoundaryRefusal('update record'), id)
         }

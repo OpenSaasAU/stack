@@ -1,6 +1,5 @@
 import type { AccessContext, OrmRow, Session } from '../access/types.js'
-import type { FieldConfig, ListConfig, OpenSaasConfig, RelationshipField } from '../config/types.js'
-import { getRelatedListConfig } from '../access/engine.js'
+import type { FieldConfig, ListConfig, OpenSaasConfig } from '../config/types.js'
 import { classifyRowIndependentRead } from '../access/field-access.js'
 import { getListDependencies } from '../access/declared-dependencies.js'
 import { controlFlowPredicateOf, decideAdvertisement } from '../access/decide-advertisement.js'
@@ -12,6 +11,7 @@ import { orderByArgument, whereArgument } from './arguments.js'
 import { MCP_NESTED_TAKE_DEFAULT, MCP_NESTED_TAKE_MAX } from './constants.js'
 import { assertOrderByReachable, assertWhereReachable } from './where-reachability.js'
 import { mcpReadableList, readableLists } from './reachability.js'
+import { relationFieldOf, type McpRelation } from './relation-member.js'
 import { coerceWhereIds, foreignKeyVisibility, idBoundaryRefusal } from './where-id-boundary.js'
 
 /** A scalar/virtual field in a `fields` projection is selected by naming it `true` — this advertises that, not the field's own value shape (`fieldToJsonSchema`, used for `create`/`update`, is a different schema entirely). */
@@ -69,43 +69,23 @@ export class McpProjectionRefusedError extends Error {
   }
 }
 
-function isRelationshipField(
-  fieldConfig: FieldConfig | undefined,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RelationshipField must accept any TypeInfo
-): fieldConfig is RelationshipField<any> {
-  return (
-    !!fieldConfig &&
-    fieldConfig.type === 'relationship' &&
-    'ref' in fieldConfig &&
-    !!fieldConfig.ref
-  )
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- RelationshipField must accept any TypeInfo
-function isMany(fieldConfig: RelationshipField<any>): boolean {
-  return fieldConfig.many === true
-}
-
 /**
  * Resolve a relation field's target list, or `null` if it should not be
- * advertised/selectable at all: the ref doesn't resolve, its MCP tools are
- * disabled (ADR-0033 — a list with `mcp.enabled: false` is unreachable
- * through MCP, including as a relation target), or this session's
- * operation-level `query` access on it is denied outright.
+ * advertised/selectable at all: its MCP tools are disabled (ADR-0033 — a list
+ * with `mcp.enabled: false` is unreachable through MCP, including as a
+ * relation target), or this session's operation-level `query` access on it is
+ * denied outright.
  */
 async function relatedListIfVisible(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RelationshipField must accept any TypeInfo
-  fieldConfig: RelationshipField<any>,
+  relation: McpRelation,
   config: OpenSaasConfig,
-  session: Session | null,
   context: AccessContext,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
 ): Promise<{ listName: string; listConfig: ListConfig<any> } | null> {
-  const related = getRelatedListConfig(fieldConfig.ref, config)
-  if (!related) return null
-  if (!(await mcpReadableList(config, related.listName, context))) return null
-
-  return related
+  const listConfig = config.lists[relation.relatedList]
+  if (!listConfig) return null
+  if (!(await mcpReadableList(config, relation.relatedList, context))) return null
+  return { listName: relation.relatedList, listConfig }
 }
 
 /**
@@ -115,8 +95,7 @@ async function relatedListIfVisible(
 type AdvertisableField = {
   name: string
   relation: {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RelationshipField must accept any TypeInfo
-    fieldConfig: RelationshipField<any>
+    many: boolean
     listName: string
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
     listConfig: ListConfig<any>
@@ -124,6 +103,7 @@ type AdvertisableField = {
 }
 
 async function decideField(
+  listKey: string,
   fieldName: string,
   fieldConfig: FieldConfig,
   config: OpenSaasConfig,
@@ -131,18 +111,18 @@ async function decideField(
   context: AccessContext,
   options: { relationsSelectable: boolean },
 ): Promise<AdvertisableField | null> {
-  const relationConfig = isRelationshipField(fieldConfig) ? fieldConfig : null
-  if (relationConfig && !options.relationsSelectable) return null
+  const relation = relationFieldOf(config, listKey, fieldName)
+  if (relation && !options.relationsSelectable) return null
 
   const answer = await classifyRowIndependentRead(fieldConfig.access, { session, context })
   if (answer === 'deny') return null
 
-  if (!relationConfig) return { name: fieldName, relation: null }
+  if (!relation) return { name: fieldName, relation: null }
 
-  const related = await relatedListIfVisible(relationConfig, config, session, context)
+  const related = await relatedListIfVisible(relation, config, context)
   if (!related) return null
 
-  return { name: fieldName, relation: { fieldConfig: relationConfig, ...related } }
+  return { name: fieldName, relation: { many: relation.many, ...related } }
 }
 
 /**
@@ -183,7 +163,7 @@ async function advertisableFields(
   for (const [fieldName, fieldConfig] of Object.entries(listConfig.fields)) {
     const decided = await decideAdvertisement<AdvertisableField | null>(
       `${listKey}.${fieldName}`,
-      () => decideField(fieldName, fieldConfig, config, session, context, options),
+      () => decideField(listKey, fieldName, fieldConfig, config, session, context, options),
       null,
       mcpAdvertisement,
       controlFlowPredicateOf(context, config),
@@ -242,7 +222,7 @@ export async function generateFieldsProjectionSchema(
       level2Properties[relFieldName] = scalarSelectorSchema(relFieldName)
     }
 
-    const many = isMany(relation.fieldConfig)
+    const many = relation.many
     properties[fieldName] = {
       type: 'object',
       description: many
@@ -452,7 +432,7 @@ export async function resolveFieldsProjection(
     }
 
     const entry: Record<string, unknown> = { ...rawValue }
-    const many = isMany(related.fieldConfig)
+    const many = related.many
     const allowedKeys = many
       ? new Set(['fields', 'where', 'orderBy', 'take', 'skip', 'count'])
       : new Set(['fields'])
