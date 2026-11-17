@@ -10,7 +10,7 @@ import { InvalidFieldAccessResultError } from './errors.js'
 import { checkAccess, resolveSyntheticReverseRelation } from './engine.js'
 import { guardedRuleItem, NO_RULE_VIEWS, ruleRowOf, type RuleRow } from './rule-item.js'
 import { shouldHaveForeignKey } from '../fields/index.js'
-import { isSystemFieldName } from './system-fields.js'
+import { resolveListMember } from '../members/list-members.js'
 
 function isHookOnlyAccess(fieldAccess: FieldAccess | undefined): boolean {
   return fieldAccess?.write === 'hooks'
@@ -265,7 +265,7 @@ async function evaluateRowRead(
  * has already been fetched. That leaves the predicate itself unconstrained —
  * a caller can still filter or sort by a field whose value they could never
  * read, and recover it (or its relative order) by probing. This function is
- * the pre-query counterpart, called from `query-validation.ts`'s `where`/
+ * the pre-query counterpart, called from `secured/vocabulary.ts`'s `where`/
  * `orderBy` walk for every key that resolves to a declared field.
  *
  * It delegates to the same evaluator Field Visibility uses (`checkFieldAccess`),
@@ -450,17 +450,10 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
     item?: Record<string, unknown>
     context: AccessContext & { _isSudo?: boolean }
     inputData?: Record<string, unknown>
-    /**
-     * The list being written and the full config — used ONLY to recognise a
-     * synthetic reverse-relation key (`from_<List>_<field>`, #978) among the
-     * undeclared keys sudo would otherwise pass through unchecked. The write
-     * pipeline supplies these; a direct unit test that omits them keeps the
-     * pre-#978 sudo
-     * behaviour of passing any undeclared key through, since it has no config
-     * to resolve a synthetic key against.
-     */
-    listName?: string
-    config?: OpenSaasConfig
+    /** The list being written. */
+    listName: string
+    /** The full config, which says what each name on the list is. */
+    config: OpenSaasConfig
     /**
      * Field keys `applyCreateDefaults` filled on this write (`create` only) —
      * see the check below and `applyCreateDefaults`'s own doc comment.
@@ -550,7 +543,7 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
       callerFields.has(owningField(fieldName)) ||
       args.defaultedFields?.has(fieldName) === true
 
-    if (isSystemFieldName(fieldName, fieldConfigs)) {
+    if (resolveListMember(args.config, args.listName, fieldName)?.kind === 'systemField') {
       throw new ValidationError([
         `Cannot ${operation} "${fieldName}": it is system-managed and cannot be written` +
           (fieldName === 'id'
@@ -644,18 +637,13 @@ export async function filterWritableFields<T extends Record<string, unknown>>(
         // exactly as a declared relationship field is. Any other
         // undeclared key has no such route to hooks — passing it straight to
         // Prisma is the same silent-bypass shape this issue closed for
-        // relations, so it is refused even under sudo. `listName`/`config`
-        // are omitted only by direct unit tests of this function, which keep
-        // the pre-#978 blanket sudo passthrough since they have no config to
-        // resolve a synthetic key against.
-        if (args.listName && args.config) {
-          const synthetic = resolveSyntheticReverseRelation(fieldName, args.listName, args.config)
-          if (!synthetic) {
-            throw new ValidationError([
-              `Cannot ${operation} "${fieldName}": it is not a field of this list. ` +
-                `Undeclared data keys are rejected, even under sudo.`,
-            ])
-          }
+        // relations, so it is refused even under sudo.
+        const synthetic = resolveSyntheticReverseRelation(fieldName, args.listName, args.config)
+        if (!synthetic) {
+          throw new ValidationError([
+            `Cannot ${operation} "${fieldName}": it is not a field of this list. ` +
+              `Undeclared data keys are rejected, even under sudo.`,
+          ])
         }
         filtered[fieldName] = value
         continue

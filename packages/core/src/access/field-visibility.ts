@@ -24,6 +24,8 @@ import {
 // `resolveOutput` hook actually runs (never during module evaluation), so by
 // the time it runs the export is fully initialised.
 import { buildDbDelegate } from '../context/index.js'
+import { resolveListMembers } from '../members/list-members.js'
+import type { FieldDependencySet } from '../contract/dependencies.js'
 
 /**
  * Field Visibility — phase 2 of the two-phase read (post-query).
@@ -250,15 +252,15 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
     workingItem[fieldName] = assembled
   }
 
-  // This list's actual system fields, from the emitted table (ADR-0051):
-  // always readable, never field-access-checked, always visible to a hook's
-  // `item`. `id` is universal; the timestamps exist only where the list
-  // carries them, so a fixed triple would name columns a list does not have.
-  const listDependencies =
+  // This list's actual system fields: always readable, never
+  // field-access-checked, always visible to a hook's `item`.
+  const declaredDependencies: Readonly<Record<string, FieldDependencySet>> =
+    config && listKey ? getListDependencies(config, listKey).fields : {}
+  const systemFields = new Set<string>(
     config && listKey
-      ? getListDependencies(config, listKey)
-      : { systemFields: ['id', 'createdAt', 'updatedAt'], fields: {} }
-  const systemFields = new Set(listDependencies.systemFields)
+      ? resolveListMembers(config, listKey).systemFields
+      : ['id', 'createdAt', 'updatedAt'],
+  )
 
   /**
    * The `item` one computed field's hook is handed: exactly the dependencies
@@ -278,7 +280,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
 
   const hookItemFor = (fieldName: string): Record<string, unknown> => {
     if (!config || !listKey) return ruleItem
-    const declared = listDependencies.fields[fieldName] ?? { columns: [], relations: [] }
+    const declared = declaredDependencies[fieldName] ?? { columns: [], relations: [] }
     const item: Record<string, unknown> = {}
     for (const key of [...systemFields, ...declared.columns, ...declared.relations]) {
       if (key in ruleItem) item[key] = ruleItem[key]

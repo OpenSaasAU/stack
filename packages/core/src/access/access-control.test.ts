@@ -13,6 +13,12 @@ import { InvalidCreateAccessResultError, UndefinedAccessFilterError } from './er
 import type { AccessControl, FieldAccess, AccessContext } from './types.js'
 import { ValidationError } from '../hooks/index.js'
 import { integer, text } from '../fields/index.js'
+import type { OpenSaasConfig } from '../config/types.js'
+
+const UNIT: { listName: string; config: OpenSaasConfig } = {
+  listName: 'Post',
+  config: { db: { provider: 'postgresql' }, lists: { Post: { fields: { title: text() } } } },
+}
 
 describe('Access Control', () => {
   const mockContext: AccessContext = {
@@ -572,6 +578,7 @@ describe('Access Control', () => {
       }
 
       const result = await filterWritableFields(data, fieldConfigs, 'create', {
+        ...UNIT,
         session: null,
         context: mockContext,
       })
@@ -593,6 +600,7 @@ describe('Access Control', () => {
 
       await expect(
         filterWritableFields(data, fieldConfigs, 'create', {
+          ...UNIT,
           session: null,
           context: mockContext,
         }),
@@ -621,12 +629,14 @@ describe('Access Control', () => {
 
       await expect(
         filterWritableFields(data, fieldConfigs, 'create', {
+          ...UNIT,
           session: null,
           context: mockContext,
         }),
       ).rejects.toThrow(ValidationError)
       await expect(
         filterWritableFields(data, fieldConfigs, 'create', {
+          ...UNIT,
           session: null,
           context: mockContext,
         }),
@@ -651,6 +661,7 @@ describe('Access Control', () => {
 
       // Allow on create
       const createResult = await filterWritableFields(data, fieldConfigs, 'create', {
+        ...UNIT,
         session: null,
         context: mockContext,
       })
@@ -660,6 +671,7 @@ describe('Access Control', () => {
       // Deny on update — now throws instead of silently dropping the field.
       await expect(
         filterWritableFields(data, fieldConfigs, 'update', {
+          ...UNIT,
           session: null,
           context: mockContext,
         }),
@@ -681,6 +693,7 @@ describe('Access Control', () => {
       }
 
       await filterWritableFields(data, fieldConfigs, 'update', {
+        ...UNIT,
         session: { userId: '123' },
         item,
         context: mockContext,

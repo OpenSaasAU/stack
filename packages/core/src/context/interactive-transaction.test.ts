@@ -4,6 +4,7 @@ import type { OpenSaasConfig, ResolveInputHookArgs } from '../config/types.js'
 import { text } from '../fields/index.js'
 import { isSerializationFailure } from '../lib/database-errors.js'
 import { createTestContext, ormClientFor, type TestContext } from '../testing/context.js'
+import { resolveListMembers } from '../members/list-members.js'
 import type { StackContext } from '../types/context.js'
 import { getContext, OrmHandleUnresolvableError, TransactionUnavailableError } from './index.js'
 
@@ -290,6 +291,9 @@ describe('context.transaction', () => {
           })
         }
         const config: OpenSaasConfig = { ...base, lists }
+        // The List member resolver reads `db` too, once per config.
+        for (const listKey of Object.keys(lists)) resolveListMembers(config, listKey)
+        dbAccesses = 0
 
         const orm = ormClientFor(harness.data, harness.client.orm)
         const context = getContext(

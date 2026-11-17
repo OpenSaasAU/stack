@@ -298,6 +298,11 @@ export function resolveListMembers(config: OpenSaasConfig, listKey: string): Lis
   return built
 }
 
+/** The `default` branch of a position's exhaustive choice over a member's kind. */
+export function unhandledMember(member: never): never {
+  throw new Error(`Unhandled List member: ${JSON.stringify(member)}`)
+}
+
 /** The List member `name` on `listKey`, or `undefined` when the name is not one. */
 export function resolveListMember(
   config: OpenSaasConfig,

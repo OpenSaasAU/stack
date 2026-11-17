@@ -15,6 +15,11 @@ import type { FieldAccess, FieldAccessControl } from './types.js'
 import { relationship, text, virtual } from '../fields/index.js'
 import type { OpenSaasConfig } from '../config/types.js'
 
+const UNIT: { listName: string; config: OpenSaasConfig } = {
+  listName: 'Post',
+  config: { db: { provider: 'postgresql' }, lists: { Post: { fields: { title: text() } } } },
+}
+
 // A non-sudo access context. The cast is localized to test setup (mirrors the
 // existing sudo-context casts in this file): the runtime AccessContext carries
 // Prisma plumbing the unit under test never touches.
@@ -332,13 +337,13 @@ describe('filterWritableFields', () => {
     const data = {
       title: 'Test Post',
       authorId: 'user-123', // A legitimate spelling of the same edge `connect` lowers to (#1326)
-      tagsId: 'tag-456', // Not a foreign key at all (tags is many:true) — an ordinary key
       author: {
         connect: { id: 'user-123' },
       },
     }
 
     const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
+      ...UNIT,
       session: null,
       context: {
         session: null,
@@ -357,9 +362,6 @@ describe('filterWritableFields', () => {
     // author relationship should remain
     expect(filtered).toHaveProperty('author')
     expect(filtered.author).toEqual({ connect: { id: 'user-123' } })
-
-    // tagsId should remain (tags is many:true, so no foreign key is created)
-    expect(filtered).toHaveProperty('tagsId', 'tag-456')
   })
 
   it.each([
@@ -368,19 +370,42 @@ describe('filterWritableFields', () => {
     ['updatedAt', { updatedAt: new Date() }],
   ])('refuses system field %s, even under sudo', async (name, extra) => {
     const data = { title: 'Test', ...extra }
+    const fields = { title: text() }
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql', timestamps: true },
+      lists: { Post: { fields } },
+    }
     await expect(
-      filterWritableFields(data, { title: { type: 'text' } }, 'create', {
+      filterWritableFields(data, fields, 'create', {
         session: null,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         context: { session: null, _isSudo: true } as any,
         inputData: data,
+        listName: 'Post',
+        config,
       }),
     ).rejects.toThrow(new RegExp(`"${name}": it is system-managed`))
+  })
+
+  it('refuses an undeclared createdAt as unknown on a list without timestamps', async () => {
+    const data = { title: 'Test', createdAt: new Date() }
+    const fields = { title: text() }
+    const config: OpenSaasConfig = { db: { provider: 'postgresql' }, lists: { Post: { fields } } }
+    await expect(
+      filterWritableFields(data, fields, 'create', {
+        session: null,
+        context: nonSudoContext(),
+        inputData: data,
+        listName: 'Post',
+        config,
+      }),
+    ).rejects.toThrow(/"createdAt": it is not a field of this list/)
   })
 
   it('treats a declared createdAt as an ordinary field', async () => {
     const data = { createdAt: 'hello' }
     const filtered = await filterWritableFields(data, { createdAt: { type: 'text' } }, 'create', {
+      ...UNIT,
       session: null,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       context: { session: null } as any,
@@ -407,6 +432,7 @@ describe('filterWritableFields', () => {
     }
 
     const filtered = await filterWritableFields(data, fieldConfigs, 'update', {
+      ...UNIT,
       session: null,
       item: { id: 'post-123' },
       context: {
@@ -437,6 +463,7 @@ describe('filterWritableFields', () => {
     }
 
     const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
+      ...UNIT,
       session: null,
       context: {
         session: null,
@@ -466,6 +493,7 @@ describe('filterWritableFields', () => {
 
     await expect(
       filterWritableFields(data, fieldConfigs, 'create', {
+        ...UNIT,
         session: null,
         context: nonSudoContext(),
         inputData: data,
@@ -473,6 +501,7 @@ describe('filterWritableFields', () => {
     ).rejects.toThrow(ValidationError)
     await expect(
       filterWritableFields(data, fieldConfigs, 'create', {
+        ...UNIT,
         session: null,
         context: nonSudoContext(),
         inputData: data,
@@ -489,29 +518,13 @@ describe('filterWritableFields', () => {
 
     await expect(
       filterWritableFields(data, fieldConfigs, 'update', {
+        ...UNIT,
         session: null,
         item: { id: 'post-1' },
         context: nonSudoContext(),
         inputData: data,
       }),
     ).rejects.toThrow(/bogusKey/)
-  })
-
-  it('passes undeclared data keys through under sudo (the single trusted bypass)', async () => {
-    const fieldConfigs = { title: { type: 'text' } }
-    const data = {
-      title: 'Test',
-      from_Enrolment_student: { disconnect: [{ id: 'e1' }] },
-    }
-
-    const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
-      session: null,
-      context: sudoContext(),
-      inputData: data,
-    })
-
-    expect(filtered).toHaveProperty('title', 'Test')
-    expect(filtered).toHaveProperty('from_Enrolment_student')
   })
 
   it('keeps a directly-written FK column with no field access declared, for a non-sudo write', async () => {
@@ -525,6 +538,7 @@ describe('filterWritableFields', () => {
     }
 
     const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
+      ...UNIT,
       session: null,
       context: nonSudoContext(),
       inputData: data,
@@ -545,6 +559,7 @@ describe('filterWritableFields', () => {
     const data = { media_url: 'https://x/y.jpg', media_size: 99 }
 
     const filtered = await filterWritableFields(data, mediaConfigs, 'create', {
+      ...UNIT,
       session: null,
       context: nonSudoContext(),
       inputData: { media: { url: 'https://x/y.jpg' } },
@@ -561,6 +576,7 @@ describe('filterWritableFields', () => {
 
     await expect(
       filterWritableFields({ media_url: 'https://x/y.jpg', media_size: 1 }, configs, 'create', {
+        ...UNIT,
         session: null,
         context: nonSudoContext(),
         inputData: { media: { url: 'https://x/y.jpg' } },
@@ -577,6 +593,7 @@ describe('filterWritableFields', () => {
         const data = { media_url: 'javascript:alert(1)', media_size: 5 }
 
         const result = filterWritableFields(data, mediaConfigs, operation, {
+          ...UNIT,
           session: null,
           item: operation === 'update' ? { id: 'item-1' } : undefined,
           context: makeContext(),
@@ -607,6 +624,7 @@ describe('filterWritableFields', () => {
     // silent drop of the key (the original defect this pins).
     await expect(
       filterWritableFields(data, fieldConfigs, 'create', {
+        ...UNIT,
         session: null,
         context: nonSudoContext(),
         inputData: data,
@@ -614,6 +632,7 @@ describe('filterWritableFields', () => {
     ).rejects.toThrow(ValidationError)
     await expect(
       filterWritableFields(data, fieldConfigs, 'create', {
+        ...UNIT,
         session: null,
         context: nonSudoContext(),
         inputData: data,
@@ -632,6 +651,7 @@ describe('filterWritableFields', () => {
     const data = { authorId: 'user-123' }
 
     const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
+      ...UNIT,
       session: null,
       context: nonSudoContext(),
       inputData: data,
@@ -651,6 +671,7 @@ describe('filterWritableFields', () => {
     const data = { authorId: 'user-123' }
 
     const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
+      ...UNIT,
       session: null,
       context: sudoContext(),
       inputData: data,
@@ -768,6 +789,7 @@ describe('filterWritableFields', () => {
 
     await expect(
       filterWritableFields({ title: 'x' }, config.lists.Post.fields, 'update', {
+        ...UNIT,
         ...args,
         context: nonSudoContext(),
         inputData: { title: 'x', authorId: undefined },
@@ -775,6 +797,7 @@ describe('filterWritableFields', () => {
     ).resolves.toEqual({ title: 'x' })
     await expect(
       filterWritableFields({ title: 'x' }, config.lists.Post.fields, 'update', {
+        ...UNIT,
         ...args,
         context: sudoContext(),
         inputData: { title: 'x', authorId: 'u1' },
@@ -796,6 +819,7 @@ describe('filterWritableFields', () => {
 
     await expect(
       filterWritableFields(data, fieldConfigs, 'update', {
+        ...UNIT,
         session: null,
         item: { id: 'post-1' },
         context: nonSudoContext(),
@@ -823,6 +847,7 @@ describe('filterWritableFields', () => {
 
     await expect(
       filterWritableFields(data, fieldConfigs, 'update', {
+        ...UNIT,
         session: null,
         item: { id: 'post-1', status: 'draft' },
         context: nonSudoContext(),
@@ -842,6 +867,7 @@ describe('filterWritableFields', () => {
     const data = { title: 'Test', status: 'published' }
 
     const filtered = await filterWritableFields(data, fieldConfigs, 'update', {
+      ...UNIT,
       session: null,
       item: { id: 'post-1' },
       context: sudoContext(),
@@ -863,6 +889,7 @@ describe('filterWritableFields', () => {
     }
 
     const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
+      ...UNIT,
       session: null,
       context: nonSudoContext(),
       inputData: data,
@@ -890,6 +917,7 @@ describe('filterWritableFields — defaultedFields exemption (opt-in via allowCr
     const data = { emailVerified: false }
 
     const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
+      ...UNIT,
       session: null,
       context: nonSudoContext(),
       inputData: {}, // the caller never supplied it — applyCreateDefaults did
@@ -911,6 +939,7 @@ describe('filterWritableFields — defaultedFields exemption (opt-in via allowCr
 
     await expect(
       filterWritableFields(data, fieldConfigs, 'create', {
+        ...UNIT,
         session: null,
         context: nonSudoContext(),
         inputData: {}, // omitted — applyCreateDefaults filled it
@@ -930,6 +959,7 @@ describe('filterWritableFields — defaultedFields exemption (opt-in via allowCr
 
     await expect(
       filterWritableFields(data, fieldConfigs, 'create', {
+        ...UNIT,
         session: null,
         context: nonSudoContext(),
         inputData: { emailVerified: false }, // the caller DID supply it
@@ -949,6 +979,7 @@ describe('filterWritableFields — defaultedFields exemption (opt-in via allowCr
 
     await expect(
       filterWritableFields(data, fieldConfigs, 'update', {
+        ...UNIT,
         session: null,
         context: nonSudoContext(),
         inputData: { emailVerified: true },
@@ -968,6 +999,7 @@ describe('filterWritableFields — defaultedFields exemption (opt-in via allowCr
 
     await expect(
       filterWritableFields(data, fieldConfigs, 'create', {
+        ...UNIT,
         session: null,
         context: nonSudoContext(),
         inputData: { emailVerified: false },
@@ -983,19 +1015,18 @@ describe('filterWritableFields — #978 tightened sudo undeclared-key guard', ()
   // A minimal config: Account is the target of ChargeRequest's list-only ref
   // (`ref: 'Account'`, no field named on Account), so the generator
   // synthesizes `from_ChargeRequest_account` on Account.
-  const config = {
-    db: { provider: 'sqlite', url: 'file:./dev.db' },
+  const config: OpenSaasConfig = {
+    db: { provider: 'postgresql' },
     lists: {
-      Account: { fields: { name: { type: 'text' } } },
+      Account: { fields: { name: text() } },
       ChargeRequest: {
         fields: {
-          kind: { type: 'text' },
-          account: { type: 'relationship', ref: 'Account' },
+          kind: text(),
+          account: relationship({ ref: 'Account' }),
         },
       },
     },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } as any
+  }
 
   it('passes a synthetic reverse-relation key through under sudo, when config/listName are supplied', async () => {
     const fieldConfigs = { name: { type: 'text' } }
@@ -1035,23 +1066,6 @@ describe('filterWritableFields — #978 tightened sudo undeclared-key guard', ()
       }),
     ).rejects.toThrow(/totallyBogusKey/)
   })
-
-  it('keeps the pre-#978 blanket sudo passthrough when config/listName are omitted', async () => {
-    // Pins the fallback direct unit tests above (e.g. "passes undeclared data
-    // keys through under sudo") rely on: with no config to resolve a synthetic
-    // key against, any undeclared key still passes through under sudo.
-    const fieldConfigs = { name: { type: 'text' } }
-    const data = { name: 'Acme', totallyBogusKey: 'value' }
-
-    const filtered = await filterWritableFields(data, fieldConfigs, 'update', {
-      session: null,
-      item: { id: 'a1' },
-      context: sudoContext(),
-      inputData: data,
-    })
-
-    expect(filtered).toHaveProperty('totallyBogusKey', 'value')
-  })
 })
 
 describe('the virtual-field write skip (issue #1531)', () => {
@@ -1063,6 +1077,7 @@ describe('the virtual-field write skip (issue #1531)', () => {
     const data = { title: 'Test', summary: 'ignored' }
 
     const filtered = await filterWritableFields(data, fieldConfigs, 'create', {
+      ...UNIT,
       session: null,
       context: sudoContext(),
       inputData: data,
@@ -1119,7 +1134,7 @@ describe('filterWritableFields — gates caller input, not hook output (issue #1
         { name: 'a', locked: 'server-set' },
         fieldConfigs,
         operation,
-        { session: null, context: nonSudoContext(), inputData: { name: 'a' } },
+        { ...UNIT, session: null, context: nonSudoContext(), inputData: { name: 'a' } },
       )
       expect(filtered).toEqual({ name: 'a', locked: 'server-set' })
     }
@@ -1128,6 +1143,7 @@ describe('filterWritableFields — gates caller input, not hook output (issue #1
   it('throws when the caller supplies the denied field', async () => {
     await expect(
       filterWritableFields({ locked: 'x' }, fieldConfigs, 'create', {
+        ...UNIT,
         session: null,
         context: nonSudoContext(),
         inputData: { locked: 'x' },
@@ -1138,6 +1154,7 @@ describe('filterWritableFields — gates caller input, not hook output (issue #1
   it('throws when the caller supplied the denied field and a hook removed it', async () => {
     await expect(
       filterWritableFields({ name: 'a' }, fieldConfigs, 'update', {
+        ...UNIT,
         session: null,
         context: nonSudoContext(),
         inputData: { name: 'a', locked: 'x' },
@@ -1147,23 +1164,25 @@ describe('filterWritableFields — gates caller input, not hook output (issue #1
 
   it('refuses a caller-supplied foreign key but persists a hook-set one', async () => {
     const rels = {
-      author: { type: 'relationship', ref: 'User.posts', access: { create: () => false } },
+      author: relationship({ ref: 'User.posts', access: { create: () => false } }),
     }
-    const config = {
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql' },
       lists: {
-        User: { fields: { posts: { type: 'relationship', ref: 'Post.author', many: true } } },
+        User: { fields: { posts: relationship({ ref: 'Post.author', many: true }) } },
         Post: { fields: rels },
       },
-    } as unknown as OpenSaasConfig
+    }
     const base = { session: null, context: nonSudoContext(), listName: 'Post', config }
     await expect(
       filterWritableFields({ authorId: 'u1' }, rels, 'create', {
+        ...UNIT,
         ...base,
         inputData: { authorId: 'u1' },
       }),
     ).rejects.toThrow(ValidationError)
     await expect(
-      filterWritableFields({ authorId: 'u1' }, rels, 'create', { ...base, inputData: {} }),
+      filterWritableFields({ authorId: 'u1' }, rels, 'create', { ...UNIT, ...base, inputData: {} }),
     ).resolves.toEqual({ authorId: 'u1' })
   })
 })
