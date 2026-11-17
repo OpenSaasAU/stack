@@ -41,6 +41,7 @@ export function validateExtensionPacks(config: OpenSaasConfig): ConfigRefusal[] 
           message:
             `List "${listKey}": fields.${fieldKey} cannot describe its contract column — ` +
             (error instanceof Error ? error.message : String(error)),
+          cause: error instanceof Error ? error : new Error(String(error), { cause: error }),
         })
         continue
       }

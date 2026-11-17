@@ -413,6 +413,7 @@ describe('Generate Command Integration', () => {
           message:
             'List "Article": fields.embedding cannot describe its contract column — ' +
             refusalMessage,
+          cause: new Error(refusalMessage),
         },
       ])
       expect(formatConfigRefusals(refusals)).toContain(refusalMessage)

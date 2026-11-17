@@ -266,7 +266,7 @@ function refuseUnsupportedProvider(config: OpenSaasConfig): ConfigRefusal[] {
   return refusals
 }
 
-function refuseNonPascalListKeys(config: OpenSaasConfig): ConfigRefusal[] {
+export function refuseNonPascalListKeys(config: OpenSaasConfig): ConfigRefusal[] {
   return Object.keys(config.lists)
     .filter((listKey) => IDENTIFIER.test(listKey) && !/^[A-Z][A-Za-z0-9]*$/.test(listKey))
     .map((listKey) => ({

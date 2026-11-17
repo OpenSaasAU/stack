@@ -434,6 +434,22 @@ describe('deriveContract — member collisions are refused as a backstop', () =>
       /List "Category": the back-relation synthesised for the list-only ref on "Post\.category" derives the contract member "from_Post_category", which fields\.from_Post_category already claims/,
     )
   })
+
+  test("a multi-column field's part collision is reported before a later part's nullability", () => {
+    const parts: BaseFieldConfig<TypeInfo> = {
+      type: 'parts',
+      getContractField: () => ({
+        kind: 'columns',
+        columns: [
+          { name: 'title', type: { pack: 'pg', type: 'text' }, nullable: true },
+          { name: 'parts_extra', type: { pack: 'pg', type: 'text' }, nullable: false },
+        ],
+      }),
+    }
+    expect(() => single({ A: { fields: { title: text(), parts } } })).toThrow(
+      /List "A": fields\.parts derives the contract member "title", which fields\.title already claims/,
+    )
+  })
 })
 
 describe('deriveContract — db.indexes resolution', () => {

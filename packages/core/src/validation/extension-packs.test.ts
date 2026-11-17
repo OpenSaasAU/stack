@@ -98,6 +98,55 @@ describe('validateExtensionPacks', () => {
     expect(validateDatabaseConfig(config).map((r) => r.reason)).toEqual(['field-descriptor-error'])
   })
 
+  it("keeps a descriptor's thrown Error as the refusal's cause", () => {
+    const failure = new Error('dimensions must be positive')
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql' },
+      lists: {
+        Doc: {
+          fields: {
+            vec: {
+              type: 'vector',
+              getContractField: () => {
+                throw failure
+              },
+            },
+          },
+        },
+      },
+    }
+    const [refusal] = validateExtensionPacks(config)
+    expect(refusal?.message).toBe(
+      'List "Doc": fields.vec cannot describe its contract column — dimensions must be positive',
+    )
+    expect(refusal?.cause).toBe(failure)
+  })
+
+  it('wraps a thrown non-Error in an Error that keeps the value as its cause', () => {
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql' },
+      lists: {
+        Doc: {
+          fields: {
+            vec: {
+              type: 'vector',
+              getContractField: () => {
+                throw 'dimensions must be positive'
+              },
+            },
+          },
+        },
+      },
+    }
+    const [refusal] = validateExtensionPacks(config)
+    expect(refusal?.message).toBe(
+      'List "Doc": fields.vec cannot describe its contract column — dimensions must be positive',
+    )
+    expect(refusal?.cause).toBeInstanceOf(Error)
+    expect(refusal?.cause?.message).toBe('dimensions must be positive')
+    expect(refusal?.cause?.cause).toBe('dimensions must be positive')
+  })
+
   it('is part of validateDatabaseConfig', () => {
     const config: OpenSaasConfig = {
       db: { provider: 'postgresql' },
