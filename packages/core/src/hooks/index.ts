@@ -522,7 +522,6 @@ export async function splitMultiColumnFields(
   inputData: Record<string, any>,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   resolvedData: Record<string, any>,
-  fields: Record<string, FieldConfig>,
   members: ListMembers,
   operation: 'create' | 'update',
   context: AccessContext,
@@ -530,6 +529,10 @@ export async function splitMultiColumnFields(
   item?: any,
 ): Promise<Record<string, unknown>> {
   let result = { ...resolvedData }
+  const fields: Record<string, FieldConfig> = {}
+  for (const member of members.members.values()) {
+    if (member.kind === 'field') fields[member.name] = member.field
+  }
 
   for (const member of members.members.values()) {
     if (member.kind !== 'field' || member.storage.kind !== 'columns') continue

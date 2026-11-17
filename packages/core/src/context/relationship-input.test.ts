@@ -72,8 +72,6 @@ describe('refuseNestedRelationInput', () => {
   })
 
   it('refuses a nested write on a synthetic reverse-relation key', () => {
-    // `from_Post_category` is undeclared by design — a sudo payload carries it
-    // past `filterWritableFields`, so the refusal has to recognise it too.
     expect(() =>
       refuseNestedRelationInput('Category', config, {
         name: 'c',

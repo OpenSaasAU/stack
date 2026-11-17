@@ -763,4 +763,35 @@ describe('the relationship table server actions over a real database', () => {
     },
     BOOT,
   )
+
+  test(
+    'linkRelated on a config generate refuses returns the refusal instead of throwing',
+    async () => {
+      const base = schemaConfig()
+      const refused: OpenSaasConfig = {
+        ...base,
+        lists: {
+          ...base.lists,
+          Category: {
+            ...base.lists.Category,
+            fields: { ...base.lists.Category.fields, owner: relationship({ ref: 'Missing' }) },
+          },
+        },
+      }
+      const authorId = await seedAuthor('ada')
+      const post = await harness.context.db.Post.create({ data: { title: 'story' } })
+
+      const result = await contextAt(refused, { userId: 'u1' }).serverAction({
+        listKey: 'Post',
+        action: 'linkRelated',
+        id: String(post?.id),
+        field: 'author',
+        parentId: authorId,
+      })
+
+      expect(result).toMatchObject({ linked: false })
+      expect(await storedLinks(harness.url)).toEqual([{ title: 'story', author: null }])
+    },
+    BOOT,
+  )
 })

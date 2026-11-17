@@ -1242,27 +1242,27 @@ export function getContext<TConfig extends OpenSaasConfig>(
     // update returns `null`, surfaced as `{ linked: false }` with a generic
     // reason.
     if (props.action === 'linkRelated') {
-      const backRef = classifyBackReference(props.listKey, props.field, config)
-      if (backRef.kind === 'notRelationship') {
-        return {
-          linked: false,
-          error: `Field "${props.field}" on list "${props.listKey}" is not a relationship field`,
-        }
-      }
-      if (backRef.kind === 'nonOwning') {
-        return {
-          linked: false,
-          error:
-            `Cannot link through "${props.field}": a non-owning back-reference owns no foreign key. ` +
-            `Link the parent from the side that holds the column.`,
-        }
-      }
-      const relatedId = parseId(props.listKey, props.id)
-      const parentId = parseId(backRef.relatedList, props.parentId)
-      if (relatedId === null || parentId === null) {
-        return { linked: false, error: 'Access denied or operation failed' }
-      }
       try {
+        const backRef = classifyBackReference(props.listKey, props.field, config)
+        if (backRef.kind === 'notRelationship') {
+          return {
+            linked: false,
+            error: `Field "${props.field}" on list "${props.listKey}" is not a relationship field`,
+          }
+        }
+        if (backRef.kind === 'nonOwning') {
+          return {
+            linked: false,
+            error:
+              `Cannot link through "${props.field}": a non-owning back-reference owns no foreign key. ` +
+              `Link the parent from the side that holds the column.`,
+          }
+        }
+        const relatedId = parseId(props.listKey, props.id)
+        const parentId = parseId(backRef.relatedList, props.parentId)
+        if (relatedId === null || parentId === null) {
+          return { linked: false, error: 'Access denied or operation failed' }
+        }
         const result = await model.update({
           where: { id: relatedId },
           data: { [props.field]: { connect: { id: parentId } } },

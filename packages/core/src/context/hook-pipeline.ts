@@ -135,7 +135,6 @@ async function runHookPipeline(args: HookPipelineArgs): Promise<HookPipelineResu
   const splitData = await splitMultiColumnFields(
     inputData,
     resolvedData,
-    listConfig.fields,
     resolveListMembers(config, listName),
     operation,
     context,

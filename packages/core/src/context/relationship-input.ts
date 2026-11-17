@@ -151,26 +151,6 @@ export class ConflictingRelationInputError extends Error {
   }
 }
 
-/**
- * Thrown when a `connect` names a list the config does not declare — the ref
- * and the config have drifted, which is a generation or wiring fault rather
- * than an access denial, so it is reported rather than folded into the silent
- * `null`.
- */
-export class RelationTargetMissingError extends Error {
-  constructor(
-    readonly listName: string,
-    readonly fieldKey: string,
-    readonly target: string,
-  ) {
-    super(
-      `Cannot write "${listName}" — "${fieldKey}" refs list "${target}", which the config does ` +
-        `not declare. Re-run \`opensaas generate\` so the emitted contract matches the config.`,
-    )
-    this.name = 'RelationTargetMissingError'
-  }
-}
-
 function quoteKinds(kinds: readonly string[]): string {
   return kinds.map((kind) => `\`${kind}\``).join(', ')
 }
@@ -406,15 +386,12 @@ export type RelationLowering =
  * through. A non-existent id folds into the same answer.
  */
 async function reachable(
-  listName: string,
-  fieldKey: string,
   target: string,
   id: string | number,
   args: LowerRelationInputArgs,
 ): Promise<boolean> {
   const { config, context, ormHandle, ops } = args
   const targetConfig = config.lists[target]
-  if (!targetConfig) throw new RelationTargetMissingError(listName, fieldKey, target)
 
   const scope: WherePlan[] = [identityPredicate(target, id)]
   if (context._isSudo !== true) {
@@ -481,7 +458,7 @@ export async function lowerRelationInput(args: LowerRelationInputArgs): Promise<
     if (key.kind !== 'owning' && key.kind !== 'foreignKey') continue
     const id = key.kind === 'owning' ? connectId(value) : foreignKeyIdOf(listName, key, value)
     if (id === undefined || id === null) continue
-    if (!(await reachable(listName, key.field, key.target, id, args))) {
+    if (!(await reachable(key.target, id, args))) {
       return { status: 'unreachable' }
     }
   }

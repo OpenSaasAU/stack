@@ -203,7 +203,6 @@ describe('multi-column write split (splitMultiColumnFields, AFTER validation —
     const result = await splitMultiColumnFields(
       inputData,
       { ...inputData },
-      fields,
       membersOf(fields),
       'create',
       makeContext(),
@@ -217,7 +216,6 @@ describe('multi-column write split (splitMultiColumnFields, AFTER validation —
     const result = await splitMultiColumnFields(
       inputData,
       { ...inputData },
-      fields,
       membersOf(fields),
       'update',
       makeContext(),
@@ -230,7 +228,6 @@ describe('multi-column write split (splitMultiColumnFields, AFTER validation —
     const result = await splitMultiColumnFields(
       inputData,
       { ...inputData },
-      { ...fields, title: text() },
       membersOf({ ...fields, title: text() }),
       'update',
       makeContext(),
@@ -244,7 +241,6 @@ describe('multi-column write split (splitMultiColumnFields, AFTER validation —
     const result = await splitMultiColumnFields(
       inputData,
       { ...inputData },
-      { ...fields, title: text() },
       membersOf({ ...fields, title: text() }),
       'update',
       makeContext(),
@@ -259,7 +255,6 @@ describe('multi-column write split (splitMultiColumnFields, AFTER validation —
     const result = await splitMultiColumnFields(
       inputData,
       { ...inputData },
-      fields,
       membersOf(fields),
       'create',
       makeContext(),
@@ -1108,7 +1103,6 @@ describe('multi-column write split respects field-level write access', () => {
       splitMultiColumnFields(
         inputData,
         { ...inputData },
-        fields,
         membersOf(fields),
         'update',
         makeContext(),
@@ -1123,7 +1117,6 @@ describe('multi-column write split respects field-level write access', () => {
       splitMultiColumnFields(
         inputData,
         { ...inputData },
-        fields,
         membersOf(fields),
         'create',
         makeContext(),
@@ -1136,7 +1129,6 @@ describe('multi-column write split respects field-level write access', () => {
     const result = await splitMultiColumnFields(
       {},
       { media: { url: 'https://x/y.jpg', size: 99 } },
-      fields,
       membersOf(fields),
       'create',
       makeContext(),
@@ -1150,7 +1142,6 @@ describe('multi-column write split respects field-level write access', () => {
     const result = await splitMultiColumnFields(
       inputData,
       { ...inputData },
-      fields,
       membersOf(fields),
       'update',
       makeContext(),
@@ -1166,7 +1157,6 @@ describe('multi-column write split respects field-level write access', () => {
     const result = await splitMultiColumnFields(
       inputData,
       { ...inputData },
-      fields,
       membersOf(fields),
       'create',
       makeContext(),
@@ -1180,7 +1170,6 @@ describe('multi-column write split respects field-level write access', () => {
     const result = await splitMultiColumnFields(
       inputData,
       { ...inputData },
-      fields,
       membersOf(fields),
       'update',
       makeContext({ isSudo: true }),
@@ -1194,7 +1183,6 @@ describe('multi-column write split respects field-level write access', () => {
     const result = await splitMultiColumnFields(
       inputData,
       { ...inputData },
-      fields,
       membersOf(fields),
       'update',
       makeContext(),
