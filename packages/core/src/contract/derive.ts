@@ -17,6 +17,7 @@ import {
   listMembersFromDescriptors,
   unhandledMember,
   type ListMember,
+  type ListMemberTable,
   type ListMembers,
 } from '../members/list-members.js'
 import { idColumn, pgType, resolveIdStrategy } from './strategy.js'
@@ -27,7 +28,6 @@ import type {
   ContractEnum,
   ContractIndex,
   ContractModel,
-  ContractRelation,
 } from './types.js'
 
 const DEFAULT_NAMESPACE = 'public'
@@ -184,7 +184,6 @@ type ModelDraft = {
   model: ContractModel
   /** Column name → the field-level `isIndexed` that already indexes it. */
   fieldLevelIndexes: Map<string, FieldLevelIndex>
-  settle: Array<(members: MemberTable) => void>
 }
 
 function readIsIndexed(field: FieldConfig): true | 'unique' | undefined {
@@ -275,6 +274,7 @@ function recordRelation(
   field: RelationshipField,
   descriptor: ContractRelationDescriptor,
   config: OpenSaasConfig,
+  members: MemberTable,
   draft: ModelDraft,
 ): void {
   const targetList = config.lists[descriptor.target]
@@ -298,42 +298,34 @@ function recordRelation(
       ...(field.db?.onDelete !== undefined ? { onDelete: field.db.onDelete } : {}),
       ...(field.db?.onUpdate !== undefined ? { onUpdate: field.db.onUpdate } : {}),
     })
-    const relation: ContractRelation = {
+    const oneToOne = isOneToOne(members, descriptor)
+    if (foreignKey.unique || foreignKey.index) {
+      const explicit = field.isIndexed === 'unique' || (field.isIndexed === true && !oneToOne)
+      draft.fieldLevelIndexes.set(foreignKey.name, {
+        fieldKey,
+        isIndexed: foreignKey.unique ? 'unique' : true,
+        implicit: !explicit,
+        ...(oneToOne ? { oneToOneWith: inverseKey } : {}),
+      })
+    }
+    draft.model.relations.push({
       name: fieldKey,
       target: descriptor.target,
       kind: 'belongsTo',
       column: foreignKey.name,
-      oneToOne: false,
+      oneToOne,
       synthetic: false,
-    }
-    draft.model.relations.push(relation)
-    draft.settle.push((members) => {
-      const oneToOne = isOneToOne(members, descriptor)
-      relation.oneToOne = oneToOne
-      if (foreignKey.unique || foreignKey.index) {
-        const explicit = field.isIndexed === 'unique' || (field.isIndexed === true && !oneToOne)
-        draft.fieldLevelIndexes.set(foreignKey.name, {
-          fieldKey,
-          isIndexed: foreignKey.unique ? 'unique' : true,
-          implicit: !explicit,
-          ...(oneToOne ? { oneToOneWith: inverseKey } : {}),
-        })
-      }
     })
     return
   }
 
-  const relation: ContractRelation = {
+  draft.model.relations.push({
     name: fieldKey,
     target: descriptor.target,
     kind: descriptor.many ? 'hasMany' : 'hasOne',
-    column: '',
+    column: inverseForeignKey(listKey, fieldKey, members, descriptor),
     oneToOne: !descriptor.many,
     synthetic: false,
-  }
-  draft.model.relations.push(relation)
-  draft.settle.push((members) => {
-    relation.column = inverseForeignKey(listKey, fieldKey, members, descriptor)
   })
 }
 
@@ -360,11 +352,6 @@ function resolveIndexColumn(
     default:
       return unhandledMember(member)
   }
-  if (member.field.virtual) {
-    throw new Error(
-      `${entry} on list "${listKey}" references virtual field "${fieldKey}", which has no database column`,
-    )
-  }
   const { storage } = member
   switch (storage.kind) {
     case 'relation':
@@ -383,8 +370,11 @@ function resolveIndexColumn(
       throw new Error(
         `${entry} on list "${listKey}" references field "${fieldKey}", which maps to more than one database column and cannot be used in a model-level index`,
       )
-    case 'column':
     case 'computed':
+      throw new Error(
+        `${entry} on list "${listKey}" references virtual field "${fieldKey}", which has no database column`,
+      )
+    case 'column':
       return fieldKey
   }
 }
@@ -654,6 +644,46 @@ function collectNamespaces(config: OpenSaasConfig, models: ContractModel[]): str
   return [...namespaces]
 }
 
+type DescribedFields = {
+  descriptors: Map<string, Map<string, ContractFieldDescriptor>>
+  failures: Map<string, Map<string, { error: unknown }>>
+}
+
+function describeContractFields(config: OpenSaasConfig): DescribedFields {
+  const described: DescribedFields = { descriptors: new Map(), failures: new Map() }
+  for (const [listKey, listConfig] of Object.entries(config.lists)) {
+    const descriptors = new Map<string, ContractFieldDescriptor>()
+    const failures = new Map<string, { error: unknown }>()
+    for (const [fieldKey, field] of Object.entries(listConfig.fields)) {
+      if (field.virtual) {
+        descriptors.set(fieldKey, { kind: 'computed' })
+        continue
+      }
+      if (!field.getContractField) {
+        failures.set(fieldKey, {
+          error: new Error(
+            `Field "${listKey}.${fieldKey}" (type "${field.type}") does not implement getContractField, so its contract contribution is unknown`,
+          ),
+        })
+        continue
+      }
+      try {
+        descriptors.set(fieldKey, field.getContractField(fieldKey, listKey, config))
+      } catch (error) {
+        failures.set(fieldKey, { error })
+      }
+    }
+    described.descriptors.set(listKey, descriptors)
+    described.failures.set(listKey, failures)
+  }
+  return described
+}
+
+/** The List member table contract derivation reads its names from, refusing nothing. */
+export function deriveListMemberTable(config: OpenSaasConfig): ListMemberTable {
+  return listMembersFromDescriptors(config, describeContractFields(config).descriptors)
+}
+
 /**
  * Derive the contract data a config describes (ADR-0057): one model per list
  * with its id by strategy, stored columns from each field builder's structured
@@ -694,7 +724,9 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
   const extensions = dedupeExtensions(config.db.extensions ?? [])
   const timestampDefault = resolveTimestampDefault(config)
   const drafts = new Map<string, ModelDraft>()
-  const descriptors = new Map<string, ContractFieldDescriptor>()
+  const described = describeContractFields(config)
+  const table = listMembersFromDescriptors(config, described.descriptors)
+  const members = table.lists
   const draftOf = (listKey: string): ModelDraft => {
     const draft = drafts.get(listKey)
     if (draft === undefined) throw new Error(`List "${listKey}" has no model draft`)
@@ -702,6 +734,7 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
   }
 
   walkContractMembers(config, {
+    synthetics: table.syntheticClaims,
     startList: (listKey, listConfig, timestamps) => {
       drafts.set(listKey, {
         model: {
@@ -722,19 +755,13 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
             : {}),
         },
         fieldLevelIndexes: new Map(),
-        settle: [],
       })
     },
     describe: (listKey, fieldKey, field) => {
       if (field.virtual) return undefined
-      if (!field.getContractField) {
-        throw new Error(
-          `Field "${listKey}.${fieldKey}" (type "${field.type}") does not implement getContractField, so its contract contribution is unknown`,
-        )
-      }
-      const descriptor = field.getContractField(fieldKey, listKey, config)
-      descriptors.set(`${listKey}.${fieldKey}`, descriptor)
-      return descriptor
+      const failure = described.failures.get(listKey)?.get(fieldKey)
+      if (failure !== undefined) throw failure.error
+      return described.descriptors.get(listKey)?.get(fieldKey)
     },
     beforeClaim: (listKey, fieldKey, field, descriptor) => {
       if (descriptor.kind !== 'relation') return
@@ -777,8 +804,18 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
         }
       }
       if (descriptor.kind === 'relation' && isRelationshipField(field)) {
-        recordRelation(listKey, fieldKey, field, descriptor, config, draft)
+        recordRelation(listKey, fieldKey, field, descriptor, config, members, draft)
       }
+    },
+    endList: (listKey, listConfig) => {
+      const draft = draftOf(listKey)
+      draft.model.indexes = deriveIndexes(members, listKey, listConfig, draft)
+      if (config.db.indexNaming !== undefined && config.db.indexNaming !== 'prisma7') {
+        throw new Error(
+          `db.indexNaming must be 'prisma7', received ${JSON.stringify(config.db.indexNaming)}`,
+        )
+      }
+      if (config.db.indexNaming === 'prisma7') applyPrisma7Names(draft.model)
     },
     afterSyntheticClaim: (target, synthetic) => {
       draftOf(target).model.relations.push({
@@ -791,21 +828,6 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
       })
     },
   })
-
-  const members = listMembersFromDescriptors(
-    config,
-    (listKey, fieldKey) => descriptors.get(`${listKey}.${fieldKey}`) ?? { kind: 'computed' },
-  )
-  for (const [listKey, draft] of drafts) {
-    for (const settle of draft.settle) settle(members)
-    draft.model.indexes = deriveIndexes(members, listKey, config.lists[listKey], draft)
-    if (config.db.indexNaming !== undefined && config.db.indexNaming !== 'prisma7') {
-      throw new Error(
-        `db.indexNaming must be 'prisma7', received ${JSON.stringify(config.db.indexNaming)}`,
-      )
-    }
-    if (config.db.indexNaming === 'prisma7') applyPrisma7Names(draft.model)
-  }
 
   for (const [listKey, draft] of drafts) {
     const composite = deriveCompositeForeignKeys(listKey, config, drafts, members)

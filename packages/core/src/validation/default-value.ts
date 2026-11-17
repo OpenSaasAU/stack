@@ -1,5 +1,6 @@
 import { isNowSentinel } from '../context/apply-defaults.js'
-import type { ContractFieldDescriptor, OpenSaasConfig } from '../config/types.js'
+import { readContractDescriptor } from '../config/field-kind.js'
+import type { OpenSaasConfig } from '../config/types.js'
 import { isRelationshipField } from '../fields/index.js'
 import type { ConfigRefusal } from './config-refusal.js'
 
@@ -43,13 +44,8 @@ export function validateDefaultValues(config: OpenSaasConfig): ConfigRefusal[] {
       if (isNowSentinel(field.defaultValue)) continue
       if (!field.getZodSchema) continue
 
-      let descriptor: ContractFieldDescriptor
-      try {
-        descriptor = field.getContractField(fieldKey, listKey, config)
-      } catch {
-        continue
-      }
-      if (descriptor.kind !== 'column' || descriptor.default === undefined) continue
+      const descriptor = readContractDescriptor(field, fieldKey, listKey, config)
+      if (descriptor?.kind !== 'column' || descriptor.default === undefined) continue
 
       const result = field.getZodSchema(fieldKey, 'create').safeParse(field.defaultValue)
       if (result.success) continue

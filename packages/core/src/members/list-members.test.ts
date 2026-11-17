@@ -7,18 +7,13 @@ import { afterAll, describe, expect, it } from 'vitest'
 import ts from 'typescript'
 import { z } from 'zod'
 import type { ContractFieldDescriptor, FieldConfig, OpenSaasConfig } from '../config/types.js'
-import { deriveContract } from '../contract/derive.js'
+import { deriveContract, deriveListMemberTable } from '../contract/derive.js'
 import { relationship, text, timestamp, virtual } from '../fields/index.js'
 import { validateConfigFields } from '../validation/field-config.js'
 import { validateDatabaseConfig } from '../validation/database-config.js'
 import { validateRelations } from '../validation/relations.js'
 import type { ConfigRefusalReason } from '../validation/config-refusal.js'
-import {
-  listMembersFromDescriptors,
-  resolveListMember,
-  resolveListMembers,
-  type ListMember,
-} from './list-members.js'
+import { resolveListMember, resolveListMembers, type ListMember } from './list-members.js'
 
 type Part = { name: string; map?: string }
 
@@ -479,13 +474,9 @@ describe('resolveListMembers', () => {
     expect(() => resolveListMembers(config, 'Nope')).toThrow('List "Nope" is not in the config')
   })
 
-  it('is the table contract derivation builds from the descriptors it already holds', () => {
+  it('is the table contract derivation reads its names from', () => {
     const own = fixture()
-    const derived = listMembersFromDescriptors(own, (listKey, fieldKey, field) =>
-      field.virtual || !field.getContractField
-        ? { kind: 'computed' }
-        : field.getContractField(fieldKey, listKey, own),
-    )
+    const derived = deriveListMemberTable(own).lists
     expect([...derived.keys()]).toEqual(Object.keys(own.lists))
     for (const [listKey, members] of derived) {
       expect(members).toEqual(resolveListMembers(own, listKey))

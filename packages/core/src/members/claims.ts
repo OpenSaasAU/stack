@@ -124,7 +124,9 @@ export interface ContractMemberWalk {
     field: FieldConfig,
     descriptor: ContractFieldDescriptor,
   ): void
+  endList?(listKey: string, listConfig: ListConfig<TypeInfo>): void
   afterSyntheticClaim?(target: string, synthetic: SyntheticBackRelationClaim): void
+  readonly synthetics?: ReadonlyMap<string, readonly SyntheticBackRelationClaim[]>
 }
 
 type ListWalk = {
@@ -176,7 +178,7 @@ function walkField(
 
 export function walkContractMembers(config: OpenSaasConfig, walk: ContractMemberWalk): void {
   const lists = new Map<string, ListWalk>()
-  const synthetics = new Map<string, SyntheticBackRelationClaim[]>()
+  const collected = new Map<string, SyntheticBackRelationClaim[]>()
 
   for (const [listKey, listConfig] of Object.entries(config.lists)) {
     const timestamps = resolveListTimestamps(listConfig, config.db)
@@ -188,23 +190,25 @@ export function walkContractMembers(config: OpenSaasConfig, walk: ContractMember
       if (descriptor === undefined) continue
       walkField(walk, listKey, list, fieldKey, field, descriptor)
       if (
+        walk.synthetics === undefined &&
         descriptor.kind === 'relation' &&
         descriptor.inverse.synthetic &&
         descriptor.foreignKey !== undefined
       ) {
-        const entries = synthetics.get(descriptor.target) ?? []
+        const entries = collected.get(descriptor.target) ?? []
         entries.push({
           name: descriptor.inverse.field,
           sourceList: listKey,
           sourceField: fieldKey,
           foreignKey: descriptor.foreignKey.name,
         })
-        synthetics.set(descriptor.target, entries)
+        collected.set(descriptor.target, entries)
       }
     }
+    walk.endList?.(listKey, listConfig)
   }
 
-  for (const [target, entries] of synthetics) {
+  for (const [target, entries] of walk.synthetics ?? collected) {
     const list = lists.get(target)
     if (list === undefined) {
       throw new MemberClaimRefusal(

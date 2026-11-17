@@ -13,6 +13,7 @@ import {
   MemberClaimRefusal,
   systemFieldsOf,
   walkContractMembers,
+  type SyntheticBackRelationClaim,
   type SystemFieldName,
 } from './claims.js'
 
@@ -92,12 +93,44 @@ const NAME_RELATION_REFUSALS: ReadonlySet<ConfigRefusalReason> = new Set([
 
 type SyntheticEntry = { name: string; sourceList: string; sourceField: string }
 
-/** What `field` contributes to the contract, as the member table reads it. */
-export type DescribeContractField = (
+type DescribeContractField = (
   listKey: string,
   fieldKey: string,
   field: FieldConfig,
 ) => ContractFieldDescriptor
+
+export type ContractFieldDescriptors = ReadonlyMap<
+  string,
+  ReadonlyMap<string, ContractFieldDescriptor>
+>
+
+export interface ListMemberTable {
+  readonly lists: ReadonlyMap<string, ListMembers>
+  readonly syntheticClaims: ReadonlyMap<string, readonly SyntheticBackRelationClaim[]>
+}
+
+type Synthetics = {
+  entries: Map<string, SyntheticEntry[]>
+  claims: Map<string, SyntheticBackRelationClaim[]>
+}
+
+function collectSynthetics(
+  described: Iterable<[sourceList: string, sourceField: string, ContractFieldDescriptor]>,
+): Synthetics {
+  const synthetics: Synthetics = { entries: new Map(), claims: new Map() }
+  for (const [sourceList, sourceField, descriptor] of described) {
+    if (descriptor.kind !== 'relation' || !descriptor.inverse.synthetic) continue
+    const name = descriptor.inverse.field
+    const entries = synthetics.entries.get(descriptor.target) ?? []
+    entries.push({ name, sourceList, sourceField })
+    synthetics.entries.set(descriptor.target, entries)
+    if (descriptor.foreignKey === undefined) continue
+    const claims = synthetics.claims.get(descriptor.target) ?? []
+    claims.push({ name, sourceList, sourceField, foreignKey: descriptor.foreignKey.name })
+    synthetics.claims.set(descriptor.target, claims)
+  }
+  return synthetics
+}
 
 type ConfigState = {
   refusal: Error | undefined
@@ -166,30 +199,22 @@ function describe(
   return descriptor
 }
 
-function syntheticsByTarget(
+function* describeAll(
   config: OpenSaasConfig,
-  describeField: DescribeContractField,
-): Map<string, SyntheticEntry[]> {
-  const byTarget = new Map<string, SyntheticEntry[]>()
-  for (const [sourceList, listConfig] of Object.entries(config.lists)) {
-    for (const [sourceField, field] of Object.entries(listConfig.fields)) {
-      const descriptor = describeField(sourceList, sourceField, field)
-      if (descriptor.kind !== 'relation' || !descriptor.inverse.synthetic) continue
-      const entries = byTarget.get(descriptor.target) ?? []
-      entries.push({ name: descriptor.inverse.field, sourceList, sourceField })
-      byTarget.set(descriptor.target, entries)
+  state: ConfigState,
+): Generator<[string, string, ContractFieldDescriptor]> {
+  for (const [listKey, listConfig] of Object.entries(config.lists)) {
+    for (const [fieldKey, field] of Object.entries(listConfig.fields)) {
+      yield [listKey, fieldKey, describe(config, state, listKey, fieldKey, field)]
     }
   }
-  return byTarget
 }
 
 function syntheticsOf(
   config: OpenSaasConfig,
   state: ConfigState,
 ): ReadonlyMap<string, readonly SyntheticEntry[]> {
-  state.synthetics ??= syntheticsByTarget(config, (listKey, fieldKey, field) =>
-    describe(config, state, listKey, fieldKey, field),
-  )
+  state.synthetics ??= collectSynthetics(describeAll(config, state)).entries
   return state.synthetics
 }
 
@@ -319,22 +344,31 @@ export function resolveListMembers(config: OpenSaasConfig, listKey: string): Lis
   return built
 }
 
-/**
- * Every list's List members, built from descriptors the caller already holds
- * rather than resolved and gated. Contract derivation reads its names from
- * this, so it and {@link resolveListMembers} are one table.
- */
+/** Every list's List members, built ungated from descriptors already read. A field with none stores nothing. */
 export function listMembersFromDescriptors(
   config: OpenSaasConfig,
-  describeField: DescribeContractField,
-): ReadonlyMap<string, ListMembers> {
-  const synthetics = syntheticsByTarget(config, describeField)
-  return new Map(
-    Object.keys(config.lists).map((listKey) => [
-      listKey,
-      buildListMembers(config, listKey, describeField, synthetics),
-    ]),
+  descriptors: ContractFieldDescriptors,
+): ListMemberTable {
+  const describeField: DescribeContractField = (listKey, fieldKey) =>
+    descriptors.get(listKey)?.get(fieldKey) ?? { kind: 'computed' }
+  const synthetics = collectSynthetics(
+    [...descriptors].flatMap(([listKey, fields]) =>
+      [...fields].map(([fieldKey, descriptor]): [string, string, ContractFieldDescriptor] => [
+        listKey,
+        fieldKey,
+        descriptor,
+      ]),
+    ),
   )
+  return {
+    lists: new Map(
+      Object.keys(config.lists).map((listKey) => [
+        listKey,
+        buildListMembers(config, listKey, describeField, synthetics.entries),
+      ]),
+    ),
+    syntheticClaims: synthetics.claims,
+  }
 }
 
 /** The `default` branch of a position's exhaustive choice over a member's kind. */

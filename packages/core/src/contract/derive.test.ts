@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest'
+import { z } from 'zod'
 import type { BaseFieldConfig, OpenSaasConfig, TypeInfo } from '../config/types.js'
 import {
   decimal,
@@ -431,6 +432,46 @@ describe('deriveContract — names from the List member table', () => {
         synthetic: false,
       },
     ])
+  })
+})
+
+describe('deriveContract — refusal order', () => {
+  test("an early list's db.indexes refusal comes before a later list's member collision", () => {
+    expect(() =>
+      single({
+        A: { fields: { title: text() }, db: { indexes: [{ fields: ['nope'] }] } },
+        Post: { fields: { author: relationship({ ref: 'User' }), authorId: text() } },
+        User: { fields: { name: text() } },
+      }),
+    ).toThrow('Model-level index db.indexes[0] on list "A" references unknown field "nope"')
+  })
+
+  test("an early list's db.indexes refusal comes before a later synthetic claim's collision", () => {
+    expect(() =>
+      single({
+        A: { fields: { title: text() }, db: { indexes: [{ fields: ['nope'] }] } },
+        Post: { fields: { category: relationship({ ref: 'Category' }) } },
+        Category: { fields: { from_Post_category: text() } },
+      }),
+    ).toThrow('Model-level index db.indexes[0] on list "A" references unknown field "nope"')
+  })
+})
+
+describe('deriveContract — a stored-nothing field in db.indexes', () => {
+  test('a computed descriptor without the virtual flag is refused by name', () => {
+    const computed: BaseFieldConfig<TypeInfo> = {
+      type: 'calc',
+      outputType: 'string',
+      getZodSchema: () => z.string().optional(),
+      getContractField: () => ({ kind: 'computed' }),
+    }
+    expect(() =>
+      single({
+        A: { fields: { title: text(), calc: computed }, db: { indexes: [{ fields: ['calc'] }] } },
+      }),
+    ).toThrow(
+      'Model-level index db.indexes[0] on list "A" references virtual field "calc", which has no database column',
+    )
   })
 })
 
