@@ -343,6 +343,20 @@ describe('a hook asking after the write that promoted the role', () => {
   )
 
   test(
+    'a delete’s afterOperation sees the revocation its own beforeOperation could not',
+    async () => {
+      const { id, session } = await newMember('admin')
+      const context = database.context(session)
+
+      watching = true
+      expect(await context.db.Member.delete({ where: { id } })).not.toBeNull()
+      watching = false
+      expect(seen).toEqual(['allow', 'deny'])
+    },
+    BOOT,
+  )
+
+  test(
     'afterTransaction of a root write sees it through the context the write was issued with',
     async () => {
       const { id, session } = await newMember('member')
