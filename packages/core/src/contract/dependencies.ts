@@ -1,8 +1,7 @@
-import type { ListConfig, OpenSaasConfig, TypeInfo } from '../config/types.js'
-import { isRelationshipField, shouldHaveForeignKey } from '../fields/index.js'
+import type { OpenSaasConfig } from '../config/types.js'
+import { isRelationshipField } from '../fields/index.js'
 import { unhandledMember, type ListMembers } from '../members/list-members.js'
 import { deriveListMemberTable } from './derive.js'
-import { resolveListTimestamps } from './strategy.js'
 import type { ContractData, ContractModel } from './types.js'
 
 /**
@@ -115,41 +114,27 @@ function makeObjectName(name: string, label: string): string {
   return `${clipToBytes(name, available)}_${label}`
 }
 
-function foreignKeyColumnName(fieldKey: string): string {
-  return `${fieldKey}Id`
-}
-
-/**
- * A relationship field's foreign-key column, or `undefined` where the other
- * side owns it. An unresolvable `ref` is `validateRelations`' finding, so it
- * counts as no column here rather than throwing out of the table.
- */
-function ownedForeignKeyColumn(
-  config: OpenSaasConfig,
-  listKey: string,
+function foreignKeyMemberColumn(
+  members: ListMembers | undefined,
   fieldKey: string,
-  field: ListConfig<TypeInfo>['fields'][string],
 ): string | undefined {
-  if (!isRelationshipField(field)) return undefined
-  try {
-    return shouldHaveForeignKey(listKey, fieldKey, field, config)
-      ? foreignKeyColumnName(fieldKey)
-      : undefined
-  } catch {
-    return undefined
-  }
+  const member = members?.members.get(fieldKey)
+  if (member?.kind !== 'field' || member.storage.kind !== 'relation') return undefined
+  return member.storage.foreignKey?.name
 }
 
-function systemFieldsOf(config: OpenSaasConfig, listConfig: ListConfig<TypeInfo>): string[] {
-  // `resolveListTimestamps` reads `listConfig.fields` directly, so a raw config
-  // that omits it entirely throws — and this runs per read, not only at
-  // generation.
-  const fields = listConfig.fields ?? {}
-  const timestamps = resolveListTimestamps({ ...listConfig, fields }, config.db)
-  const names = ['id']
-  if (timestamps.createdAt) names.push('createdAt')
-  if (timestamps.updatedAt) names.push('updatedAt')
-  return names
+function withFieldsOnEveryList(config: OpenSaasConfig): OpenSaasConfig {
+  const lists = Object.entries(config.lists)
+  if (lists.every(([, listConfig]) => listConfig.fields !== undefined)) return config
+  return {
+    ...config,
+    lists: Object.fromEntries(
+      lists.map(([listKey, listConfig]) => [
+        listKey,
+        { ...listConfig, fields: listConfig.fields ?? {} },
+      ]),
+    ),
+  }
 }
 
 /**
@@ -164,10 +149,12 @@ function systemFieldsOf(config: OpenSaasConfig, listConfig: ListConfig<TypeInfo>
  */
 export function deriveDependencyTable(config: OpenSaasConfig): DependencyTable {
   const table: DependencyTable = {}
+  const fielded = withFieldsOnEveryList(config)
+  const members = deriveListMemberTable(fielded)
 
-  for (const listKey of Object.keys(config.lists).sort()) {
-    const listConfig = config.lists[listKey]
-    const fieldConfigs = listConfig?.fields ?? {}
+  for (const listKey of Object.keys(fielded.lists).sort()) {
+    const listMembers = members.lists.get(listKey)
+    const fieldConfigs = fielded.lists[listKey].fields
     const fields: Record<string, FieldDependencySet> = {}
 
     for (const fieldKey of Object.keys(fieldConfigs).sort()) {
@@ -181,7 +168,7 @@ export function deriveDependencyTable(config: OpenSaasConfig): DependencyTable {
         const dependency = fieldConfigs[name]
         if (dependency && isRelationshipField(dependency)) {
           relations.add(name)
-          const column = ownedForeignKeyColumn(config, listKey, name, dependency)
+          const column = foreignKeyMemberColumn(listMembers, name)
           if (column) columns.add(column)
           continue
         }
@@ -196,7 +183,7 @@ export function deriveDependencyTable(config: OpenSaasConfig): DependencyTable {
     }
 
     table[listKey] = {
-      systemFields: systemFieldsOf(config, listConfig ?? { fields: {} }),
+      systemFields: [...(listMembers?.systemFields ?? ['id'])],
       fields,
     }
   }

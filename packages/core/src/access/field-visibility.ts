@@ -24,7 +24,7 @@ import {
 // `resolveOutput` hook actually runs (never during module evaluation), so by
 // the time it runs the export is fully initialised.
 import { buildDbDelegate } from '../context/index.js'
-import { resolveListMembers } from '../members/list-members.js'
+import { partColumnsOf, resolveListMembers } from '../members/list-members.js'
 import type { FieldDependencySet } from '../contract/dependencies.js'
 
 /**
@@ -237,10 +237,11 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
   // (the raw per-part columns never leak). The assembled value then flows
   // through the normal read-access + resolveOutput path under the field's own
   // key. See ADR-0006.
+  const listMembers = config && listKey ? resolveListMembers(config, listKey) : undefined
   const workingItem: Record<string, unknown> = { ...item }
   for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
-    if (!fieldConfig.assembleColumns || !fieldConfig.getColumnNames) continue
-    const columnNames = fieldConfig.getColumnNames(fieldName)
+    const columnNames = listMembers && partColumnsOf(listMembers, fieldName)
+    if (!fieldConfig.assembleColumns || !columnNames) continue
     // Only assemble when the raw columns are present in the row (i.e. they were
     // selected); otherwise leave the field absent from the result.
     const hasAnyColumn = columnNames.some((name) => name in workingItem)
@@ -257,9 +258,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
   const declaredDependencies: Readonly<Record<string, FieldDependencySet>> =
     config && listKey ? getListDependencies(config, listKey).fields : {}
   const systemFields = new Set<string>(
-    config && listKey
-      ? resolveListMembers(config, listKey).systemFields
-      : ['id', 'createdAt', 'updatedAt'],
+    listMembers ? listMembers.systemFields : ['id', 'createdAt', 'updatedAt'],
   )
 
   /**

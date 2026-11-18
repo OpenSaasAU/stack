@@ -48,35 +48,104 @@ describe('deriveDependencyTable', () => {
       lists: {
         Order: {
           fields: {
-            lineItems: { type: 'relationship', ref: 'LineItem.order', many: true },
-            total: {
-              type: 'virtual',
-              virtual: true,
+            lineItems: relationship({ ref: 'LineItem.order', many: true }),
+            total: virtual({
+              type: 'number',
               needs: ['lineItems'],
               hooks: { resolveOutput: () => 0 },
-            },
+            }),
           },
         },
         LineItem: {
           fields: {
-            order: { type: 'relationship', ref: 'Order.lineItems' },
-            label: {
-              type: 'virtual',
-              virtual: true,
+            order: relationship({ ref: 'Order.lineItems' }),
+            label: virtual({
+              type: 'string',
               needs: ['order'],
               hooks: { resolveOutput: () => '' },
-            },
+            }),
           },
         },
       },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- a minimal config, not a builder-produced one
-    } as any
+    }
 
     const table = deriveDependencyTable(config)
     // The to-many side owns no column, so declaring it implies none.
     expect(table.Order.fields.total).toEqual({ columns: [], relations: ['lineItems'] })
     // The to-one side owns `orderId`, so declaring the relation carries it.
     expect(table.LineItem.fields.label).toEqual({ columns: ['orderId'], relations: ['order'] })
+  })
+
+  it('carries the owning side of a one-to-one, and a renamed column under its model field name', () => {
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql' },
+      lists: {
+        Passport: {
+          fields: {
+            holder: relationship({
+              ref: 'Person.passport',
+              db: { foreignKey: { map: 'holder_fk' } },
+            }),
+            label: virtual({
+              type: 'string',
+              needs: ['holder'],
+              hooks: { resolveOutput: () => '' },
+            }),
+          },
+        },
+        Person: {
+          fields: {
+            passport: relationship({ ref: 'Passport.holder' }),
+            label: virtual({
+              type: 'string',
+              needs: ['passport'],
+              hooks: { resolveOutput: () => '' },
+            }),
+          },
+        },
+      },
+    }
+
+    const table = deriveDependencyTable(config)
+    expect(table.Passport.fields.label).toEqual({ columns: ['holderId'], relations: ['holder'] })
+    expect(table.Person.fields.label).toEqual({ columns: [], relations: ['passport'] })
+  })
+
+  it('carries no column, and does not throw, for a relation generate refuses', () => {
+    const refused: OpenSaasConfig = {
+      db: { provider: 'postgresql', timestamps: true },
+      lists: {
+        Order: {
+          fields: {
+            customer: relationship({ ref: 'Missing.orders' }),
+            both: relationship({ ref: 'Order.other', db: { foreignKey: true } }),
+            other: relationship({ ref: 'Order.both', db: { foreignKey: true } }),
+            label: virtual({
+              type: 'string',
+              needs: ['customer', 'both', 'other'],
+              hooks: { resolveOutput: () => '' },
+            }),
+          },
+        },
+        lowercase: { fields: { name: text() } },
+      },
+    }
+
+    const table = deriveDependencyTable(refused)
+    expect(table.Order.fields.label).toEqual({
+      columns: [],
+      relations: ['both', 'customer', 'other'],
+    })
+    expect(table.Order.systemFields).toEqual(['id', 'createdAt', 'updatedAt'])
+    expect(table.lowercase.systemFields).toEqual(['id', 'createdAt', 'updatedAt'])
+  })
+
+  it('takes a declared timestamp field out of the system fields', () => {
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql', timestamps: true },
+      lists: { Doc: { fields: { createdAt: text() } } },
+    }
+    expect(deriveDependencyTable(config).Doc.systemFields).toEqual(['id', 'updatedAt'])
   })
 
   it('is deterministic: lists, fields and set members come back sorted', () => {

@@ -86,6 +86,10 @@ function makeContext(overrides: { isSudo?: boolean } = {}): AccessContext {
 
 describe('multi-column read assembly (filterReadableFields)', () => {
   const fields = { media: multiColumnField() }
+  const config: OpenSaasConfig = {
+    db: { provider: 'postgresql' },
+    lists: { Post: { fields: { ...fields, title: text() } } },
+  }
 
   it('assembles the per-part columns into the logical field and strips the raw columns', async () => {
     const row = { id: 'a', m_url: 'https://x/y.jpg', m_size: 99, title: 'hi' }
@@ -94,7 +98,7 @@ describe('multi-column read assembly (filterReadableFields)', () => {
       // title is a plain field
       { ...fields, title: text() },
       { session: null, context: makeContext() },
-      undefined,
+      config,
       0,
       'Post',
     )
@@ -110,7 +114,7 @@ describe('multi-column read assembly (filterReadableFields)', () => {
       row,
       fields,
       { session: null, context: makeContext() },
-      undefined,
+      config,
       0,
       'Post',
     )
@@ -123,7 +127,7 @@ describe('multi-column read assembly (filterReadableFields)', () => {
       row,
       fields,
       { session: null, context: makeContext() },
-      undefined,
+      config,
       0,
       'Post',
     )
@@ -136,12 +140,31 @@ describe('multi-column read assembly (filterReadableFields)', () => {
       row,
       { ...fields, title: text() },
       { session: null, context: makeContext() },
-      undefined,
+      config,
       0,
       'Post',
     )
     expect(result).toEqual({ id: 'd', title: 'no media columns' })
     expect('media' in result).toBe(false)
+  })
+})
+
+describe('multi-column read assembly reads its part columns from the contract descriptor', () => {
+  it('assembles a columns field that implements no getColumnNames', async () => {
+    const { getColumnNames: _omitted, ...media } = multiColumnField()
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql' },
+      lists: { Post: { fields: { media } } },
+    }
+    const result = await filterReadableFields(
+      { id: 'e', m_url: 'https://x/z.jpg', m_size: 7 },
+      config.lists.Post.fields,
+      { session: null, context: makeContext() },
+      config,
+      0,
+      'Post',
+    )
+    expect(result).toEqual({ id: 'e', media: { url: 'https://x/z.jpg', size: 7 } })
   })
 })
 

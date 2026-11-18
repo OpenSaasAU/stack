@@ -1,6 +1,7 @@
 import type { AccessContext } from '../access/types.js'
 import { controlFlowPredicateOf, rethrowControlFlow } from '../access/decide-advertisement.js'
 import type { AggregateBuild } from '../secured/aggregate.js'
+import { resolveListMembers } from '../members/list-members.js'
 import type { ListConfig, OpenSaasConfig, TypeInfo } from './types.js'
 
 /**
@@ -37,7 +38,7 @@ export async function resolveNavCounts(
     const listConfig = lists[listKey] as ListConfig<TypeInfo> | undefined
     if (!listConfig) return false
     if (listConfig.ui?.navCount !== true) return false
-    return !listConfig.isSingleton
+    return !resolveListMembers(config, listKey).singleton
   })
 
   await Promise.all(

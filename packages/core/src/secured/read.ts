@@ -83,6 +83,7 @@ import {
   type RowLockLane,
 } from './lock.js'
 import { ValidationError } from '../hooks/index.js'
+import { partColumnsOf, resolveListMembers, type ListMembers } from '../members/list-members.js'
 
 export { AccessFilterRecursionError, ACCESS_FILTER_MAX_DEPTH } from './vocabulary.js'
 export { NEAREST_DEFAULT_LIMIT } from './vocabulary.js'
@@ -916,11 +917,15 @@ function relatedResolveContext(
   }
 }
 
-function assembleColumnFields(row: OrmRow, fieldConfigs: ListConfig<TypeInfo>['fields']): OrmRow {
+function assembleColumnFields(
+  row: OrmRow,
+  fieldConfigs: ListConfig<TypeInfo>['fields'],
+  members: ListMembers,
+): OrmRow {
   const assembled: OrmRow = { ...row }
   for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
-    if (!fieldConfig.assembleColumns || !fieldConfig.getColumnNames) continue
-    const columnNames = fieldConfig.getColumnNames(fieldName)
+    const columnNames = partColumnsOf(members, fieldName)
+    if (!fieldConfig.assembleColumns || !columnNames) continue
     if (!columnNames.some((name) => name in assembled)) continue
     const value = fieldConfig.assembleColumns(fieldName, assembled)
     for (const name of columnNames) delete assembled[name]
@@ -998,12 +1003,13 @@ async function narrowUnincludedForeignKeys(
   )
 
   const owners = foreignKeyOwningRelations(ctx)
+  const members = owners.length === 0 ? undefined : resolveListMembers(binding.config, listName)
   const ruleRows =
-    owners.length === 0
+    members === undefined
       ? []
       : rawRows.map((row) =>
           ruleRowOf(
-            assembleColumnFields(maskReductions(row, resolvedIncludes), listConfig.fields),
+            assembleColumnFields(maskReductions(row, resolvedIncludes), listConfig.fields, members),
             ruleViews,
             listConfig.fields,
             binding.config,

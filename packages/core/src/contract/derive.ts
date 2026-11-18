@@ -743,7 +743,7 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
           ...(listConfig.db?.schema !== undefined && listConfig.db.schema !== DEFAULT_NAMESPACE
             ? { namespace: listConfig.db.schema }
             : {}),
-          singleton: listConfig.isSingleton !== undefined && listConfig.isSingleton !== false,
+          singleton: members.get(listKey)?.singleton === true,
           id: idColumn(resolveIdStrategy(listConfig, config)),
           columns: [],
           foreignKeys: [],

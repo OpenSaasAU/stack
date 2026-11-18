@@ -381,6 +381,16 @@ export function listMembersFromDescriptors(
   }
 }
 
+/** The model field names `fieldKey` stores its value across, or `undefined` unless it is a `columns` field. */
+export function partColumnsOf(
+  members: ListMembers,
+  fieldKey: string,
+): readonly string[] | undefined {
+  const member = members.members.get(fieldKey)
+  if (member?.kind !== 'field' || member.storage.kind !== 'columns') return undefined
+  return member.storage.parts.map((part) => part.name)
+}
+
 /** The `default` branch of a position's exhaustive choice over a member's kind. */
 export function unhandledMember(member: never): never {
   throw new Error(`Unhandled List member: ${JSON.stringify(member)}`)

@@ -1,11 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { resolveSyntheticReverseRelation } from './engine.js'
-import type { OpenSaasConfig, FieldConfig } from '../config/types.js'
-
-// A relationship field pointing at another list.
-function rel(ref: string, many = false): FieldConfig {
-  return { type: 'relationship', ref, many } as unknown as FieldConfig
-}
+import type { OpenSaasConfig } from '../config/types.js'
+import { relationship, text } from '../fields/index.js'
 
 /**
  * #978: a list-only `ref` (`ref: 'ListName'`, no target field) generates a
@@ -17,24 +13,23 @@ function rel(ref: string, many = false): FieldConfig {
  */
 describe('resolveSyntheticReverseRelation', () => {
   const config: OpenSaasConfig = {
-    db: { provider: 'sqlite', url: 'file:./dev.db' },
+    db: { provider: 'postgresql' },
     lists: {
-      Account: { fields: { name: { type: 'text' } as unknown as FieldConfig } },
+      Account: { fields: { name: text() } },
       ChargeRequest: {
         fields: {
-          kind: { type: 'text' } as unknown as FieldConfig,
+          kind: text(),
           // List-only ref — no field named on Account, so a back-relation is
           // synthesized on it as `from_ChargeRequest_account`.
-          account: rel('Account'),
+          account: relationship({ ref: 'Account' }),
         },
       },
       // A bidirectional relationship — Post.author names User.posts directly,
       // so no back-relation is synthesized anywhere for it.
-      User: { fields: { posts: rel('Post.author', true) } },
-      Post: { fields: { author: rel('User.posts') } },
+      User: { fields: { posts: relationship({ ref: 'Post.author', many: true }) } },
+      Post: { fields: { author: relationship({ ref: 'User.posts' }) } },
     },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } as any
+  }
 
   it('resolves the synthetic back-relation name to its owning field', () => {
     const result = resolveSyntheticReverseRelation('from_ChargeRequest_account', 'Account', config)
@@ -63,5 +58,15 @@ describe('resolveSyntheticReverseRelation', () => {
 
   it('returns null for a genuinely unknown key', () => {
     expect(resolveSyntheticReverseRelation('totallyBogusKey', 'Account', config)).toBeNull()
+  })
+
+  it('returns null for a list the config does not have', () => {
+    expect(resolveSyntheticReverseRelation('from_ChargeRequest_account', 'Nope', config)).toBeNull()
+  })
+
+  it('returns null for a declared field, a foreign key or a system field on the parent', () => {
+    expect(resolveSyntheticReverseRelation('name', 'Account', config)).toBeNull()
+    expect(resolveSyntheticReverseRelation('id', 'Account', config)).toBeNull()
+    expect(resolveSyntheticReverseRelation('accountId', 'ChargeRequest', config)).toBeNull()
   })
 })
