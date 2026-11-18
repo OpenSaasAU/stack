@@ -123,8 +123,8 @@ importers:
         specifier: ^0.5.8
         version: 0.5.8(@types/react@19.3.0)(react@19.3.1)
       '@markdoc/next.js':
-        specifier: ^0.5.0
-        version: 0.5.0(@markdoc/markdoc@0.5.8(@types/react@19.3.0)(react@19.3.1))(next@16.4.2(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(@playwright/test@1.65.1)(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react@19.3.1)
+        specifier: ^0.6.2
+        version: 0.6.2(@markdoc/markdoc@0.5.8(@types/react@19.3.0)(react@19.3.1))(next@16.4.2(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(@playwright/test@1.65.1)(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react@19.3.1)
       '@opensaas/stack-rag':
         specifier: workspace:*
         version: link:../packages/rag
@@ -2450,8 +2450,8 @@ packages:
       react:
         optional: true
 
-  '@markdoc/next.js@0.5.0':
-    resolution: {integrity: sha512-gzWvRc2dlxArQn1mDS4SHed46vkAoKBbXkELihQRYv1eVSA0u9eoNEdJXNuBL4Ajn9j2dPpwZp6nAVjN4nzZlA==}
+  '@markdoc/next.js@0.6.2':
+    resolution: {integrity: sha512-eo1hbfyXHy9b7PCzRMOv3cG2todnuGoOYVPtU3Hzu/92dX/mIaL9utHgwHajRfBUId6Fczl1ik0nsMRF4t+CzA==}
     peerDependencies:
       '@markdoc/markdoc': '*'
       next: '*'
@@ -8512,7 +8512,7 @@ snapshots:
       '@types/react': 19.3.0
       react: 19.3.1
 
-  '@markdoc/next.js@0.5.0(@markdoc/markdoc@0.5.8(@types/react@19.3.0)(react@19.3.1))(next@16.4.2(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(@playwright/test@1.65.1)(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react@19.3.1)':
+  '@markdoc/next.js@0.6.2(@markdoc/markdoc@0.5.8(@types/react@19.3.0)(react@19.3.1))(next@16.4.2(@babel/core@7.29.7)(@opentelemetry/api@1.9.1)(@playwright/test@1.65.1)(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react@19.3.1)':
     dependencies:
       '@markdoc/markdoc': 0.5.8(@types/react@19.3.0)(react@19.3.1)
       js-yaml: 4.3.2
