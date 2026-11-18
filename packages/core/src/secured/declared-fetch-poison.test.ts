@@ -34,22 +34,35 @@ const config: OpenSaasConfig = {
   },
 }
 
+const DECLARED_FETCH =
+  /^SELECT "Writer"\."id" AS "id", \(SELECT .* FROM "public"\."Article" WHERE "Article"\."writerId" = "Writer"\."id"\) AS "articles__rows"\) AS "articles" FROM "public"\."Writer" WHERE "Writer"\."id" IN \(/
+const SHAPED_MAIN_READ =
+  /^SELECT "Writer"\."id" AS "id", "Writer"\."name" AS "name", \(SELECT .* WHERE \("Article"\."writerId" = "Writer"\."id" AND "Article"\."title" = \$1\)\) AS "articles__rows"\) AS "articles" FROM "public"\."Writer"$/
+
+const isDeclaredFetch = (sql: string): boolean => DECLARED_FETCH.test(sql)
+const isShapedMainRead = (sql: string): boolean => SHAPED_MAIN_READ.test(sql)
+
 class InjectedStatementFailure extends Error {
-  constructor() {
-    super('injected failure of the declared-rows fetch')
+  constructor(readonly sql: string) {
+    super('injected statement failure')
     this.name = 'InjectedStatementFailure'
   }
 }
 
-let issued = 0
-let failAt: number | undefined
+const statements: string[] = []
+const injected: InjectedStatementFailure[] = []
+let failWhen: ((sql: string) => boolean) | undefined
 
-const failNthStatement: SqlMiddleware = {
+const failMatchingStatement: SqlMiddleware = {
   name: 'opensaas-declared-fetch-failure',
   familyId: 'sql',
-  beforeEncode: (_plan: SqlExecutionPlan) => {
-    issued += 1
-    if (issued === failAt) throw new InjectedStatementFailure()
+  beforeEncode: (plan: SqlExecutionPlan) => {
+    statements.push(plan.sql)
+    if (failWhen?.(plan.sql) !== true) return
+    failWhen = undefined
+    const failure = new InjectedStatementFailure(plan.sql)
+    injected.push(failure)
+    throw failure
   },
 }
 
@@ -57,7 +70,11 @@ describe('the declared-rows fetch of a caller-shaped include', () => {
   let harness: TestContext
 
   beforeAll(async () => {
-    harness = await createTestContext(config, { userId: 'u1' }, { middleware: [failNthStatement] })
+    harness = await createTestContext(
+      config,
+      { userId: 'u1' },
+      { middleware: [failMatchingStatement] },
+    )
   }, BOOT)
 
   afterAll(async () => {
@@ -65,26 +82,28 @@ describe('the declared-rows fetch of a caller-shaped include', () => {
   })
 
   beforeEach(async () => {
-    failAt = undefined
+    failWhen = undefined
+    injected.length = 0
     await harness.truncate()
     const admin = harness.context.sudo()
     const writer = await admin.db.Writer.create({ data: { name: 'w' } })
     for (const title of ['a', 'b']) {
       await admin.db.Article.create({ data: { title, writer: { connect: { id: writer!.id } } } })
     }
-    issued = 0
+    statements.length = 0
   })
 
   test(
     'is the second statement of the read, after the one an unshaped include issues alone',
     async () => {
       await harness.context.db.Writer.include('articles').all()
-      expect(issued).toBe(1)
-      issued = 0
+      expect(statements.map(isDeclaredFetch)).toEqual([false])
+      statements.length = 0
       const [writer] = await harness.context.db.Writer.include('articles', (articles) =>
         articles.where({ title: { equals: 'a' } }),
       ).all()
-      expect(issued).toBe(2)
+      expect(statements.map(isShapedMainRead)).toEqual([true, false])
+      expect(statements.map(isDeclaredFetch)).toEqual([false, true])
       expect(writer).toMatchObject({ articleCount: 2, articles: [{ title: 'a' }] })
     },
     BOOT,
@@ -97,18 +116,22 @@ describe('the declared-rows fetch of a caller-shaped include', () => {
       const rejection = await harness.context
         .transaction(async (tx) => {
           await tx.db.Writer.create({ data: { name: 'inside' } })
-          failAt = issued + 2
+          statements.length = 0
+          failWhen = isDeclaredFetch
           await tx.db.Writer.include('articles', (articles) =>
             articles.where({ title: { equals: 'a' } }),
           )
             .all()
             .catch((error: unknown) => caught.push(error))
-          failAt = undefined
+          failWhen = undefined
         })
         .catch((error: unknown) => error)
 
-      expect(caught).toHaveLength(1)
-      expect(caught[0]).toBeInstanceOf(InjectedStatementFailure)
+      expect(injected).toHaveLength(1)
+      expect(isDeclaredFetch(injected[0].sql)).toBe(true)
+      expect(statements.map(isShapedMainRead)).toEqual([true, false])
+      expect(statements.at(-1)).toBe(injected[0].sql)
+      expect(caught).toEqual([injected[0]])
       expect(rejection).toBeInstanceOf(TransactionRolledBackError)
       if (rejection instanceof TransactionRolledBackError) expect(rejection.cause).toBe(caught[0])
       const names = (await harness.context.sudo().db.Writer.all()).map((row) => row.name)
