@@ -14,10 +14,11 @@
 //
 // Known limits
 //
-//   - Roots are the `'use client'` modules under packages/*/src, examples/ and
-//     the scaffolder templates, judged by their leading directive, plus the
-//     entries on CLIENT_ENTRIES, which promise the same thing without the
-//     directive. Tests are not roots.
+//   - Roots are the `'use client'` modules under packages/*/src and examples/,
+//     judged by their leading directive, plus the entries on CLIENT_ENTRIES,
+//     which promise the same thing without the directive. Tests are not roots.
+//     The scaffolder's templates are build-time copies of examples/starter and
+//     examples/starter-auth, so they are covered through examples/.
 //   - `@/` resolves against the nearest package.json directory, trying `src/`
 //     first. No other path alias is resolved: a specifier that is neither
 //     relative, `@/`, nor a valid npm package name (`~/x`, `#x`) is a finding,
@@ -42,6 +43,7 @@
 //     walked. A resolved file on ASSET_EXTENSIONS (styles, `.json`, images,
 //     fonts) is a leaf. Any other resolved file is a finding, so a file type
 //     the checker cannot read fails loudly instead of passing as a leaf.
+//     Extensions match case-sensitively: `./x.CSS` is not an asset.
 
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { builtinModules } from 'node:module'
@@ -75,7 +77,7 @@ const ASSET_EXTENSIONS = new Set([
   '.eot',
 ])
 const SKIP_DIRECTORIES = new Set(['node_modules', 'dist', '__tests__', 'tests', 'e2e'])
-const APPLICATION_ROOTS = ['examples', 'packages/create-opensaas-app/templates']
+const APPLICATION_ROOTS = ['examples']
 const CLIENT_ENTRIES = [
   'packages/core/src/client-safe.ts',
   'packages/ui/src/components/fields/index.ts',
@@ -122,6 +124,14 @@ function leadingDirective(source) {
 function isFile(candidate) {
   try {
     return statSync(candidate).isFile()
+  } catch {
+    return false
+  }
+}
+
+function isDirectory(candidate) {
+  try {
+    return statSync(candidate).isDirectory()
   } catch {
     return false
   }
@@ -316,7 +326,7 @@ function resolveEdge(specifier, importer, packages) {
 
 function isWalkedOrAsset(file) {
   const ext = path.extname(file)
-  return SOURCE_EXTENSIONS.includes(ext) || ASSET_EXTENSIONS.has(ext.toLowerCase())
+  return SOURCE_EXTENSIONS.includes(ext) || ASSET_EXTENSIONS.has(ext)
 }
 
 function walk(root, packages, inventory) {
@@ -329,7 +339,7 @@ function walk(root, packages, inventory) {
   }
   while (queue.length > 0) {
     const file = queue.shift()
-    if (ASSET_EXTENSIONS.has(path.extname(file).toLowerCase())) continue
+    if (ASSET_EXTENSIONS.has(path.extname(file))) continue
     const { directive, imports } = valueImportsOf(file)
     if (directive === 'server' && file !== root) continue
     for (const { specifier, names } of imports) {
@@ -354,6 +364,9 @@ function walk(root, packages, inventory) {
 
 function check(packagesDir, applicationDirs = [], entries = []) {
   const packages = loadWorkspacePackages(packagesDir)
+  for (const dir of applicationDirs) {
+    if (!isDirectory(dir)) throw new Error(`Configured root ${dir} is not a directory`)
+  }
   const scanned = [
     ...[...packages.values()].map(({ dir }) => path.join(dir, 'src')),
     ...applicationDirs,
@@ -379,11 +392,18 @@ function report(findings) {
     for (const step of f.chain.slice(1)) console.error(`    -> ${step}`)
     console.error(`    -> ${f.reached}`)
   }
-  console.error(
-    '\nwebpack cannot bundle that graph for the browser. Import the value from\n' +
-      "'@opensaas/stack-core/client-safe' (or the narrowest subpath that does not reach\n" +
-      'a server module), or move the code that needs it behind the server boundary.',
-  )
+  if (findings.some((f) => f.why !== UNWALKED)) {
+    console.error(
+      '\nwebpack cannot bundle that graph for the browser. Import the value from\n' +
+        "'@opensaas/stack-core/client-safe' (or the narrowest subpath that does not reach\n" +
+        'a server module), or move the code that needs it behind the server boundary.',
+    )
+  }
+  if (findings.some((f) => f.why === UNWALKED)) {
+    console.error(
+      '\nAn unwalked file type: add its extension to ASSET_EXTENSIONS if it is a true asset, or teach the checker to walk it.',
+    )
+  }
 }
 
 const args = process.argv.slice(2)
@@ -403,7 +423,13 @@ const SELF_TEST_BAD = [
   'bad-transitive.tsx',
   'bad-unknown-alias.tsx',
   'bad-unknown-extension.tsx',
+  'bad-uppercase-asset.tsx',
 ]
+const SELF_TEST_REASONS = {
+  'bad-cjs.tsx': { reached: 'node:fs', why: 'a Node builtin' },
+  'bad-unknown-extension.tsx': { reached: './lib/query.graphql', why: UNWALKED },
+  'bad-uppercase-asset.tsx': { reached: './lib/widget.CSS', why: UNWALKED },
+}
 const SELF_TEST_GOOD = [
   'good-asset.tsx',
   'good-client-safe.tsx',
@@ -423,6 +449,14 @@ if (args.includes('--self-test')) {
   }
   for (const name of SELF_TEST_BAD) {
     if (!reported.has(name)) problems.push(`expected a finding for ${name}, got none`)
+  }
+  for (const f of findings) {
+    const expected = SELF_TEST_REASONS[path.basename(f.root)]
+    if (expected && (f.reached !== expected.reached || f.why !== expected.why)) {
+      problems.push(
+        `expected ${path.basename(f.root)} to reach ${expected.reached} (${expected.why}), got ${f.reached} (${f.why})`,
+      )
+    }
   }
   for (const name of reported) {
     if (!SELF_TEST_BAD.includes(name)) problems.push(`expected no finding for ${name}, got one`)
@@ -461,5 +495,5 @@ if (findings.length > 0) {
 }
 
 console.log(
-  `No client module reaches server-only code (${roots.length} roots: 'use client' modules under packages/*/src and ${APPLICATION_ROOTS.join(', ')}, plus ${CLIENT_ENTRIES.length} client entries).`,
+  `No client module reaches server-only code (${roots.length} roots: 'use client' modules under packages/*/src and ${APPLICATION_ROOTS.join(', ')}/, plus ${CLIENT_ENTRIES.length} client entries).`,
 )

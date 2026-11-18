@@ -1,0 +1,3 @@
+const { readFileSync } = require('node:fs')
+
+exports.widget = () => readFileSync('widget.html', 'utf8')
