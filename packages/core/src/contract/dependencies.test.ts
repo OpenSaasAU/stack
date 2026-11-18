@@ -140,6 +140,21 @@ describe('deriveDependencyTable', () => {
     expect(table.lowercase.systemFields).toEqual(['id', 'createdAt', 'updatedAt'])
   })
 
+  it.each([
+    ['null', (list: object) => Reflect.set(list, 'fields', null)],
+    ['absent', (list: object) => Reflect.deleteProperty(list, 'fields')],
+  ])('builds a row for a list whose fields are %s', (_label, strip) => {
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql', timestamps: true },
+      lists: { Bare: { fields: {} }, Doc: { fields: { name: text() } } },
+    }
+    strip(config.lists.Bare)
+
+    const table = deriveDependencyTable(config)
+    expect(table.Bare).toEqual({ systemFields: ['id', 'createdAt', 'updatedAt'], fields: {} })
+    expect(table.Doc.systemFields).toEqual(['id', 'createdAt', 'updatedAt'])
+  })
+
   it('takes a declared timestamp field out of the system fields', () => {
     const config: OpenSaasConfig = {
       db: { provider: 'postgresql', timestamps: true },

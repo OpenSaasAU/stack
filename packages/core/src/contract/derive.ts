@@ -654,7 +654,7 @@ function describeContractFields(config: OpenSaasConfig): DescribedFields {
   for (const [listKey, listConfig] of Object.entries(config.lists)) {
     const descriptors = new Map<string, ContractFieldDescriptor>()
     const failures = new Map<string, { error: unknown }>()
-    for (const [fieldKey, field] of Object.entries(listConfig.fields)) {
+    for (const [fieldKey, field] of Object.entries(listConfig.fields ?? {})) {
       if (field.virtual) {
         descriptors.set(fieldKey, { kind: 'computed' })
         continue
@@ -736,6 +736,7 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
   walkContractMembers(config, {
     synthetics: table.syntheticClaims,
     startList: (listKey, listConfig, timestamps) => {
+      const idStrategy = resolveIdStrategy(listConfig, config)
       drafts.set(listKey, {
         model: {
           name: listKey,
@@ -743,8 +744,8 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
           ...(listConfig.db?.schema !== undefined && listConfig.db.schema !== DEFAULT_NAMESPACE
             ? { namespace: listConfig.db.schema }
             : {}),
-          singleton: members.get(listKey)?.singleton === true,
-          id: idColumn(resolveIdStrategy(listConfig, config)),
+          singleton: idStrategy === 'singleton',
+          id: idColumn(idStrategy),
           columns: [],
           foreignKeys: [],
           indexes: [],

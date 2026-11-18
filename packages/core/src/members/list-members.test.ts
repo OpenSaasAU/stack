@@ -376,6 +376,7 @@ describe('resolveListMember', () => {
         { name: 'price', column: 'price_amount' },
         { name: 'price_currency', column: 'price_currency' },
       ],
+      partNames: ['price', 'price_currency'],
     })
   })
 

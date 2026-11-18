@@ -1,6 +1,5 @@
 import type { AccessControl, Session, AccessContext, PrismaFilter } from './types.js'
-import type { OpenSaasConfig, ListConfig, RelationshipField } from '../config/types.js'
-import { isRelationshipField } from '../fields/index.js'
+import type { FieldConfig, OpenSaasConfig, ListConfig } from '../config/types.js'
 import { resolveListMember } from '../members/list-members.js'
 import {
   InvalidCreateAccessResultError,
@@ -54,8 +53,7 @@ export function getRelatedListConfig(
 export interface SyntheticReverseRelation {
   sourceListName: string
   sourceFieldName: string
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RelationshipField must accept any TypeInfo
-  sourceFieldConfig: RelationshipField<any>
+  sourceFieldConfig: FieldConfig
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
   sourceListConfig: ListConfig<any>
 }
@@ -71,16 +69,13 @@ export function resolveSyntheticReverseRelation(
   parentListName: string,
   config: OpenSaasConfig,
 ): SyntheticReverseRelation | null {
-  if (!Object.prototype.hasOwnProperty.call(config.lists, parentListName)) return null
   const member = resolveListMember(config, parentListName, fieldName)
   if (member?.kind !== 'syntheticBackRelation') return null
   const sourceListConfig = config.lists[member.sourceList]
-  const sourceFieldConfig = sourceListConfig.fields[member.sourceField]
-  if (!isRelationshipField(sourceFieldConfig)) return null
   return {
     sourceListName: member.sourceList,
     sourceFieldName: member.sourceField,
-    sourceFieldConfig,
+    sourceFieldConfig: sourceListConfig.fields[member.sourceField],
     sourceListConfig,
   }
 }

@@ -116,6 +116,8 @@ describe('Relationship Access Control', () => {
             context: mockContext,
           },
           config,
+          0,
+          'Post',
         )
 
         expect(result.title).toBe('Test Post')
@@ -166,6 +168,8 @@ describe('Relationship Access Control', () => {
             context: mockContext,
           },
           config,
+          0,
+          'Post',
         )
 
         expect(result.author).toBeDefined()
@@ -222,6 +226,8 @@ describe('Relationship Access Control', () => {
             context: mockContext,
           },
           config,
+          0,
+          'User',
         )
 
         expect(result.posts).toHaveLength(2)
@@ -271,6 +277,8 @@ describe('Relationship Access Control', () => {
             context: mockContext,
           },
           config,
+          0,
+          'User',
         )
 
         expect(result.posts).toHaveLength(2)
@@ -293,6 +301,7 @@ describe('Relationship Access Control', () => {
             Post: {
               fields: {
                 title: text(),
+                author: relationship({ ref: 'User.posts' }),
               },
               access: {
                 operation: {
@@ -317,6 +326,8 @@ describe('Relationship Access Control', () => {
             context: mockContext,
           },
           config,
+          0,
+          'User',
         )
 
         expect(result.posts).toEqual([])
@@ -384,6 +395,8 @@ describe('Relationship Access Control', () => {
           config.lists.L0.fields,
           { session: null, context: mockContext },
           config,
+          0,
+          'L0',
         )
 
         // Walk down to the deepest level in the filtered result.
@@ -406,6 +419,7 @@ describe('Relationship Access Control', () => {
             User: {
               fields: {
                 name: text(),
+                posts: relationship({ ref: 'Post.author', many: true }),
               },
               access: {
                 operation: {
@@ -436,6 +450,8 @@ describe('Relationship Access Control', () => {
             context: mockContext,
           },
           config,
+          0,
+          'Post',
         )
 
         expect(result.author).toBeNull()

@@ -23,7 +23,7 @@ export type MemberColumn = { name: string; column: string }
 
 export type DeclaredFieldStorage =
   | { kind: 'column'; column: string }
-  | { kind: 'columns'; parts: readonly MemberColumn[] }
+  | { kind: 'columns'; parts: readonly MemberColumn[]; partNames: readonly string[] }
   | {
       kind: 'relation'
       relatedList: string
@@ -257,8 +257,10 @@ function storageOf(descriptor: ContractFieldDescriptor): DeclaredFieldStorage {
   switch (descriptor.kind) {
     case 'column':
       return { kind: 'column', column: descriptor.map ?? descriptor.name }
-    case 'columns':
-      return { kind: 'columns', parts: descriptor.columns.map(memberColumn) }
+    case 'columns': {
+      const parts = descriptor.columns.map(memberColumn)
+      return { kind: 'columns', parts, partNames: parts.map((part) => part.name) }
+    }
     case 'relation':
       return {
         kind: 'relation',
@@ -280,7 +282,7 @@ function buildListMembers(
   synthetics: ReadonlyMap<string, readonly SyntheticEntry[]>,
 ): ListMembers {
   const listConfig = listConfigOf(config, listKey)
-  const fields = Object.entries(listConfig.fields).map(([fieldKey, field]) => ({
+  const fields = Object.entries(listConfig.fields ?? {}).map(([fieldKey, field]) => ({
     fieldKey,
     field,
     descriptor: describeField(listKey, fieldKey, field),
@@ -388,7 +390,7 @@ export function partColumnsOf(
 ): readonly string[] | undefined {
   const member = members.members.get(fieldKey)
   if (member?.kind !== 'field' || member.storage.kind !== 'columns') return undefined
-  return member.storage.parts.map((part) => part.name)
+  return member.storage.partNames
 }
 
 /** The `default` branch of a position's exhaustive choice over a member's kind. */

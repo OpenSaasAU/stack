@@ -166,6 +166,23 @@ describe('multi-column read assembly reads its part columns from the contract de
     )
     expect(result).toEqual({ id: 'e', media: { url: 'https://x/z.jpg', size: 7 } })
   })
+
+  it('never leaks the raw part columns of a columns field whose read is denied', async () => {
+    const media = multiColumnField({ read: () => false })
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql' },
+      lists: { Post: { fields: { media, title: text() } } },
+    }
+    const result = await filterReadableFields(
+      { id: '1', m_url: 'secret', m_size: 3, title: 'hi' },
+      config.lists.Post.fields,
+      { session: null, context: makeContext() },
+      config,
+      0,
+      'Post',
+    )
+    expect(result).toEqual({ id: '1', title: 'hi' })
+  })
 })
 
 describe('multi-column resolveInput (executeFieldResolveInputHooks) does NOT split (#789)', () => {

@@ -1,6 +1,6 @@
 import type { OpenSaasConfig } from '../config/types.js'
 import { isRelationshipField } from '../fields/index.js'
-import { unhandledMember, type ListMembers } from '../members/list-members.js'
+import { unhandledMember, type ListMemberTable, type ListMembers } from '../members/list-members.js'
 import { deriveListMemberTable } from './derive.js'
 import type { ContractData, ContractModel } from './types.js'
 
@@ -114,27 +114,16 @@ function makeObjectName(name: string, label: string): string {
   return `${clipToBytes(name, available)}_${label}`
 }
 
-function foreignKeyMemberColumn(
-  members: ListMembers | undefined,
-  fieldKey: string,
-): string | undefined {
-  const member = members?.members.get(fieldKey)
+function foreignKeyMemberColumn(members: ListMembers, fieldKey: string): string | undefined {
+  const member = members.members.get(fieldKey)
   if (member?.kind !== 'field' || member.storage.kind !== 'relation') return undefined
   return member.storage.foreignKey?.name
 }
 
-function withFieldsOnEveryList(config: OpenSaasConfig): OpenSaasConfig {
-  const lists = Object.entries(config.lists)
-  if (lists.every(([, listConfig]) => listConfig.fields !== undefined)) return config
-  return {
-    ...config,
-    lists: Object.fromEntries(
-      lists.map(([listKey, listConfig]) => [
-        listKey,
-        { ...listConfig, fields: listConfig.fields ?? {} },
-      ]),
-    ),
-  }
+function listMembersOf(table: ListMemberTable, listKey: string): ListMembers {
+  const members = table.lists.get(listKey)
+  if (members === undefined) throw new Error(`List "${listKey}" has no List members`)
+  return members
 }
 
 /**
@@ -148,13 +137,15 @@ function withFieldsOnEveryList(config: OpenSaasConfig): OpenSaasConfig {
  * for a config whose refusals are being reported.
  */
 export function deriveDependencyTable(config: OpenSaasConfig): DependencyTable {
-  const table: DependencyTable = {}
-  const fielded = withFieldsOnEveryList(config)
-  const members = deriveListMemberTable(fielded)
+  return dependencyTableFrom(config, deriveListMemberTable(config))
+}
 
-  for (const listKey of Object.keys(fielded.lists).sort()) {
-    const listMembers = members.lists.get(listKey)
-    const fieldConfigs = fielded.lists[listKey].fields
+function dependencyTableFrom(config: OpenSaasConfig, members: ListMemberTable): DependencyTable {
+  const table: DependencyTable = {}
+
+  for (const listKey of Object.keys(config.lists).sort()) {
+    const listMembers = listMembersOf(members, listKey)
+    const fieldConfigs = config.lists[listKey].fields ?? {}
     const fields: Record<string, FieldDependencySet> = {}
 
     for (const fieldKey of Object.keys(fieldConfigs).sort()) {
@@ -183,7 +174,7 @@ export function deriveDependencyTable(config: OpenSaasConfig): DependencyTable {
     }
 
     table[listKey] = {
-      systemFields: [...(listMembers?.systemFields ?? ['id'])],
+      systemFields: [...listMembers.systemFields],
       fields,
     }
   }
@@ -287,8 +278,15 @@ function claim(
  *   suggestion.
  */
 export function deriveConstraintMap(config: OpenSaasConfig, contract: ContractData): ConstraintMap {
+  return constraintMapFrom(config, contract, deriveListMemberTable(config))
+}
+
+function constraintMapFrom(
+  config: OpenSaasConfig,
+  contract: ContractData,
+  members: ListMemberTable,
+): ConstraintMap {
   const map: ConstraintMap = {}
-  const members = deriveListMemberTable(config)
 
   for (const model of contract.models) {
     if (!config.lists[model.name]) continue
@@ -346,8 +344,9 @@ export function deriveGeneratedTables(
   config: OpenSaasConfig,
   contract: ContractData,
 ): GeneratedTables {
+  const members = deriveListMemberTable(config)
   return {
-    dependencies: deriveDependencyTable(config),
-    constraints: deriveConstraintMap(config, contract),
+    dependencies: dependencyTableFrom(config, members),
+    constraints: constraintMapFrom(config, contract, members),
   }
 }

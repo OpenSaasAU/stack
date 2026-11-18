@@ -96,26 +96,18 @@ type FieldVisibilityArgs = {
  * defeating the cycle guard entirely. Rebuilding `db` via `buildDbDelegate`
  * against the derived context is what makes a hook-issued read's own nested
  * hooks actually observe the extended chain.
- *
- * `config` is required to rebuild `db`; callers that cannot supply one (e.g. a
- * narrow unit test exercising field access in isolation) still get a correct
- * chain for THIS hook's own cycle/cap check, but a read that hook issues
- * would not carry the chain any further — those callers are not exercising
- * the read pipeline, so there is nothing for it to reach.
  */
 function deriveResolveOutputContext(
   context: AccessContext & { _isSudo?: boolean },
   link: { listKey: string; fieldKey: string },
-  config: OpenSaasConfig | undefined,
+  config: OpenSaasConfig,
 ): AccessContext & { _isSudo?: boolean } {
   const derived: AccessContext & { _isSudo?: boolean } = {
     ...context,
     _resolveOutputChain: [...context._resolveOutputChain, link],
   }
-  if (config) {
-    derived.db = buildDbDelegate(config, context.ormHandle, derived)
-    withDerivedSessionVocabulary(derived, context, config)
-  }
+  derived.db = buildDbDelegate(config, context.ormHandle, derived)
+  withDerivedSessionVocabulary(derived, context, config)
   return derived
 }
 
@@ -142,9 +134,9 @@ async function resolveReadableFieldValue(params: {
   value: unknown
   ruleRow: RuleRow
   hookItem: Record<string, unknown>
-  listKey: string | undefined
+  listKey: string
   args: FieldVisibilityArgs
-  config: OpenSaasConfig | undefined
+  config: OpenSaasConfig
 }): Promise<{ readable: false } | { readable: true; value: unknown }> {
   const { fieldConfig, fieldName, value, ruleRow, hookItem, listKey, args, config } = params
 
@@ -154,7 +146,7 @@ async function resolveReadableFieldValue(params: {
     return { readable: false }
   }
 
-  if (fieldConfig?.hooks?.resolveOutput && listKey) {
+  if (fieldConfig?.hooks?.resolveOutput) {
     // The hook is erased to this runtime shape here; at the actual call it
     // receives the value typed for its own field.
     const hook = fieldConfig.hooks.resolveOutput as unknown as ResolveOutputHookRuntime
@@ -207,9 +199,9 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
     session: Session | null
     context: AccessContext & { _isSudo?: boolean }
   },
-  config?: OpenSaasConfig,
-  depth: number = 0,
-  listKey?: string,
+  config: OpenSaasConfig,
+  depth: number,
+  listKey: string,
   // Relation keys the dependency widening added at THIS level (ADR-0051),
   // and the same tree for each nested relation reached via a caller-named
   // branch. Stripped from `filtered` right before it is returned — after
@@ -237,10 +229,10 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
   // (the raw per-part columns never leak). The assembled value then flows
   // through the normal read-access + resolveOutput path under the field's own
   // key. See ADR-0006.
-  const listMembers = config && listKey ? resolveListMembers(config, listKey) : undefined
+  const listMembers = resolveListMembers(config, listKey)
   const workingItem: Record<string, unknown> = { ...item }
   for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
-    const columnNames = listMembers && partColumnsOf(listMembers, fieldName)
+    const columnNames = partColumnsOf(listMembers, fieldName)
     if (!fieldConfig.assembleColumns || !columnNames) continue
     // Only assemble when the raw columns are present in the row (i.e. they were
     // selected); otherwise leave the field absent from the result.
@@ -255,11 +247,11 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
 
   // This list's actual system fields: always readable, never
   // field-access-checked, always visible to a hook's `item`.
-  const declaredDependencies: Readonly<Record<string, FieldDependencySet>> =
-    config && listKey ? getListDependencies(config, listKey).fields : {}
-  const systemFields = new Set<string>(
-    listMembers ? listMembers.systemFields : ['id', 'createdAt', 'updatedAt'],
-  )
+  const declaredDependencies: Readonly<Record<string, FieldDependencySet>> = getListDependencies(
+    config,
+    listKey,
+  ).fields
+  const systemFields = new Set<string>(listMembers.systemFields)
 
   /**
    * The `item` one computed field's hook is handed: exactly the dependencies
@@ -269,16 +261,11 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
    * compute differently because someone else's projection widened the row —
    * and independent of a caller-facing `read` denial on a declared key, which
    * governs what the CALLER receives and is enforced on `filtered` alone.
-   *
-   * A caller that reached this function without a config (a narrow unit test
-   * exercising field access in isolation) has no table to read, so the whole
-   * working row stands in — there is no declaration to honour there.
    */
   const ruleRow = ruleRowOf(workingItem, ruleViews, fieldConfigs, config, listKey)
   const ruleItem = ruleRow.item
 
   const hookItemFor = (fieldName: string): Record<string, unknown> => {
-    if (!config || !listKey) return ruleItem
     const declared = declaredDependencies[fieldName] ?? { columns: [], relations: [] }
     const item: Record<string, unknown> = {}
     for (const key of [...systemFields, ...declared.columns, ...declared.relations]) {
@@ -325,16 +312,11 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
     // worth trying: a declared-but-non-relationship field (e.g. a scalar or
     // virtual) must fall through to the generic path below, unchanged.
     const synthetic =
-      !isDeclaredRelationshipField && fieldConfig === undefined && config && listKey
+      !isDeclaredRelationshipField && fieldConfig === undefined
         ? resolveSyntheticReverseRelation(fieldName, listKey, config)
         : null
 
-    if (
-      config &&
-      (isDeclaredRelationshipField || synthetic) &&
-      value !== null &&
-      value !== undefined
-    ) {
+    if ((isDeclaredRelationshipField || synthetic) && value !== null && value !== undefined) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
       let relatedConfig: { listName: string; listConfig: ListConfig<any> } | null = null
 
@@ -490,7 +472,7 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
     // never has output has no side effect worth preserving access for). This
     // is also the cheapest of the three, and true for most fields, so it
     // runs before the pricier check below.
-    if (!(fieldConfig.hooks?.resolveOutput && listKey)) {
+    if (!fieldConfig.hooks?.resolveOutput) {
       continue
     }
 

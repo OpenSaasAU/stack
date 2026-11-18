@@ -3,5 +3,5 @@
 'create-opensaas-app': patch
 ---
 
-The dependency table, synthetic back-relation lookup, multi-column read assembly and singleton checks read from the List member table; output is unchanged.
-A multi-column field's parts now come from its `columns` descriptor, so one that implements no `getColumnNames` is still assembled on read.
+The dependency table, synthetic back-relation lookup, multi-column read assembly and singleton checks read from the List member table, so generated contracts and tables are unchanged.
+A multi-column field is now assembled from its `columns` descriptor even without `getColumnNames`, and Field Visibility always resolves the list it reads, so a denied multi-column field's raw part columns never pass through.

@@ -36,7 +36,7 @@ describe('resolveSyntheticReverseRelation', () => {
     expect(result).not.toBeNull()
     expect(result?.sourceListName).toBe('ChargeRequest')
     expect(result?.sourceFieldName).toBe('account')
-    expect(result?.sourceFieldConfig.ref).toBe('Account')
+    expect(result?.sourceFieldConfig).toBe(config.lists.ChargeRequest.fields.account)
   })
 
   it('returns null for a name that does not match the synthetic construction', () => {
@@ -60,8 +60,10 @@ describe('resolveSyntheticReverseRelation', () => {
     expect(resolveSyntheticReverseRelation('totallyBogusKey', 'Account', config)).toBeNull()
   })
 
-  it('returns null for a list the config does not have', () => {
-    expect(resolveSyntheticReverseRelation('from_ChargeRequest_account', 'Nope', config)).toBeNull()
+  it('throws for a list the config does not have', () => {
+    expect(() =>
+      resolveSyntheticReverseRelation('from_ChargeRequest_account', 'Nope', config),
+    ).toThrow('List "Nope" is not in the config')
   })
 
   it('returns null for a declared field, a foreign key or a system field on the parent', () => {

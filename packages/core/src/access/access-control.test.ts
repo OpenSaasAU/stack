@@ -460,6 +460,26 @@ describe('Access Control', () => {
   })
 
   describe('filterReadableFields', () => {
+    function readAs(
+      fields: Record<string, FieldConfig>,
+      item: Record<string, unknown>,
+      session: Record<string, unknown> | null,
+      timestamps = false,
+    ): Promise<Record<string, unknown>> {
+      const config: OpenSaasConfig = {
+        db: { provider: 'postgresql', timestamps },
+        lists: { Person: { fields } },
+      }
+      return filterReadableFields(
+        item,
+        fields,
+        { session, context: mockContext },
+        config,
+        0,
+        'Person',
+      )
+    }
+
     it('should include all fields when no access control', async () => {
       const item = {
         id: '1',
@@ -468,15 +488,7 @@ describe('Access Control', () => {
         createdAt: new Date(),
       }
 
-      const fieldConfigs = {
-        name: { type: 'text' },
-        email: { type: 'text' },
-      }
-
-      const result = await filterReadableFields(item, fieldConfigs, {
-        session: null,
-        context: mockContext,
-      })
+      const result = await readAs({ name: text(), email: text() }, item, null, true)
 
       expect(result).toEqual(item)
     })
@@ -489,14 +501,12 @@ describe('Access Control', () => {
         name: 'John',
       }
 
-      const fieldConfigs = {
-        name: text({ access: { read: async () => false } }),
-      }
-
-      const result = await filterReadableFields(item, fieldConfigs, {
-        session: null,
-        context: mockContext,
-      })
+      const result = await readAs(
+        { name: text({ access: { read: async () => false } }) },
+        item,
+        null,
+        true,
+      )
 
       expect(result.id).toBe('1')
       expect(result.createdAt).toBeDefined()
@@ -512,21 +522,11 @@ describe('Access Control', () => {
         password: 'hashed',
       }
 
-      const fieldConfigs = {
-        name: { type: 'text' },
-        email: { type: 'text' },
-        password: {
-          type: 'password',
-          access: {
-            read: async () => false,
-          },
-        },
-      }
-
-      const result = await filterReadableFields(item, fieldConfigs, {
-        session: null,
-        context: mockContext,
-      })
+      const result = await readAs(
+        { name: text(), email: text(), password: text({ access: { read: async () => false } }) },
+        item,
+        null,
+      )
 
       expect(result.name).toBe('John')
       expect(result.email).toBe('john@example.com')
@@ -540,7 +540,7 @@ describe('Access Control', () => {
         salary: 100000,
       }
 
-      const fieldConfigs = {
+      const fields = {
         name: text(),
         salary: integer({
           access: {
@@ -549,20 +549,10 @@ describe('Access Control', () => {
         }),
       }
 
-      // Without admin session
-      const resultNoAccess = await filterReadableFields(item, fieldConfigs, {
-        session: { role: 'user' },
-        context: mockContext,
-      })
-
+      const resultNoAccess = await readAs(fields, item, { role: 'user' })
       expect(resultNoAccess.salary).toBeUndefined()
 
-      // With admin session
-      const resultWithAccess = await filterReadableFields(item, fieldConfigs, {
-        session: { role: 'admin' },
-        context: mockContext,
-      })
-
+      const resultWithAccess = await readAs(fields, item, { role: 'admin' })
       expect(resultWithAccess.salary).toBe(100000)
     })
   })
