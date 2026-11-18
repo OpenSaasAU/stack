@@ -1284,7 +1284,7 @@ async function unshapedDeclaredRows(
   if (fetched.length === 0 || ids.length === 0) return byRelation
   const ops = await whereCombinators()
   for (const plan of fetched) {
-    const owners = await withOrigin('engine', () =>
+    const owners = await engineRead(binding, () =>
       collectionFor(binding.ormHandle, listName)
         .where((model) => identityIn(model, listName, ids))
         .select('id')
