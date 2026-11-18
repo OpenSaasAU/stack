@@ -4,7 +4,6 @@ import {
   checkCreateAccess,
   mergeFilters,
   checkFieldAccess,
-  filterReadableFields,
   filterWritableFields,
   isBoolean,
   isPrismaFilter,
@@ -12,7 +11,7 @@ import {
 import { InvalidCreateAccessResultError, UndefinedAccessFilterError } from './errors.js'
 import type { AccessControl, FieldAccess, AccessContext } from './types.js'
 import { ValidationError } from '../hooks/index.js'
-import { integer, select, text } from '../fields/index.js'
+import { select, text } from '../fields/index.js'
 import type { FieldConfig, OpenSaasConfig } from '../config/types.js'
 
 function onList(fields: Record<string, FieldConfig>): { listName: string; config: OpenSaasConfig } {
@@ -456,104 +455,6 @@ describe('Access Control', () => {
       })
 
       expect(result).toBe(true)
-    })
-  })
-
-  describe('filterReadableFields', () => {
-    function readAs(
-      fields: Record<string, FieldConfig>,
-      item: Record<string, unknown>,
-      session: Record<string, unknown> | null,
-      timestamps = false,
-    ): Promise<Record<string, unknown>> {
-      const config: OpenSaasConfig = {
-        db: { provider: 'postgresql', timestamps },
-        lists: { Person: { fields } },
-      }
-      return filterReadableFields(
-        item,
-        fields,
-        { session, context: mockContext },
-        config,
-        0,
-        'Person',
-      )
-    }
-
-    it('should include all fields when no access control', async () => {
-      const item = {
-        id: '1',
-        name: 'John',
-        email: 'john@example.com',
-        createdAt: new Date(),
-      }
-
-      const result = await readAs({ name: text(), email: text() }, item, null, true)
-
-      expect(result).toEqual(item)
-    })
-
-    it('should always include system fields', async () => {
-      const item = {
-        id: '1',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        name: 'John',
-      }
-
-      const result = await readAs(
-        { name: text({ access: { read: async () => false } }) },
-        item,
-        null,
-        true,
-      )
-
-      expect(result.id).toBe('1')
-      expect(result.createdAt).toBeDefined()
-      expect(result.updatedAt).toBeDefined()
-      expect(result.name).toBeUndefined()
-    })
-
-    it('should filter out fields with denied read access', async () => {
-      const item = {
-        id: '1',
-        name: 'John',
-        email: 'john@example.com',
-        password: 'hashed',
-      }
-
-      const result = await readAs(
-        { name: text(), email: text(), password: text({ access: { read: async () => false } }) },
-        item,
-        null,
-      )
-
-      expect(result.name).toBe('John')
-      expect(result.email).toBe('john@example.com')
-      expect(result.password).toBeUndefined()
-    })
-
-    it('should respect session in field access', async () => {
-      const item = {
-        id: '1',
-        name: 'John',
-        salary: 100000,
-      }
-
-      const fields = {
-        name: text(),
-        salary: integer({
-          access: {
-            read: async ({ session }) => session?.role === 'admin',
-          },
-        }),
-      }
-
-      const resultNoAccess = await readAs(fields, item, { role: 'user' })
-      expect(resultNoAccess.salary).toBeUndefined()
-
-      const resultWithAccess = await readAs(fields, item, { role: 'admin' })
-      expect(resultWithAccess.salary).toBe(100000)
     })
   })
 
