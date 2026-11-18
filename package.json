@@ -100,7 +100,7 @@
     "pg": "^8.23.1",
     "playwright": "^1.65.1",
     "prettier": "^3.9.9",
-    "semver": "^7.8.5",
+    "semver": "^7.8.6",
     "turbo": "^2.11.5",
     "typescript": "npm:@typescript/typescript6@^6.0.2"
   }
