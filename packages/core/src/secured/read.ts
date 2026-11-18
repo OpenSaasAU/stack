@@ -1394,7 +1394,6 @@ async function visibleRows(
         listConfig.fields,
         { session: context.session, context },
         config,
-        0,
         listName,
         plan.additions,
         plan.selection,
@@ -1518,7 +1517,6 @@ export async function visibleWrittenRow(
     listConfig.fields,
     { session: context.session, context: { ...context, _isSudo: context._isSudo } },
     config,
-    0,
     listName,
   )
   await narrowUnincludedForeignKeys(

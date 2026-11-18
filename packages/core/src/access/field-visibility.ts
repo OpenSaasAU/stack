@@ -200,7 +200,6 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
     context: AccessContext & { _isSudo?: boolean }
   },
   config: OpenSaasConfig,
-  depth: number,
   listKey: string,
   // Relation keys the dependency widening added at THIS level (ADR-0051),
   // and the same tree for each nested relation reached via a caller-named
@@ -402,7 +401,6 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
                 relatedConfig.listConfig.fields,
                 args,
                 config,
-                depth + 1,
                 relatedConfig.listName,
                 nestedAdditions,
                 nestedSelection,
@@ -417,7 +415,6 @@ export async function filterReadableFields<T extends Record<string, unknown>>(
             relatedConfig.listConfig.fields,
             args,
             config,
-            depth + 1,
             relatedConfig.listName,
             nestedAdditions,
             nestedSelection,

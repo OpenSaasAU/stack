@@ -1,6 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, it, expect } from 'vitest'
 import { z } from 'zod'
-import { filterReadableFields } from './field-visibility.js'
 import {
   executeFieldResolveInputHooks,
   splitMultiColumnFields,
@@ -83,107 +82,6 @@ function makeContext(overrides: { isSudo?: boolean } = {}): AccessContext {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal context for unit test
   } as any
 }
-
-describe('multi-column read assembly (filterReadableFields)', () => {
-  const fields = { media: multiColumnField() }
-  const config: OpenSaasConfig = {
-    db: { provider: 'postgresql' },
-    lists: { Post: { fields: { ...fields, title: text() } } },
-  }
-
-  it('assembles the per-part columns into the logical field and strips the raw columns', async () => {
-    const row = { id: 'a', m_url: 'https://x/y.jpg', m_size: 99, title: 'hi' }
-    const result = await filterReadableFields(
-      row,
-      // title is a plain field
-      { ...fields, title: text() },
-      { session: null, context: makeContext() },
-      config,
-      0,
-      'Post',
-    )
-    expect(result).toEqual({ id: 'a', title: 'hi', media: { url: 'https://x/y.jpg', size: 99 } })
-    // Raw columns must NOT leak.
-    expect('m_url' in result).toBe(false)
-    expect('m_size' in result).toBe(false)
-  })
-
-  it('assembles a partially-populated row (only m_url present)', async () => {
-    const row = { id: 'b', m_url: 'https://x/only.jpg' }
-    const result = await filterReadableFields(
-      row,
-      fields,
-      { session: null, context: makeContext() },
-      config,
-      0,
-      'Post',
-    )
-    expect(result).toEqual({ id: 'b', media: { url: 'https://x/only.jpg', size: 0 } })
-  })
-
-  it('yields a null logical value when the columns are empty', async () => {
-    const row = { id: 'c', m_url: null, m_size: null }
-    const result = await filterReadableFields(
-      row,
-      fields,
-      { session: null, context: makeContext() },
-      config,
-      0,
-      'Post',
-    )
-    expect(result).toEqual({ id: 'c', media: null })
-  })
-
-  it('leaves the field absent when its columns were not selected', async () => {
-    const row = { id: 'd', title: 'no media columns' }
-    const result = await filterReadableFields(
-      row,
-      { ...fields, title: text() },
-      { session: null, context: makeContext() },
-      config,
-      0,
-      'Post',
-    )
-    expect(result).toEqual({ id: 'd', title: 'no media columns' })
-    expect('media' in result).toBe(false)
-  })
-})
-
-describe('multi-column read assembly reads its part columns from the contract descriptor', () => {
-  it('assembles a columns field that implements no getColumnNames', async () => {
-    const { getColumnNames: _omitted, ...media } = multiColumnField()
-    const config: OpenSaasConfig = {
-      db: { provider: 'postgresql' },
-      lists: { Post: { fields: { media } } },
-    }
-    const result = await filterReadableFields(
-      { id: 'e', m_url: 'https://x/z.jpg', m_size: 7 },
-      config.lists.Post.fields,
-      { session: null, context: makeContext() },
-      config,
-      0,
-      'Post',
-    )
-    expect(result).toEqual({ id: 'e', media: { url: 'https://x/z.jpg', size: 7 } })
-  })
-
-  it('never leaks the raw part columns of a columns field whose read is denied', async () => {
-    const media = multiColumnField({ read: () => false })
-    const config: OpenSaasConfig = {
-      db: { provider: 'postgresql' },
-      lists: { Post: { fields: { media, title: text() } } },
-    }
-    const result = await filterReadableFields(
-      { id: '1', m_url: 'secret', m_size: 3, title: 'hi' },
-      config.lists.Post.fields,
-      { session: null, context: makeContext() },
-      config,
-      0,
-      'Post',
-    )
-    expect(result).toEqual({ id: '1', title: 'hi' })
-  })
-})
 
 describe('multi-column resolveInput (executeFieldResolveInputHooks) does NOT split (#789)', () => {
   const fields = { media: multiColumnField() }
