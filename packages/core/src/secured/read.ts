@@ -67,6 +67,8 @@ import {
 } from './select.js'
 import {
   getListDependencies,
+  noDependencyAdditions,
+  noReducedDeclaredKeys,
   type DependencyAdditions,
   type FieldSelectionScope,
   type ReducedDeclaredKeys,
@@ -1249,18 +1251,34 @@ declare const VISIBLE_ROW: unique symbol
 
 /**
  * A row that has been through {@link visibleRows} — Field Visibility and both
- * foreign-key passes — and nothing else. `OrmRow` has no property keyed by
- * this module-private symbol, so an unbranded row is not assignable where a
- * `VisibleRow` is expected: {@link visibleRows} is the only place that mints
- * one, and every terminal below is typed to return what it mints rather than
- * a plain `OrmRow`. A terminal added later that materialises rows without
- * calling {@link visibleRows} therefore fails to compile instead of shipping
- * the silent access-control regression this codebase has shipped four times
+ * foreign-key passes — or is {@link systemFieldsRow}'s, and nothing else.
+ * `OrmRow` has no property keyed by this module-private symbol, so an
+ * unbranded row is not assignable where a `VisibleRow` is expected:
+ * {@link minted} is the only place one is made, and every terminal and write
+ * return is typed to return what it mints rather than a plain `OrmRow`. A
+ * terminal or write path added later that materialises rows without calling
+ * {@link visibleRows} therefore fails to compile instead of shipping the
+ * silent access-control regression this codebase has shipped four times
  * (issue #1386). This closes the failure mode of *forgetting* the funnel, not
  * the one of a future author deliberately reaching for `as VisibleRow` on an
  * unfiltered row — no nominal brand in TypeScript stops that.
  */
 export type VisibleRow = OrmRow & { readonly [VISIBLE_ROW]: true }
+
+function minted(rows: OrmRow[]): VisibleRow[] {
+  return rows as VisibleRow[]
+}
+
+type VisibilityPlan = Pick<ReadPlan, 'includes' | 'selection' | 'additions' | 'reducedDeclared'>
+
+function emptyVisibilityPlan(): VisibilityPlan {
+  return {
+    includes: [],
+    selection: undefined,
+    additions: noDependencyAdditions(),
+    reducedDeclared: noReducedDeclaredKeys(),
+  }
+}
 
 async function unshapedDeclaredRows(
   binding: ReadBinding,
@@ -1383,7 +1401,7 @@ function ruleViewFor(
 async function visibleRows(
   binding: ReadBinding,
   rows: readonly OrmRow[],
-  plan: ReadPlan,
+  plan: VisibilityPlan,
 ): Promise<VisibleRow[]> {
   const { listConfig, context, config, listName } = binding
   const ruleViews = await ruleViewTreeFor(binding, listName, rows, plan.includes)
@@ -1414,7 +1432,15 @@ async function visibleRows(
     plan.includes,
     ruleViews,
   )
-  return results as VisibleRow[]
+  return minted(results)
+}
+
+function systemFieldsRow(binding: ReadBinding, row: OrmRow): VisibleRow {
+  const kept: OrmRow = {}
+  for (const key of getListDependencies(binding.config, binding.listName).systemFields) {
+    if (key in row) kept[key] = row[key]
+  }
+  return minted([kept])[0]
 }
 
 /**
@@ -1493,42 +1519,22 @@ export async function readWrittenRow(
 }
 
 /**
- * What a write hands back: the row Field Visibility leaves, then the
- * foreign-key pass a read of the same row would give it, so `create()` and
- * `update()` never return an id `first()` hides. A row the session cannot
- * `query` comes back as the list's system fields alone.
+ * What a write hands back, through {@link visibleRows} like every read: the
+ * re-read row under its own plan, or the write's own row under an empty one,
+ * so `create()` and `update()` never return an id `first()` hides. A row the
+ * session cannot `query` comes back as the list's system fields alone.
  */
 export async function visibleWrittenRow(
   binding: Omit<ReadBinding, 'lock'>,
   row: OrmRow,
   read: WrittenRowRead,
-): Promise<OrmRow> {
-  const { listConfig, context, config, listName } = binding
-  if (read.kind === 'read') return (await visibleRows(binding, [read.row], read.plan))[0]
-  if (read.kind === 'hidden') {
-    const kept: OrmRow = {}
-    for (const key of getListDependencies(config, listName).systemFields) {
-      if (key in row) kept[key] = row[key]
-    }
-    return kept
-  }
-  const filtered = await filterReadableFields(
-    row,
-    listConfig.fields,
-    { session: context.session, context: { ...context, _isSudo: context._isSudo } },
-    config,
-    listName,
-  )
-  await narrowUnincludedForeignKeys(
-    binding,
-    [filtered],
-    [row],
-    listName,
-    listConfig,
-    [],
-    NO_RULE_VIEWS,
-  )
-  return filtered
+): Promise<VisibleRow> {
+  if (read.kind === 'hidden') return systemFieldsRow(binding, row)
+  const [visible] =
+    read.kind === 'read'
+      ? await visibleRows(binding, [read.row], read.plan)
+      : await visibleRows(binding, [row], emptyVisibilityPlan())
+  return visible
 }
 
 /** `all()` is the terminal every plan member was designed for. */

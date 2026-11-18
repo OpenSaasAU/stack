@@ -23,7 +23,12 @@ import {
   type WriteCollection,
   type WriteScope,
 } from '../secured/write.js'
-import { readWrittenRow, visibleWrittenRow, writeReturnReadsRelations } from '../secured/read.js'
+import {
+  readWrittenRow,
+  visibleWrittenRow,
+  writeReturnReadsRelations,
+  type VisibleRow,
+} from '../secured/read.js'
 import { hookPipeline } from './hook-pipeline.js'
 import {
   lowerRelationInput,
@@ -185,7 +190,7 @@ export interface WritePipelineArgs {
  *   - `afterOperation` receives `originalItem` for update/delete (undefined for
  *     create).
  */
-export async function runWritePipeline(args: WritePipelineArgs): Promise<OrmRow | null> {
+export async function runWritePipeline(args: WritePipelineArgs): Promise<VisibleRow | null> {
   const { ormHandle, listName, listConfig, context, config, inputData, strategy } = args
   const ops = await whereCombinators()
 
@@ -426,7 +431,7 @@ function resolveAfterTransactionContext(
 }
 
 interface WrittenRow {
-  visible: OrmRow
+  visible: VisibleRow
   raw: OrmRow
 }
 
