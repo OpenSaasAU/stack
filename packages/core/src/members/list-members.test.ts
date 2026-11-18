@@ -12,6 +12,8 @@ import { relationship, text, timestamp, virtual } from '../fields/index.js'
 import { validateConfigFields } from '../validation/field-config.js'
 import { validateDatabaseConfig } from '../validation/database-config.js'
 import { validateRelations } from '../validation/relations.js'
+import { validateFieldNames } from '../validation/field-names.js'
+import { MemberClaimRefusal, walkContractMembers } from './claims.js'
 import type { ConfigRefusalReason } from '../validation/config-refusal.js'
 import { resolveListMember, resolveListMembers, type ListMember } from './list-members.js'
 
@@ -121,12 +123,6 @@ function fixture(): OpenSaasConfig {
           secret: new SecretField(),
         },
       },
-      Ticket: {
-        fields: {
-          owner: relationship({ ref: 'Author' }),
-          ownerId: virtual({ type: 'string', hooks: { resolveOutput: () => 'owner' } }),
-        },
-      },
       Settings: {
         isSingleton: true,
         fields: { siteName: text() },
@@ -136,6 +132,10 @@ function fixture(): OpenSaasConfig {
 }
 
 const config = fixture()
+
+function computed(): FieldConfig {
+  return virtual({ type: 'string', hooks: { resolveOutput: () => '' } })
+}
 
 function storageOf(member: ListMember | undefined): unknown {
   return member?.kind === 'field' ? member.storage : undefined
@@ -350,12 +350,6 @@ describe('resolveListMember', () => {
       'a part of the #private field',
       { kind: 'partColumn', field: 'secret', column: 'secret_salt' },
     ],
-    [
-      'Ticket',
-      'ownerId',
-      'a computed field keyed like an owned foreign key, resolved declared-first (OpenSaasAU/stack#2445)',
-      { kind: 'field', storage: { kind: 'computed' } },
-    ],
     ['Settings', 'siteName', "a singleton's field", { kind: 'field', storage: { kind: 'column' } }],
     ['Category', 'categoryId', 'the far side of a list-only ref', undefined],
   ]
@@ -490,6 +484,7 @@ const NAME_REFUSALS: ReadonlySet<ConfigRefusalReason> = new Set([
   'non-identifier-name',
   'reserved-field-name',
   'foreign-key-column-collision',
+  'part-column-collision',
   'synthetic-relation-collision',
   'unknown-relationship-target',
   'inverse-mismatch',
@@ -701,6 +696,44 @@ describe('a config generate refuses', () => {
       'Blog-Post',
     ],
     [
+      'a computed field keyed like an owned foreign key',
+      withLists({
+        Post: { fields: { author: relationship({ ref: 'Author' }), authorId: computed() } },
+        Author: { fields: { name: text() } },
+      }),
+      'Post',
+    ],
+    [
+      'a computed field keyed like another field’s part column',
+      withLists({ Post: { fields: { address: addressField, address_city: computed() } } }),
+      'Post',
+    ],
+    [
+      'a multi-column field keyed like an owned foreign key',
+      withLists({
+        Post: {
+          fields: {
+            authorId: partsField({ name: 'authorId_a' }, { name: 'authorId_b' }),
+            author: relationship({ ref: 'Author' }),
+          },
+        },
+        Author: { fields: { name: text() } },
+      }),
+      'Post',
+    ],
+    [
+      'a multi-column field keyed like another field’s part column',
+      withLists({
+        Post: {
+          fields: {
+            address: addressField,
+            address_line: partsField({ name: 'line_a' }, { name: 'line_b' }),
+          },
+        },
+      }),
+      'Post',
+    ],
+    [
       'a column stored under the name of a relation on the same list',
       withLists({
         Post: {
@@ -719,6 +752,66 @@ describe('a config generate refuses', () => {
     const message = generateError(refused)
     expect(() => resolveListMembers(refused, listKey)).toThrow(message)
   })
+
+  const shadowed: Array<[string, OpenSaasConfig, string]> = [
+    [
+      'a computed field keyed like an owned foreign key, declared after it',
+      withLists({
+        Post: { fields: { author: relationship({ ref: 'Author' }), authorId: computed() } },
+        Author: { fields: { name: text() } },
+      }),
+      'List "Post": fields.authorId collides with the foreign-key column "authorId" that ' +
+        'fields.author derives for its relationship. Rename fields.authorId, or remove it and ' +
+        'read the key through fields.author.',
+    ],
+    [
+      'a computed field keyed like an owned foreign key, declared before it',
+      withLists({
+        Post: { fields: { authorId: computed(), author: relationship({ ref: 'Author' }) } },
+        Author: { fields: { name: text() } },
+      }),
+      'List "Post": fields.authorId collides with the foreign-key column "authorId" that ' +
+        'fields.author derives for its relationship. Rename fields.authorId, or remove it and ' +
+        'read the key through fields.author.',
+    ],
+    [
+      'a multi-column field keyed like another field’s part column, declared before it',
+      withLists({
+        Post: {
+          fields: {
+            address_city: partsField({ name: 'city_a' }, { name: 'city_b' }),
+            address: addressField,
+          },
+        },
+      }),
+      'List "Post": fields.address_city collides with the part column "address_city" that ' +
+        'fields.address derives for its multi-column field. Rename fields.address_city.',
+    ],
+  ]
+
+  shadowed.push([
+    'a text field keyed like another field’s part column',
+    withLists({ Post: { fields: { address: addressField, address_city: text() } } }),
+    'List "Post": fields.address_city collides with the part column "address_city" that ' +
+      'fields.address derives for its multi-column field. Rename fields.address_city.',
+  ])
+
+  it.each(shadowed)(
+    '%s is refused with the message validateFieldNames gives (#2445)',
+    (_description, refused, message) => {
+      expect(validateFieldNames(refused).map((refusal) => refusal.message)).toEqual([message])
+      expect(() => resolveListMembers(refused, 'Post')).toThrow(message)
+      const claimed = (): void =>
+        walkContractMembers(refused, {
+          describe: (listKey, fieldKey, field) =>
+            field.virtual
+              ? { kind: 'computed' }
+              : field.getContractField?.(fieldKey, listKey, refused),
+        })
+      expect(claimed).toThrow(MemberClaimRefusal)
+      expect(claimed).toThrow(message)
+    },
+  )
 
   it('rethrows the same error object on every call', () => {
     const refused = withLists({ Post: { fields: { id: text() } } })

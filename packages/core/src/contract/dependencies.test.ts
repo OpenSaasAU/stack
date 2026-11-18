@@ -208,7 +208,15 @@ describe('deriveConstraintMap', () => {
         User: { fields: { name: text() } },
       },
     }
-    const map = deriveConstraintMap(shadowed, deriveContract(shadowed))
+    const contract = deriveContract({
+      ...shadowed,
+      lists: {
+        ...shadowed.lists,
+        Ticket: { fields: { owner: shadowed.lists.Ticket.fields.owner } },
+      },
+    })
+    expect(() => deriveContract(shadowed)).toThrow('Rename fields.ownerId')
+    const map = deriveConstraintMap(shadowed, contract)
     expect(map.Ticket_ownerId_key).toEqual({ list: 'Ticket', fields: ['owner'] })
   })
 
