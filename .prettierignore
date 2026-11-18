@@ -36,3 +36,6 @@ ds-bundle/
 examples/*/prisma/
 examples/*/prisma.config.ts
 examples/*/migrations/
+
+# Checker fixtures hold deliberately unusual files (JS in a .CSS file).
+scripts/client-server-graph/self-test/
