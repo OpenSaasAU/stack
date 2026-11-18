@@ -204,7 +204,7 @@ function* describeAll(
   state: ConfigState,
 ): Generator<[string, string, ContractFieldDescriptor]> {
   for (const [listKey, listConfig] of Object.entries(config.lists)) {
-    for (const [fieldKey, field] of Object.entries(listConfig.fields)) {
+    for (const [fieldKey, field] of Object.entries(listConfig.fields ?? {})) {
       yield [listKey, fieldKey, describe(config, state, listKey, fieldKey, field)]
     }
   }
