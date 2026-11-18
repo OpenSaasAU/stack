@@ -176,6 +176,7 @@ describe('validateFieldNames', () => {
   it.each([
     ['a virtual field', computed],
     ['a multi-column field', () => partsField('address_city_a', 'address_city_b')],
+    ['a text field', () => text()],
   ])("refuses %s keyed like another field's part column (#2445)", (_kind, field) => {
     const refusals = validateFieldNames(
       configWith({
@@ -193,6 +194,19 @@ describe('validateFieldNames', () => {
           'List "Post": fields.address_city collides with the part column "address_city" that ' +
           'fields.address derives for its multi-column field. Rename fields.address_city.',
       },
+    ])
+  })
+
+  it('refuses a field keyed like a part column declared after it, naming the declared field', () => {
+    const refusals = validateFieldNames(
+      configWith({
+        Post: {
+          fields: { address_city: text(), address: partsField('address_line', 'address_city') },
+        },
+      }),
+    )
+    expect(refusals.map((refusal) => [refusal.entry, refusal.reason])).toEqual([
+      ['fields.address_city', 'part-column-collision'],
     ])
   })
 

@@ -1,7 +1,12 @@
-import { isComputedField, readContractDescriptor } from '../config/field-kind.js'
+import { readContractDescriptor } from '../config/field-kind.js'
 import type { ContractFieldDescriptor, OpenSaasConfig } from '../config/types.js'
 import { isRelationshipField } from '../fields/index.js'
-import { derivedMemberCollision, type DerivedMemberOwner } from '../members/claims.js'
+import {
+  DerivedMemberLedger,
+  derivedMemberCollision,
+  fieldMemberClaims,
+  type DerivedMemberCollision,
+} from '../members/claims.js'
 import type { ConfigRefusal } from './config-refusal.js'
 
 type FieldConfigOf = OpenSaasConfig['lists'][string]['fields'][string]
@@ -105,66 +110,40 @@ function refuseReservedName(
   ]
 }
 
-function derivedMembers(descriptors: ListDescriptors): Map<string, DerivedMemberOwner> {
-  const derived = new Map<string, DerivedMemberOwner>()
-  for (const [fieldKey, descriptor] of descriptors) {
-    if (descriptor?.kind === 'relation' && descriptor.foreignKey !== undefined) {
-      derived.set(descriptor.foreignKey.name, { kind: 'foreignKey', field: fieldKey })
-    }
-  }
-  for (const [fieldKey, descriptor] of descriptors) {
-    if (descriptor?.kind !== 'columns') continue
-    for (const column of descriptor.columns) {
-      if (column.name !== fieldKey && !derived.has(column.name)) {
-        derived.set(column.name, { kind: 'partColumn', field: fieldKey })
-      }
-    }
-  }
-  return derived
-}
-
-function refuseForeignKeyCollisions(
+function refuseDerivedMemberCollisions(
   descriptors: ListDescriptors,
   listKey: string,
   listConfig: OpenSaasConfig['lists'][string],
-  config: OpenSaasConfig,
 ): ConfigRefusal[] {
-  const derived = derivedMembers(descriptors)
-  if (derived.size === 0) return []
-
-  const refusals: ConfigRefusal[] = []
-  for (const [fieldKey, field] of Object.entries(listConfig.fields)) {
-    const collision = memberNames(descriptors, fieldKey, field)
-      .map((name) => ({ name, owner: derived.get(name) }))
-      .find(
-        ({ owner }) =>
-          owner !== undefined && owner.kind === 'foreignKey' && owner.field !== fieldKey,
-      )
-    if (collision?.owner !== undefined) {
-      refusals.push({
+  const ledger = new DerivedMemberLedger()
+  const collisions = new Map<string, DerivedMemberCollision>()
+  const fieldKeys = Object.keys(listConfig.fields)
+  for (const fieldKey of fieldKeys) {
+    for (const claim of fieldMemberClaims(
+      fieldKey,
+      descriptors.get(fieldKey) ?? { kind: 'computed' },
+    )) {
+      const collision = ledger.claim(fieldKey, claim)
+      if (collision !== undefined && !collisions.has(collision.field)) {
+        collisions.set(collision.field, collision)
+      }
+    }
+  }
+  return fieldKeys.flatMap((fieldKey): ConfigRefusal[] => {
+    const collision = collisions.get(fieldKey)
+    if (collision === undefined) return []
+    return [
+      {
         listKey,
         entry: `fields.${fieldKey}`,
-        reason: 'foreign-key-column-collision',
+        reason:
+          collision.owner.kind === 'foreignKey'
+            ? 'foreign-key-column-collision'
+            : 'part-column-collision',
         message: derivedMemberCollision(listKey, fieldKey, collision.name, collision.owner),
-      })
-      continue
-    }
-    const descriptor = descriptors.get(fieldKey)
-    const keyedLikeMember =
-      descriptor?.kind === 'columns'
-        ? !descriptor.columns.some((column) => column.name === fieldKey)
-        : isComputedField(field, fieldKey, listKey, config, { kind: descriptor?.kind })
-    const owner = keyedLikeMember ? derived.get(fieldKey) : undefined
-    if (owner === undefined || owner.field === fieldKey) continue
-    refusals.push({
-      listKey,
-      entry: `fields.${fieldKey}`,
-      reason:
-        owner.kind === 'foreignKey' ? 'foreign-key-column-collision' : 'part-column-collision',
-      message: derivedMemberCollision(listKey, fieldKey, fieldKey, owner),
-    })
-  }
-  return refusals
+      },
+    ]
+  })
 }
 
 function refuseSyntheticCollisions(
@@ -202,8 +181,8 @@ function refuseSyntheticCollisions(
  * members it derives itself: the Where vocabulary's `AND`/`OR`/`NOT` (and `some`/`every`/`none` on a
  * relationship), `id` (the primary key comes from `db.idField`,
  * ADR-0048), a field whose column name is the `<field>Id` foreign-key column
- * another relationship on the same list owns, a computed or multi-column field
- * keyed like another field's foreign-key or part column, and a field named
+ * another relationship on the same list owns, any field keyed like another
+ * field's foreign-key or part column, and a field named
  * `from_<List>_<field>` where a list-only ref synthesises that back-relation
  * on its target. A declared `createdAt`/`updatedAt` is not refused: it
  * replaces the auto-timestamp column, as the generator has always allowed.
@@ -218,7 +197,7 @@ export function validateFieldNames(config: OpenSaasConfig): ConfigRefusal[] {
       refusals.push(...refuseReservedName(listKey, fieldKey, field))
       refusals.push(...refuseReservedPartColumns(descriptors, listKey, fieldKey, field))
     }
-    refusals.push(...refuseForeignKeyCollisions(descriptors, listKey, listConfig, config))
+    refusals.push(...refuseDerivedMemberCollisions(descriptors, listKey, listConfig))
   }
   refusals.push(...refuseSyntheticCollisions(config, described))
   return refusals

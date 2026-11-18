@@ -11,7 +11,7 @@ import {
   multiSchemaConfig,
   oneToOneConfig,
 } from './fixtures/contract-configs.js'
-import { text } from '../fields/index.js'
+import { relationship, text, virtual } from '../fields/index.js'
 import type { OpenSaasConfig } from '../config/types.js'
 
 /** A config whose only content is one list of text fields, built through the real builders. */
@@ -109,6 +109,31 @@ describe('deriveConstraintMap', () => {
     expect(map.Passport_holderId_key).toEqual({ list: 'Passport', fields: ['holder'] })
     // `partner` sorts before `spouse` on the self-referential pair.
     expect(map.Person_partnerId_key).toEqual({ list: 'Person', fields: ['partner'] })
+  })
+
+  it('maps a unique foreign key to its relationship when a virtual field shadows the key name', () => {
+    const shadowed: OpenSaasConfig = {
+      db: { provider: 'postgresql' },
+      lists: {
+        Ticket: {
+          fields: {
+            owner: relationship({ ref: 'User', isIndexed: 'unique' }),
+            ownerId: virtual({ type: 'string', hooks: { resolveOutput: () => 'shadow' } }),
+          },
+        },
+        User: { fields: { name: text() } },
+      },
+    }
+    const contract = deriveContract({
+      ...shadowed,
+      lists: {
+        ...shadowed.lists,
+        Ticket: { fields: { owner: shadowed.lists.Ticket.fields.owner } },
+      },
+    })
+    expect(() => deriveContract(shadowed)).toThrow('Rename fields.ownerId')
+    const map = deriveConstraintMap(shadowed, contract)
+    expect(map.Ticket_ownerId_key).toEqual({ list: 'Ticket', fields: ['owner'] })
   })
 
   it('still maps a unique when the config is one generate would refuse', () => {

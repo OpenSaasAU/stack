@@ -51,15 +51,9 @@ describe('a computed field named like an owned foreign key (#2445)', () => {
   })
 
   test(
-    'refuses a read rather than resolving the name to either member',
+    'refuses to stand up a database for it',
     async () => {
-      const database = await createTestDatabase(config)
-      try {
-        const read = async (): Promise<unknown> => database.context({ userId: 'u1' }).db.Item.all()
-        await expect(read()).rejects.toThrow(MESSAGE)
-      } finally {
-        await database.close()
-      }
+      await expect(createTestDatabase(config)).rejects.toThrow(MESSAGE)
     },
     BOOT,
   )

@@ -788,6 +788,13 @@ describe('a config generate refuses', () => {
     ],
   ]
 
+  shadowed.push([
+    'a text field keyed like another field’s part column',
+    withLists({ Post: { fields: { address: addressField, address_city: text() } } }),
+    'List "Post": fields.address_city collides with the part column "address_city" that ' +
+      'fields.address derives for its multi-column field. Rename fields.address_city.',
+  ])
+
   it.each(shadowed)(
     '%s is refused with the message validateFieldNames gives (#2445)',
     (_description, refused, message) => {

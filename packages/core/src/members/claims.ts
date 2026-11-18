@@ -145,35 +145,99 @@ export interface ContractMemberWalk {
   readonly synthetics?: ReadonlyMap<string, readonly SyntheticBackRelationClaim[]>
 }
 
+export type FieldMemberClaim = {
+  name: string
+  origin: string
+  owner: DerivedMemberOwner | undefined
+  column: { name: string; map?: string } | undefined
+  part: ContractColumnDescriptor | undefined
+  relation: boolean
+}
+
+export function fieldMemberClaims(
+  fieldKey: string,
+  descriptor: ContractFieldDescriptor,
+): FieldMemberClaim[] {
+  const declared = (name: string): FieldMemberClaim => ({
+    name,
+    origin: claimOrigin.field(fieldKey),
+    owner: undefined,
+    column: undefined,
+    part: undefined,
+    relation: false,
+  })
+  switch (descriptor.kind) {
+    case 'column':
+      return [{ ...declared(descriptor.name), column: descriptor }]
+    case 'columns': {
+      let ownPart = false
+      const claims = descriptor.columns.map((part): FieldMemberClaim => {
+        if (part.name !== fieldKey) {
+          return {
+            ...declared(part.name),
+            owner: { kind: 'partColumn', field: fieldKey },
+            column: part,
+            part,
+          }
+        }
+        ownPart = true
+        return { ...declared(part.name), column: part, part }
+      })
+      return ownPart ? claims : [...claims, declared(fieldKey)]
+    }
+    case 'relation':
+      return [
+        { ...declared(fieldKey), relation: true },
+        ...(descriptor.foreignKey === undefined
+          ? []
+          : [
+              {
+                ...declared(descriptor.foreignKey.name),
+                origin: claimOrigin.foreignKey(fieldKey),
+                owner: { kind: 'foreignKey' as const, field: fieldKey },
+                column: descriptor.foreignKey,
+              },
+            ]),
+      ]
+    case 'computed':
+      return [declared(fieldKey)]
+  }
+}
+
+export type DerivedMemberCollision = { field: string; name: string; owner: DerivedMemberOwner }
+
+export class DerivedMemberLedger {
+  #declared = new Map<string, string>()
+  #derived = new Map<string, DerivedMemberOwner>()
+
+  claim(fieldKey: string, { name, owner }: FieldMemberClaim): DerivedMemberCollision | undefined {
+    const derived = this.#derived.get(name)
+    if (owner === undefined) {
+      if (derived !== undefined) return { field: fieldKey, name, owner: derived }
+      this.#declared.set(name, fieldKey)
+      return undefined
+    }
+    const declared = this.#declared.get(name)
+    if (declared !== undefined) return { field: declared, name, owner }
+    if (derived === undefined) {
+      this.#derived.set(name, owner)
+      return undefined
+    }
+    if (derived.kind === 'foreignKey' && owner.kind === 'partColumn') {
+      return { field: owner.field, name, owner: derived }
+    }
+    if (derived.kind === 'partColumn' && owner.kind === 'foreignKey') {
+      return { field: derived.field, name, owner }
+    }
+    return undefined
+  }
+}
+
 type ListWalk = {
   claims: ListMemberClaims
-  derived: Map<string, DerivedMemberOwner>
-  keys: Set<string>
+  ledger: DerivedMemberLedger
   columns: Array<{ name: string; map?: string }>
   relations: string[]
-}
-
-function claimDerivedMember(
-  listKey: string,
-  list: ListWalk,
-  name: string,
-  owner: DerivedMemberOwner,
-  origin: string,
-): void {
-  if (list.keys.has(name)) {
-    throw new MemberClaimRefusal(derivedMemberCollision(listKey, name, name, owner))
-  }
-  claimListMember(listKey, list.claims, name, origin)
-  list.derived.set(name, owner)
-}
-
-function claimDeclaredKey(listKey: string, list: ListWalk, fieldKey: string): void {
-  const owner = list.derived.get(fieldKey)
-  if (owner !== undefined) {
-    throw new MemberClaimRefusal(derivedMemberCollision(listKey, fieldKey, fieldKey, owner))
-  }
-  claimListMember(listKey, list.claims, fieldKey, claimOrigin.field(fieldKey))
-  list.keys.add(fieldKey)
 }
 
 function walkField(
@@ -185,49 +249,18 @@ function walkField(
   descriptor: ContractFieldDescriptor,
 ): void {
   walk.beforeClaim?.(listKey, fieldKey, field, descriptor)
-  switch (descriptor.kind) {
-    case 'column':
-      claimListMember(listKey, list.claims, descriptor.name, claimOrigin.field(fieldKey))
-      list.columns.push(descriptor)
-      break
-    case 'columns':
-      for (const part of descriptor.columns) {
-        walk.beforePartClaim?.(listKey, fieldKey, field, part)
-        if (part.name === fieldKey) {
-          claimListMember(listKey, list.claims, part.name, claimOrigin.field(fieldKey))
-        } else {
-          claimDerivedMember(
-            listKey,
-            list,
-            part.name,
-            { kind: 'partColumn', field: fieldKey },
-            claimOrigin.field(fieldKey),
-          )
-        }
-        list.columns.push(part)
-        walk.afterPartClaim?.(listKey, fieldKey, field, part)
-      }
-      if (!descriptor.columns.some((part) => part.name === fieldKey)) {
-        claimDeclaredKey(listKey, list, fieldKey)
-      }
-      break
-    case 'relation':
-      claimListMember(listKey, list.claims, fieldKey, claimOrigin.field(fieldKey))
-      list.relations.push(fieldKey)
-      if (descriptor.foreignKey !== undefined) {
-        claimDerivedMember(
-          listKey,
-          list,
-          descriptor.foreignKey.name,
-          { kind: 'foreignKey', field: fieldKey },
-          claimOrigin.foreignKey(fieldKey),
-        )
-        list.columns.push(descriptor.foreignKey)
-      }
-      break
-    case 'computed':
-      claimDeclaredKey(listKey, list, fieldKey)
-      break
+  for (const claim of fieldMemberClaims(fieldKey, descriptor)) {
+    if (claim.part !== undefined) walk.beforePartClaim?.(listKey, fieldKey, field, claim.part)
+    const collision = list.ledger.claim(fieldKey, claim)
+    if (collision !== undefined) {
+      throw new MemberClaimRefusal(
+        derivedMemberCollision(listKey, collision.field, collision.name, collision.owner),
+      )
+    }
+    claimListMember(listKey, list.claims, claim.name, claim.origin)
+    if (claim.relation) list.relations.push(claim.name)
+    if (claim.column !== undefined) list.columns.push(claim.column)
+    if (claim.part !== undefined) walk.afterPartClaim?.(listKey, fieldKey, field, claim.part)
   }
   walk.afterClaim?.(listKey, fieldKey, field, descriptor)
 }
@@ -240,8 +273,7 @@ export function walkContractMembers(config: OpenSaasConfig, walk: ContractMember
     const timestamps = resolveListTimestamps(listConfig, config.db)
     const list: ListWalk = {
       claims: startListMemberClaims(timestamps),
-      derived: new Map(),
-      keys: new Set(),
+      ledger: new DerivedMemberLedger(),
       columns: [],
       relations: [],
     }
