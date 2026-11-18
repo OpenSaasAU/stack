@@ -45,8 +45,9 @@ export function resolveListTimestamps(
 ): ContractTimestamps {
   const enabled = listConfig.db?.timestamps ?? dbConfig.timestamps ?? false
   if (!enabled) return { createdAt: false, updatedAt: false }
+  const fields = listConfig.fields ?? {}
   return {
-    createdAt: !Object.prototype.hasOwnProperty.call(listConfig.fields, 'createdAt'),
-    updatedAt: !Object.prototype.hasOwnProperty.call(listConfig.fields, 'updatedAt'),
+    createdAt: !Object.prototype.hasOwnProperty.call(fields, 'createdAt'),
+    updatedAt: !Object.prototype.hasOwnProperty.call(fields, 'updatedAt'),
   }
 }

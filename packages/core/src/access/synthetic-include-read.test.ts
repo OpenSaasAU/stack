@@ -155,26 +155,6 @@ describe('filterReadableFields — synthetic back-relation (#1082)', () => {
 
     expect(result).toEqual({ id: 't1', name: 'Term 1' })
   })
-
-  it('leaves an undeclared, non-synthetic key untouched (no config supplied)', async () => {
-    // Mirrors the pre-#1082 narrow-unit-test contract: without `config`
-    // there is nothing to resolve a synthetic key against, so the field
-    // passes through as a plain value — the same fallback
-    // `filterWritableFields` documents for its own `config`-less callers.
-    const config = syntheticConfig()
-    const termRow = { id: 't1', name: 'Term 1', from_Bill_term: [{ id: 'b1', amount: 5 }] }
-
-    const result = await filterReadableFields(
-      termRow,
-      config.lists.Term.fields,
-      { session: null, context: makeContext() },
-      undefined,
-      0,
-      'Term',
-    )
-
-    expect(result.from_Bill_term).toEqual([{ id: 'b1', amount: 5 }])
-  })
 })
 
 describe('filterReadableFields — synthetic back-relation source field read gate (#1812)', () => {

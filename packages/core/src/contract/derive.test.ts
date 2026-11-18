@@ -55,6 +55,17 @@ describe('deriveContract — ids', () => {
     })
   })
 
+  test('a singleton declared with options is a singleton, and isSingleton: false is not', () => {
+    expect(
+      single({ Settings: { fields: { name: text() }, isSingleton: { autoCreate: false } } })
+        .models[0].singleton,
+    ).toBe(true)
+    expect(
+      single({ A: { fields: { name: text() }, isSingleton: false } }).models[0].singleton,
+    ).toBe(false)
+    expect(single({ A: { fields: { name: text() } } }).models[0].singleton).toBe(false)
+  })
+
   test('a foreign-key column takes the referenced list id type', () => {
     const data = single({
       Invoice: {

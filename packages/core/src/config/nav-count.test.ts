@@ -132,6 +132,29 @@ describe('resolveNavCounts', () => {
   )
 
   test(
+    'a config whose List members do not resolve omits each list and still resolves',
+    async () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+      try {
+        const base = schemaConfig()
+        const refused: OpenSaasConfig = {
+          ...base,
+          lists: {
+            ...base.lists,
+            lowercase: { fields: { title: text() }, ui: { navCount: true } },
+          },
+        }
+
+        await expect(resolveNavCounts(accessContext(), refused)).resolves.toEqual({})
+        expect(error.mock.calls.some((call) => String(call[0]).includes('Counted'))).toBe(true)
+      } finally {
+        error.mockRestore()
+      }
+    },
+    BOOT,
+  )
+
+  test(
     'a context that resolves no Session vocabulary counts nothing',
     async () => {
       const { _sessionVocabularyQuestions: _omitted, ...withoutVocabulary } = accessContext()

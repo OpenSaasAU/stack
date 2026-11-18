@@ -1,6 +1,7 @@
 import type { AccessContext } from '../access/types.js'
 import { controlFlowPredicateOf, rethrowControlFlow } from '../access/decide-advertisement.js'
 import type { AggregateBuild } from '../secured/aggregate.js'
+import { resolveListMembers } from '../members/list-members.js'
 import type { ListConfig, OpenSaasConfig, TypeInfo } from './types.js'
 
 /**
@@ -19,8 +20,8 @@ type CountDelegate = {
  * everything else is omitted from the map, never zeroed. A context that
  * resolves no vocabulary for a list counts it as denied.
  *
- * Never rejects over one list: a list whose vocabulary read or count fails is
- * omitted and logged. A framework's control flow (`redirect()`, `notFound()`)
+ * Never rejects over one list: a list whose List members, vocabulary read or
+ * count fails is omitted and logged. A framework's control flow (`redirect()`, `notFound()`)
  * raised by either propagates.
  *
  * Each count is read through the secured `context.db`, so it reflects
@@ -36,8 +37,7 @@ export async function resolveNavCounts(
   const optedIn = Object.keys(lists).filter((listKey) => {
     const listConfig = lists[listKey] as ListConfig<TypeInfo> | undefined
     if (!listConfig) return false
-    if (listConfig.ui?.navCount !== true) return false
-    return !listConfig.isSingleton
+    return listConfig.ui?.navCount === true
   })
 
   await Promise.all(
@@ -49,6 +49,7 @@ export async function resolveNavCounts(
       // omit just that badge. Other lists' counts are unaffected. A framework's
       // control flow (`redirect()`, `notFound()`) still reaches the framework.
       try {
+        if (resolveListMembers(config, listKey).singleton) return
         const questions = context._sessionVocabularyQuestions?.(listKey) ?? null
         if (questions === null || (await questions.operation('query')) === 'deny') return
         if (!delegate?.aggregate) return

@@ -1,8 +1,7 @@
-import type { ListConfig, OpenSaasConfig, TypeInfo } from '../config/types.js'
-import { isRelationshipField, shouldHaveForeignKey } from '../fields/index.js'
-import { unhandledMember, type ListMembers } from '../members/list-members.js'
+import type { OpenSaasConfig } from '../config/types.js'
+import { isRelationshipField } from '../fields/index.js'
+import { unhandledMember, type ListMemberTable, type ListMembers } from '../members/list-members.js'
 import { deriveListMemberTable } from './derive.js'
-import { resolveListTimestamps } from './strategy.js'
 import type { ContractData, ContractModel } from './types.js'
 
 /**
@@ -115,41 +114,16 @@ function makeObjectName(name: string, label: string): string {
   return `${clipToBytes(name, available)}_${label}`
 }
 
-function foreignKeyColumnName(fieldKey: string): string {
-  return `${fieldKey}Id`
+function foreignKeyMemberColumn(members: ListMembers, fieldKey: string): string | undefined {
+  const member = members.members.get(fieldKey)
+  if (member?.kind !== 'field' || member.storage.kind !== 'relation') return undefined
+  return member.storage.foreignKey?.name
 }
 
-/**
- * A relationship field's foreign-key column, or `undefined` where the other
- * side owns it. An unresolvable `ref` is `validateRelations`' finding, so it
- * counts as no column here rather than throwing out of the table.
- */
-function ownedForeignKeyColumn(
-  config: OpenSaasConfig,
-  listKey: string,
-  fieldKey: string,
-  field: ListConfig<TypeInfo>['fields'][string],
-): string | undefined {
-  if (!isRelationshipField(field)) return undefined
-  try {
-    return shouldHaveForeignKey(listKey, fieldKey, field, config)
-      ? foreignKeyColumnName(fieldKey)
-      : undefined
-  } catch {
-    return undefined
-  }
-}
-
-function systemFieldsOf(config: OpenSaasConfig, listConfig: ListConfig<TypeInfo>): string[] {
-  // `resolveListTimestamps` reads `listConfig.fields` directly, so a raw config
-  // that omits it entirely throws — and this runs per read, not only at
-  // generation.
-  const fields = listConfig.fields ?? {}
-  const timestamps = resolveListTimestamps({ ...listConfig, fields }, config.db)
-  const names = ['id']
-  if (timestamps.createdAt) names.push('createdAt')
-  if (timestamps.updatedAt) names.push('updatedAt')
-  return names
+function listMembersOf(table: ListMemberTable, listKey: string): ListMembers {
+  const members = table.lists.get(listKey)
+  if (members === undefined) throw new Error(`List "${listKey}" has no List members`)
+  return members
 }
 
 /**
@@ -163,11 +137,15 @@ function systemFieldsOf(config: OpenSaasConfig, listConfig: ListConfig<TypeInfo>
  * for a config whose refusals are being reported.
  */
 export function deriveDependencyTable(config: OpenSaasConfig): DependencyTable {
+  return dependencyTableFrom(config, deriveListMemberTable(config))
+}
+
+function dependencyTableFrom(config: OpenSaasConfig, members: ListMemberTable): DependencyTable {
   const table: DependencyTable = {}
 
   for (const listKey of Object.keys(config.lists).sort()) {
-    const listConfig = config.lists[listKey]
-    const fieldConfigs = listConfig?.fields ?? {}
+    const listMembers = listMembersOf(members, listKey)
+    const fieldConfigs = config.lists[listKey].fields ?? {}
     const fields: Record<string, FieldDependencySet> = {}
 
     for (const fieldKey of Object.keys(fieldConfigs).sort()) {
@@ -181,7 +159,7 @@ export function deriveDependencyTable(config: OpenSaasConfig): DependencyTable {
         const dependency = fieldConfigs[name]
         if (dependency && isRelationshipField(dependency)) {
           relations.add(name)
-          const column = ownedForeignKeyColumn(config, listKey, name, dependency)
+          const column = foreignKeyMemberColumn(listMembers, name)
           if (column) columns.add(column)
           continue
         }
@@ -196,7 +174,7 @@ export function deriveDependencyTable(config: OpenSaasConfig): DependencyTable {
     }
 
     table[listKey] = {
-      systemFields: systemFieldsOf(config, listConfig ?? { fields: {} }),
+      systemFields: [...listMembers.systemFields],
       fields,
     }
   }
@@ -300,8 +278,15 @@ function claim(
  *   suggestion.
  */
 export function deriveConstraintMap(config: OpenSaasConfig, contract: ContractData): ConstraintMap {
+  return constraintMapFrom(config, contract, deriveListMemberTable(config))
+}
+
+function constraintMapFrom(
+  config: OpenSaasConfig,
+  contract: ContractData,
+  members: ListMemberTable,
+): ConstraintMap {
   const map: ConstraintMap = {}
-  const members = deriveListMemberTable(config)
 
   for (const model of contract.models) {
     if (!config.lists[model.name]) continue
@@ -359,8 +344,9 @@ export function deriveGeneratedTables(
   config: OpenSaasConfig,
   contract: ContractData,
 ): GeneratedTables {
+  const members = deriveListMemberTable(config)
   return {
-    dependencies: deriveDependencyTable(config),
-    constraints: deriveConstraintMap(config, contract),
+    dependencies: dependencyTableFrom(config, members),
+    constraints: constraintMapFrom(config, contract, members),
   }
 }
