@@ -73,7 +73,7 @@ export default config({
 
 ```typescript
 // lib/second-client.ts
-import { resolveRuntimeConnection } from '@opensaas/stack-core/client'
+import { resolveRuntimeConnection } from '@opensaas/stack-core/db-client'
 import postgres from '@prisma/orm-postgres/runtime'
 import { contractFromJson } from '@prisma/orm-postgres/static'
 import type { Contract } from '../prisma/contract.d.js'

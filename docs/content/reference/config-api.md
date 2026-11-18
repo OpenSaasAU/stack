@@ -341,7 +341,7 @@ db: {
 }
 ```
 
-Omit `client` entirely to let the runtime open its own pool from the resolved database URL. `resolveRuntimeConnection` from `@opensaas/stack-core/client` is what reads this key — see [building a second client synchronously](/docs/reference/context-api).
+Omit `client` entirely to let the runtime open its own pool from the resolved database URL. `resolveRuntimeConnection` from `@opensaas/stack-core/db-client` is what reads this key — see [building a second client synchronously](/docs/reference/context-api).
 
 ##### `schemas`
 

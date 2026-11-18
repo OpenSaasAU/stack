@@ -37,9 +37,13 @@
       "types": "./dist/mcp/index.d.ts",
       "default": "./dist/mcp/index.js"
     },
-    "./client": {
+    "./db-client": {
       "types": "./dist/db/client.d.ts",
       "default": "./dist/db/client.js"
+    },
+    "./client": {
+      "types": "./dist/db/client-alias.d.ts",
+      "default": "./dist/db/client-alias.js"
     },
     "./client-safe": {
       "types": "./dist/client-safe.d.ts",

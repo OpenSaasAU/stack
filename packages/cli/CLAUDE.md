@@ -192,7 +192,7 @@ One ORM client per process, constructed from the committed `contract.json` rathe
 
 ```typescript
 import { getContext as getOpensaasContext, requireOrmHandle } from '@opensaas/stack-core'
-import { resolveRuntimeConnection } from '@opensaas/stack-core/client'
+import { resolveRuntimeConnection } from '@opensaas/stack-core/db-client'
 import { originTripwire } from '@opensaas/stack-core/origin'
 import type { OpenSaasConfig } from '@opensaas/stack-core'
 import postgres from '@prisma/orm-postgres/runtime'

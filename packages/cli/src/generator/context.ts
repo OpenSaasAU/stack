@@ -213,7 +213,7 @@ export function generateContext(
  */
 
 import { getContext as getOpensaasContext, requireOrmHandle } from '@opensaas/stack-core'
-import { resolveRuntimeConnection } from '@opensaas/stack-core/client'
+import { resolveRuntimeConnection } from '@opensaas/stack-core/db-client'
 import { originTripwire } from '@opensaas/stack-core/origin'
 import { ${framework.next ? 'controlFlowFromRethrow, eitherControlFlow, ' : ''}processGlobal, processLifetimeContext } from '@opensaas/stack-core/internal'
 import type { Session as OpensaasSession, OpenSaasConfig } from '@opensaas/stack-core'
