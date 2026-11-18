@@ -168,7 +168,7 @@ warns rather than silently rebinding.
 
 Under the hood, the generated context spreads `resolveRuntimeConnection(config.db.client)`
 into its client construction. That function is exported from
-`@opensaas/stack-core/client` if you ever need to build a client outside the
+`@opensaas/stack-core/db-client` if you ever need to build a client outside the
 generated bundle; pair it with `import contractJson from '../prisma/contract.json' with { type: 'json' }`,
 exactly as `.opensaas/context.ts` does. Do not hand-roll an equivalent.
 

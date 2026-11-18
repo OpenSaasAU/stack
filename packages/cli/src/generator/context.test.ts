@@ -53,7 +53,7 @@ describe('generateContext', () => {
     const context = generateContext(config, data)
 
     expect(context).toContain(
-      "import { resolveRuntimeConnection } from '@opensaas/stack-core/client'",
+      "import { resolveRuntimeConnection } from '@opensaas/stack-core/db-client'",
     )
     expect(context).toContain('...resolveRuntimeConnection(config.db.client),')
     // The factory may only run under the client singleton: the publish and the
@@ -61,6 +61,14 @@ describe('generateContext', () => {
     expect(context.match(/createClient\(config\)/g)).toHaveLength(2)
     expect(context).toMatch(/const config = await getConfig\(\)\s[\s\S]*?createClient\(config\)/)
     expect(context).not.toContain('binding?.pg?.()')
+  })
+
+  it('imports a subpath whose deprecated /client alias carries the same binding', async () => {
+    const dbClient = await import('@opensaas/stack-core/db-client')
+    const alias = await import('@opensaas/stack-core/client')
+
+    expect(Object.keys(alias).sort()).toEqual(Object.keys(dbClient).sort())
+    expect(alias.resolveRuntimeConnection).toBe(dbClient.resolveRuntimeConnection)
   })
 
   it('installs the stack-owned tripwire as the client’s middleware', () => {

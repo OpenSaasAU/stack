@@ -28,7 +28,8 @@ pnpm add @opensaas/stack-core
 | `@opensaas/stack-core/extend`               | Plugin and third-party field authoring contracts                                                                     |
 | `@opensaas/stack-core/mcp`                  | MCP request handlers                                                                                                 |
 | `@opensaas/stack-core/unsafe`               | The `context.unsafe` surface types and its refusals                                                                  |
-| `@opensaas/stack-core/client`               | `resolveRuntimeConnection`, used by the generated context                                                            |
+| `@opensaas/stack-core/db-client`            | `resolveRuntimeConnection`, used by the generated context; server-only, it reaches `pg`                              |
+| `@opensaas/stack-core/client`               | Deprecated alias of `/db-client`, removed at the next major                                                          |
 | `@opensaas/stack-core/client-safe`          | The naming and filter-query helpers a `'use client'` module may import; reaches nothing server-side                  |
 | `@opensaas/stack-core/dev-database`         | The PGlite-backed Dev database the `dev` loop can resolve to                                                         |
 | `@opensaas/stack-core/contract`             | Contract derivation fed into the Prisma builder                                                                      |
