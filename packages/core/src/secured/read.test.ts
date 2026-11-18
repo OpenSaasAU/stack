@@ -7,7 +7,8 @@ import { createTestDatabase, type TestDatabase } from '../testing/context.js'
 import { createPlanRecorder } from '../testing/plans.js'
 import { ValidationError } from '../hooks/index.js'
 import { AccessFilterRecursionError, type Where } from './vocabulary.js'
-import type { VisibleRow } from './read.js'
+import type { VisibleRow, visibleWrittenRow } from './read.js'
+import type { runWritePipeline } from '../context/write-pipeline.js'
 
 const BOOT = 120_000
 
@@ -911,5 +912,15 @@ describe('the funnel is a compile error to bypass, not a review rule (issue #138
     // @ts-expect-error `raw` carries no VisibleRow brand — only `visibleRows` mints one.
     const asVisible: VisibleRow[] = raw
     void asVisible
+  })
+
+  test("an unbranded row is not assignable to a write's return", () => {
+    const raw: OrmRow = {}
+    // @ts-expect-error `raw` carries no VisibleRow brand — a write returns what `visibleRows` mints.
+    const written: Awaited<ReturnType<typeof visibleWrittenRow>> = raw
+    // @ts-expect-error `raw` carries no VisibleRow brand — a write returns what `visibleRows` mints.
+    const returned: Awaited<ReturnType<typeof runWritePipeline>> = raw
+    void written
+    void returned
   })
 })

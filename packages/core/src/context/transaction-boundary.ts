@@ -1,5 +1,6 @@
 import type { ListConfig, OpenSaasConfig } from '../config/types.js'
 import type { AccessContext } from '../access/types.js'
+import type { VisibleRow } from '../secured/read.js'
 import {
   executeBeforeTransaction,
   executeAfterTransaction,
@@ -299,10 +300,10 @@ export async function runWithTransactionBoundary(args: {
   /** Set when this write just opened the transaction joined writes below it share. */
   ownedRegistry?: TransactionRegistry
   runTransaction: () => Promise<{
-    visible: Record<string, unknown>
+    visible: VisibleRow
     raw: Record<string, unknown>
   } | null>
-}): Promise<Record<string, unknown> | null> {
+}): Promise<VisibleRow | null> {
   const {
     config,
     involvedLists,
