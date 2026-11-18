@@ -1,8 +1,26 @@
 import { describe, expect, it } from 'vitest'
 import type { BaseFieldConfig, OpenSaasConfig, TypeInfo } from '../config/types.js'
-import { relationship, text, timestamp } from '../fields/index.js'
+import { relationship, text, timestamp, virtual } from '../fields/index.js'
 import { validateDatabaseConfig } from './database-config.js'
 import { validateFieldNames } from './field-names.js'
+
+function partsField(
+  ...names: Array<string | ((fieldKey: string) => string)>
+): BaseFieldConfig<TypeInfo> {
+  return {
+    type: 'parts',
+    getContractField: (fieldKey) => ({
+      kind: 'columns',
+      columns: names.map((name) => ({
+        name: typeof name === 'function' ? name(fieldKey) : name,
+        type: { pack: 'pg', type: 'text' },
+        nullable: true,
+      })),
+    }),
+  }
+}
+
+const computed = () => virtual({ type: 'string', hooks: { resolveOutput: () => '' } })
 
 function configWith(
   lists: OpenSaasConfig['lists'],
@@ -130,6 +148,69 @@ describe('validateFieldNames', () => {
       ['fields.authorId', 'foreign-key-column-collision'],
       ['fields.map', 'foreign-key-column-collision'],
     ])
+  })
+
+  it.each([
+    ['a virtual field', computed],
+    ['a multi-column field', () => partsField('authorId_line', 'authorId_city')],
+  ])('refuses %s keyed like an owned foreign-key column (#2445)', (_kind, field) => {
+    const refusals = validateFieldNames(
+      configWith({
+        Post: { fields: { author: relationship({ ref: 'Author' }), authorId: field() } },
+        Author: { fields: { name: text() } },
+      }),
+    )
+    expect(refusals).toEqual([
+      {
+        listKey: 'Post',
+        entry: 'fields.authorId',
+        reason: 'foreign-key-column-collision',
+        message:
+          'List "Post": fields.authorId collides with the foreign-key column "authorId" that ' +
+          'fields.author derives for its relationship. Rename fields.authorId, or remove it and ' +
+          'read the key through fields.author.',
+      },
+    ])
+  })
+
+  it.each([
+    ['a virtual field', computed],
+    ['a multi-column field', () => partsField('address_city_a', 'address_city_b')],
+  ])("refuses %s keyed like another field's part column (#2445)", (_kind, field) => {
+    const refusals = validateFieldNames(
+      configWith({
+        Post: {
+          fields: { address: partsField('address_line', 'address_city'), address_city: field() },
+        },
+      }),
+    )
+    expect(refusals).toEqual([
+      {
+        listKey: 'Post',
+        entry: 'fields.address_city',
+        reason: 'part-column-collision',
+        message:
+          'List "Post": fields.address_city collides with the part column "address_city" that ' +
+          'fields.address derives for its multi-column field. Rename fields.address_city.',
+      },
+    ])
+  })
+
+  it('accepts a multi-column field whose own part shares its key', () => {
+    const refusals = validateFieldNames(
+      configWith({
+        Post: {
+          fields: {
+            price: partsField(
+              (key) => key,
+              (key) => `${key}_currency`,
+            ),
+            summary: computed(),
+          },
+        },
+      }),
+    )
+    expect(refusals).toEqual([])
   })
 
   it('does not refuse a name that only matches a foreign key the other side owns', () => {

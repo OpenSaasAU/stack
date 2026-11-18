@@ -523,15 +523,16 @@ export interface ForeignKeyOwner {
  */
 export function foreignKeyOwningRelations(ctx: ResolveContext): ForeignKeyOwner[] {
   const owners: ForeignKeyOwner[] = []
-  for (const member of resolveListMembers(ctx.config, ctx.listName).members.values()) {
-    if (member.kind !== 'field' || member.storage.kind !== 'relation') continue
-    const { foreignKey, relatedList } = member.storage
-    if (foreignKey === undefined) continue
+  const { members } = resolveListMembers(ctx.config, ctx.listName)
+  for (const member of members.values()) {
+    if (member.kind !== 'foreignKey') continue
+    const relation = members.get(member.field)
+    if (relation?.kind !== 'field') continue
     owners.push({
-      relation: member.name,
-      fieldConfig: member.field,
-      relatedList,
-      foreignKey: foreignKey.name,
+      relation: member.field,
+      fieldConfig: relation.field,
+      relatedList: member.relatedList,
+      foreignKey: member.name,
     })
   }
   return owners

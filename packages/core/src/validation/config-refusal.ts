@@ -17,6 +17,7 @@ export type ConfigRefusalReason =
   | 'composite-keyed-target'
   | 'reserved-field-name'
   | 'foreign-key-column-collision'
+  | 'part-column-collision'
   | 'synthetic-relation-collision'
   | 'field-descriptor-error'
   | 'default-value-rejected-by-validation'

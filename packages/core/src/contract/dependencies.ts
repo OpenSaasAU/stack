@@ -221,13 +221,13 @@ function columnOwners(members: ListMembers | undefined): Map<string, string> {
             for (const part of member.storage.parts) owners.set(part.name, member.name)
             break
           case 'relation':
-            if (member.storage.foreignKey) owners.set(member.storage.foreignKey.name, member.name)
-            break
           case 'computed':
             break
         }
         break
       case 'foreignKey':
+        owners.set(member.name, member.field)
+        break
       case 'partColumn':
       case 'syntheticBackRelation':
         break

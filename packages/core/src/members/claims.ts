@@ -18,6 +18,22 @@ export class MemberClaimRefusal extends Error {
   override name = 'MemberClaimRefusal'
 }
 
+export type DerivedMemberOwner = { kind: 'foreignKey' | 'partColumn'; field: string }
+
+export function derivedMemberCollision(
+  listKey: string,
+  fieldKey: string,
+  name: string,
+  owner: DerivedMemberOwner,
+): string {
+  return owner.kind === 'foreignKey'
+    ? `List "${listKey}": fields.${fieldKey} collides with the foreign-key column "${name}" that ` +
+        `fields.${owner.field} derives for its relationship. Rename fields.${fieldKey}, or remove it and ` +
+        `read the key through fields.${owner.field}.`
+    : `List "${listKey}": fields.${fieldKey} collides with the part column "${name}" that ` +
+        `fields.${owner.field} derives for its multi-column field. Rename fields.${fieldKey}.`
+}
+
 export const claimOrigin = {
   field: (fieldKey: string): string => `fields.${fieldKey}`,
   foreignKey: (fieldKey: string): string => `the foreign-key column of fields.${fieldKey}`,
@@ -131,8 +147,33 @@ export interface ContractMemberWalk {
 
 type ListWalk = {
   claims: ListMemberClaims
+  derived: Map<string, DerivedMemberOwner>
+  keys: Set<string>
   columns: Array<{ name: string; map?: string }>
   relations: string[]
+}
+
+function claimDerivedMember(
+  listKey: string,
+  list: ListWalk,
+  name: string,
+  owner: DerivedMemberOwner,
+  origin: string,
+): void {
+  if (list.keys.has(name)) {
+    throw new MemberClaimRefusal(derivedMemberCollision(listKey, name, name, owner))
+  }
+  claimListMember(listKey, list.claims, name, origin)
+  list.derived.set(name, owner)
+}
+
+function claimDeclaredKey(listKey: string, list: ListWalk, fieldKey: string): void {
+  const owner = list.derived.get(fieldKey)
+  if (owner !== undefined) {
+    throw new MemberClaimRefusal(derivedMemberCollision(listKey, fieldKey, fieldKey, owner))
+  }
+  claimListMember(listKey, list.claims, fieldKey, claimOrigin.field(fieldKey))
+  list.keys.add(fieldKey)
 }
 
 function walkField(
@@ -152,25 +193,40 @@ function walkField(
     case 'columns':
       for (const part of descriptor.columns) {
         walk.beforePartClaim?.(listKey, fieldKey, field, part)
-        claimListMember(listKey, list.claims, part.name, claimOrigin.field(fieldKey))
+        if (part.name === fieldKey) {
+          claimListMember(listKey, list.claims, part.name, claimOrigin.field(fieldKey))
+        } else {
+          claimDerivedMember(
+            listKey,
+            list,
+            part.name,
+            { kind: 'partColumn', field: fieldKey },
+            claimOrigin.field(fieldKey),
+          )
+        }
         list.columns.push(part)
         walk.afterPartClaim?.(listKey, fieldKey, field, part)
+      }
+      if (!descriptor.columns.some((part) => part.name === fieldKey)) {
+        claimDeclaredKey(listKey, list, fieldKey)
       }
       break
     case 'relation':
       claimListMember(listKey, list.claims, fieldKey, claimOrigin.field(fieldKey))
       list.relations.push(fieldKey)
       if (descriptor.foreignKey !== undefined) {
-        claimListMember(
+        claimDerivedMember(
           listKey,
-          list.claims,
+          list,
           descriptor.foreignKey.name,
+          { kind: 'foreignKey', field: fieldKey },
           claimOrigin.foreignKey(fieldKey),
         )
         list.columns.push(descriptor.foreignKey)
       }
       break
     case 'computed':
+      claimDeclaredKey(listKey, list, fieldKey)
       break
   }
   walk.afterClaim?.(listKey, fieldKey, field, descriptor)
@@ -182,7 +238,13 @@ export function walkContractMembers(config: OpenSaasConfig, walk: ContractMember
 
   for (const [listKey, listConfig] of Object.entries(config.lists)) {
     const timestamps = resolveListTimestamps(listConfig, config.db)
-    const list: ListWalk = { claims: startListMemberClaims(timestamps), columns: [], relations: [] }
+    const list: ListWalk = {
+      claims: startListMemberClaims(timestamps),
+      derived: new Map(),
+      keys: new Set(),
+      columns: [],
+      relations: [],
+    }
     lists.set(listKey, list)
     walk.startList?.(listKey, listConfig, timestamps)
     for (const [fieldKey, field] of Object.entries(listConfig.fields)) {
