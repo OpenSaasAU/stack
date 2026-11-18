@@ -38,7 +38,10 @@
 //     argument (options or not), `require('…')` and `import x = require('…')`.
 //     An `import()` or `require()` whose specifier is not a literal is not
 //     followed.
-//   - A resolved file that is not a script (`.css`, `.json`, …) is a leaf.
+//   - Every JavaScript and TypeScript extension, `.cjs` and `.cts` included, is
+//     walked. A resolved file on ASSET_EXTENSIONS (styles, `.json`, images,
+//     fonts) is a leaf. Any other resolved file is a finding, so a file type
+//     the checker cannot read fails loudly instead of passing as a leaf.
 
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { builtinModules } from 'node:module'
@@ -48,7 +51,29 @@ import ts from 'typescript'
 
 const repoRoot = path.resolve(fileURLToPath(import.meta.url), '../..')
 
-const SOURCE_EXTENSIONS = ['.ts', '.tsx', '.mts', '.js', '.jsx', '.mjs']
+const SOURCE_EXTENSIONS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs']
+const DECLARATION_FILE = /\.d\.[cm]?ts$/
+const ASSET_EXTENSIONS = new Set([
+  '.css',
+  '.scss',
+  '.sass',
+  '.less',
+  '.json',
+  '.svg',
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.gif',
+  '.webp',
+  '.avif',
+  '.ico',
+  '.bmp',
+  '.woff',
+  '.woff2',
+  '.ttf',
+  '.otf',
+  '.eot',
+])
 const SKIP_DIRECTORIES = new Set(['node_modules', 'dist', '__tests__', 'tests', 'e2e'])
 const APPLICATION_ROOTS = ['examples', 'packages/create-opensaas-app/templates']
 const CLIENT_ENTRIES = [
@@ -82,7 +107,7 @@ function collectSourceFiles(dir, found = []) {
       if (SKIP_DIRECTORIES.has(entry.name) || entry.name.startsWith('.')) continue
       collectSourceFiles(full, found)
     } else if (SOURCE_EXTENSIONS.includes(path.extname(entry.name))) {
-      if (!TEST_FILE.test(entry.name) && !entry.name.endsWith('.d.ts')) found.push(full)
+      if (!TEST_FILE.test(entry.name) && !DECLARATION_FILE.test(entry.name)) found.push(full)
     }
   }
   return found
@@ -108,7 +133,7 @@ function resolveFile(base) {
   for (const ext of SOURCE_EXTENSIONS) candidates.push(stem + ext)
   for (const ext of SOURCE_EXTENSIONS) candidates.push(path.join(base, 'index' + ext))
   for (const candidate of candidates) {
-    if (isFile(candidate) && !candidate.endsWith('.d.ts')) return candidate
+    if (isFile(candidate) && !DECLARATION_FILE.test(candidate)) return candidate
   }
   return null
 }
@@ -265,6 +290,7 @@ function projectRootOf(file) {
 }
 
 const UNRESOLVED = 'a module this checker cannot resolve'
+const UNWALKED = 'a file type this checker neither walks nor knows as an asset'
 
 function localEdge(file) {
   return file ? { file } : { external: UNRESOLVED }
@@ -288,6 +314,11 @@ function resolveEdge(specifier, importer, packages) {
   return PACKAGE_SPECIFIER.test(specifier) ? {} : { external: UNRESOLVED }
 }
 
+function isWalkedOrAsset(file) {
+  const ext = path.extname(file)
+  return SOURCE_EXTENSIONS.includes(ext) || ASSET_EXTENSIONS.has(ext.toLowerCase())
+}
+
 function walk(root, packages, inventory) {
   const parent = new Map([[root, null]])
   const queue = [root]
@@ -298,7 +329,7 @@ function walk(root, packages, inventory) {
   }
   while (queue.length > 0) {
     const file = queue.shift()
-    if (!SOURCE_EXTENSIONS.includes(path.extname(file))) continue
+    if (ASSET_EXTENSIONS.has(path.extname(file).toLowerCase())) continue
     const { directive, imports } = valueImportsOf(file)
     if (directive === 'server' && file !== root) continue
     for (const { specifier, names } of imports) {
@@ -308,6 +339,9 @@ function walk(root, packages, inventory) {
       const edge = resolveEdge(specifier, file, packages)
       if (edge.external) {
         return [{ root, reached: specifier, why: edge.external, chain: chainTo(file) }]
+      }
+      if (edge.file && !isWalkedOrAsset(edge.file)) {
+        return [{ root, reached: specifier, why: UNWALKED, chain: chainTo(file) }]
       }
       if (edge.file && !parent.has(edge.file)) {
         parent.set(edge.file, file)
@@ -356,6 +390,7 @@ const args = process.argv.slice(2)
 
 const SELF_TEST_BAD = [
   'bad-builtin.tsx',
+  'bad-cjs.tsx',
   'bad-dynamic.tsx',
   'bad-import-attributes.tsx',
   'bad-import-equals.ts',
@@ -367,6 +402,7 @@ const SELF_TEST_BAD = [
   'bad-server-package.tsx',
   'bad-transitive.tsx',
   'bad-unknown-alias.tsx',
+  'bad-unknown-extension.tsx',
 ]
 const SELF_TEST_GOOD = [
   'good-asset.tsx',
