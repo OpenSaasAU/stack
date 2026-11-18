@@ -1,10 +1,17 @@
-import { afterAll, beforeAll, describe, expect, test } from 'vitest'
+import { describe, expect, test } from 'vitest'
 import type { OpenSaasConfig } from '../config/types.js'
 import { relationship, text, virtual } from '../fields/index.js'
-import { createTestDatabase, type TestDatabase } from '../testing/context.js'
+import { resolveListMembers } from '../members/list-members.js'
+import { createTestDatabase } from '../testing/context.js'
+import { validateDatabaseConfig } from '../validation/database-config.js'
 
 const BOOT = 120_000
 const OPEN = { query: () => true, create: () => true, update: () => true, delete: () => true }
+
+const MESSAGE =
+  'List "Item": fields.ownerId collides with the foreign-key column "ownerId" that fields.owner ' +
+  'derives for its relationship. Rename fields.ownerId, or remove it and read the key through ' +
+  'fields.owner.'
 
 const config: OpenSaasConfig = {
   db: { provider: 'postgresql' },
@@ -27,27 +34,26 @@ const config: OpenSaasConfig = {
   },
 }
 
-let database: TestDatabase
-
-beforeAll(async () => {
-  database = await createTestDatabase(config)
-  const sudo = database.context(null).sudo()
-  const org = await sudo.db.Org.create({ data: { handle: 'hidden' } })
-  if (!org) throw new Error('seed org')
-  await sudo.db.Item.create({ data: { title: 'x', owner: { connect: { id: String(org.id) } } } })
-}, BOOT)
-
-afterAll(async () => {
-  await database?.close()
-})
-
 describe('a computed field named like an owned foreign key (#2445)', () => {
+  test('is refused by generate, naming both fields and the fix', () => {
+    expect(validateDatabaseConfig(config)).toEqual([
+      {
+        listKey: 'Item',
+        entry: 'fields.ownerId',
+        reason: 'foreign-key-column-collision',
+        message: MESSAGE,
+      },
+    ])
+  })
+
+  test('is refused by the List member resolver with the same message', () => {
+    expect(() => resolveListMembers(config, 'Item')).toThrow(MESSAGE)
+  })
+
   test(
-    "does not carry the foreign key past its relationship's read gate",
+    'refuses to stand up a database for it',
     async () => {
-      const rows = await database.context({ userId: 'u1' }).db.Item.all()
-      expect(rows).toHaveLength(1)
-      expect(rows[0].ownerId ?? null).toBeNull()
+      await expect(createTestDatabase(config)).rejects.toThrow(MESSAGE)
     },
     BOOT,
   )

@@ -1,6 +1,12 @@
 import { readContractDescriptor } from '../config/field-kind.js'
 import type { ContractFieldDescriptor, OpenSaasConfig } from '../config/types.js'
 import { isRelationshipField } from '../fields/index.js'
+import {
+  DerivedMemberLedger,
+  derivedMemberCollision,
+  fieldMemberClaims,
+  type DerivedMemberCollision,
+} from '../members/claims.js'
 import type { ConfigRefusal } from './config-refusal.js'
 
 type FieldConfigOf = OpenSaasConfig['lists'][string]['fields'][string]
@@ -104,39 +110,40 @@ function refuseReservedName(
   ]
 }
 
-function refuseForeignKeyCollisions(
+function refuseDerivedMemberCollisions(
   descriptors: ListDescriptors,
   listKey: string,
   listConfig: OpenSaasConfig['lists'][string],
 ): ConfigRefusal[] {
-  const ownedColumns = new Map<string, string>()
-  for (const [fieldKey, field] of Object.entries(listConfig.fields)) {
-    if (!isRelationshipField(field)) continue
-    const descriptor = descriptors.get(fieldKey)
-    if (descriptor?.kind === 'relation' && descriptor.foreignKey !== undefined) {
-      ownedColumns.set(descriptor.foreignKey.name, fieldKey)
+  const ledger = new DerivedMemberLedger()
+  const collisions = new Map<string, DerivedMemberCollision>()
+  const fieldKeys = Object.keys(listConfig.fields)
+  for (const fieldKey of fieldKeys) {
+    for (const claim of fieldMemberClaims(
+      fieldKey,
+      descriptors.get(fieldKey) ?? { kind: 'computed' },
+    )) {
+      const collision = ledger.claim(fieldKey, claim)
+      if (collision !== undefined && !collisions.has(collision.field)) {
+        collisions.set(collision.field, collision)
+      }
     }
   }
-  if (ownedColumns.size === 0) return []
-
-  const refusals: ConfigRefusal[] = []
-  for (const [fieldKey, field] of Object.entries(listConfig.fields)) {
-    for (const name of memberNames(descriptors, fieldKey, field)) {
-      const owner = ownedColumns.get(name)
-      if (owner === undefined || owner === fieldKey) continue
-      refusals.push({
+  return fieldKeys.flatMap((fieldKey): ConfigRefusal[] => {
+    const collision = collisions.get(fieldKey)
+    if (collision === undefined) return []
+    return [
+      {
         listKey,
         entry: `fields.${fieldKey}`,
-        reason: 'foreign-key-column-collision',
-        message:
-          `List "${listKey}": fields.${fieldKey} collides with the foreign-key column "${name}" that ` +
-          `fields.${owner} derives for its relationship. Rename fields.${fieldKey}, or remove it and ` +
-          `read the key through fields.${owner}.`,
-      })
-      break
-    }
-  }
-  return refusals
+        reason:
+          collision.owner.kind === 'foreignKey'
+            ? 'foreign-key-column-collision'
+            : 'part-column-collision',
+        message: derivedMemberCollision(listKey, fieldKey, collision.name, collision.owner),
+      },
+    ]
+  })
 }
 
 function refuseSyntheticCollisions(
@@ -174,7 +181,8 @@ function refuseSyntheticCollisions(
  * members it derives itself: the Where vocabulary's `AND`/`OR`/`NOT` (and `some`/`every`/`none` on a
  * relationship), `id` (the primary key comes from `db.idField`,
  * ADR-0048), a field whose column name is the `<field>Id` foreign-key column
- * another relationship on the same list owns, and a field named
+ * another relationship on the same list owns, any field keyed like another
+ * field's foreign-key or part column, and a field named
  * `from_<List>_<field>` where a list-only ref synthesises that back-relation
  * on its target. A declared `createdAt`/`updatedAt` is not refused: it
  * replaces the auto-timestamp column, as the generator has always allowed.
@@ -189,7 +197,7 @@ export function validateFieldNames(config: OpenSaasConfig): ConfigRefusal[] {
       refusals.push(...refuseReservedName(listKey, fieldKey, field))
       refusals.push(...refuseReservedPartColumns(descriptors, listKey, fieldKey, field))
     }
-    refusals.push(...refuseForeignKeyCollisions(descriptors, listKey, listConfig))
+    refusals.push(...refuseDerivedMemberCollisions(descriptors, listKey, listConfig))
   }
   refusals.push(...refuseSyntheticCollisions(config, described))
   return refusals

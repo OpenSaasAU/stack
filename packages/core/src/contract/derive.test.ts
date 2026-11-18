@@ -489,7 +489,7 @@ describe('deriveContract — member collisions are refused as a backstop', () =>
         User: { fields: { name: text() } },
       }),
     ).toThrow(
-      /List "Post": fields\.authorId derives the contract member "authorId", which the foreign-key column of fields\.author already claims/,
+      'List "Post": fields.authorId collides with the foreign-key column "authorId" that fields.author derives for its relationship. Rename fields.authorId, or remove it and read the key through fields.author.',
     )
   })
 
@@ -516,7 +516,23 @@ describe('deriveContract — member collisions are refused as a backstop', () =>
       }),
     }
     expect(() => single({ A: { fields: { title: text(), parts } } })).toThrow(
-      /List "A": fields\.parts derives the contract member "title", which fields\.title already claims/,
+      'List "A": fields.title collides with the part column "title" that fields.parts derives for its multi-column field. Rename fields.title.',
+    )
+  })
+
+  test('a virtual field named after an owned foreign-key column (#2445)', () => {
+    expect(() =>
+      single({
+        Post: {
+          fields: {
+            author: relationship({ ref: 'User' }),
+            authorId: virtual({ type: 'string', hooks: { resolveOutput: () => '' } }),
+          },
+        },
+        User: { fields: { name: text() } },
+      }),
+    ).toThrow(
+      'List "Post": fields.authorId collides with the foreign-key column "authorId" that fields.author derives for its relationship. Rename fields.authorId, or remove it and read the key through fields.author.',
     )
   })
 })

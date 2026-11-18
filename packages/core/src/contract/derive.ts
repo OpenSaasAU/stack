@@ -757,8 +757,7 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
         fieldLevelIndexes: new Map(),
       })
     },
-    describe: (listKey, fieldKey, field) => {
-      if (field.virtual) return undefined
+    describe: (listKey, fieldKey) => {
       const failure = described.failures.get(listKey)?.get(fieldKey)
       if (failure !== undefined) throw failure.error
       return described.descriptors.get(listKey)?.get(fieldKey)
