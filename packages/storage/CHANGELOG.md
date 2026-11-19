@@ -1,5 +1,9 @@
 # @opensaas/stack-storage
 
+## 0.44.0-alpha.7
+
+No changes in this release.
+
 ## 0.44.0-alpha.6
 
 ### Patch Changes
