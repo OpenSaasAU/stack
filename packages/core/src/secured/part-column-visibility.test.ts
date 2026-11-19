@@ -3,8 +3,8 @@
 // every write return (#2473).
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
-import type { FieldAccess, FieldConfig, OpenSaasConfig } from '../config/types.js'
-import type { Session } from '../access/types.js'
+import type { FieldConfig, OpenSaasConfig } from '../config/types.js'
+import type { FieldAccess, Session } from '../access/types.js'
 import { json, relationship, text, virtual } from '../fields/index.js'
 import { withOrigin } from '../origin.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
@@ -90,7 +90,8 @@ const config: OpenSaasConfig = {
       fields: {
         title: text(),
         avatar: rawParts({
-          read: ({ item }) => typeof item?.avatar_filesize === 'number' && item.avatar_filesize < 100,
+          read: ({ item }) =>
+            typeof item?.avatar_filesize === 'number' && item.avatar_filesize < 100,
         }),
       },
       access: { operation: open },
@@ -208,16 +209,32 @@ describe('the root of a read', () => {
   )
 
   test(
+    "a predicate naming a part column answers to the owning field's rule",
+    async () => {
+      await seed('Card', { title: 'c1', ...PART_VALUES })
+      const where = { avatar_filename: { equals: 'ada.png' } }
+
+      await expect(database.context(member).db.Card.where(where).all()).rejects.toThrow()
+      expect(await database.context(admin).db.Card.where(where).all()).toHaveLength(1)
+    },
+    BOOT,
+  )
+
+  test(
     'forUpdate() re-reads through the same gate',
     async () => {
       await seed('Card', { title: 'c1', ...PART_VALUES })
 
-      const denied = await database
-        .context(member)
-        .transaction((tx) => tx.db.Card.where({ title: { equals: 'c1' } }).forUpdate().first())
-      const allowed = await database
-        .context(admin)
-        .transaction((tx) => tx.db.Card.where({ title: { equals: 'c1' } }).forUpdate().first())
+      const denied = await database.context(member).transaction((tx) =>
+        tx.db.Card.where({ title: { equals: 'c1' } })
+          .forUpdate()
+          .first(),
+      )
+      const allowed = await database.context(admin).transaction((tx) =>
+        tx.db.Card.where({ title: { equals: 'c1' } })
+          .forUpdate()
+          .first(),
+      )
 
       expectHidden(denied)
       expectParts(allowed)
