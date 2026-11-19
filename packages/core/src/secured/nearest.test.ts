@@ -12,7 +12,8 @@ import { checkbox, json, relationship, text } from '../fields/index.js'
 import { ValidationError } from '../hooks/index.js'
 import { withOrigin } from '../origin.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
-import { assertListMembersResolve } from '../members/list-members.js'
+import { validateConfigFields } from '../validation/field-config.js'
+import { assemblyDrop } from './__tests__/assembly-drop.js'
 import { createPlanRecorder, type RecordedPlan } from '../testing/plans.js'
 import { ESCAPE_VARIABLES, readDatabaseEscape } from '../testing/escape.js'
 
@@ -41,15 +42,7 @@ function embedding(
   }
 }
 
-const unassembled: FieldConfig[] = []
-
-// The runtime refuses a multi-column field without assembleColumns (#2481), so
-// the Field Visibility gate is reached the way a field stripped of it after
-// validation reaches it: the config resolves whole, then the member goes.
-function dropAssemblyAfterResolution(config: OpenSaasConfig): void {
-  assertListMembersResolve(config)
-  for (const field of unassembled) delete field.assembleColumns
-}
+const unassembled = assemblyDrop()
 
 function rawParts(read: NonNullable<FieldConfig['access']>['read']): FieldConfig {
   const field = json({ access: { read } })
@@ -64,7 +57,7 @@ function rawParts(read: NonNullable<FieldConfig['access']>['read']): FieldConfig
     filename: row.avatar_filename,
     filesize: row.avatar_filesize,
   })
-  unassembled.push(field)
+  unassembled.mark(field)
   return field
 }
 
@@ -282,7 +275,10 @@ describe.skipIf(!available)(
   () => {
     beforeAll(async () => {
       database = await createTestDatabase(config, { middleware: [recorder.middleware] })
-      dropAssemblyAfterResolution(config)
+      unassembled.dropAfterResolution(config)
+      expect(validateConfigFields(config).map((error) => error.missingMember)).toContain(
+        'assembleColumns',
+      )
     }, BOOT)
 
     afterAll(async () => {

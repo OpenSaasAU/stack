@@ -10,19 +10,12 @@ import { ValidationError } from '../hooks/index.js'
 import { createMcpHandlers } from '../mcp/handler.js'
 import { withOrigin } from '../origin.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
-import { assertListMembersResolve } from '../members/list-members.js'
+import { validateConfigFields } from '../validation/field-config.js'
+import { assemblyDrop } from './__tests__/assembly-drop.js'
 
 const BOOT = 120_000
 
-const unassembled: FieldConfig[] = []
-
-// The runtime refuses a multi-column field without assembleColumns (#2481), so
-// the Field Visibility gate is reached the way a field stripped of it after
-// validation reaches it: the config resolves whole, then the member goes.
-function dropAssemblyAfterResolution(config: OpenSaasConfig): void {
-  assertListMembersResolve(config)
-  for (const field of unassembled) delete field.assembleColumns
-}
+const unassembled = assemblyDrop()
 
 const PARTS = ['avatar_filename', 'avatar_filesize'] as const
 
@@ -44,7 +37,7 @@ function rawParts(access: FieldAccess): FieldConfig {
     filename: row[PARTS[0]],
     filesize: row[PARTS[1]],
   })
-  unassembled.push(field)
+  unassembled.mark(field)
   return field
 }
 
@@ -184,7 +177,10 @@ function expectParts(row: unknown): void {
 
 beforeAll(async () => {
   database = await createTestDatabase(config)
-  dropAssemblyAfterResolution(config)
+  unassembled.dropAfterResolution(config)
+  expect(validateConfigFields(config).map((error) => error.missingMember)).toContain(
+    'assembleColumns',
+  )
 }, BOOT)
 
 afterAll(async () => {

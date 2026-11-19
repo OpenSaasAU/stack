@@ -487,7 +487,7 @@ Each field builder function returns an object declaring:
 
 A single-column field also sets **`nullable`** to what its descriptor reports, when an emptied admin control should be able to store `null`: the admin reads it where it has no list key or config to call `getContractField` with, and leaving it out keeps the non-null behaviour.
 
-`opensaas generate` refuses a config where a field leaves out a member it owes, naming the list, the field and the member. Building a context over a config whose multi-column field leaves out `assembleColumns` fails with the same message.
+`opensaas generate` refuses a config where a field leaves out a member it owes, naming the list, the field and the member. Building a context over a config whose multi-column field leaves out `assembleColumns` fails too, naming the list, the field and the member.
 
 This allows field types to be fully self-contained and extensible without modifying core stack code.
 

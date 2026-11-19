@@ -57,8 +57,8 @@ describe('opensaas generate on a refusing config', () => {
     expect(output).not.toContain('at Object.')
   })
 
-  test('writes no contract artifacts', () => {
-    expect(fs.existsSync(path.join(scratchRoot, 'project', 'prisma', 'contract.ts'))).toBe(false)
+  test('writes nothing: the project holds only the config it started with', () => {
+    expect(fs.readdirSync(path.join(scratchRoot, 'project'))).toEqual(['opensaas.config.ts'])
   })
 })
 
@@ -109,7 +109,7 @@ describe('opensaas generate on a multi-column field without assembleColumns (#24
     expect(output).not.toContain('at Object.')
   })
 
-  test('writes no contract artifacts', () => {
-    expect(fs.existsSync(path.join(projectDir, 'prisma', 'contract.ts'))).toBe(false)
+  test('writes nothing: the project holds only the config it started with', () => {
+    expect(fs.readdirSync(projectDir)).toEqual(['opensaas.config.ts'])
   })
 })

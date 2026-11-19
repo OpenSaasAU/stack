@@ -2183,7 +2183,7 @@ A field whose descriptor is `kind: 'columns'` owes three more members, because t
 
 Both transforms must stay pure. `assembleColumns` runs before field visibility; `splitColumns` runs after `resolveInput`.
 
-`assembleColumns` is **required**. Without it the field has no value under its own key, so `.select()` returns nothing for it, a `needs` entry naming it gives the hook nothing, and MCP advertises a field it never returns. `opensaas generate` refuses a config where a `kind: 'columns'` field leaves it out, naming the list, the field and `assembleColumns()`, and building a context over such a config fails with the same message.
+`assembleColumns` is **required**. Without it the field has no value under its own key, so `.select()` returns nothing for it, a `needs` entry naming it gives the hook nothing, and MCP advertises a field it never returns. `opensaas generate` refuses a config where a `kind: 'columns'` field leaves it out, naming the list, the field and `assembleColumns()`, and building a context over such a config fails too, naming the list, the field and `assembleColumns()`.
 
 ---
 
