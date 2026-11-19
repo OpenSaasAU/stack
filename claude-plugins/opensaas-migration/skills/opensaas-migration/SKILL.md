@@ -335,7 +335,7 @@ Every field owes `getZodSchema(fieldName, operation)` and `getContractField(fiel
 - `{ kind: 'columns', columns: [...] }` — several physical columns backing one logical value (see below)
 - `{ kind: 'computed' }` — a virtual field with no column at all
 
-`outputType` (a `TypeDescriptor`: a primitive type string, an import string, or `{ value, from, name? }`) is **required** whenever the field has no single column to be typed from — every virtual field, and every `kind: 'columns'` field — because there `opensaas generate` has nothing to infer the TypeScript face from. `inputType` is never required: on a single-column field its absence means the column's own input type, but a `kind: 'columns'` field has no single column for that to name either, so declare it alongside `outputType` there too. A field leaving out a member it owes fails `pnpm generate`, naming the list and the field.
+`outputType` (a `TypeDescriptor`: a primitive type string, an import string, or `{ value, from, name? }`) is **required** whenever the field has no single column to be typed from — every virtual field, and every `kind: 'columns'` field — because there `opensaas generate` has nothing to infer the TypeScript face from. `inputType` is never required: on a single-column field its absence means the column's own input type, but a `kind: 'columns'` field has no single column for that to name either, so declare it alongside `outputType` there too. A `kind: 'columns'` field also owes `assembleColumns`, without which it has no value under its own key. A field leaving out a member it owes fails `pnpm generate`, naming the list, the field and the member.
 
 **Single-column example** (`getPrismaType`/`getTypeScriptType`'s replacement):
 

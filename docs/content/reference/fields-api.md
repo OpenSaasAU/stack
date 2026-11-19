@@ -2183,6 +2183,8 @@ A field whose descriptor is `kind: 'columns'` owes three more members, because t
 
 Both transforms must stay pure. `assembleColumns` runs before field visibility; `splitColumns` runs after `resolveInput`.
 
+`assembleColumns` is **required**. Without it the field has no value under its own key, so `.select()` returns nothing for it, a `needs` entry naming it gives the hook nothing, and MCP advertises a field it never returns. `opensaas generate` refuses a config where a `kind: 'columns'` field leaves it out, naming the list, the field and `assembleColumns()`, and building a context over such a config fails with the same message.
+
 ---
 
 ### `getVectorColumn(fieldName)`
@@ -2268,7 +2270,7 @@ export function email<
 **Key principles:**
 
 1. Extend `BaseFieldConfig` with your field's options
-2. Implement `getZodSchema` and `getContractField`; add `outputType` when the field has no single column to be typed from
+2. Implement `getZodSchema` and `getContractField`; add `outputType` when the field has no single column to be typed from, and `assembleColumns` when its descriptor is `kind: 'columns'`
 3. Use field-level hooks for data transformation
 4. Field types are self-contained (no switch statements in core)
 

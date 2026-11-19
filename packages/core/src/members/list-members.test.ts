@@ -837,7 +837,13 @@ describe('a config generate refuses', () => {
     expect(() => resolveListMembers(refused, 'Post')).toThrow(
       /"Post\.address".*does not declare assembleColumns\(\)/,
     )
-    expect(resolveListMember(withLists({ Post: { fields: { address: addressField } } }), 'Post', 'address')?.kind).toBe('field')
+    expect(
+      resolveListMember(
+        withLists({ Post: { fields: { address: addressField } } }),
+        'Post',
+        'address',
+      )?.kind,
+    ).toBe('field')
   })
 
   it('rethrows the same error object on every call', () => {

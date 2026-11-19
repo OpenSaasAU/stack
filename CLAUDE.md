@@ -443,7 +443,7 @@ const lists = {
 
 An entry naming a field the list doesn't have, a virtual field, a to-many relationship, or the non-foreign-key side of a one-to-one relationship fails `pnpm generate` with an error naming the list, the entry and the bad field — never silently dropped. The same is true for an empty `fields` array, and for a single-field entry that indexes the exact column a field-level `isIndexed` on the same list already indexes (the error names both — remove one of them).
 
-**Other generate-time refusals**, each naming the list, the entry and the fix: `many: true` on both sides of a relationship (implicit many-to-many is not generated — declare a junction list); `db.idField` on a singleton; a field type needing an undeclared extension pack; a pack missing a required subpath; a duplicate pack `name` with a differing `from`; `needs` on a field with no `resolveOutput`; `db.foreignKey: true` on both sides of a one-to-one; a relationship pointing at a composite-keyed list; a non-nullable part column on a multi-column (`kind: 'columns'`) field — the secured surface always types its assembled logical key as optional on create, so there is no all-parts-required case for it to satisfy a NOT NULL part with.
+**Other generate-time refusals**, each naming the list, the entry and the fix: `many: true` on both sides of a relationship (implicit many-to-many is not generated — declare a junction list); `db.idField` on a singleton; a field type needing an undeclared extension pack; a pack missing a required subpath; a duplicate pack `name` with a differing `from`; `needs` on a field with no `resolveOutput`; `db.foreignKey: true` on both sides of a one-to-one; a relationship pointing at a composite-keyed list; a multi-column (`kind: 'columns'`) field with no `assembleColumns`; a non-nullable part column on a multi-column field — the secured surface always types its assembled logical key as optional on create, so there is no all-parts-required case for it to satisfy a NOT NULL part with.
 
 ### Migrations and the dev loop
 
@@ -483,10 +483,11 @@ Each field builder function returns an object declaring:
 1. **`getZodSchema(fieldName, operation)`** - Validation schema generation
 2. **`getContractField(fieldName, listKey, config)`** - what the field contributes to the contract: `{ kind: 'column' }` (inline column descriptor), `{ kind: 'columns' }`, `{ kind: 'relation' }`, or `{ kind: 'computed' }` for a virtual field
 3. **`outputType`** / **`inputType`** - the TypeScript read and write faces, when they differ from the column's codec type. `outputType` is **required** on a virtual field and on a `kind: 'columns'` field, neither of which has a single column to be typed from. `inputType` is never required by the generator — on a single-column field its absence means the column's own input type, and a `kind: 'columns'` field, which has no single column for that to name, should declare it alongside `outputType`
+4. **`assembleColumns(fieldName, row)`** - **required** on a `kind: 'columns'` field: it builds the logical value from the row's part columns, and without it the field has no value under its own key, so `.select()`, `needs` and MCP all come back empty for it. `getColumnNames` and `splitColumns` complete the multi-column set
 
 A single-column field also sets **`nullable`** to what its descriptor reports, when an emptied admin control should be able to store `null`: the admin reads it where it has no list key or config to call `getContractField` with, and leaving it out keeps the non-null behaviour.
 
-`opensaas generate` refuses a config where a field leaves out a member it owes, naming the list, the field and the member.
+`opensaas generate` refuses a config where a field leaves out a member it owes, naming the list, the field and the member. Building a context over a config whose multi-column field leaves out `assembleColumns` fails with the same message.
 
 This allows field types to be fully self-contained and extensible without modifying core stack code.
 
@@ -1090,6 +1091,8 @@ packages/my-field/
      }
    }
    ```
+
+   A field whose descriptor is `kind: 'columns'` must also supply `assembleColumns` (and declare `outputType`); `opensaas generate` refuses it otherwise.
 
    A field whose column type comes from an **Extension pack** names that pack in its descriptor (`type: { pack: 'pgvector', type: 'Vector', args: [1536] }`), and the package contributes the declaration through its own plugin's `addExtension` rather than asking the application to write `db.extensions` itself. A field naming a pack the config does not declare fails `pnpm generate`.
 

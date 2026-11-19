@@ -40,7 +40,10 @@ function rawParts(access: FieldAccess): FieldConfig {
       typeof value === 'object' && value !== null ? value : {}
     return { [PARTS[0]]: metadata.filename ?? null, [PARTS[1]]: metadata.filesize ?? null }
   }
-  field.assembleColumns = (_fieldName, row) => ({ filename: row[PARTS[0]], filesize: row[PARTS[1]] })
+  field.assembleColumns = (_fieldName, row) => ({
+    filename: row[PARTS[0]],
+    filesize: row[PARTS[1]],
+  })
   unassembled.push(field)
   return field
 }

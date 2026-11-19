@@ -42,6 +42,7 @@ Field builder functions, each returning an object with:
 - `getContractField(fieldName, listKey, config)` - the column(s), relation, or `{ kind: 'computed' }` the field contributes to the contract
 - `outputType` - the TypeScript read face, when it differs from the column's codec type. Required on a virtual field and on one whose descriptor is `kind: 'columns'`, neither of which has a single column to be typed from
 - `inputType` - the write face, when it differs from the read face. Never required by `opensaas generate`: on a single-column field, absence means the column's own input type. A `kind: 'columns'` field has no single column for that to name, so declare it there alongside `outputType`
+- `assembleColumns(fieldName, row)` - the logical value built from a row's part columns. Required on a `kind: 'columns'` field, which otherwise has no value under its own key: `opensaas generate` and context construction both refuse it, naming the list, the field and the member. `splitColumns` is its write direction
 - `getVectorColumn(fieldName)` - a stored vector column and its distance function, on a field that has one. A field that does not answer this is not searchable, which is what makes `nearest('title', …)` a refusal rather than a query the database rejects
 
 Built-in fields:

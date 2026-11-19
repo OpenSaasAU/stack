@@ -87,7 +87,7 @@ text({
 })
 ```
 
-The column's codec then types the field on both faces, so a field only declares `outputType` when it needs a different one — which a virtual or multi-column field always does, since it has no single column to be typed from.
+The column's codec then types the field on both faces, so a field only declares `outputType` when it needs a different one — which a virtual or multi-column field always does, since it has no single column to be typed from. A multi-column field also supplies `assembleColumns`, which builds its value from the part columns; generation refuses one that leaves it out, naming the list, the field and the member.
 
 This allows field types to be fully self-contained and extensible.
 
