@@ -125,7 +125,6 @@ function traversable(level: PlanLevel): boolean {
 interface VisitedRow {
   readonly raw: OrmRow
   readonly shown: OrmRow
-  readonly ruleRow: RuleRow
   readonly related: ReadonlyMap<string, readonly VisitedRow[]>
 }
 
@@ -262,7 +261,7 @@ async function visitRow(
     if (node.declared) delete shown[node.relation]
   }
   narrowIncludedForeignKeys(shown, level.includes)
-  return { raw, shown, ruleRow, related }
+  return { raw, shown, related }
 }
 
 /**
@@ -276,9 +275,24 @@ async function narrowForeignKeysAt(
   rows: readonly VisitedRow[],
   level: PlanLevel,
 ): Promise<void> {
-  const { listName } = level
+  const { listName, listConfig } = level
   const ctx = relatedResolveContext(binding, level)
   const args = { session: binding.context.session, context: binding.context }
+  const members = level.foreignKeys().owned
+    ? resolveListMembers(binding.config, listName)
+    : undefined
+  const ruleRows =
+    members === undefined
+      ? []
+      : rows.map((row) =>
+          ruleRowOf(
+            assembleColumnFields(row.raw, listConfig.fields, members),
+            ruleViewsOf(level),
+            listConfig.fields,
+            binding.config,
+            listName,
+          ),
+        )
 
   for (const owner of level.foreignKeys().unincluded) {
     const column = owner.foreignKey
@@ -286,8 +300,9 @@ async function narrowForeignKeysAt(
     if (!rows.some(({ raw }) => column in raw)) continue
 
     const access = await resolveRelatedAccessPlan(owner.related, ctx)
-    for (const row of carrying) {
-      const canReadField = await checkRowRead(owner.fieldConfig.access, args, row.ruleRow)
+    for (const [index, row] of rows.entries()) {
+      if (!(column in row.raw && column in row.shown)) continue
+      const canReadField = await checkRowRead(owner.fieldConfig.access, args, ruleRows[index])
       if (!canReadField || access.kind === 'false') row.shown[column] = null
     }
     if (access.kind === 'true' || access.kind === 'false') continue

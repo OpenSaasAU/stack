@@ -61,6 +61,16 @@ function avatar(prefix = 'avatar'): FieldConfig {
   return field
 }
 
+function mutatedInPlace(field: FieldConfig): FieldConfig {
+  field.hooks = {
+    resolveOutput: ({ value }) => {
+      if (isRecord(value)) value.filename = 'MUTATED'
+      return value
+    },
+  }
+  return field
+}
+
 const config: OpenSaasConfig = {
   db: { provider: 'postgresql', idField: 'int autoincrement' },
   lists: {
@@ -410,6 +420,31 @@ const config: OpenSaasConfig = {
         },
       },
     },
+    Kit: {
+      fields: {
+        name: text(),
+        asset: mutatedInPlace(avatar('asset')),
+        coach: relationship({
+          ref: 'Coach',
+          access: {
+            read: ({ item }) => {
+              const asset: unknown = item.asset
+              const filename = isRecord(asset) ? asset.filename : asset
+              record('read', 'Kit.coach', item.name, filename)
+              return filename === `${String(item.name)}.png`
+            },
+          },
+        }),
+      },
+      access: {
+        operation: {
+          query: (args) => {
+            record('query', 'Kit', keysOf(args))
+            return true
+          },
+        },
+      },
+    },
     Node: {
       fields: {
         label: text({
@@ -560,15 +595,6 @@ async function observe(
   const before = fieldVisibilityRuns()
   const result = await run()
   const after = fieldVisibilityRuns()
-  const assembled = calls
-    .filter((call) => call[0] === 'assembleColumns')
-    .map((call) => JSON.stringify(call.slice(1)))
-  if (traversing) {
-    expect(
-      assembled.filter((row, index) => assembled.indexOf(row) !== index),
-      `"${name}" assembles a row once: the differential takes a repeat for the old walks' foreign-key pass`,
-    ).toEqual([])
-  }
   expect(
     {
       walks: after.walks - before.walks > 0,
@@ -1072,10 +1098,10 @@ describe('includes', () => {
     ])
   })
 
-  test('multi-column assembly happens once per row on the single traversal', async () => {
+  test('a multi-column field reads assembled under its own key, its part columns never shown', async () => {
     await seedLeague()
 
-    const rows = await observe('multi-column assembly once per row', 'traversal', () =>
+    const rows = await observe('a multi-column field reads assembled', 'traversal', () =>
       database
         .context(member)
         .db.Team.where({ id: { equals: 1 } })
@@ -1088,7 +1114,75 @@ describe('includes', () => {
       return player
     })
     expect(rows).toEqual([{ ...shownTeam(1), players }])
-    expect(assembledIds()).toEqual(traversing ? [1, 2] : [1, 2, 1, 2])
+    expect(assembledIds()).toEqual([1, 2, 1, 2])
+  })
+
+  test("a foreign-key owner's rule never sees a hook's in-place change to an assembled value", async () => {
+    await seedLeague()
+    const sudo = database.context(null).sudo().db
+    for (const kit of [1, 2]) {
+      await sudo.Kit.create({
+        data: {
+          name: `k${kit}`,
+          asset: { filename: `k${kit}.png`, filesize: kit },
+          coach: { connect: { id: 1 } },
+        },
+      })
+    }
+
+    const rows = await observe('a hook mutating an assembled value in place', 'traversal', () =>
+      database.context(member).db.Kit.orderBy({ id: 'asc' }).all(),
+    )
+
+    expect(rows).toEqual(
+      [1, 2].map((kit) => ({
+        id: kit,
+        name: `k${kit}`,
+        asset: { filename: 'MUTATED', filesize: kit },
+        coachId: 1,
+      })),
+    )
+    expect(callsTo('read', 'Kit.coach')).toEqual([
+      ['read', 'Kit.coach', 'k1', 'k1.png'],
+      ['read', 'Kit.coach', 'k2', 'k2.png'],
+    ])
+  })
+
+  test('one multi-column row reached through two paths is assembled and narrowed on each', async () => {
+    await seedLeague()
+
+    const rows = await observe('one multi-column row reached through two paths', 'traversal', () =>
+      database
+        .context(member)
+        .db.Team.where({ id: { equals: 1 } })
+        .include('players', (players) =>
+          players.include('awards', (awards) => awards.include('player')),
+        )
+        .all(),
+    )
+
+    const bare = (id: number) => {
+      const { awards: _awards, ...player } = shownPlayer(id)
+      return player
+    }
+    const players = [1, 2].map((id) => ({
+      ...bare(id),
+      awards: [id * 2 - 1, id * 2].map((award) => ({
+        ...shownAward(award),
+        title: `a${award}`,
+        player: bare(id),
+      })),
+    }))
+    expect(rows).toEqual([{ ...shownTeam(1), players }])
+    expect(assembledIds()).toEqual([1, 2, 1, 1, 2, 2, 1, 2, 1, 1, 2, 2])
+    expect(callsTo('read', 'Player.coach').map((call) => call[2])).toEqual([
+      'p1',
+      'p2',
+      'p1',
+      'p1',
+      'p2',
+      'p2',
+    ])
   })
 
   test('a declared dependency the caller did not name reaches its hook and never the caller', async () => {
