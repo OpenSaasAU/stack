@@ -106,8 +106,40 @@ function observedEntries(observations: unknown): string[] {
   return isRecord(observations) ? Object.keys(observations).sort() : []
 }
 
+function isAssembly(call: unknown): call is unknown[] {
+  return Array.isArray(call) && call[0] === 'assembleColumns'
+}
+
+/**
+ * The old walks assemble a row's multi-column field a second time in their
+ * foreign-key pass, and the single traversal does not (#2409). That repeat is
+ * the one difference allowed: it is dropped from the old replay's calls only,
+ * so the traversal assembling a row twice, or not at all, is still reported.
+ */
+function withoutRepeatedAssembly(old: unknown): unknown {
+  if (!isRecord(old)) return old
+  const kept: Record<string, unknown> = {}
+  for (const [entry, observation] of Object.entries(old)) {
+    if (!isRecord(observation) || !Array.isArray(observation.calls)) {
+      kept[entry] = observation
+      continue
+    }
+    const assembled = new Set<string>()
+    const calls = observation.calls.filter((call) => {
+      if (!isAssembly(call)) return true
+      const row = JSON.stringify([call[1], call[2]])
+      if (assembled.has(row)) return false
+      assembled.add(row)
+      return true
+    })
+    kept[entry] = { ...observation, calls }
+  }
+  return kept
+}
+
 /** One line per diverging catalogue entry, naming the entry and its first differing key. */
-function divergences(old: unknown, next: unknown): string[] {
+function divergences(rawOld: unknown, next: unknown): string[] {
+  const old = withoutRepeatedAssembly(rawOld)
   if (!isRecord(old) || !isRecord(next)) return ['the replays wrote no catalogue']
   const entries = [...new Set([...Object.keys(old), ...Object.keys(next)])]
   const found: string[] = []
@@ -156,6 +188,26 @@ describe('the divergence report', () => {
     ).toEqual(['"read" diverged at .calls[0][0]: old "x", new "y"'])
     expect(divergences({ read: { result: { a: 1 } } }, { read: { result: {} } })).toEqual([
       '"read" diverged at .result.a: old 1, new nothing',
+    ])
+  })
+
+  test("allows only the old walks' repeated assembly of a row", () => {
+    const assembled = (id: number) => ['assembleColumns', 'card', id]
+    const read = ['read', 'Player.rating', 'p1']
+    const old = { read: { calls: [assembled(1), assembled(2), read, assembled(1), assembled(2)] } }
+
+    expect(divergences(old, { read: { calls: [assembled(1), assembled(2), read] } })).toEqual([])
+    expect(
+      divergences(old, { read: { calls: [assembled(1), assembled(2), read, assembled(1)] } }),
+    ).toEqual(['"read" diverged at .calls[3]: old nothing, new ["assembleColumns","card",1]'])
+    expect(divergences(old, { read: { calls: [assembled(1), read] } })).toEqual([
+      '"read" diverged at .calls[1][0]: old "assembleColumns", new "read"',
+    ])
+    expect(divergences(old, { read: { calls: [assembled(1), assembled(2), read, read] } })).toEqual(
+      ['"read" diverged at .calls[3]: old nothing, new ["read","Player.rating","p1"]'],
+    )
+    expect(divergences({ read: { calls: [read, read] } }, { read: { calls: [read] } })).toEqual([
+      '"read" diverged at .calls[1]: old ["read","Player.rating","p1"], new nothing',
     ])
   })
 })
