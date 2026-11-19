@@ -336,9 +336,8 @@ export type CombineBranchPlan =
     }
 
 /** A resolved include: every key checked, the Access Filter already folded in. */
-export interface IncludePlan {
+export interface IncludePlan extends PlanLevel {
   readonly relation: string
-  readonly relatedListName: string
   /** What the relation decodes to: one row (or `null`), or an array (ADR-0058). */
   readonly arity: 'one' | 'many'
   /**
@@ -368,7 +367,6 @@ export interface IncludePlan {
   readonly orders: readonly OrderPlan[]
   readonly limit?: number
   readonly offset?: number
-  readonly includes: readonly IncludePlan[]
   /** The related read's own projection, already widened (ADR-0041). */
   readonly projection: ProjectionPlan
   /**
@@ -396,6 +394,78 @@ export interface IncludePlan {
    * `restoreReductions` in `read.ts`.
    */
   readonly declaredRows?: readonly WherePlan[]
+  /**
+   * Whether this relation's value is {@link declaredRows}' stand-in rather than
+   * what the caller will see: a reduction with no rows branch of its own.
+   */
+  readonly reducedDeclared: boolean
+  /** Present on a Synthetic back-relation: the declared field whose `read` rule gates each row. */
+  readonly synthetic?: { readonly gate: FieldConfig | undefined }
+  /** What a `read` rule and a hook on the parent row see under this relation (ADR-0082). */
+  readonly ruleView: RelationRuleView
+}
+
+/**
+ * - `fetched`: the relation's value as the read fetched it
+ * - `withheld`: nothing, because the caller shaped it or it is a count with no rows
+ * - `declaredRowsBranch`: the rows its `combine` fetched for the declaring hooks
+ * - `declaredFetch`: the unshaped rows fetched apart from the caller's view
+ */
+export type RelationRuleView = 'fetched' | 'withheld' | 'declaredRowsBranch' | 'declaredFetch'
+
+/** One level of a resolved read: the root, or the list one relation reaches. */
+export interface PlanLevel {
+  readonly listName: string
+  readonly listConfig: ListConfig<TypeInfo>
+  /** The fields the caller keeps at this level, or `undefined` when it projected nothing here. */
+  readonly selection: ReadonlySet<string> | undefined
+  readonly includes: readonly IncludePlan[]
+  /** The to-ones owning a foreign-key column that no caller include at this level reaches. */
+  readonly unincludedForeignKeys: readonly ForeignKeyOwner[]
+  /** Whether any relationship field of this list owns a foreign-key column, included or not. */
+  readonly ownsForeignKeys: boolean
+}
+
+type LevelContext = Pick<ResolveContext, 'listName' | 'listConfig' | 'config'>
+
+/**
+ * A level's own facts, resolved once here so Field Visibility reads them off
+ * the plan rather than looking the lists up again by name.
+ */
+export function planLevel(
+  ctx: LevelContext,
+  selection: ReadonlySet<string> | undefined,
+  includes: readonly IncludePlan[],
+): PlanLevel {
+  const owners = foreignKeyOwningRelations(ctx)
+  const included = new Set(
+    includes.filter((plan) => !plan.declared && !plan.callerRefined).map((plan) => plan.relation),
+  )
+  return {
+    listName: ctx.listName,
+    listConfig: ctx.listConfig,
+    selection,
+    includes,
+    unincludedForeignKeys: owners.filter((owner) => !included.has(owner.relation)),
+    ownsForeignKeys: owners.length > 0,
+  }
+}
+
+function ruleViewOf(plan: {
+  declared: boolean
+  callerShaped: boolean
+  reduce?: ReducePlan
+  declaredRows?: readonly WherePlan[]
+  declaredFetch?: readonly WherePlan[]
+}): RelationRuleView {
+  const rowsBranch = plan.reduce !== undefined && rowsBranchKeyOf(plan.reduce) !== undefined
+  if (plan.declaredFetch !== undefined) return 'declaredFetch'
+  if (plan.reduce !== undefined && plan.declaredRows !== undefined && rowsBranch) {
+    return 'declaredRowsBranch'
+  }
+  const narrowed = !plan.declared && plan.callerShaped && (plan.reduce === undefined || rowsBranch)
+  const rowless = plan.reduce !== undefined && !rowsBranch && plan.declaredRows === undefined
+  return narrowed || rowless ? 'withheld' : 'fetched'
 }
 
 /** The key a resolved reduce's own rows branch sits under, if it composed one. */
@@ -506,7 +576,7 @@ interface IncludeTarget {
 export interface ForeignKeyOwner {
   readonly relation: string
   readonly fieldConfig: FieldConfig
-  readonly relatedList: string
+  readonly related: { readonly listName: string; readonly listConfig: ListConfig<TypeInfo> }
   readonly foreignKey: string
 }
 
@@ -518,10 +588,10 @@ export interface ForeignKeyOwner {
  * regardless of `include`. `resolveInclude` only ever resolves a relation this
  * read actually named or declared, so a to-one nobody asked for has no
  * {@link IncludePlan} entry and nothing narrows its column — the gap issue
- * #1243 closes. `narrowUnincludedForeignKeys` (`read.ts`) is what actually
- * does that narrowing; this is the enumeration it walks.
+ * #1243 closes. `narrowUnincludedForeignKeys` (`field-visibility.ts`) is what
+ * actually does that narrowing; this is the enumeration it walks.
  */
-export function foreignKeyOwningRelations(ctx: ResolveContext): ForeignKeyOwner[] {
+function foreignKeyOwningRelations(ctx: LevelContext): ForeignKeyOwner[] {
   const owners: ForeignKeyOwner[] = []
   for (const member of resolveListMembers(ctx.config, ctx.listName).members.values()) {
     if (member.kind !== 'field' || member.storage.kind !== 'relation') continue
@@ -530,7 +600,7 @@ export function foreignKeyOwningRelations(ctx: ResolveContext): ForeignKeyOwner[
     owners.push({
       relation: member.name,
       fieldConfig: member.field,
-      relatedList,
+      related: listNamed(ctx, relatedList),
       foreignKey: foreignKey.name,
     })
   }
@@ -723,8 +793,8 @@ async function resolveInclude(
       : undefined
 
   return {
+    ...planLevel(related, projection.caller, includes),
     relation: request.name,
-    relatedListName: target.relatedListName,
     arity: target.arity,
     ...(target.foreignKey ? { foreignKey: target.foreignKey } : {}),
     predicates,
@@ -735,11 +805,14 @@ async function resolveInclude(
     orders,
     limit: request.limit,
     offset: request.offset,
-    includes,
     projection,
     declared,
     ...(reduce ? { reduce } : {}),
     ...(declaredRows ? { declaredRows } : {}),
+    reducedDeclared:
+      declaredRows !== undefined && (reduce === undefined || rowsBranchKeyOf(reduce) === undefined),
+    ...(target.fieldConfig === undefined ? { synthetic: { gate: target.readGate } } : {}),
+    ruleView: ruleViewOf({ declared, callerShaped, reduce, declaredRows, declaredFetch }),
   }
 }
 

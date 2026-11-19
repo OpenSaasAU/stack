@@ -1596,7 +1596,15 @@ export function populateDbDelegate(
       ),
     }
 
-    const read = createSecuredRead({ listName, listConfig, ormHandle, context, config, lock })
+    const read = createSecuredRead({
+      listName,
+      listConfig,
+      ormHandle,
+      context,
+      config,
+      rebindDb: rebindDb(config),
+      lock,
+    })
 
     if (listMembers.get(listName)?.singleton === true) {
       operations.get = resolvingConstraints(
@@ -1642,6 +1650,11 @@ export function buildDbDelegate(
   const db: Record<string, unknown> = {}
   populateDbDelegate(db, config, ormHandle, context, context._rowLock)
   return db as AccessControlledDB
+}
+
+/** The read binding's `rebindDb`: a hook's `context.db`, built against the hook's own context. */
+export function rebindDb(config: OpenSaasConfig): (derived: AccessContext) => AccessControlledDB {
+  return (derived) => buildDbDelegate(config, derived.ormHandle, derived)
 }
 
 const WRITE_ARG_KEYS = {

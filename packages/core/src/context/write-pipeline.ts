@@ -23,12 +23,8 @@ import {
   type WriteCollection,
   type WriteScope,
 } from '../secured/write.js'
-import {
-  readWrittenRow,
-  visibleWrittenRow,
-  writeReturnReadsRelations,
-  type VisibleRow,
-} from '../secured/read.js'
+import { readWrittenRow, writeReturnReadsRelations } from '../secured/read.js'
+import { visibleWrittenRow, type VisibleRow } from '../secured/field-visibility.js'
 import { hookPipeline } from './hook-pipeline.js'
 import {
   lowerRelationInput,
@@ -48,7 +44,7 @@ import {
 // dependency. It is safe because `buildDbDelegate` is only INVOKED at write
 // time (never during module evaluation), so by the time it runs the export is
 // fully initialised.
-import { buildDbDelegate } from './index.js'
+import { buildDbDelegate, rebindDb } from './index.js'
 import {
   invalidatesSessionVocabularyOf,
   withOwnSessionVocabulary,
@@ -611,7 +607,14 @@ async function runWriteInTransaction(
   )
 
   // ── Phase 11: Field Visibility (filter readable fields + resolveOutput) ─────
-  const binding = { listName, listConfig, ormHandle: tx, context, config }
+  const binding = {
+    listName,
+    listConfig,
+    ormHandle: tx,
+    context,
+    config,
+    rebindDb: rebindDb(config),
+  }
   const visible = await visibleWrittenRow(binding, item, await readWrittenRow(binding, item.id))
   return { visible, raw: item }
 }
@@ -647,7 +650,7 @@ async function runDeletePath(args: {
     strategy,
   } = args
   const item = originalItem as Record<string, unknown>
-  const binding = { listName, listConfig, ormHandle, context, config }
+  const binding = { listName, listConfig, ormHandle, context, config, rebindDb: rebindDb(config) }
 
   // Before any hook: a `beforeOperation` clearing the row's children must not
   // change what the return computes over (ADR-0081).

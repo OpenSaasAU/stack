@@ -34,8 +34,6 @@ export {
 // The `item` a `read` rule runs against (ADR-0082).
 export { NO_RULE_VIEWS, ruleRowOf } from './rule-item.js'
 export type { RuleView, RuleViewTree } from './rule-item.js'
-// Phase 2 — Field Visibility (post-query field stripping + resolveOutput).
-export { filterReadableFields } from './field-visibility.js'
 // Declared Dependencies — widening a read for the emitted `needs` sets
 // without widening the result (ADR-0025, ADR-0051).
 export {
