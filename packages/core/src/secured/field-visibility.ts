@@ -293,12 +293,10 @@ async function filterReadableFields(
     }
 
     const member = listMembers.members.get(fieldName)
-    if (member === undefined || member.kind === 'partColumn') continue
-
     const node = nodes.get(fieldName)
 
     // A related row the plan has no node for has nothing to strip it by.
-    if (node === undefined && isRelationMember(member)) continue
+    if (node === undefined && member !== undefined && isRelationMember(member)) continue
 
     if (node !== undefined && value !== null && value !== undefined) {
       if (node.synthetic === undefined) {

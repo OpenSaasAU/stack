@@ -317,7 +317,7 @@ type PlanDisposition = 'applied' | 'refused' | 'inapplicable'
  * silence, and each was found by review rather than by a test.
  */
 type PlanDispositions = {
-  readonly [Member in keyof ReadPlan]: Member extends 'root'
+  readonly [Member in keyof ReadPlan]-?: Member extends 'root'
     ? Exclude<PlanDisposition, 'refused'>
     : PlanDisposition
 }

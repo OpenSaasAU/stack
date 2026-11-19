@@ -9,7 +9,7 @@ import { READ_INCLUDE_MAX_DEPTH } from '../access/depth-limits.js'
 const BOOT = 120_000
 
 function multiColumn(
-  options: { access?: FieldConfig['access']; namesColumns?: boolean } = {},
+  options: { access?: FieldConfig['access']; namesColumns?: boolean; assembles?: boolean } = {},
 ): FieldConfig {
   const field = json({ access: options.access })
   const columns = ['avatar_filename', 'avatar_filesize']
@@ -21,10 +21,12 @@ function multiColumn(
     ],
   })
   if (options.namesColumns !== false) field.getColumnNames = () => columns
-  field.assembleColumns = (_fieldName, row) => ({
-    filename: row[columns[0]],
-    filesize: row[columns[1]],
-  })
+  if (options.assembles !== false) {
+    field.assembleColumns = (_fieldName, row) => ({
+      filename: row[columns[0]],
+      filesize: row[columns[1]],
+    })
+  }
   field.splitColumns = (_fieldName, value) => {
     const metadata: { filename?: unknown; filesize?: unknown } =
       typeof value === 'object' && value !== null ? value : {}
@@ -93,6 +95,16 @@ const config: OpenSaasConfig = {
     },
     HiddenAvatar: {
       fields: { title: text(), avatar: multiColumn({ access: { read: () => false } }) },
+      access: { operation: { query: () => true } },
+    },
+    RawParts: {
+      fields: {
+        title: text(),
+        avatar: multiColumn({
+          assembles: false,
+          access: { read: ({ session }) => session?.role === 'admin' },
+        }),
+      },
       access: { operation: { query: () => true } },
     },
     Term: {
@@ -223,6 +235,24 @@ describe('a multi-column field read', () => {
       expect(row).not.toHaveProperty('avatar')
       expect(row).not.toHaveProperty('avatar_filename')
       expect(row).not.toHaveProperty('avatar_filesize')
+    },
+    BOOT,
+  )
+})
+
+describe('a multi-column field without assembleColumns', () => {
+  test(
+    'returns its raw part columns to a session its read rule allows',
+    async () => {
+      await seed('RawParts', { title: 'hi', avatar_filename: 'ada.png', avatar_filesize: 12 })
+
+      const row = await database.context(admin).db.RawParts.first()
+
+      expect(row).toMatchObject({
+        title: 'hi',
+        avatar_filename: 'ada.png',
+        avatar_filesize: 12,
+      })
     },
     BOOT,
   )
