@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, describe, expect, test } from 'vitest'
+import { CATALOGUE_ENTRIES } from './fixtures/field-visibility-catalogue-entries.js'
 
 const RUN = 300_000
 
@@ -101,6 +102,10 @@ function firstDifference(left: unknown, right: unknown, at = ''): string | undef
   return `${at}: old ${show(left)}, new ${show(right)}`
 }
 
+function observedEntries(observations: unknown): string[] {
+  return isRecord(observations) ? Object.keys(observations).sort() : []
+}
+
 /** One line per diverging catalogue entry, naming the entry and its first differing key. */
 function divergences(old: unknown, next: unknown): string[] {
   if (!isRecord(old) || !isRecord(next)) return ['the replays wrote no catalogue']
@@ -123,6 +128,11 @@ describe('Field Visibility under the walks and the single traversal', () => {
     async () => {
       const [old, next] = await Promise.all([replay('old'), replay('new')])
 
+      const expected = [...CATALOGUE_ENTRIES].sort()
+      expect({
+        old: observedEntries(old.observations),
+        new: observedEntries(next.observations),
+      }).toEqual({ old: expected, new: expected })
       expect(divergences(old.observations, next.observations)).toEqual([])
       expect({ old: old.exitCode, new: next.exitCode }, `${old.output}\n${next.output}`).toEqual({
         old: 0,

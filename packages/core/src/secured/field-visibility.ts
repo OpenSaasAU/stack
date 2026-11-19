@@ -84,16 +84,17 @@ export async function visibleRows(
   rows: readonly OrmRow[],
   root: PlanLevel,
 ): Promise<VisibleRow[]> {
-  if (implementation() === 'traversal' && root.includes.length === 0) {
-    return minted(await traverse(binding, rows, root))
-  }
-  return minted(await walk(binding, rows, root))
+  const shown =
+    implementation() === 'traversal' && root.includes.length === 0
+      ? await traverse(binding, rows, root)
+      : await walk(binding, rows, root)
+  return minted(shown)
 }
 
 /**
- * Which implementation of the phase this process runs, fixed at its first
- * read: `OPENSAAS_FIELD_VISIBILITY=new` selects the single traversal while
- * #2387 replaces the walks with it. A process never runs both.
+ * Which implementation of the phase this process runs:
+ * `OPENSAAS_FIELD_VISIBILITY=new` selects the single traversal. Fixed at its
+ * first read; a process never runs both.
  */
 let chosenImplementation: 'walks' | 'traversal' | undefined
 
@@ -231,8 +232,12 @@ async function narrowForeignKeysAt(
     for (const { row } of carrying) {
       const value = row.raw[column]
       if (row.shown[column] === null || value === null || value === undefined) continue
-      if (isRowLockKey(value)) referenced.set(String(value), value)
-      else row.shown[column] = null
+      if (!isRowLockKey(value)) {
+        throw new Error(
+          `Foreign key ${listName}.${column} holds a ${typeof value}; Field Visibility narrows only a string or number id.`,
+        )
+      }
+      referenced.set(String(value), value)
     }
     if (referenced.size === 0) continue
 
@@ -278,7 +283,7 @@ async function walk(
     }),
   )
   await narrowUnincludedForeignKeys(binding, results, rows, root, ruleViews)
-  return minted(results)
+  return results
 }
 
 /**

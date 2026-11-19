@@ -9,6 +9,7 @@ import type { Session } from '../access/types.js'
 import { checkbox, integer, json, relationship, text, virtual } from '../fields/index.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
 import { createPlanRecorder, type RecordedPlan } from '../testing/plans.js'
+import type { CatalogueEntry } from './fixtures/field-visibility-catalogue-entries.js'
 
 const BOOT = 120_000
 
@@ -20,8 +21,16 @@ function record(...call: unknown[]): void {
   calls.push(call)
 }
 
-function keysOf(item: Record<string, unknown>): string[] {
+function keysOf(item: object): string[] {
   return Object.keys(item)
+}
+
+function enumerates(session: Session | null): boolean {
+  return session?.enumerate === true
+}
+
+function ruleKeys(session: Session | null, item: object): string[] | 'not enumerated' {
+  return enumerates(session) ? keysOf(item) : 'not enumerated'
 }
 
 function avatar(): FieldConfig {
@@ -54,8 +63,8 @@ const config: OpenSaasConfig = {
       fields: { name: text(), listed: checkbox() },
       access: {
         operation: {
-          query: () => {
-            record('query', 'Org')
+          query: (args) => {
+            record('query', 'Org', keysOf(args))
             return { listed: { equals: true } }
           },
         },
@@ -63,7 +72,15 @@ const config: OpenSaasConfig = {
     },
     Mentor: {
       fields: { name: text() },
-      access: { operation: { query: () => false, create: () => true } },
+      access: {
+        operation: {
+          query: (args) => {
+            record('query', 'Mentor', keysOf(args))
+            return false
+          },
+          create: () => true,
+        },
+      },
     },
     Member: {
       fields: {
@@ -71,23 +88,23 @@ const config: OpenSaasConfig = {
         salary: integer({
           access: {
             read: ({ session, item }) => {
-              record('read', 'Member.salary', item.name)
+              record('read', 'Member.salary', item.name, ruleKeys(session, item))
               return session?.role === 'admin'
             },
           },
         }),
         secret: text({
           access: {
-            read: () => {
-              record('read', 'Member.secret')
+            read: ({ session, item }) => {
+              record('read', 'Member.secret', ruleKeys(session, item))
               return false
             },
           },
         }),
         badge: text({
           access: {
-            read: ({ item }) => {
-              record('read', 'Member.badge')
+            read: ({ session, item }) => {
+              record('read', 'Member.badge', ruleKeys(session, item))
               return item.org !== null
             },
           },
@@ -114,8 +131,8 @@ const config: OpenSaasConfig = {
         org: relationship({
           ref: 'Org',
           access: {
-            read: ({ session }) => {
-              record('read', 'Member.org')
+            read: ({ session, item }) => {
+              record('read', 'Member.org', ruleKeys(session, item))
               return session !== null
             },
           },
@@ -124,7 +141,10 @@ const config: OpenSaasConfig = {
       },
       access: {
         operation: {
-          query: () => true,
+          query: (args) => {
+            record('query', 'Member', keysOf(args))
+            return true
+          },
           create: () => true,
           update: () => true,
           delete: () => true,
@@ -137,9 +157,9 @@ const config: OpenSaasConfig = {
         secretSauce: integer(),
         note: text({
           access: {
-            read: ({ session }) => {
-              record('read', 'Ledger.note')
-              return session !== null
+            read: ({ session, item }) => {
+              record('read', 'Ledger.note', ruleKeys(session, item))
+              return session?.role !== undefined
             },
           },
         }),
@@ -164,15 +184,37 @@ const config: OpenSaasConfig = {
           },
         }),
       },
-      access: { operation: { query: () => true } },
+      access: {
+        operation: {
+          query: (args) => {
+            record('query', 'Ledger', keysOf(args))
+            return true
+          },
+        },
+      },
     },
     Sealed: {
       fields: { name: text() },
-      access: { operation: { query: () => false, create: () => true } },
+      access: {
+        operation: {
+          query: (args) => {
+            record('query', 'Sealed', keysOf(args))
+            return false
+          },
+          create: () => true,
+        },
+      },
     },
     Order: {
       fields: {
-        ref: text(),
+        ref: text({
+          access: {
+            read: ({ session, item }) => {
+              record('read', 'Order.ref', ruleKeys(session, item))
+              return session?.role === 'admin'
+            },
+          },
+        }),
         lines: relationship({ ref: 'Line.order', many: true }),
         total: virtual({
           type: 'number',
@@ -186,11 +228,27 @@ const config: OpenSaasConfig = {
           },
         }),
       },
-      access: { operation: { query: () => true, create: () => true } },
+      access: {
+        operation: {
+          query: (args) => {
+            record('query', 'Order', keysOf(args))
+            return true
+          },
+          create: () => true,
+        },
+      },
     },
     Line: {
       fields: { price: integer(), order: relationship({ ref: 'Order.lines' }) },
-      access: { operation: { query: () => true, create: () => true } },
+      access: {
+        operation: {
+          query: (args) => {
+            record('query', 'Line', keysOf(args))
+            return true
+          },
+          create: () => true,
+        },
+      },
     },
   },
 }
@@ -200,15 +258,20 @@ let database: TestDatabase
 
 const member: Session = { role: 'member' }
 const admin: Session = { role: 'admin' }
+const enumerating: Session = { role: 'admin', enumerate: true }
 
-/** What the differential compares: the result, then every call and statement it took, in order. */
-export interface Observation {
-  readonly result: unknown
-  readonly calls: readonly Call[]
-  readonly statements: readonly string[]
+interface Statement {
+  readonly shape: string
+  readonly ast: unknown
 }
 
-const observations: Record<string, Observation> = {}
+interface Observation {
+  readonly result: unknown
+  readonly calls: readonly Call[]
+  readonly statements: readonly Statement[]
+}
+
+const observations: Partial<Record<CatalogueEntry, Observation>> = {}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
@@ -225,6 +288,38 @@ function projectedColumns(plan: RecordedPlan): string[] {
 function statement(plan: RecordedPlan): string {
   return `${plan.kind}:${String(plan.origin)}:${projectedColumns(plan).join(',')}`
 }
+
+function plainAst(plan: RecordedPlan): unknown {
+  return JSON.parse(
+    JSON.stringify(plan.ast, (_key, value: unknown) =>
+      typeof value === 'bigint' ? `${value}n` : value,
+    ),
+  )
+}
+
+function callsTo(kind: string, label: string): Call[] {
+  return calls.filter((call) => call[0] === kind && call[1] === label)
+}
+
+function ruleAndHookCalls(): Call[] {
+  return calls.filter((call) => call[0] === 'read' || call[0] === 'resolveOutput')
+}
+
+function hookItems(label: string): unknown[] {
+  return callsTo('resolveOutput', label).map((call) => call[2])
+}
+
+const memberColumns = [
+  'id',
+  'name',
+  'salary',
+  'secret',
+  'badge',
+  'nickname',
+  'orgId',
+  'mentorId',
+  'avatar',
+]
 
 async function seedMembers(): Promise<void> {
   const sudo = database.context(null).sudo().db
@@ -260,14 +355,15 @@ async function seedLedger(): Promise<void> {
  * Runs one catalogue entry, keeps what it observed for the differential, and
  * hands back the result for the entry's own assertion.
  */
-async function observe(name: string, run: () => Promise<unknown>): Promise<unknown> {
+async function observe(name: CatalogueEntry, run: () => Promise<unknown>): Promise<unknown> {
+  if (name in observations) throw new Error(`catalogue entry "${name}" is observed twice`)
   calls.length = 0
   recorder.clear()
   const result = await run()
   observations[name] = {
     result: JSON.parse(JSON.stringify(result ?? null)),
     calls: calls.map((call) => [...call]),
-    statements: recorder.plans.map(statement),
+    statements: recorder.plans.map((plan) => ({ shape: statement(plan), ast: plainAst(plan) })),
   }
   return result
 }
@@ -325,6 +421,12 @@ describe('bare reads', () => {
         label: 'member cy',
       },
     ])
+    expect(hookItems('Member.nickname')).toEqual([['id'], ['id'], ['id']])
+    expect(hookItems('Member.label')).toEqual([
+      ['id', 'name'],
+      ['id', 'name'],
+      ['id', 'name'],
+    ])
   })
 
   test('all() as an admin reads the salary its rule grants', async () => {
@@ -338,6 +440,9 @@ describe('bare reads', () => {
     )
 
     expect(rows).toEqual([{ ...ada, salary: 100 }])
+    expect(callsTo('read', 'Member.salary')).toEqual([
+      ['read', 'Member.salary', 'ada', 'not enumerated'],
+    ])
   })
 
   test('first() anonymously nulls a foreign key whose field rule denies', async () => {
@@ -358,17 +463,45 @@ describe('bare reads', () => {
     )
 
     expect(row).toEqual({ ...ada, salary: 100, secret: 's1', badge: 'gold', mentorId: 1 })
+    expect(calls.filter((call) => call[0] === 'read' || call[0] === 'query')).toEqual([])
+    expect(recorder.plans.map(statement)).toEqual([
+      'select:engine:id,name,salary,secret,badge,nickname,avatar_filename,avatar_filesize,orgId,mentorId',
+    ])
   })
 
   test('a list with no relations computes every computed field from its declared set', async () => {
     await seedLedger()
 
     const rows = await observe('bare all() on a list with no relations', () =>
-      database.context(member).db.Ledger.all(),
+      database.context({ enumerate: true }).db.Ledger.all(),
     )
 
-    expect(rows).toEqual([
-      { id: 1, amount: 3, secretSauce: 41, note: 'n', total: 6, expensive: 42 },
+    expect(rows).toEqual([{ id: 1, amount: 3, secretSauce: 41, total: 6, expensive: 42 }])
+    expect(ruleAndHookCalls()).toEqual([
+      ['read', 'Ledger.note', ['id', 'amount', 'secretSauce', 'note']],
+      ['resolveOutput', 'Ledger.total', ['id', 'amount']],
+      ['resolveOutput', 'Ledger.expensive', ['id', 'secretSauce']],
+    ])
+  })
+
+  test('a rule enumerating its row sees the stored columns, and denies while a relation is withheld', async () => {
+    await seedMembers()
+
+    const rows = await observe('a rule enumerating its row', () =>
+      database
+        .context(enumerating)
+        .db.Member.where({ name: { equals: 'ada' } })
+        .all(),
+    )
+
+    expect(rows).toEqual([{ ...ada, orgId: null }])
+    expect(ruleAndHookCalls()).toEqual([
+      ['read', 'Member.salary', 'ada', memberColumns],
+      ['read', 'Member.secret', memberColumns],
+      ['read', 'Member.badge', memberColumns],
+      ['resolveOutput', 'Member.nickname', ['id']],
+      ['resolveOutput', 'Member.label', ['id', 'name']],
+      ['read', 'Member.org', memberColumns],
     ])
   })
 })
@@ -387,6 +520,8 @@ describe('projections', () => {
     )
 
     expect(rows).toEqual([{ id: 1, name: 'ada', label: 'member ada' }])
+    expect(ruleAndHookCalls()).toEqual([['resolveOutput', 'Member.label', ['id', 'name']]])
+    expect(recorder.plans.map(statement)).toEqual(['select:engine:id,name'])
   })
 
   test('an unselected computed field neither runs nor widens the fetch', async () => {
@@ -398,6 +533,8 @@ describe('projections', () => {
 
     expect(rows).toEqual([{ id: 1, note: 'n', total: 6 }])
     expect(calls).not.toContainEqual(expect.arrayContaining(['Ledger.expensive']))
+    expect(callsTo('read', 'Ledger.note')).not.toEqual([])
+    expect(hookItems('Ledger.total')).toEqual([['id', 'amount']])
     expect(recorder.plans.map(statement)).toEqual(['select:engine:id,note,amount'])
   })
 
@@ -413,6 +550,7 @@ describe('projections', () => {
       { id: 2, orgId: null, mentorId: null },
       { id: 3, orgId: null, mentorId: null },
     ])
+    expect(callsTo('read', 'Member.org')).not.toEqual([])
   })
 })
 
@@ -495,12 +633,15 @@ describe('write returns', () => {
     expect(created).toEqual({ id: 1 })
   })
 
-  test('a list declaring a relation returns the re-read row', async () => {
-    const created = await observe('create on a list declaring a relation', async () => {
-      const order = await database.context(member).db.Order.create({ data: { ref: 'o' } })
-      return order
-    })
+  test('a list declaring a relation returns the re-read row through its rules', async () => {
+    const created = await observe('create on a list declaring a relation', () =>
+      database.context(member).db.Order.create({ data: { ref: 'o' } }),
+    )
 
-    expect(created).toEqual({ id: 1, ref: 'o', total: 0 })
+    expect(created).toEqual({ id: 1, total: 0 })
+    expect(ruleAndHookCalls()).toEqual([
+      ['read', 'Order.ref', 'not enumerated'],
+      ['resolveOutput', 'Order.total', ['id', 'lines']],
+    ])
   })
 })
