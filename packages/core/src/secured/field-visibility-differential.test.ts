@@ -23,7 +23,10 @@ interface Replay {
   readonly output: string
 }
 
-function childEnvironment(implementation: Implementation, out: string): Record<string, string | undefined> {
+function childEnvironment(
+  implementation: Implementation,
+  out: string,
+): Record<string, string | undefined> {
   const env: Record<string, string | undefined> = {}
   for (const [key, value] of Object.entries(process.env)) {
     if (key.startsWith('VITEST') || key === 'NODE_V8_COVERAGE' || key === 'TEST') continue
