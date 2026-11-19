@@ -6,6 +6,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
 import type { FieldConfig, OpenSaasConfig } from '../config/types.js'
 import type { FieldAccess, Session } from '../access/types.js'
 import { json, relationship, text, virtual } from '../fields/index.js'
+import { ValidationError } from '../hooks/index.js'
+import { createMcpHandlers } from '../mcp/handler.js'
 import { withOrigin } from '../origin.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
 
@@ -31,6 +33,7 @@ function rawParts(access: FieldAccess): FieldConfig {
 }
 
 const adminOnly: FieldAccess = { read: ({ session }) => session?.role === 'admin' }
+const memberOnly: FieldAccess = { read: ({ session }) => session?.role === 'member' }
 
 let ruleCalls = 0
 
@@ -38,6 +41,7 @@ const open = { query: () => true, create: () => true, update: () => true, delete
 
 const config: OpenSaasConfig = {
   db: { provider: 'postgresql' },
+  mcp: { enabled: true, basePath: '/api/mcp' },
   lists: {
     Card: {
       fields: {
@@ -45,7 +49,12 @@ const config: OpenSaasConfig = {
         avatar: rawParts(adminOnly),
         owner: relationship({ ref: 'Holder.cards' }),
         tag: relationship({ ref: 'Tag' }),
+        pic: relationship({ ref: 'Pic' }),
       },
+      access: { operation: open },
+    },
+    Pic: {
+      fields: { title: text(), avatar: rawParts(memberOnly) },
       access: { operation: open },
     },
     Holder: {
@@ -214,7 +223,11 @@ describe('the root of a read', () => {
       await seed('Card', { title: 'c1', ...PART_VALUES })
       const where = { avatar_filename: { equals: 'ada.png' } }
 
-      await expect(database.context(member).db.Card.where(where).all()).rejects.toThrow()
+      const refused = database.context(member).db.Card.where(where).all()
+      await expect(refused).rejects.toBeInstanceOf(ValidationError)
+      await expect(refused).rejects.toThrow(
+        'Cannot query "Card" — "avatar_filename" is not a queryable field of this list.',
+      )
       expect(await database.context(admin).db.Card.where(where).all()).toHaveLength(1)
     },
     BOOT,
@@ -307,6 +320,113 @@ describe('rows reached through a relation', () => {
       expectHidden(deniedCard)
       expect(deniedCard).toMatchObject({ title: 'c1' })
       expectParts(allowedCard)
+    },
+    BOOT,
+  )
+  test(
+    'a combine rows branch withholds the parts from a denied session and keeps the count',
+    async () => {
+      const holder = await seed('Holder', { name: 'h' })
+      await seed('Card', { title: 'c1', ownerId: holder.id, ...PART_VALUES })
+      await seed('Card', { title: 'c2', ownerId: holder.id, ...PART_VALUES })
+
+      for (const [session, expectation] of [
+        [null, expectHidden],
+        [member, expectHidden],
+        [admin, expectParts],
+      ] as const) {
+        const [read] = await database
+          .context(session)
+          .db.Holder.include('cards', (cards) =>
+            cards.combine({ rows: cards, total: cards.count() }),
+          )
+          .all()
+        const combined = record(read.cards)
+        expect(combined.total).toBe(2)
+        const rows = records(combined.rows)
+        expect(rows).toHaveLength(2)
+        for (const card of rows) expectation(card)
+      }
+    },
+    BOOT,
+  )
+
+  test(
+    'two lists sharing a field name and its part names each follow their own rule in one read',
+    async () => {
+      const pic = await seed('Pic', { title: 'p1', ...PART_VALUES })
+      await seed('Card', { title: 'c1', picId: pic.id, ...PART_VALUES })
+
+      const [asMember] = await database.context(member).db.Card.include('pic').all()
+      expectHidden(asMember)
+      expectParts(asMember.pic)
+
+      const [asAdmin] = await database.context(admin).db.Card.include('pic').all()
+      expectParts(asAdmin)
+      expectHidden(asAdmin.pic)
+      expect(asAdmin.pic).toMatchObject({ title: 'p1' })
+    },
+    BOOT,
+  )
+})
+
+describe('MCP', () => {
+  async function call(
+    session: Session,
+    name: string,
+    args: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const handlers = createMcpHandlers({
+      config,
+      getSession: async () => ({ userId: 'user-1', scopes: ['read', 'write'], ...session }),
+      getContext: async (given) => database.context(given ?? null),
+    })
+    const response = await handlers.POST(
+      new Request('http://localhost/api/mcp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/call',
+          params: { name, arguments: args },
+        }),
+      }),
+    )
+    const body: unknown = JSON.parse(await response.text())
+    const result = record(record(body).result)
+    const [content] = records(result.content)
+    if (result.isError === true) throw new Error(String(content.text))
+    const parsed: unknown = JSON.parse(String(content.text))
+    return record(parsed)
+  }
+
+  test(
+    'a query with no fields withholds the parts from a denied session',
+    async () => {
+      await seed('Card', { title: 'c1', ...PART_VALUES })
+
+      const [denied] = records((await call(member, 'list_card_query', {})).items)
+      expectHidden(denied)
+      expect(denied).toMatchObject({ title: 'c1' })
+
+      const [allowed] = records((await call(admin, 'list_card_query', {})).items)
+      expectParts(allowed)
+    },
+    BOOT,
+  )
+
+  test(
+    "a create tool's return withholds the parts from a denied session",
+    async () => {
+      const denied = await call(member, 'list_card_create', { data: { title: 'c1' } })
+      expectHidden(denied.item)
+      expect(denied.item).toMatchObject({ title: 'c1' })
+
+      const allowed = await call(admin, 'list_card_create', {
+        data: { title: 'c2', avatar: { filename: 'ada.png', filesize: 12 } },
+      })
+      expectParts(allowed.item)
     },
     BOOT,
   )
