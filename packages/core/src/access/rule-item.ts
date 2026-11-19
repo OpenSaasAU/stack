@@ -27,15 +27,13 @@ const EMPTY_RULE_VIEW: RuleView = Object.freeze({
   scopedAway: new Set<string>(),
 })
 
-/** The {@link RuleView} of every row at one level, and of the levels beneath it. */
-export interface RuleViewTree {
+/** The {@link RuleView} of every row at one level. */
+export interface RuleViews {
   readonly viewFor: (row: Record<string, unknown>) => RuleView
-  readonly nested: Readonly<Record<string, RuleViewTree>>
 }
 
-export const NO_RULE_VIEWS: RuleViewTree = Object.freeze({
+export const NO_RULE_VIEWS: RuleViews = Object.freeze({
   viewFor: () => EMPTY_RULE_VIEW,
-  nested: {},
 })
 
 /** A list's relation keys, each with the list it reaches when that is known. */
@@ -114,7 +112,7 @@ function viewedRow(row: Record<string, unknown>, view: RuleView): Record<string,
  */
 export function ruleRowOf(
   row: Record<string, unknown>,
-  views: RuleViewTree,
+  views: RuleViews,
   fieldConfigs: Record<string, FieldConfig>,
   config: OpenSaasConfig | undefined,
   listKey: string | undefined,

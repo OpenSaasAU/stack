@@ -11,7 +11,7 @@ import type {
 /**
  * A multi-column field's physical columns (`hero_url`, `hero_width`, …) are
  * hidden here rather than merely overridden: they are still contract columns,
- * but the runtime strips them from every read (`filterReadableFields`) so
+ * but Field Visibility strips them from every read so
  * only the assembled logical key — added by `& R[K]['output']` below — ever
  * reaches a caller (#1195).
  */

@@ -31,7 +31,7 @@ export {
 } from './field-access.js'
 // The `item` a `read` rule runs against (ADR-0082).
 export { NO_RULE_VIEWS, ruleRowOf } from './rule-item.js'
-export type { RuleView, RuleViewTree } from './rule-item.js'
+export type { RuleView, RuleViews } from './rule-item.js'
 // The emitted declared-dependency sets (ADR-0025, ADR-0051).
 export {
   resolveDeclaredDependencies,

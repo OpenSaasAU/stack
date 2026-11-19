@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import type { FieldConfig, OpenSaasConfig } from '../config/types.js'
 import { relationship, text } from '../fields/index.js'
-import { guardedRuleItem, NO_RULE_VIEWS, ruleRowOf, type RuleViewTree } from './rule-item.js'
+import { guardedRuleItem, NO_RULE_VIEWS, ruleRowOf, type RuleViews } from './rule-item.js'
 
 const config: OpenSaasConfig = {
   db: { provider: 'postgresql' },
@@ -22,7 +22,7 @@ const config: OpenSaasConfig = {
 
 const fields: Record<string, FieldConfig> = config.lists.Ticket.fields
 
-function guarded(row: Record<string, unknown>, views: RuleViewTree = NO_RULE_VIEWS) {
+function guarded(row: Record<string, unknown>, views: RuleViews = NO_RULE_VIEWS) {
   return guardedRuleItem(ruleRowOf(row, views, fields, config, 'Ticket'))
 }
 
@@ -234,9 +234,8 @@ describe('each evaluation has its own record', () => {
 })
 
 describe('a to-one the session cannot see', () => {
-  const scopedAway: RuleViewTree = {
+  const scopedAway: RuleViews = {
     viewFor: () => ({ removed: new Set(), declared: {}, scopedAway: new Set(['assignee']) }),
-    nested: {},
   }
 
   test('is withheld from a rule and stays null for a hook', () => {
