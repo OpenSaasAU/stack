@@ -1570,14 +1570,14 @@ describe('declared relations a caller reduces or shapes', () => {
         .all(),
     )
 
+    expect(blurbed()).toEqual([])
+    expect(callsTo('read', 'Book.title')).toEqual([])
     expect(rows).toEqual([shelf(1, 2, 2), shelf(2, 1, 1), shelf(3, 0, 0)])
     expect(callsTo('resolveOutput', 'Shelf.weight')).toEqual([
       ['resolveOutput', 'Shelf.weight', ['id', 'books'], ['b1', 'b2']],
       ['resolveOutput', 'Shelf.weight', ['id', 'books'], ['b4']],
       ['resolveOutput', 'Shelf.weight', ['id', 'books'], []],
     ])
-    expect(blurbed()).toEqual([])
-    expect(callsTo('read', 'Book.title')).toEqual([])
   })
 
   test('a combine rows branch beside a declared relation hands the hook the unshaped rows', async () => {
@@ -1812,12 +1812,16 @@ describe('writes on a list declaring a relation', () => {
 
   test('delete returns the row as it stood, computed over the declared rows', async () => {
     await seedShelves()
+    await database
+      .context(null)
+      .sudo()
+      .db.Shelf.update({ where: { id: 3 }, data: { keeper: { connect: { id: 2 } } } })
 
     const deleted = await observe('delete on a list declaring a relation', 'traversal', () =>
       database.context(member).db.Shelf.delete({ where: { id: 3 } }),
     )
 
-    expect(deleted).toEqual(shelf(3, undefined, 0))
+    expect(deleted).toEqual({ ...shelf(3, undefined, 0), keeperId: null })
     expect(weighed()).toEqual([[]])
   })
 })
