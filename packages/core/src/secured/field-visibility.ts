@@ -343,6 +343,14 @@ async function visitRow(
       args,
       binding,
     })
+  const ownerReads = new Map<string, boolean | Promise<boolean>>()
+  const ownerReadable = (owner: string): boolean | Promise<boolean> => {
+    const known = ownerReads.get(owner)
+    if (known !== undefined) return known
+    const answer = checkRowRead(fieldConfigs[owner]?.access, args, ruleRow)
+    ownerReads.set(owner, answer)
+    return answer
+  }
 
   const nodes = nodesOf(level)
   const shown: OrmRow = {}
@@ -354,6 +362,10 @@ async function visitRow(
     }
     if (!selected(fieldName)) continue
     const member = members.members.get(fieldName)
+    if (member?.kind === 'partColumn') {
+      if (await ownerReadable(member.field)) shown[fieldName] = value
+      continue
+    }
     const node = nodes.get(fieldName)
     if (node === undefined && member !== undefined && isRelationMember(member)) continue
 

@@ -256,6 +256,23 @@ describe('a multi-column field without assembleColumns', () => {
     },
     BOOT,
   )
+
+  test(
+    'returns neither the field nor its part columns to a session its read rule denies',
+    async () => {
+      await seed('RawParts', { title: 'hi', avatar_filename: 'ada.png', avatar_filesize: 12 })
+
+      for (const session of [null, member]) {
+        const row = await database.context(session).db.RawParts.first()
+
+        expect(row).toMatchObject({ title: 'hi' })
+        expect(row).not.toHaveProperty('avatar')
+        expect(row).not.toHaveProperty('avatar_filename')
+        expect(row).not.toHaveProperty('avatar_filesize')
+      }
+    },
+    BOOT,
+  )
 })
 
 describe('a read-denied field on an included relation', () => {

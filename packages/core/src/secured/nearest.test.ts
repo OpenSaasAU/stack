@@ -2,12 +2,13 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
 import pg from 'pg'
 import type {
   BaseFieldConfig,
+  FieldConfig,
   OpenSaasConfig,
   TypeInfo,
   VectorDistanceFunction,
 } from '../config/types.js'
 import type { Session } from '../access/types.js'
-import { checkbox, relationship, text } from '../fields/index.js'
+import { checkbox, json, relationship, text } from '../fields/index.js'
 import { ValidationError } from '../hooks/index.js'
 import { withOrigin } from '../origin.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
@@ -37,6 +38,18 @@ function embedding(
     }),
     getVectorColumn: (fieldName) => ({ column: fieldName, dimensions, distanceFunction }),
   }
+}
+
+function rawParts(read: NonNullable<FieldConfig['access']>['read']): FieldConfig {
+  const field = json({ access: { read } })
+  field.getContractField = () => ({
+    kind: 'columns',
+    columns: [
+      { name: 'avatar_filename', type: { pack: 'pg', type: 'text' }, nullable: true },
+      { name: 'avatar_filesize', type: { pack: 'pg', type: 'int' }, nullable: true },
+    ],
+  })
+  return field
 }
 
 const QUERY = [1, 0, 0]
@@ -134,6 +147,14 @@ const config: OpenSaasConfig = {
       fields: {
         flagged: checkbox(),
         indexed: relationship({ ref: 'Indexed.marks' }),
+      },
+      access: { operation: { query: () => true } },
+    },
+    Pictured: {
+      fields: {
+        title: text(),
+        avatar: rawParts(({ session }) => session?.userId === 'me'),
+        embedding: embedding(3, 'cosine'),
       },
       access: { operation: { query: () => true } },
     },
@@ -506,6 +527,25 @@ describe.skipIf(!available)(
 
         const [match] = await database.context(anonymous).db.Inner.nearest('embedding', QUERY)
         expect(match.score).toBeCloseTo(3, 5)
+      })
+    })
+
+    describe('a multi-column field without assembleColumns', () => {
+      test("returns its part columns only where the field's read rule allows", async () => {
+        await seed('Pictured', {
+          title: 'p',
+          avatar_filename: 'ada.png',
+          avatar_filesize: 12,
+          embedding: [1, 0, 0],
+        })
+
+        const [denied] = await database.context(anonymous).db.Pictured.nearest('embedding', QUERY)
+        const [allowed] = await database.context(mine).db.Pictured.nearest('embedding', QUERY)
+
+        expect(denied.item).toMatchObject({ title: 'p' })
+        expect(denied.item).not.toHaveProperty('avatar_filename')
+        expect(denied.item).not.toHaveProperty('avatar_filesize')
+        expect(allowed.item).toMatchObject({ avatar_filename: 'ada.png', avatar_filesize: 12 })
       })
     })
 
