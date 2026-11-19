@@ -1,5 +1,11 @@
 # @opensaas/stack-auth
 
+## 0.44.0-alpha.7
+
+### Patch Changes
+
+- [#2448](https://github.com/OpenSaasAU/stack/pull/2448) [`b3120a1`](https://github.com/OpenSaasAU/stack/commit/b3120a1d6cc843ae53a7865a5d7e8696a3b3c935) Thanks [@borisno2](https://github.com/borisno2)! - Fix `select()` silently dropping a foreign key the list does not own ([#2388](https://github.com/OpenSaasAU/stack/issues/2388)), `distinct`/`distinctOn` refusing one it does own ([#2389](https://github.com/OpenSaasAU/stack/issues/2389)), and an undeclared `createdAt`/`updatedAt` on a list without timestamps being treated as a system field instead of an unknown name ([#2390](https://github.com/OpenSaasAU/stack/issues/2390)).
+
 ## 0.44.0-alpha.6
 
 ### Minor Changes

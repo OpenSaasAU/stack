@@ -1,5 +1,93 @@
 # @opensaas/stack-cli
 
+## 0.44.0-alpha.7
+
+### Minor Changes
+
+- [#2428](https://github.com/OpenSaasAU/stack/pull/2428) [`21bce38`](https://github.com/OpenSaasAU/stack/commit/21bce381ec8a4459bd591c3651962c4d6b21f646) Thanks [@borisno2](https://github.com/borisno2)! - Make the framework control-flow rethrow predicate injectable
+
+  A new `isFrameworkControlFlow` config option recognises a host framework's control flow thrown from inside an access rule, so the Session vocabulary, MCP's advertised vocabulary and the admin's nav counts let it propagate instead of folding it into a logged deny. It is OR'ed with the built-in recognition of Next.js's digests and React's postpone, and the `cause` walk applies to both. A predicate that throws recognises nothing and is reported once, so a rule's own throw still denies.
+
+  ```typescript
+  export default config({
+    db: { provider: 'postgresql' },
+    lists: {},
+    isFrameworkControlFlow: (thrown) => thrown instanceof Response,
+  })
+  ```
+
+  `opensaas generate` now wires Next.js's own `unstable_rethrow` into `.opensaas/context.ts` when the project's `package.json` declares `next`, so new Next control-flow signals are recognised without waiting for core to learn their digests. It is imported lazily, so the bundle still loads under plain Node, where it keeps the built-in recognition. Re-run `pnpm generate` to pick it up. A project without `next` gets the same context as before.
+
+- [#2482](https://github.com/OpenSaasAU/stack/pull/2482) [`bab30df`](https://github.com/OpenSaasAU/stack/commit/bab30dfe01663f03ba49717d5c3d688ef0792f42) Thanks [@borisno2](https://github.com/borisno2)! - Require `assembleColumns` on every multi-column field
+
+  A field whose `getContractField` returns `{ kind: 'columns' }` must now supply `assembleColumns`. Without it the field had no value under its own key, so `.select()` returned nothing for it, a `needs` entry naming it gave the hook nothing, and MCP advertised a field it never returned. `opensaas generate` now refuses such a config, and so does building a context over it; each names the list, the field and the member. Generate reports:
+
+  ```
+  Profile.avatar (type "avatar") is missing assembleColumns()
+  ```
+
+  and context construction throws:
+
+  ```
+  Field "Profile.avatar" (type "avatar") is not self-contained: it does not declare assembleColumns(). ...
+  ```
+
+  Migration: supply `assembleColumns` on any `kind: 'columns'` field.
+
+  ```typescript
+  import type { BaseFieldConfig, TypeInfo } from '@opensaas/stack-core/extend'
+  import { z } from 'zod'
+
+  const avatar: BaseFieldConfig<TypeInfo> = {
+    type: 'avatar',
+    outputType: '{ filename: string; filesize: number } | null',
+    getZodSchema: () => z.object({ filename: z.string(), filesize: z.number() }).nullable(),
+    getContractField: () => ({
+      kind: 'columns',
+      columns: [
+        { name: 'avatar_filename', type: { pack: 'pg', type: 'text' }, nullable: true },
+        { name: 'avatar_filesize', type: { pack: 'pg', type: 'int' }, nullable: true },
+      ],
+    }),
+    assembleColumns: (_fieldName, row) =>
+      row.avatar_filename === null
+        ? null
+        : { filename: row.avatar_filename, filesize: row.avatar_filesize },
+    splitColumns: (_fieldName, value) => {
+      const parts = typeof value === 'object' && value !== null ? value : {}
+      return {
+        avatar_filename: 'filename' in parts ? parts.filename : null,
+        avatar_filesize: 'filesize' in parts ? parts.filesize : null,
+      }
+    },
+  }
+  ```
+
+  `image()`/`file()` in multi-column mode and `embedding()` already supply it.
+
+### Patch Changes
+
+- [#2426](https://github.com/OpenSaasAU/stack/pull/2426) [`a4dcb7e`](https://github.com/OpenSaasAU/stack/commit/a4dcb7e45a3aadab0251121d566520cee027b654) Thanks [@borisno2](https://github.com/borisno2)! - Fix the session vocabulary keeping stale answers: a successful write or committed transaction clears it, `rawOpensaasContext` keeps nothing, and a `resolveOutput` hook no longer waits on its own pending answer.
+
+- [#2478](https://github.com/OpenSaasAU/stack/pull/2478) [`1b45d87`](https://github.com/OpenSaasAU/stack/commit/1b45d877684393fb2dd61ac53ac3e4176fb5b322) Thanks [@borisno2](https://github.com/borisno2)! - Internal restructuring: Field Visibility has one implementation, its single traversal; the old walks, the switch between them and the comparison harness are deleted.
+
+- [#2469](https://github.com/OpenSaasAU/stack/pull/2469) [`2f48eab`](https://github.com/OpenSaasAU/stack/commit/2f48eab7d64911588624fe7e66741c0c0ba540a9) Thanks [@borisno2](https://github.com/borisno2)! - Add `@opensaas/stack-core/db-client`, the server-only subpath for `resolveRuntimeConnection`, and deprecate `@opensaas/stack-core/client`
+
+  `/client` sat beside `/client-safe` and read as browser-safe, but it reaches `pg`. `opensaas generate` now emits the new subpath in `.opensaas/context.ts`. `/client` still resolves to the same bindings, marked `@deprecated`, and is removed at the next major.
+
+  Migration — regenerate (`pnpm generate`) and update any hand-written import:
+
+  ```typescript
+  // Before
+  import { resolveRuntimeConnection } from '@opensaas/stack-core/client'
+
+  // After
+  import { resolveRuntimeConnection } from '@opensaas/stack-core/db-client'
+  ```
+
+- Updated dependencies [[`4b768f2`](https://github.com/OpenSaasAU/stack/commit/4b768f232d8fed6af88b292e469e05ffb5203983), [`28ff344`](https://github.com/OpenSaasAU/stack/commit/28ff34407741a466cafd21048a8e385b7800652e), [`6422e97`](https://github.com/OpenSaasAU/stack/commit/6422e97c0a5e22a3ae19c5cb2fbe9a076feee34e), [`846f622`](https://github.com/OpenSaasAU/stack/commit/846f622c7e2f080c1d746f7ccd284fba214f5b6a), [`bc97369`](https://github.com/OpenSaasAU/stack/commit/bc973693857be40587c0c6903557cf32fe118ce5), [`9774d08`](https://github.com/OpenSaasAU/stack/commit/9774d082befd990e392748487bab65fbd916c27c), [`4374e65`](https://github.com/OpenSaasAU/stack/commit/4374e651496547cafd7094fbd8330620b088a2ff), [`756558e`](https://github.com/OpenSaasAU/stack/commit/756558eee7b8723827ff8770f0b346b43b4bd895), [`df46667`](https://github.com/OpenSaasAU/stack/commit/df466677dd0d9a1b3de7cda12cd3901e656b8b3a), [`94e8358`](https://github.com/OpenSaasAU/stack/commit/94e8358c069e34b96ee2f75e9581029572abbe59), [`6840f89`](https://github.com/OpenSaasAU/stack/commit/6840f89e366f6e52bbe0612628169db6f83fd566), [`a4dcb7e`](https://github.com/OpenSaasAU/stack/commit/a4dcb7e45a3aadab0251121d566520cee027b654), [`dff4310`](https://github.com/OpenSaasAU/stack/commit/dff4310b1cbf901f9ba401b85f33b0200fd81179), [`5bd3fc6`](https://github.com/OpenSaasAU/stack/commit/5bd3fc6cd474acc1fea2cffa94d85209ddc913a6), [`565c4ca`](https://github.com/OpenSaasAU/stack/commit/565c4ca5de288b8c54cf2e3b5c811b44e913bf47), [`1b45d87`](https://github.com/OpenSaasAU/stack/commit/1b45d877684393fb2dd61ac53ac3e4176fb5b322), [`59e8d70`](https://github.com/OpenSaasAU/stack/commit/59e8d70029aa90c01373aa8600a665bc538523ce), [`5850dd6`](https://github.com/OpenSaasAU/stack/commit/5850dd64bbbda381027f344044ebc803cac76958), [`21bce38`](https://github.com/OpenSaasAU/stack/commit/21bce381ec8a4459bd591c3651962c4d6b21f646), [`dc6ae19`](https://github.com/OpenSaasAU/stack/commit/dc6ae1999ef9b4e02573f308dc8f69f03dabbd8b), [`4c5d2d2`](https://github.com/OpenSaasAU/stack/commit/4c5d2d275e667287b1ae5443dfb8b41902c84b48), [`a66e95e`](https://github.com/OpenSaasAU/stack/commit/a66e95e1fdbf6fe902b70b3ecd346084647e70cf), [`b3120a1`](https://github.com/OpenSaasAU/stack/commit/b3120a1d6cc843ae53a7865a5d7e8696a3b3c935), [`e2e18be`](https://github.com/OpenSaasAU/stack/commit/e2e18be4812600f83c924e62d1ece0b05ee0f180), [`ad85f09`](https://github.com/OpenSaasAU/stack/commit/ad85f095916eae5500e6e6b7e77e1ccbff24fa36), [`2f48eab`](https://github.com/OpenSaasAU/stack/commit/2f48eab7d64911588624fe7e66741c0c0ba540a9), [`d417e3a`](https://github.com/OpenSaasAU/stack/commit/d417e3a4a1fef505587b6f83edcc6568e9db82e7), [`5621a97`](https://github.com/OpenSaasAU/stack/commit/5621a977d4d13104c72d5166301ab8a3d2c535e7), [`bab30df`](https://github.com/OpenSaasAU/stack/commit/bab30dfe01663f03ba49717d5c3d688ef0792f42)]:
+  - @opensaas/stack-core@0.44.0-alpha.7
+
 ## 0.44.0-alpha.6
 
 ### Minor Changes

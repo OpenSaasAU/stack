@@ -1,5 +1,36 @@
 # @opensaas/stack-tiptap
 
+## 0.44.0-alpha.7
+
+### Patch Changes
+
+- [#2431](https://github.com/OpenSaasAU/stack/pull/2431) [`6422e97`](https://github.com/OpenSaasAU/stack/commit/6422e97c0a5e22a3ae19c5cb2fbe9a076feee34e) Thanks [@borisno2](https://github.com/borisno2)! - Add client-safe entry points so `next build --webpack` builds the admin
+
+  A `'use client'` module that imported from `@opensaas/stack-core` or `@opensaas/stack-ui` pulled the
+  server graph into the browser bundle, and webpack refused it (`UnhandledSchemeError: node:async_hooks`).
+  Turbopack tolerated the same graph, so only `next build --webpack` failed. The admin's own client
+  components now import from two new entries that reach nothing server-side:
+
+  - `@opensaas/stack-core/client-safe` — `getUrlKey`, `getListKeyFromUrl`, `resolveListKeyFromUrl` and the
+    filter-query helpers (`parseFilterQuery`, `serializeFilterQuery`, `recordIdFilterToken`, …). The root
+    entry still exports the same bindings.
+  - `@opensaas/stack-ui/cells` — the cell components and `registerCellComponent`.
+
+  A field-registration module in your app should import from these, never from a package root:
+
+  ```ts
+  // lib/register-fields.ts
+  'use client'
+
+  // Before: pulled AdminUI and the server graph into the client bundle
+  // import { registerFieldComponent } from '@opensaas/stack-ui'
+  import { registerFieldComponent } from '@opensaas/stack-ui/fields'
+  import { registerCellComponent } from '@opensaas/stack-ui/cells'
+  import { getUrlKey } from '@opensaas/stack-core/client-safe'
+  ```
+
+  The rag and tiptap registration modules now do the same.
+
 ## 0.44.0-alpha.6
 
 ### Minor Changes

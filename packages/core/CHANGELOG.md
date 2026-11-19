@@ -1,5 +1,244 @@
 # @opensaas/stack-core
 
+## 0.44.0-alpha.7
+
+### Minor Changes
+
+- [#2431](https://github.com/OpenSaasAU/stack/pull/2431) [`6422e97`](https://github.com/OpenSaasAU/stack/commit/6422e97c0a5e22a3ae19c5cb2fbe9a076feee34e) Thanks [@borisno2](https://github.com/borisno2)! - Add client-safe entry points so `next build --webpack` builds the admin
+
+  A `'use client'` module that imported from `@opensaas/stack-core` or `@opensaas/stack-ui` pulled the
+  server graph into the browser bundle, and webpack refused it (`UnhandledSchemeError: node:async_hooks`).
+  Turbopack tolerated the same graph, so only `next build --webpack` failed. The admin's own client
+  components now import from two new entries that reach nothing server-side:
+
+  - `@opensaas/stack-core/client-safe` — `getUrlKey`, `getListKeyFromUrl`, `resolveListKeyFromUrl` and the
+    filter-query helpers (`parseFilterQuery`, `serializeFilterQuery`, `recordIdFilterToken`, …). The root
+    entry still exports the same bindings.
+  - `@opensaas/stack-ui/cells` — the cell components and `registerCellComponent`.
+
+  A field-registration module in your app should import from these, never from a package root:
+
+  ```ts
+  // lib/register-fields.ts
+  'use client'
+
+  // Before: pulled AdminUI and the server graph into the client bundle
+  // import { registerFieldComponent } from '@opensaas/stack-ui'
+  import { registerFieldComponent } from '@opensaas/stack-ui/fields'
+  import { registerCellComponent } from '@opensaas/stack-ui/cells'
+  import { getUrlKey } from '@opensaas/stack-core/client-safe'
+  ```
+
+  The rag and tiptap registration modules now do the same.
+
+- [#2425](https://github.com/OpenSaasAU/stack/pull/2425) [`bc97369`](https://github.com/OpenSaasAU/stack/commit/bc973693857be40587c0c6903557cf32fe118ce5) Thanks [@borisno2](https://github.com/borisno2)! - Resolve Session vocabulary answers lazily, one question at a time
+
+  A list's Session vocabulary no longer resolves every rule of the list on the first ask. Each answer (an operation, a field's `read`/`create`/`update`, `filterable`, `sortable`) is asked only when a consumer needs it, and is memoised on its own for the context's life, so asking a related list's `query` and one field's `filterable` asks only those two rules. The whole vocabulary is assembled from the same answers, so no rule is asked twice per context.
+
+  The admin's list view filter labels, Relationship table column labels and link controls, item form relationship options and operation gates ask a related list only the questions they need.
+
+  `resolveNavCounts` behaviour changes:
+
+  - A list whose vocabulary read fails is now omitted and logged instead of rejecting the whole call.
+  - A framework's control flow (`redirect()`, `notFound()`) raised by a list's count call (`aggregate`) was previously caught, logged and the badge dropped; it now propagates out of `resolveNavCounts`, as control flow from the vocabulary read already did.
+
+- [#2420](https://github.com/OpenSaasAU/stack/pull/2420) [`4374e65`](https://github.com/OpenSaasAU/stack/commit/4374e651496547cafd7094fbd8330620b088a2ff) Thanks [@borisno2](https://github.com/borisno2)! - `checkFieldAccess` and `isListQueryStaticallyDenied` are gone from core's entry points, nav counts read the Session vocabulary, and the vocabulary rethrows only real framework control flow
+
+  The admin reads the Session vocabulary instead of evaluating access rules itself, so the field-access evaluator leaves `@opensaas/stack-core/internal`, and `isListQueryStaticallyDenied` leaves the root entry point.
+
+  `resolveNavCounts` counts a list only where the session's vocabulary does not deny `query`. A `query` rule returning `null` or `undefined` now shows no nav count instead of a `0`, and a context that resolves no vocabulary counts nothing.
+
+  A rule that throws while the vocabulary or MCP decides what to advertise is rethrown only when it is framework control flow: a string `digest` starting with one of Next.js's control-flow prefixes (`NEXT_REDIRECT`, `NEXT_HTTP_ERROR_FALLBACK`, `NEXT_NOT_FOUND`, `DYNAMIC_SERVER_USAGE`, `BAILOUT_TO_CLIENT_SIDE_RENDERING`, `HANGING_PROMISE_REJECTION`, `NEXT_PRERENDER_INTERRUPTED`), or React's postpone. As Next's `unstable_rethrow` does, an `Error` whose `cause` chain reaches one of those has that cause rethrown, so a rule wrapping `redirect()` in `new Error(message, { cause })` still redirects. Any other throw, including one carrying an unrelated `digest` or an unrelated `cause`, denies that answer and logs a warning.
+
+  `isHookOnlyField(field)` is added to `@opensaas/stack-core/internal`, so the admin marks a Hook-only field without reading its `access` itself.
+
+- [#2415](https://github.com/OpenSaasAU/stack/pull/2415) [`59e8d70`](https://github.com/OpenSaasAU/stack/commit/59e8d70029aa90c01373aa8600a665bc538523ce) Thanks [@borisno2](https://github.com/borisno2)! - The Session vocabulary can answer its row-dependent write questions for one stored row
+
+  A consumer naming one row by its id now gets the vocabulary with each `'row-dependent'` write answer resolved for that row, against the stored row, as the write decides: core reads the row by identity exactly as an update does before it decides (every column, no relation), then answers a field's `update` against it as the row's guarded `item`, and the list's `update` and `delete` by the same target resolution a write runs (a filter-returning rule allows only a row its filter matches). A rule reaching for a relation the stored row does not carry answers deny, as the write does, and a row that is not there answers every row-dependent write question deny. A field's `read` is not resolved per row: Field Visibility decides it on each read, against the row that read delivers, so a row-dependent `read` stays `'row-dependent'`. `allow` and `deny` answers pass through without their rules being asked again, a rule that reads the payload stays `'row-dependent'`, and a rule that throws answers deny and is logged. It is disclosure only; the write still decides.
+
+  It is internal plumbing on the engine context (`_sessionVocabularyForItem(listKey, id)`), which `@opensaas/stack-ui` reads for the admin edit form and for `serializeFieldConfigs(context, listKey, 'update', item)`.
+
+- [#2428](https://github.com/OpenSaasAU/stack/pull/2428) [`21bce38`](https://github.com/OpenSaasAU/stack/commit/21bce381ec8a4459bd591c3651962c4d6b21f646) Thanks [@borisno2](https://github.com/borisno2)! - Make the framework control-flow rethrow predicate injectable
+
+  A new `isFrameworkControlFlow` config option recognises a host framework's control flow thrown from inside an access rule, so the Session vocabulary, MCP's advertised vocabulary and the admin's nav counts let it propagate instead of folding it into a logged deny. It is OR'ed with the built-in recognition of Next.js's digests and React's postpone, and the `cause` walk applies to both. A predicate that throws recognises nothing and is reported once, so a rule's own throw still denies.
+
+  ```typescript
+  export default config({
+    db: { provider: 'postgresql' },
+    lists: {},
+    isFrameworkControlFlow: (thrown) => thrown instanceof Response,
+  })
+  ```
+
+  `opensaas generate` now wires Next.js's own `unstable_rethrow` into `.opensaas/context.ts` when the project's `package.json` declares `next`, so new Next control-flow signals are recognised without waiting for core to learn their digests. It is imported lazily, so the bundle still loads under plain Node, where it keeps the built-in recognition. Re-run `pnpm generate` to pick it up. A project without `next` gets the same context as before.
+
+- [#2452](https://github.com/OpenSaasAU/stack/pull/2452) [`dc6ae19`](https://github.com/OpenSaasAU/stack/commit/dc6ae1999ef9b4e02573f308dc8f69f03dabbd8b) Thanks [@borisno2](https://github.com/borisno2)! - Junction-edge detection, the delegate's singleton shape and write-field ownership now ask the List member resolver, so a context built over a config whose list or member names `opensaas generate` refuses throws generate's own error at construction. Generate still runs further checks that context construction does not.
+
+  **Migrating:** a test or script that builds a context over a hand-written config with names `opensaas generate` would refuse (for example a camelCase list key, or a list-only to-many) now fails at `getContext`/`createTestContext`. Fix the config so `pnpm generate` accepts it.
+
+- [#2418](https://github.com/OpenSaasAU/stack/pull/2418) [`4c5d2d2`](https://github.com/OpenSaasAU/stack/commit/4c5d2d275e667287b1ae5443dfb8b41902c84b48) Thanks [@borisno2](https://github.com/borisno2)! - The admin list view reads the Session vocabulary for everything it offers
+
+  The column picker, default columns, Preset views and the Filter builder offer only fields the session can read, sorting follows each field's `sortable` answer, and a field with `isFilterable: false` is absent from every place a filter can be built. A row-dependent readable field stays shown but is neither filterable nor sortable (ADR-0031). Count links and filter-chip labels read the related list's vocabulary, so a related list whose `query` rule returns `false`, `null` or `undefined` gets no link and no label lookup.
+
+  A session denied the list's `query` now sees an explicit "can't be shown here" state instead of an empty table, and keeps the Create button when it may still create (a write-only inbox). A Preset view's search drops every token naming a field the session cannot filter by (a never-readable or row-dependent field, or `isFilterable: false`), and a context that resolves no Session vocabulary shows the list's "could not be loaded" state instead of failing the page.
+
+  `collectFilterSpecs`, `buildListFilterWhere`, `collectFilterSuggestions` and `isFieldFilterableById` now answer from the context's Session vocabulary, which builds each Filter spec once per request: a `read` rule or a spec builder that throws denies that one field and is logged instead of failing the list. They answer for the context's own session and config, so `FilterAccessArgs` no longer takes a `session`, and `listConfig` and `config` must be the context's own. A context core did not build gets no specs and no throw:
+
+  ```ts
+  const specs = await collectFilterSpecs(listConfig, 'Post', config, { context })
+  ```
+
+  A throw carrying a string `digest` (Next.js's `redirect()`, `notFound()` and dynamic-usage bailouts) now propagates out of the Session vocabulary and the MCP vocabulary instead of being treated as a deny, so a rule that redirects still redirects.
+
+  The internal `_orderableKeys` context member and `collectUnreadableFields` are removed; read `context._sessionVocabulary(listKey)` instead (`fields.get(key)?.sortable`, `fields.get(key)?.read`).
+
+- [#2449](https://github.com/OpenSaasAU/stack/pull/2449) [`e2e18be`](https://github.com/OpenSaasAU/stack/commit/e2e18be4812600f83c924e62d1ece0b05ee0f180) Thanks [@borisno2](https://github.com/borisno2)! - The Write Pipeline's ownership, singleton and part-column checks ask the List member resolver instead of re-deriving them from the config.
+
+  - Writes on a config whose list or member names `opensaas generate` refuses now throw generate's own error.
+  - Under sudo, a Synthetic back-relation key whose value is `undefined` is now refused as undeclared, like any other unknown key.
+  - `RelationTargetMissingError` is removed from `@opensaas/stack-core`: a `connect` to an undeclared list now fails with generate's refusal, so the error could no longer be thrown.
+
+  **Migrating:** remove any `instanceof RelationTargetMissingError` checks. The same mistake (a relationship whose `ref` names a list that does not exist) is now refused by `pnpm generate`, with a message naming the list and field, before any context is built.
+
+- [#2412](https://github.com/OpenSaasAU/stack/pull/2412) [`ad85f09`](https://github.com/OpenSaasAU/stack/commit/ad85f095916eae5500e6e6b7e77e1ccbff24fa36) Thanks [@borisno2](https://github.com/borisno2)! - Add the Session vocabulary: one answer, per list and context, for what a session may be told ahead of any request (ADR-0084)
+
+  A context core built carries an internal `_sessionVocabulary(listKey)` member. It answers each field's read, create and update as `'allow'`, `'deny'` or `'row-dependent'`, each list operation by the engine's own rule (no rule, `null` and `undefined` deny; `true` or a filter allows), and whether each field is filterable and sortable. System fields (`id`, and automatic `createdAt`/`updatedAt`) have entries too, readable and never writable. A computed field and a relationship side that does not own the foreign key are never writable, and a hook-only field's writes stay denied under sudo. On a singleton list, `delete` is denied for every session, sudo included, and no field is filterable or sortable. A rule that throws, or a field rule that returns a filter, answers deny for that one question and is logged, so one broken rule never takes the rest of the list with it. Each context resolves with its own session and connection, once per list, and keeps the answer for its life: a write's transaction-bound hook context and its `afterTransaction` context each have their own, and a `resolveOutput` hook shares the answer of the read that ran it:
+
+  ```ts
+  import { engineContextOf } from '@opensaas/stack-core'
+
+  const vocabulary = await engineContextOf(context)._sessionVocabulary?.('Post')
+  vocabulary?.operations.update // 'allow' | 'deny' | 'row-dependent'
+  vocabulary?.fields.get('title') // { read, create, update, filterable, sortable, relationship }
+  ```
+
+- [#2469](https://github.com/OpenSaasAU/stack/pull/2469) [`2f48eab`](https://github.com/OpenSaasAU/stack/commit/2f48eab7d64911588624fe7e66741c0c0ba540a9) Thanks [@borisno2](https://github.com/borisno2)! - Add `@opensaas/stack-core/db-client`, the server-only subpath for `resolveRuntimeConnection`, and deprecate `@opensaas/stack-core/client`
+
+  `/client` sat beside `/client-safe` and read as browser-safe, but it reaches `pg`. `opensaas generate` now emits the new subpath in `.opensaas/context.ts`. `/client` still resolves to the same bindings, marked `@deprecated`, and is removed at the next major.
+
+  Migration — regenerate (`pnpm generate`) and update any hand-written import:
+
+  ```typescript
+  // Before
+  import { resolveRuntimeConnection } from '@opensaas/stack-core/client'
+
+  // After
+  import { resolveRuntimeConnection } from '@opensaas/stack-core/db-client'
+  ```
+
+- [#2462](https://github.com/OpenSaasAU/stack/pull/2462) [`5621a97`](https://github.com/OpenSaasAU/stack/commit/5621a977d4d13104c72d5166301ab8a3d2c535e7) Thanks [@relationship({](https://github.com/relationship({), [@relationship({](https://github.com/relationship({)! - `opensaas generate` refuses a computed (virtual) or multi-column field keyed like another field's foreign-key or part column
+
+  Such a field used to be accepted and then win every name lookup, so the foreign-key or part column it shadowed could not be named in `where`, `orderBy` or `select`. Generate, `deriveContract` and the List member resolver now refuse it with the same message, naming the list, both fields and the fix. A stored field keyed like another field's part column, already refused, now gets the same named message (reason `part-column-collision`):
+
+  ```
+  List "Post": fields.authorId collides with the foreign-key column "authorId" that fields.author derives for its relationship. Rename fields.authorId, or remove it and read the key through fields.author.
+  ```
+
+  Migration: rename the virtual or multi-column field.
+
+  ```ts
+  // Before: refused by generate
+  Post: list({
+    fields: {
+   ref: 'Author' }),
+      authorId: virtual({ type: 'string', hooks: { resolveOutput: () => '' } }),
+    },
+  })
+
+  // After
+  Post: list({
+    fields: {
+   ref: 'Author' }),
+      authorLabel: virtual({ type: 'string', hooks: { resolveOutput: () => '' } }),
+    },
+  })
+  ```
+
+- [#2482](https://github.com/OpenSaasAU/stack/pull/2482) [`bab30df`](https://github.com/OpenSaasAU/stack/commit/bab30dfe01663f03ba49717d5c3d688ef0792f42) Thanks [@borisno2](https://github.com/borisno2)! - Require `assembleColumns` on every multi-column field
+
+  A field whose `getContractField` returns `{ kind: 'columns' }` must now supply `assembleColumns`. Without it the field had no value under its own key, so `.select()` returned nothing for it, a `needs` entry naming it gave the hook nothing, and MCP advertised a field it never returned. `opensaas generate` now refuses such a config, and so does building a context over it; each names the list, the field and the member. Generate reports:
+
+  ```
+  Profile.avatar (type "avatar") is missing assembleColumns()
+  ```
+
+  and context construction throws:
+
+  ```
+  Field "Profile.avatar" (type "avatar") is not self-contained: it does not declare assembleColumns(). ...
+  ```
+
+  Migration: supply `assembleColumns` on any `kind: 'columns'` field.
+
+  ```typescript
+  import type { BaseFieldConfig, TypeInfo } from '@opensaas/stack-core/extend'
+  import { z } from 'zod'
+
+  const avatar: BaseFieldConfig<TypeInfo> = {
+    type: 'avatar',
+    outputType: '{ filename: string; filesize: number } | null',
+    getZodSchema: () => z.object({ filename: z.string(), filesize: z.number() }).nullable(),
+    getContractField: () => ({
+      kind: 'columns',
+      columns: [
+        { name: 'avatar_filename', type: { pack: 'pg', type: 'text' }, nullable: true },
+        { name: 'avatar_filesize', type: { pack: 'pg', type: 'int' }, nullable: true },
+      ],
+    }),
+    assembleColumns: (_fieldName, row) =>
+      row.avatar_filename === null
+        ? null
+        : { filename: row.avatar_filename, filesize: row.avatar_filesize },
+    splitColumns: (_fieldName, value) => {
+      const parts = typeof value === 'object' && value !== null ? value : {}
+      return {
+        avatar_filename: 'filename' in parts ? parts.filename : null,
+        avatar_filesize: 'filesize' in parts ? parts.filesize : null,
+      }
+    },
+  }
+  ```
+
+  `image()`/`file()` in multi-column mode and `embedding()` already supply it.
+
+### Patch Changes
+
+- [#2471](https://github.com/OpenSaasAU/stack/pull/2471) [`4b768f2`](https://github.com/OpenSaasAU/stack/commit/4b768f232d8fed6af88b292e469e05ffb5203983) Thanks [@borisno2](https://github.com/borisno2)! - Internal restructuring: every write return now goes through Field Visibility's read funnel and carries the visible-row brand.
+
+- [#2451](https://github.com/OpenSaasAU/stack/pull/2451) [`28ff344`](https://github.com/OpenSaasAU/stack/commit/28ff34407741a466cafd21048a8e385b7800652e) Thanks [@borisno2](https://github.com/borisno2)! - Contract derivation, the constraint map and generate-time field-name validation read names and foreign-key ownership from the List member table; the contract is unchanged.
+  A `db.indexes`/`db.foreignKeys` entry naming a field with a `computed` descriptor is now refused by name at generate.
+
+- [#2480](https://github.com/OpenSaasAU/stack/pull/2480) [`846f622`](https://github.com/OpenSaasAU/stack/commit/846f622c7e2f080c1d746f7ccd284fba214f5b6a) Thanks [@borisno2](https://github.com/borisno2)! - Fix part columns of a multi-column field without `assembleColumns` reaching a session the field's own `read` rule denies.
+
+- [#2474](https://github.com/OpenSaasAU/stack/pull/2474) [`9774d08`](https://github.com/OpenSaasAU/stack/commit/9774d082befd990e392748487bab65fbd916c27c) Thanks [@borisno2](https://github.com/borisno2)! - Internal restructuring: Field Visibility gains a single traversal for reads and write returns with no relation nodes, behind an internal switch that defaults to the existing walks.
+
+- [#2475](https://github.com/OpenSaasAU/stack/pull/2475) [`756558e`](https://github.com/OpenSaasAU/stack/commit/756558eee7b8723827ff8770f0b346b43b4bd895) Thanks [@borisno2](https://github.com/borisno2)! - Internal restructuring: Field Visibility's single traversal now also handles reads with plain includes, behind the same internal switch, which still defaults to the existing walks.
+
+- [#2470](https://github.com/OpenSaasAU/stack/pull/2470) [`df46667`](https://github.com/OpenSaasAU/stack/commit/df466677dd0d9a1b3de7cda12cd3901e656b8b3a) Thanks [@borisno2](https://github.com/borisno2)! - Internal restructuring: Field Visibility's tests now run through the secured surface, and its field-strip step drops an unused depth parameter.
+
+- [#2468](https://github.com/OpenSaasAU/stack/pull/2468) [`94e8358`](https://github.com/OpenSaasAU/stack/commit/94e8358c069e34b96ee2f75e9581029572abbe59) Thanks [@borisno2](https://github.com/borisno2)! - Cover the delete path's Session vocabulary clear with a test.
+
+- [#2444](https://github.com/OpenSaasAU/stack/pull/2444) [`6840f89`](https://github.com/OpenSaasAU/stack/commit/6840f89e366f6e52bbe0612628169db6f83fd566) Thanks [@borisno2](https://github.com/borisno2)! - Add an internal List member resolver that answers, once per list, what each usable name on a list is. No call site uses it yet.
+
+- [#2426](https://github.com/OpenSaasAU/stack/pull/2426) [`a4dcb7e`](https://github.com/OpenSaasAU/stack/commit/a4dcb7e45a3aadab0251121d566520cee027b654) Thanks [@borisno2](https://github.com/borisno2)! - Fix the session vocabulary keeping stale answers: a successful write or committed transaction clears it, `rawOpensaasContext` keeps nothing, and a `resolveOutput` hook no longer waits on its own pending answer.
+
+- [#2447](https://github.com/OpenSaasAU/stack/pull/2447) [`dff4310`](https://github.com/OpenSaasAU/stack/commit/dff4310b1cbf901f9ba401b85f33b0200fd81179) Thanks [@borisno2](https://github.com/borisno2)! - MCP asks the List member resolver which names a `where`, `orderBy`, write `data` and singleton read accept, and refuses a config `generate` refuses when its handlers are created.
+
+- [#2466](https://github.com/OpenSaasAU/stack/pull/2466) [`5bd3fc6`](https://github.com/OpenSaasAU/stack/commit/5bd3fc6cd474acc1fea2cffa94d85209ddc913a6) Thanks [@borisno2](https://github.com/borisno2)! - A failed declared-rows fetch for a caller-shaped include now poisons its transaction owner, as every other engine read does.
+
+- [#2424](https://github.com/OpenSaasAU/stack/pull/2424) [`565c4ca`](https://github.com/OpenSaasAU/stack/commit/565c4ca5de288b8c54cf2e3b5c811b44e913bf47) Thanks [@borisno2](https://github.com/borisno2)! - The engine context answers whether a singleton's row is stored, so `serializeItemForForm` can read a singleton without triggering `get()`'s auto-create.
+
+- [#2478](https://github.com/OpenSaasAU/stack/pull/2478) [`1b45d87`](https://github.com/OpenSaasAU/stack/commit/1b45d877684393fb2dd61ac53ac3e4176fb5b322) Thanks [@borisno2](https://github.com/borisno2)! - Internal restructuring: Field Visibility has one implementation, its single traversal; the old walks, the switch between them and the comparison harness are deleted.
+
+- [#2472](https://github.com/OpenSaasAU/stack/pull/2472) [`5850dd6`](https://github.com/OpenSaasAU/stack/commit/5850dd64bbbda381027f344044ebc803cac76958) Thanks [@borisno2](https://github.com/borisno2)! - Internal restructuring: Field Visibility is one module, driven by the resolved read plan alone, and no longer imports the context module.
+
+- [#2463](https://github.com/OpenSaasAU/stack/pull/2463) [`a66e95e`](https://github.com/OpenSaasAU/stack/commit/a66e95e1fdbf6fe902b70b3ecd346084647e70cf) Thanks [@borisno2](https://github.com/borisno2)! - The dependency table, synthetic back-relation lookup, multi-column read assembly and singleton checks read from the List member table, so generated contracts and tables are unchanged.
+  A multi-column field is now assembled from its `columns` descriptor even without `getColumnNames`, and Field Visibility always resolves the list it reads, so a denied multi-column field's raw part columns never pass through.
+
+- [#2448](https://github.com/OpenSaasAU/stack/pull/2448) [`b3120a1`](https://github.com/OpenSaasAU/stack/commit/b3120a1d6cc843ae53a7865a5d7e8696a3b3c935) Thanks [@borisno2](https://github.com/borisno2)! - Fix `select()` silently dropping a foreign key the list does not own ([#2388](https://github.com/OpenSaasAU/stack/issues/2388)), `distinct`/`distinctOn` refusing one it does own ([#2389](https://github.com/OpenSaasAU/stack/issues/2389)), and an undeclared `createdAt`/`updatedAt` on a list without timestamps being treated as a system field instead of an unknown name ([#2390](https://github.com/OpenSaasAU/stack/issues/2390)).
+
+- [#2476](https://github.com/OpenSaasAU/stack/pull/2476) [`d417e3a`](https://github.com/OpenSaasAU/stack/commit/d417e3a4a1fef505587b6f83edcc6568e9db82e7) Thanks [@borisno2](https://github.com/borisno2)! - refactor(core): the single Field Visibility traversal handles reductions, caller-shaped declared relations and row-lock re-reads, with no hand-off to the old walks ([#2410](https://github.com/OpenSaasAU/stack/issues/2410))
+
 ## 0.44.0-alpha.6
 
 ### Minor Changes
