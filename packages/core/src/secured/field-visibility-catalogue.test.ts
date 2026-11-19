@@ -1075,7 +1075,7 @@ describe('includes', () => {
   test('multi-column assembly happens once per row on the single traversal', async () => {
     await seedLeague()
 
-    await observe('multi-column assembly once per row', 'traversal', () =>
+    const rows = await observe('multi-column assembly once per row', 'traversal', () =>
       database
         .context(member)
         .db.Team.where({ id: { equals: 1 } })
@@ -1083,6 +1083,11 @@ describe('includes', () => {
         .all(),
     )
 
+    const players = [1, 2].map((id) => {
+      const { awards: _awards, ...player } = shownPlayer(id)
+      return player
+    })
+    expect(rows).toEqual([{ ...shownTeam(1), players }])
     expect(assembledIds()).toEqual(traversing ? [1, 2] : [1, 2, 1, 2])
   })
 
