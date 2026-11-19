@@ -32,6 +32,7 @@ import {
   type IncludePlan,
   type PlanLevel,
   type ReducePlan,
+  rowsBranchKeyOf,
 } from './include.js'
 import type { RowLockKey } from './lock.js'
 import { collectionFor, engineRead, identityIn, type ReadBinding } from './binding.js'
@@ -162,13 +163,19 @@ interface Reduction {
   readonly shown: (value: unknown, kept: readonly OrmRow[]) => unknown
 }
 
+const reductionByNode = new WeakMap<IncludePlan, Reduction | undefined>()
+
 function reductionOf(node: IncludePlan): Reduction | undefined {
+  if (reductionByNode.has(node)) return reductionByNode.get(node)
+  const reduction = buildReduction(node)
+  reductionByNode.set(node, reduction)
+  return reduction
+}
+
+function buildReduction(node: IncludePlan): Reduction | undefined {
   const reduce = node.reduce
   if (reduce === undefined) return undefined
-  const rowsKey =
-    reduce.kind === 'combine'
-      ? reduce.branches.find((branch) => branch.kind === 'rows')?.key
-      : undefined
+  const rowsKey = rowsBranchKeyOf(reduce)
   const branchRows = (value: unknown, key: string | undefined): OrmRow[] => {
     if (key === undefined || !isRow(value)) return []
     const rows = value[key]

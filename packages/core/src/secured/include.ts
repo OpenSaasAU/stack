@@ -482,7 +482,7 @@ function ruleViewOf(plan: {
 }
 
 /** The key a resolved reduce's own rows branch sits under, if it composed one. */
-function rowsBranchKeyOf(reduce: ReducePlan): string | undefined {
+export function rowsBranchKeyOf(reduce: ReducePlan): string | undefined {
   if (reduce.kind !== 'combine') return undefined
   for (const branch of reduce.branches) {
     if (branch.kind === 'rows') return branch.key
