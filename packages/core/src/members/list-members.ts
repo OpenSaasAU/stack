@@ -153,7 +153,8 @@ function refusalError(refusal: ConfigRefusal): Error {
 
 function validationRefusal(config: OpenSaasConfig): Error | undefined {
   const [fieldError] = validateConfigFields(config).filter(
-    (error) => error.missingMember === 'getContractField',
+    (error) =>
+      error.missingMember === 'getContractField' || error.missingMember === 'assembleColumns',
   )
   if (fieldError !== undefined) return new Error(fieldError.message, { cause: fieldError })
   const [refusal] = [

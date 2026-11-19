@@ -943,6 +943,10 @@ Required on a virtual field and on a `kind: 'columns'` field: neither has a sing
 
 `inputType` follows the same shape for the write face. `opensaas generate` never requires it: on a single-column field, absence means the column's own input type. A `kind: 'columns'` field has no single column for that to name, so declare it alongside `outputType` — every multi-column field in this repo does.
 
+### `assembleColumns`
+
+Required on a `kind: 'columns'` field: it builds the field's logical value from the row's part columns, and without it the field has no value under its own key. `opensaas generate` refuses a multi-column field that omits it, naming the list, the field and `assembleColumns()`, and so does building a context over such a config. See [Multi-column members](/docs/reference/fields-api#multi-column-members).
+
 ### `needs`
 
 The column keys this field's `resolveOutput` hook cannot compute without — stored columns and immediate relations on the same list, one hop, non-transitive, and stripped from the result unless the caller named them too. It is the only supported way for a field to widen the read it is computed inside. Declaring it without a `resolveOutput` hook is a refusal at generate time, because nothing would consume the declaration. See [Declared Dependencies](#declared-dependencies-needs) above.

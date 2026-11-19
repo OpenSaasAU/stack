@@ -49,6 +49,7 @@ const mediaField: FieldConfig = {
       { name: `${fieldName}_size`, type: { pack: 'pg', type: 'int' }, nullable: true },
     ],
   }),
+  assembleColumns: (fieldName, row) => row[`${fieldName}_url`],
 }
 
 function sudoContext() {

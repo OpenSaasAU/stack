@@ -32,7 +32,14 @@ function partsField(...parts: Array<Part | ((fieldKey: string) => Part)>): Field
         nullable: true,
       })),
     }),
+    assembleColumns: (fieldKey, row) => row[fieldKey],
   }
+}
+
+function unassembled(field: FieldConfig): FieldConfig {
+  const copy: FieldConfig = { ...field }
+  delete copy.assembleColumns
+  return copy
 }
 
 const addressField = partsField({ name: 'address_line' }, { name: 'address_city', map: 'city' })
@@ -64,6 +71,10 @@ class SecretField implements FieldConfig {
         nullable: true,
       })),
     }
+  }
+
+  assembleColumns(_fieldKey: string, row: Record<string, unknown>): unknown {
+    return row[this.#parts[0]]
   }
 }
 
@@ -497,7 +508,8 @@ const NAME_REFUSALS: ReadonlySet<ConfigRefusalReason> = new Set([
 
 function generateError(refused: OpenSaasConfig): string {
   const [fieldError] = validateConfigFields(refused).filter(
-    (error) => error.missingMember === 'getContractField',
+    (error) =>
+      error.missingMember === 'getContractField' || error.missingMember === 'assembleColumns',
   )
   if (fieldError !== undefined) return fieldError.message
   const [refusal] = [...validateDatabaseConfig(refused), ...validateRelations(refused)].filter(
@@ -646,6 +658,11 @@ describe('a config generate refuses', () => {
           },
         },
       }),
+      'Post',
+    ],
+    [
+      'a multi-column field without assembleColumns (#2481)',
+      withLists({ Post: { fields: { title: text(), address: unassembled(addressField) } } }),
       'Post',
     ],
     [
@@ -812,6 +829,22 @@ describe('a config generate refuses', () => {
       expect(claimed).toThrow(message)
     },
   )
+
+  it('refuses a multi-column field without assembleColumns, naming the list, field and member (#2481)', () => {
+    const refused = withLists({
+      Post: { fields: { title: text(), address: unassembled(addressField) } },
+    })
+    expect(() => resolveListMembers(refused, 'Post')).toThrow(
+      /"Post\.address".*does not declare assembleColumns\(\)/,
+    )
+    expect(
+      resolveListMember(
+        withLists({ Post: { fields: { address: addressField } } }),
+        'Post',
+        'address',
+      )?.kind,
+    ).toBe('field')
+  })
 
   it('rethrows the same error object on every call', () => {
     const refused = withLists({ Post: { fields: { id: text() } } })

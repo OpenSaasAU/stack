@@ -12,6 +12,8 @@ import { checkbox, json, relationship, text } from '../fields/index.js'
 import { ValidationError } from '../hooks/index.js'
 import { withOrigin } from '../origin.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
+import { validateConfigFields } from '../validation/field-config.js'
+import { assemblyDrop } from './__tests__/assembly-drop.js'
 import { createPlanRecorder, type RecordedPlan } from '../testing/plans.js'
 import { ESCAPE_VARIABLES, readDatabaseEscape } from '../testing/escape.js'
 
@@ -40,6 +42,8 @@ function embedding(
   }
 }
 
+const unassembled = assemblyDrop()
+
 function rawParts(read: NonNullable<FieldConfig['access']>['read']): FieldConfig {
   const field = json({ access: { read } })
   field.getContractField = () => ({
@@ -49,6 +53,11 @@ function rawParts(read: NonNullable<FieldConfig['access']>['read']): FieldConfig
       { name: 'avatar_filesize', type: { pack: 'pg', type: 'int' }, nullable: true },
     ],
   })
+  field.assembleColumns = (_fieldName, row) => ({
+    filename: row.avatar_filename,
+    filesize: row.avatar_filesize,
+  })
+  unassembled.mark(field)
   return field
 }
 
@@ -266,6 +275,10 @@ describe.skipIf(!available)(
   () => {
     beforeAll(async () => {
       database = await createTestDatabase(config, { middleware: [recorder.middleware] })
+      unassembled.dropAfterResolution(config)
+      expect(validateConfigFields(config).map((error) => error.missingMember)).toContain(
+        'assembleColumns',
+      )
     }, BOOT)
 
     afterAll(async () => {

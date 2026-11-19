@@ -682,6 +682,12 @@ export type BaseFieldConfig<
    * read pipeline before field visibility. Receives the full row so it can read
    * its sibling columns by name.
    *
+   * **Required on every field whose {@link getContractField} descriptor is
+   * `kind: 'columns'`.** Without it the field has no value under its own key:
+   * `opensaas generate` refuses the config, and so does building a context
+   * over it, naming the list, the field and `assembleColumns`. A single-column
+   * field leaves it out.
+   *
    * @param fieldName - The field's config key
    * @param row - The raw database row (contains the per-part columns)
    */

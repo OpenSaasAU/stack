@@ -53,8 +53,9 @@ export function formatFieldValidationErrors(errors: FieldConfigValidationError[]
     '',
     'Each field builder must declare getContractField and getZodSchema (a relationship',
     'only the former), plus outputType when it has no single column to be typed from —',
-    'a virtual field, or one spanning several columns — so the generator can produce the',
-    'contract and types without inspecting field internals.',
+    'a virtual field, or one spanning several columns — and assembleColumns on a field',
+    'spanning several columns, so the generator can produce the contract and types',
+    'without inspecting field internals.',
   ].join('\n')
 }
 

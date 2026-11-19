@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import type { OpenSaasConfig } from '@opensaas/stack-core'
+import { validateFieldConfig, type OpenSaasConfig } from '@opensaas/stack-core'
 import { image, file } from '../src/fields/index.js'
 import { FILE_COLUMN_PARTS } from '../src/utils/multi-column.js'
 import type { ImageMetadata, FileMetadata } from '../src/config/types.js'
@@ -617,5 +617,23 @@ describe('image() / file() multi-column mode', () => {
 
       expect(uploadFile).not.toHaveBeenCalled()
     })
+  })
+})
+
+describe('the field-builder contract (#2481)', () => {
+  it.each([
+    ['image()', image({ storage: 'images', db: { columns: 'keystone' } })],
+    ['file()', file({ storage: 'documents', db: { columns: 'keystone' } })],
+    [
+      'file() with every part',
+      file({
+        storage: 'documents',
+        db: { columns: { mode: 'keystone', parts: FILE_COLUMN_PARTS } },
+      }),
+    ],
+  ])('%s in multi-column mode supplies every member a multi-column field owes', (_name, field) => {
+    expect(field.getContractField?.('asset', 'Post', CONFIG).kind).toBe('columns')
+    expect(field.assembleColumns).toBeTypeOf('function')
+    expect(validateFieldConfig(field, 'asset', 'Post', CONFIG)).toEqual([])
   })
 })

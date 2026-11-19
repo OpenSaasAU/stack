@@ -10,8 +10,12 @@ import { ValidationError } from '../hooks/index.js'
 import { createMcpHandlers } from '../mcp/handler.js'
 import { withOrigin } from '../origin.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
+import { validateConfigFields } from '../validation/field-config.js'
+import { assemblyDrop } from './__tests__/assembly-drop.js'
 
 const BOOT = 120_000
+
+const unassembled = assemblyDrop()
 
 const PARTS = ['avatar_filename', 'avatar_filesize'] as const
 
@@ -29,6 +33,11 @@ function rawParts(access: FieldAccess): FieldConfig {
       typeof value === 'object' && value !== null ? value : {}
     return { [PARTS[0]]: metadata.filename ?? null, [PARTS[1]]: metadata.filesize ?? null }
   }
+  field.assembleColumns = (_fieldName, row) => ({
+    filename: row[PARTS[0]],
+    filesize: row[PARTS[1]],
+  })
+  unassembled.mark(field)
   return field
 }
 
@@ -168,6 +177,10 @@ function expectParts(row: unknown): void {
 
 beforeAll(async () => {
   database = await createTestDatabase(config)
+  unassembled.dropAfterResolution(config)
+  expect(validateConfigFields(config).map((error) => error.missingMember)).toContain(
+    'assembleColumns',
+  )
 }, BOOT)
 
 afterAll(async () => {
@@ -521,6 +534,34 @@ describe('rule invocations', () => {
       expect(rows).toHaveLength(3)
       for (const row of rows) expectHidden(row)
       expect(ruleCalls).toBe(3)
+    },
+    BOOT,
+  )
+})
+
+describe('a multi-column field that arrives without assembleColumns', () => {
+  test(
+    'is refused when the context is built, naming the list, the field and assembleColumns (#2481)',
+    async () => {
+      const avatar = json({ access: adminOnly })
+      avatar.getContractField = () => ({
+        kind: 'columns',
+        columns: [
+          { name: PARTS[0], type: { pack: 'pg', type: 'text' }, nullable: true },
+          { name: PARTS[1], type: { pack: 'pg', type: 'int' }, nullable: true },
+        ],
+      })
+      const refused = await createTestDatabase({
+        db: { provider: 'postgresql' },
+        lists: { Bare: { fields: { title: text(), avatar }, access: { operation: open } } },
+      })
+      try {
+        expect(() => refused.context(admin)).toThrow(
+          /"Bare\.avatar".*does not declare assembleColumns\(\)/,
+        )
+      } finally {
+        await refused.close()
+      }
     },
     BOOT,
   )
