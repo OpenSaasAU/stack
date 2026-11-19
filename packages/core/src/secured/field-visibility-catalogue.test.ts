@@ -10,6 +10,7 @@ import { checkbox, integer, json, relationship, text, virtual } from '../fields/
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
 import { createPlanRecorder, type RecordedPlan } from '../testing/plans.js'
 import type { CatalogueEntry } from './fixtures/field-visibility-catalogue-entries.js'
+import { fieldVisibilityRuns } from './field-visibility.js'
 
 const BOOT = 120_000
 
@@ -33,9 +34,13 @@ function ruleKeys(session: Session | null, item: object): string[] | 'not enumer
   return enumerates(session) ? keysOf(item) : 'not enumerated'
 }
 
-function avatar(): FieldConfig {
+async function ticks(count: number): Promise<void> {
+  for (let tick = 0; tick < count; tick++) await Promise.resolve()
+}
+
+function avatar(prefix = 'avatar'): FieldConfig {
   const field = json()
-  const columns = ['avatar_filename', 'avatar_filesize']
+  const columns = [`${prefix}_filename`, `${prefix}_filesize`]
   field.getContractField = () => ({
     kind: 'columns',
     columns: [
@@ -45,13 +50,23 @@ function avatar(): FieldConfig {
   })
   field.getColumnNames = () => columns
   field.assembleColumns = (fieldName, row) => {
-    record('assembleColumns', fieldName)
+    record('assembleColumns', fieldName, row.id)
     return { filename: row[columns[0]], filesize: row[columns[1]] }
   }
   field.splitColumns = (_fieldName, value) => {
     const parts: { filename?: unknown; filesize?: unknown } =
       typeof value === 'object' && value !== null ? value : {}
     return { [columns[0]]: parts.filename ?? null, [columns[1]]: parts.filesize ?? null }
+  }
+  return field
+}
+
+function mutatedInPlace(field: FieldConfig): FieldConfig {
+  field.hooks = {
+    resolveOutput: ({ value }) => {
+      if (isRecord(value)) value.filename = 'MUTATED'
+      return value
+    },
   }
   return field
 }
@@ -250,6 +265,215 @@ const config: OpenSaasConfig = {
         },
       },
     },
+    Region: {
+      fields: {
+        name: text(),
+        code: text({
+          access: {
+            read: ({ session, item }) => {
+              record('read', 'Region.code', item.name, ruleKeys(session, item))
+              return item.name !== 'r2'
+            },
+          },
+        }),
+        teams: relationship({
+          ref: 'Team.region',
+          many: true,
+          access: {
+            read: ({ item }) => {
+              record('read', 'Region.teams', item.name)
+              return true
+            },
+          },
+        }),
+      },
+      access: {
+        operation: {
+          query: (args) => {
+            record('query', 'Region', keysOf(args))
+            return true
+          },
+        },
+      },
+    },
+    Team: {
+      fields: {
+        name: text(),
+        hidden: checkbox(),
+        motto: text({
+          access: {
+            read: async ({ item }) => {
+              await ticks((6 - Number(String(item.name).slice(1))) * 3)
+              record('read', 'Team.motto', item.name)
+              return item.name !== 't2'
+            },
+          },
+        }),
+        region: relationship({ ref: 'Region.teams' }),
+        players: relationship({ ref: 'Player.team', many: true }),
+      },
+      access: {
+        operation: {
+          query: (args) => {
+            record('query', 'Team', keysOf(args))
+            return { hidden: { equals: false } }
+          },
+        },
+      },
+    },
+    Coach: {
+      fields: { name: text(), listed: checkbox() },
+      access: {
+        operation: {
+          query: (args) => {
+            record('query', 'Coach', keysOf(args))
+            return { listed: { equals: true } }
+          },
+        },
+      },
+    },
+    Player: {
+      fields: {
+        name: text(),
+        rating: integer({
+          access: {
+            read: ({ session, item }) => {
+              record('read', 'Player.rating', item.name)
+              return session?.role === 'admin'
+            },
+          },
+        }),
+        nick: text({
+          hooks: {
+            resolveOutput: async ({ value }) => {
+              await ticks(typeof value === 'string' ? value.length * 2 - 3 : 0)
+              record('resolveOutput', 'Player.nick', value)
+              return typeof value === 'string' ? value.toUpperCase() : value
+            },
+          },
+        }),
+        card: avatar('card'),
+        team: relationship({ ref: 'Team.players' }),
+        coach: relationship({
+          ref: 'Coach',
+          access: {
+            read: ({ item }) => {
+              record('read', 'Player.coach', item.name)
+              return item.name !== 'p3'
+            },
+          },
+        }),
+        awards: relationship({ ref: 'Award.player', many: true }),
+      },
+      access: {
+        operation: {
+          query: (args) => {
+            record('query', 'Player', keysOf(args))
+            return true
+          },
+        },
+      },
+    },
+    Sponsor: {
+      fields: { name: text(), listed: checkbox() },
+      access: {
+        operation: {
+          query: (args) => {
+            record('query', 'Sponsor', keysOf(args))
+            return { listed: { equals: true } }
+          },
+        },
+      },
+    },
+    Award: {
+      fields: {
+        title: text({
+          access: {
+            read: ({ item }) => {
+              record('read', 'Award.title', item.title)
+              return item.player !== null
+            },
+          },
+        }),
+        points: integer(),
+        player: relationship({ ref: 'Player.awards' }),
+        sponsor: relationship({ ref: 'Sponsor', db: { isNullable: false } }),
+        worth: virtual({
+          type: 'number',
+          needs: ['points', 'sponsor'],
+          hooks: {
+            resolveOutput: ({ item }) => {
+              const sponsor: unknown = item.sponsor
+              const sponsorName = isRecord(sponsor) ? sponsor.name : sponsor
+              record('resolveOutput', 'Award.worth', keysOf(item), sponsorName)
+              return Number(item.points) * (sponsorName === null ? 1 : 2)
+            },
+          },
+        }),
+      },
+      access: {
+        operation: {
+          query: (args) => {
+            record('query', 'Award', keysOf(args))
+            return true
+          },
+        },
+      },
+    },
+    Kit: {
+      fields: {
+        name: text(),
+        asset: mutatedInPlace(avatar('asset')),
+        coach: relationship({
+          ref: 'Coach',
+          access: {
+            read: ({ item }) => {
+              const asset: unknown = item.asset
+              const filename = isRecord(asset) ? asset.filename : asset
+              record('read', 'Kit.coach', item.name, filename)
+              return filename === `${String(item.name)}.png`
+            },
+          },
+        }),
+      },
+      access: {
+        operation: {
+          query: (args) => {
+            record('query', 'Kit', keysOf(args))
+            return true
+          },
+        },
+      },
+    },
+    Node: {
+      fields: {
+        label: text({
+          hooks: {
+            resolveOutput: ({ value }) => {
+              record('resolveOutput', 'Node.label', value)
+              return `resolved:${String(value)}`
+            },
+          },
+        }),
+        secret: text({
+          access: {
+            read: ({ item }) => {
+              record('read', 'Node.secret', item.label)
+              return false
+            },
+          },
+        }),
+        next: relationship({ ref: 'Node' }),
+      },
+      access: {
+        operation: {
+          query: (args) => {
+            record('query', 'Node', keysOf(args))
+            return true
+          },
+        },
+      },
+    },
   },
 }
 
@@ -272,6 +496,11 @@ interface Observation {
 }
 
 const observations: Partial<Record<CatalogueEntry, Observation>> = {}
+
+/** Which implementation an entry's reads reach under `=new`: the walks run every read under `=old`. */
+type Implementation = 'traversal' | 'walks' | 'none'
+
+const traversing = process.env.OPENSAAS_FIELD_VISIBILITY === 'new'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
@@ -355,11 +584,27 @@ async function seedLedger(): Promise<void> {
  * Runs one catalogue entry, keeps what it observed for the differential, and
  * hands back the result for the entry's own assertion.
  */
-async function observe(name: CatalogueEntry, run: () => Promise<unknown>): Promise<unknown> {
+async function observe(
+  name: CatalogueEntry,
+  ran: Implementation,
+  run: () => Promise<unknown>,
+): Promise<unknown> {
   if (name in observations) throw new Error(`catalogue entry "${name}" is observed twice`)
   calls.length = 0
   recorder.clear()
+  const before = fieldVisibilityRuns()
   const result = await run()
+  const after = fieldVisibilityRuns()
+  expect(
+    {
+      walks: after.walks - before.walks > 0,
+      traversal: after.traversal - before.traversal > 0,
+    },
+    `the implementation that ran "${name}"`,
+  ).toEqual({
+    walks: ran === 'walks' || (ran === 'traversal' && !traversing),
+    traversal: ran === 'traversal' && traversing,
+  })
   observations[name] = {
     result: JSON.parse(JSON.stringify(result ?? null)),
     calls: calls.map((call) => [...call]),
@@ -396,7 +641,7 @@ describe('bare reads', () => {
   test('all() as a member strips denied fields, narrows foreign keys and computes', async () => {
     await seedMembers()
 
-    const rows = await observe('bare all() as a member', () =>
+    const rows = await observe('bare all() as a member', 'traversal', () =>
       database.context(member).db.Member.orderBy({ id: 'asc' }).all(),
     )
 
@@ -432,7 +677,7 @@ describe('bare reads', () => {
   test('all() as an admin reads the salary its rule grants', async () => {
     await seedMembers()
 
-    const rows = await observe('bare all() as an admin', () =>
+    const rows = await observe('bare all() as an admin', 'traversal', () =>
       database
         .context(admin)
         .db.Member.where({ name: { equals: 'ada' } })
@@ -448,7 +693,7 @@ describe('bare reads', () => {
   test('first() anonymously nulls a foreign key whose field rule denies', async () => {
     await seedMembers()
 
-    const row = await observe('bare first() anonymously', () =>
+    const row = await observe('bare first() anonymously', 'traversal', () =>
       database.context(null).db.Member.orderBy({ id: 'asc' }).first(),
     )
 
@@ -458,7 +703,7 @@ describe('bare reads', () => {
   test('a sudo read skips every rule and the foreign-key pass', async () => {
     await seedMembers()
 
-    const row = await observe('bare first() under sudo', () =>
+    const row = await observe('bare first() under sudo', 'traversal', () =>
       database.context(null).sudo().db.Member.orderBy({ id: 'asc' }).first(),
     )
 
@@ -472,7 +717,7 @@ describe('bare reads', () => {
   test('a list with no relations computes every computed field from its declared set', async () => {
     await seedLedger()
 
-    const rows = await observe('bare all() on a list with no relations', () =>
+    const rows = await observe('bare all() on a list with no relations', 'traversal', () =>
       database.context({ enumerate: true }).db.Ledger.all(),
     )
 
@@ -487,7 +732,7 @@ describe('bare reads', () => {
   test('a rule enumerating its row sees the stored columns, and denies while a relation is withheld', async () => {
     await seedMembers()
 
-    const rows = await observe('a rule enumerating its row', () =>
+    const rows = await observe('a rule enumerating its row', 'traversal', () =>
       database
         .context(enumerating)
         .db.Member.where({ name: { equals: 'ada' } })
@@ -510,7 +755,7 @@ describe('projections', () => {
   test('a projection runs only the rules and hooks of the fields it names', async () => {
     await seedMembers()
 
-    const rows = await observe('select(name, label)', () =>
+    const rows = await observe('select(name, label)', 'traversal', () =>
       database
         .context(member)
         .db.Member.select('name', 'label')
@@ -527,7 +772,7 @@ describe('projections', () => {
   test('an unselected computed field neither runs nor widens the fetch', async () => {
     await seedLedger()
 
-    const rows = await observe('select(note, total) leaves expensive alone', () =>
+    const rows = await observe('select(note, total) leaves expensive alone', 'traversal', () =>
       database.context(member).db.Ledger.select('note', 'total').all(),
     )
 
@@ -541,7 +786,7 @@ describe('projections', () => {
   test('a projection naming a foreign key narrows it as a bare read does', async () => {
     await seedMembers()
 
-    const rows = await observe('select(orgId, mentorId)', () =>
+    const rows = await observe('select(orgId, mentorId)', 'traversal', () =>
       database.context(member).db.Member.select('orgId', 'mentorId').orderBy({ id: 'asc' }).all(),
     )
 
@@ -558,7 +803,7 @@ describe('the row lock', () => {
   test('forUpdate().first() returns the re-read row through Field Visibility', async () => {
     await seedMembers()
 
-    const row = await observe('forUpdate().first()', () =>
+    const row = await observe('forUpdate().first()', 'traversal', () =>
       database.context(member).transaction((tx) =>
         tx.db.Member.where({ id: { equals: 1 } })
           .forUpdate()
@@ -574,7 +819,7 @@ describe('write returns', () => {
   test('create returns what first() would', async () => {
     await seedMembers()
 
-    const created = await observe('create', () =>
+    const created = await observe('create', 'traversal', () =>
       database.context(member).db.Member.create({
         data: {
           name: 'dee',
@@ -600,7 +845,7 @@ describe('write returns', () => {
   test('update returns what first() would', async () => {
     await seedMembers()
 
-    const updated = await observe('update', () =>
+    const updated = await observe('update', 'traversal', () =>
       database.context(member).db.Member.update({ where: { id: 2 }, data: { nickname: 'bobby' } }),
     )
 
@@ -618,7 +863,7 @@ describe('write returns', () => {
   test('delete returns the row as it stood', async () => {
     await seedMembers()
 
-    const deleted = await observe('delete', () =>
+    const deleted = await observe('delete', 'traversal', () =>
       database.context(member).db.Member.delete({ where: { id: 1 } }),
     )
 
@@ -626,7 +871,7 @@ describe('write returns', () => {
   })
 
   test('a row the session cannot query comes back as its system fields', async () => {
-    const created = await observe('create on a list the session cannot query', () =>
+    const created = await observe('create on a list the session cannot query', 'none', () =>
       database.context(member).db.Sealed.create({ data: { name: 'x' } }),
     )
 
@@ -634,7 +879,7 @@ describe('write returns', () => {
   })
 
   test('a list declaring a relation returns the re-read row through its rules', async () => {
-    const created = await observe('create on a list declaring a relation', () =>
+    const created = await observe('create on a list declaring a relation', 'traversal', () =>
       database.context(member).db.Order.create({ data: { ref: 'o' } }),
     )
 
@@ -643,5 +888,484 @@ describe('write returns', () => {
       ['read', 'Order.ref', 'not enumerated'],
       ['resolveOutput', 'Order.total', ['id', 'lines']],
     ])
+  })
+})
+
+/**
+ * Regions r1–r3; teams t1–t4 two per region in r1 and r2, and t5 in r3, hidden;
+ * players p1–p8 two per visible team, coached by the listed c1 when odd and
+ * the unlisted c2 when even; awards a1–a16 two per player, sponsored by the
+ * listed s1 when odd and the unlisted s2 when even.
+ */
+async function seedLeague(): Promise<void> {
+  const sudo = database.context(null).sudo().db
+  for (const name of ['r1', 'r2', 'r3'])
+    await sudo.Region.create({ data: { name, code: `${name}!` } })
+  for (let team = 1; team <= 5; team++) {
+    await sudo.Team.create({
+      data: {
+        name: `t${team}`,
+        hidden: team === 5,
+        motto: `m${team}`,
+        region: { connect: { id: Math.ceil(team / 2) } },
+      },
+    })
+  }
+  await sudo.Coach.create({ data: { name: 'c1', listed: true } })
+  await sudo.Coach.create({ data: { name: 'c2', listed: false } })
+  await sudo.Sponsor.create({ data: { name: 's1', listed: true } })
+  await sudo.Sponsor.create({ data: { name: 's2', listed: false } })
+  for (let player = 1; player <= 8; player++) {
+    await sudo.Player.create({
+      data: {
+        name: `p${player}`,
+        rating: player * 10,
+        nick: `n${player}`,
+        card: { filename: `p${player}.png`, filesize: player },
+        team: { connect: { id: Math.ceil(player / 2) } },
+        coach: { connect: { id: player % 2 === 1 ? 1 : 2 } },
+      },
+    })
+  }
+  for (let award = 1; award <= 16; award++) {
+    await sudo.Award.create({
+      data: {
+        title: `a${award}`,
+        points: award,
+        player: { connect: { id: Math.ceil(award / 2) } },
+        sponsor: { connect: { id: award % 2 === 1 ? 1 : 2 } },
+      },
+    })
+  }
+}
+
+function shownAward(award: number): Record<string, unknown> {
+  const listed = award % 2 === 1
+  return {
+    id: award,
+    points: award,
+    playerId: Math.ceil(award / 2),
+    sponsorId: listed ? 1 : null,
+    worth: award * (listed ? 2 : 1),
+  }
+}
+
+function shownPlayer(player: number): Record<string, unknown> {
+  return {
+    id: player,
+    name: `p${player}`,
+    nick: `N${player}`,
+    card: { filename: `p${player}.png`, filesize: player },
+    teamId: Math.ceil(player / 2),
+    coachId: player % 2 === 1 && player !== 3 ? 1 : null,
+    awards: [player * 2 - 1, player * 2].map(shownAward),
+  }
+}
+
+function shownTeam(team: number): Record<string, unknown> {
+  return {
+    id: team,
+    name: `t${team}`,
+    hidden: false,
+    ...(team === 2 ? {} : { motto: `m${team}` }),
+    regionId: Math.ceil(team / 2),
+    players: [team * 2 - 1, team * 2].map(shownPlayer),
+  }
+}
+
+/** Each rule and hook call as its label and the row it ran on, in the order they ran. */
+function ruleAndHookOrder(): string[] {
+  return ruleAndHookCalls().map(
+    (call) => `${String(call[1])} ${String(call[1] === 'Award.worth' ? call[3] : call[2])}`,
+  )
+}
+
+function assembledIds(): unknown[] {
+  return calls.filter((call) => call[0] === 'assembleColumns').map((call) => call[2])
+}
+
+const league = [
+  { id: 1, name: 'r1', code: 'r1!', teams: [1, 2].map(shownTeam) },
+  { id: 2, name: 'r2', teams: [3, 4].map(shownTeam) },
+  { id: 3, name: 'r3', code: 'r3!', teams: [] },
+]
+
+describe('includes', () => {
+  test('three levels of includes over several rows strip, compute and narrow at every node', async () => {
+    await seedLeague()
+
+    const rows = await observe('nested includes three deep across several rows', 'traversal', () =>
+      database
+        .context(member)
+        .db.Region.orderBy({ id: 'asc' })
+        .include('teams', (teams) =>
+          teams.include('players', (players) => players.include('awards')),
+        )
+        .all(),
+    )
+
+    expect(rows).toEqual(league)
+    expect(ruleAndHookOrder()).toEqual([
+      'Region.code r1',
+      'Region.code r2',
+      'Region.code r3',
+      'Region.teams r1',
+      'Region.teams r2',
+      'Region.teams r3',
+      'Team.motto t4',
+      'Team.motto t3',
+      'Team.motto t2',
+      'Team.motto t1',
+      'Player.rating p7',
+      'Player.rating p8',
+      'Player.rating p5',
+      'Player.rating p6',
+      'Player.rating p3',
+      'Player.rating p4',
+      'Player.nick n7',
+      'Player.nick n8',
+      'Player.rating p1',
+      'Player.rating p2',
+      'Player.nick n5',
+      'Player.nick n6',
+      'Player.nick n3',
+      'Player.nick n4',
+      'Award.title a13',
+      'Award.title a14',
+      'Award.title a15',
+      'Award.title a16',
+      'Player.nick n1',
+      'Player.nick n2',
+      'Award.title a9',
+      'Award.title a10',
+      'Award.title a11',
+      'Award.title a12',
+      'Award.title a5',
+      'Award.title a6',
+      'Award.title a7',
+      'Award.title a8',
+      'Award.title a1',
+      'Award.title a2',
+      'Award.title a3',
+      'Award.title a4',
+      'Award.worth s1',
+      'Award.worth s1',
+      'Award.worth null',
+      'Award.worth null',
+      'Award.worth s1',
+      'Award.worth s1',
+      'Award.worth null',
+      'Award.worth null',
+      'Award.worth s1',
+      'Award.worth s1',
+      'Award.worth null',
+      'Award.worth null',
+      'Award.worth s1',
+      'Award.worth s1',
+      'Award.worth null',
+      'Award.worth null',
+      'Player.coach p1',
+      'Player.coach p2',
+      'Player.coach p3',
+      'Player.coach p4',
+      'Player.coach p5',
+      'Player.coach p6',
+      'Player.coach p7',
+      'Player.coach p8',
+    ])
+    expect(callsTo('read', 'Player.rating')).toHaveLength(8)
+    expect(callsTo('read', 'Award.title')).toHaveLength(16)
+    expect(hookItems('Award.worth')).toEqual(
+      Array(16).fill(['id', 'points', 'sponsorId', 'sponsor']),
+    )
+    expect(calls.filter((call) => call[0] === 'query').map((call) => call[1])).toEqual([
+      'Region',
+      'Sponsor',
+      'Award',
+      'Player',
+      'Team',
+      'Region',
+      'Team',
+      'Coach',
+      'Player',
+      'Sponsor',
+    ])
+    expect(recorder.plans.map(statement)).toEqual([
+      expect.stringMatching(/^select:engine:/),
+      'select:engine:id',
+      'select:engine:id',
+      'select:engine:id',
+    ])
+  })
+
+  test('a multi-column field reads assembled under its own key, its part columns never shown', async () => {
+    await seedLeague()
+
+    const rows = await observe('a multi-column field reads assembled', 'traversal', () =>
+      database
+        .context(member)
+        .db.Team.where({ id: { equals: 1 } })
+        .include('players')
+        .all(),
+    )
+
+    const players = [1, 2].map((id) => {
+      const { awards: _awards, ...player } = shownPlayer(id)
+      return player
+    })
+    expect(rows).toEqual([{ ...shownTeam(1), players }])
+    expect(assembledIds()).toEqual([1, 2, 1, 2])
+  })
+
+  test("a foreign-key owner's rule never sees a hook's in-place change to an assembled value", async () => {
+    await seedLeague()
+    const sudo = database.context(null).sudo().db
+    for (const kit of [1, 2]) {
+      await sudo.Kit.create({
+        data: {
+          name: `k${kit}`,
+          asset: { filename: `k${kit}.png`, filesize: kit },
+          coach: { connect: { id: 1 } },
+        },
+      })
+    }
+
+    const rows = await observe('a hook mutating an assembled value in place', 'traversal', () =>
+      database.context(member).db.Kit.orderBy({ id: 'asc' }).all(),
+    )
+
+    expect(rows).toEqual(
+      [1, 2].map((kit) => ({
+        id: kit,
+        name: `k${kit}`,
+        asset: { filename: 'MUTATED', filesize: kit },
+        coachId: 1,
+      })),
+    )
+    expect(callsTo('read', 'Kit.coach')).toEqual([
+      ['read', 'Kit.coach', 'k1', 'k1.png'],
+      ['read', 'Kit.coach', 'k2', 'k2.png'],
+    ])
+  })
+
+  test('one multi-column row reached through two paths is assembled and narrowed on each', async () => {
+    await seedLeague()
+
+    const rows = await observe('one multi-column row reached through two paths', 'traversal', () =>
+      database
+        .context(member)
+        .db.Team.where({ id: { equals: 1 } })
+        .include('players', (players) =>
+          players.include('awards', (awards) => awards.include('player')),
+        )
+        .all(),
+    )
+
+    const bare = (id: number) => {
+      const { awards: _awards, ...player } = shownPlayer(id)
+      return player
+    }
+    const players = [1, 2].map((id) => ({
+      ...bare(id),
+      awards: [id * 2 - 1, id * 2].map((award) => ({
+        ...shownAward(award),
+        title: `a${award}`,
+        player: bare(id),
+      })),
+    }))
+    expect(rows).toEqual([{ ...shownTeam(1), players }])
+    expect(assembledIds()).toEqual([1, 2, 1, 1, 2, 2, 1, 2, 1, 1, 2, 2])
+    expect(callsTo('read', 'Player.coach').map((call) => call[2])).toEqual([
+      'p1',
+      'p2',
+      'p1',
+      'p1',
+      'p2',
+      'p2',
+    ])
+  })
+
+  test('a declared dependency the caller did not name reaches its hook and never the caller', async () => {
+    await seedLeague()
+
+    const rows = await observe('a declared dependency the caller did not name', 'traversal', () =>
+      database
+        .context(member)
+        .db.Award.where({ id: { in: [1, 2] } })
+        .orderBy({ id: 'asc' })
+        .all(),
+    )
+
+    expect(rows).toEqual([shownAward(1), shownAward(2)])
+    expect(callsTo('resolveOutput', 'Award.worth')).toEqual([
+      ['resolveOutput', 'Award.worth', ['id', 'points', 'sponsorId', 'sponsor'], 's1'],
+      ['resolveOutput', 'Award.worth', ['id', 'points', 'sponsorId', 'sponsor'], null],
+    ])
+  })
+
+  test('a to-one scoped away reads null by arity, nullable or not, and a to-many reads []', async () => {
+    await seedLeague()
+
+    const read = await observe('a to-one scoped away reads null', 'traversal', async () => ({
+      awards: await database
+        .context(member)
+        .db.Award.where({ id: { in: [1, 4, 5, 8] } })
+        .orderBy({ id: 'asc' })
+        .include('sponsor')
+        .include('player', (player) => player.include('coach'))
+        .all(),
+      regions: await database
+        .context(member)
+        .db.Region.where({ id: { equals: 3 } })
+        .include('teams')
+        .all(),
+    }))
+
+    const sponsor = { id: 1, name: 's1', listed: true }
+    const player = (id: number) => {
+      const { awards: _awards, coachId, ...rest } = shownPlayer(id)
+      if (id === 3) return { ...rest, coachId }
+      return {
+        ...rest,
+        coachId,
+        coach: coachId === null ? null : { id: 1, name: 'c1', listed: true },
+      }
+    }
+    expect(read).toEqual({
+      awards: [
+        { ...shownAward(1), sponsor, player: player(1) },
+        { ...shownAward(4), sponsor: null, player: player(2) },
+        { ...shownAward(5), sponsor, player: player(3) },
+        { ...shownAward(8), sponsor: null, player: player(4) },
+      ],
+      regions: [{ id: 3, name: 'r3', code: 'r3!', teams: [] }],
+    })
+    expect(
+      callsTo('resolveOutput', 'Award.worth')
+        .map((call) => String(call[3]))
+        .sort(),
+    ).toEqual(['null', 'null', 's1', 's1'])
+  })
+
+  test('a nested rule reaching for a relation its row does not carry denies', async () => {
+    await seedLeague()
+
+    const rows = await observe('a nested rule reaching for a withheld relation', 'traversal', () =>
+      database
+        .context(member)
+        .db.Player.where({ id: { equals: 1 } })
+        .include('awards')
+        .all(),
+    )
+
+    const { awards: _awards, ...player } = shownPlayer(1)
+    expect(rows).toEqual([{ ...player, awards: [shownAward(1), shownAward(2)] }])
+    expect(callsTo('read', 'Award.title')).toEqual([
+      ['read', 'Award.title', 'a1'],
+      ['read', 'Award.title', 'a2'],
+    ])
+  })
+
+  test('a Synthetic back-relation keeps the rows its source field lets the session read', async () => {
+    await seedLeague()
+
+    const rows = await observe('a Synthetic back-relation', 'traversal', () =>
+      database
+        .context(member)
+        .db.Coach.include('from_Player_coach', (players) => players.include('awards'))
+        .all(),
+    )
+
+    expect(rows).toEqual([
+      { id: 1, name: 'c1', listed: true, from_Player_coach: [1, 5, 7].map(shownPlayer) },
+    ])
+    expect(
+      callsTo('read', 'Player.coach')
+        .slice(0, 4)
+        .map((call) => call[2]),
+    ).toEqual(['p1', 'p3', 'p5', 'p7'])
+  })
+
+  test('a read at the include depth cap strips and computes on the deepest level', async () => {
+    const sudo = database.context(null).sudo().db
+    for (let node = 6; node >= 1; node--) {
+      await sudo.Node.create({
+        data: {
+          label: `n${node}`,
+          secret: `s${node}`,
+          ...(node < 6 ? { next: { connect: { id: 7 - node - 1 } } } : {}),
+        },
+      })
+    }
+
+    const rows = await observe('an include at the depth cap', 'traversal', () =>
+      database
+        .context(member)
+        .db.Node.where({ label: { equals: 'n1' } })
+        .include('next', (n2) =>
+          n2.include('next', (n3) =>
+            n3.include('next', (n4) => n4.include('next', (n5) => n5.include('next'))),
+          ),
+        )
+        .all(),
+    )
+
+    const chain = (node: number): Record<string, unknown> => ({
+      id: 7 - node,
+      label: `resolved:n${node}`,
+      nextId: node < 6 ? 7 - node - 1 : null,
+      ...(node < 6 ? { next: chain(node + 1) } : {}),
+    })
+    expect(rows).toEqual([chain(1)])
+    expect(callsTo('read', 'Node.secret').map((call) => call[2])).toEqual([
+      'n1',
+      'n2',
+      'n3',
+      'n4',
+      'n5',
+      'n6',
+    ])
+  })
+})
+
+describe('the hand-off to the walks', () => {
+  test('a reduction is read by the walks', async () => {
+    await seedLeague()
+
+    const rows = await observe('a reduction hands off to the walks', 'walks', () =>
+      database
+        .context(member)
+        .db.Region.orderBy({ id: 'asc' })
+        .include('teams', (teams) => teams.count())
+        .all(),
+    )
+
+    expect(rows).toEqual([
+      { id: 1, name: 'r1', code: 'r1!', teams: 2 },
+      { id: 2, name: 'r2', teams: 2 },
+      { id: 3, name: 'r3', code: 'r3!', teams: 0 },
+    ])
+  })
+
+  test('a caller-shaped declared relation is read by the walks', async () => {
+    await seedLeague()
+
+    const rows = await observe(
+      'a caller-shaped declared relation hands off to the walks',
+      'walks',
+      () =>
+        database
+          .context(member)
+          .db.Award.where({ id: { in: [1, 2] } })
+          .orderBy({ id: 'asc' })
+          .include('sponsor', (sponsor) => sponsor.where({ name: { equals: 'nobody' } }))
+          .all(),
+    )
+
+    expect(rows).toEqual([
+      { ...shownAward(1), sponsor: null },
+      { ...shownAward(2), sponsor: null },
+    ])
+    expect(callsTo('resolveOutput', 'Award.worth').map((call) => call[3])).toEqual(['s1', null])
   })
 })

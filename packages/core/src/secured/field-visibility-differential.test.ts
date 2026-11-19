@@ -158,4 +158,18 @@ describe('the divergence report', () => {
       '"read" diverged at .result.a: old 1, new nothing',
     ])
   })
+
+  test('compares call counts exactly', () => {
+    const assembled = (id: number) => ['assembleColumns', 'card', id]
+    const read = ['read', 'Player.rating', 'p1']
+    const old = { read: { calls: [assembled(1), assembled(2), read, assembled(1), assembled(2)] } }
+
+    expect(divergences(old, old)).toEqual([])
+    expect(divergences(old, { read: { calls: [assembled(1), assembled(2), read] } })).toEqual([
+      '"read" diverged at .calls[3]: old ["assembleColumns","card",1], new nothing',
+    ])
+    expect(divergences({ read: { calls: [read, read] } }, { read: { calls: [read] } })).toEqual([
+      '"read" diverged at .calls[1]: old ["read","Player.rating","p1"], new nothing',
+    ])
+  })
 })

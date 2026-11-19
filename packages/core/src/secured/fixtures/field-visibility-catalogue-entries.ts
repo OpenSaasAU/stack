@@ -17,6 +17,17 @@ export const CATALOGUE_ENTRIES = [
   'delete',
   'create on a list the session cannot query',
   'create on a list declaring a relation',
+  'nested includes three deep across several rows',
+  'a multi-column field reads assembled',
+  'a hook mutating an assembled value in place',
+  'one multi-column row reached through two paths',
+  'a declared dependency the caller did not name',
+  'a to-one scoped away reads null',
+  'a nested rule reaching for a withheld relation',
+  'a Synthetic back-relation',
+  'an include at the depth cap',
+  'a reduction hands off to the walks',
+  'a caller-shaped declared relation hands off to the walks',
 ] as const
 
 export type CatalogueEntry = (typeof CATALOGUE_ENTRIES)[number]
