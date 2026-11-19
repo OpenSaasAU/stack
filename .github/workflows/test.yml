@@ -341,6 +341,13 @@ jobs:
         include:
           - shard: core
             filter: --filter=@opensaas/stack-core
+          # The core suite again under the single Field Visibility traversal,
+          # until the walks it replaces are deleted (#2387). Its coverage is
+          # not uploaded: it would overwrite the `core` shard's.
+          - shard: core-traversal
+            filter: --filter=@opensaas/stack-core
+            field_visibility: new
+            task: test
           - shard: cli
             filter: --filter=@opensaas/stack-cli
           - shard: rest
@@ -393,9 +400,10 @@ jobs:
 
       # Coverage is a package property; the examples carry no `test:coverage`.
       - name: Run package tests with coverage
-        run: turbo run test:coverage ${{ matrix.filter }}
+        run: turbo run ${{ matrix.task || 'test:coverage' }} ${{ matrix.filter }}
         env:
           OPENAI_API_KEY: 'sk-testing-key'
+          OPENSAAS_FIELD_VISIBILITY: ${{ matrix.field_visibility || 'old' }}
 
       - name: Install Playwright browsers
         if: matrix.shard == 'rest'
@@ -407,7 +415,7 @@ jobs:
         run: pnpm test:browser:coverage
 
       - name: Upload coverage artifacts
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && matrix.task != 'test'
         uses: actions/upload-artifact@v7
         with:
           name: coverage-reports-${{ matrix.shard }}
