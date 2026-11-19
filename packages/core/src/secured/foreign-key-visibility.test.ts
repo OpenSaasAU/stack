@@ -10,7 +10,7 @@ const BOOT = 120_000
  * leak the related row's id whenever the read never named the relation at
  * all — `applyForeignKeys` (the #1235 fix) only ever narrows a column for a
  * relation present in the resolved include tree, so a bare read had nothing
- * narrowing it. `narrowUnincludedForeignKeys` (`read.ts`) is what this file
+ * narrowing it. `narrowUnincludedForeignKeys` (`field-visibility.ts`) is what this file
  * exercises: every scenario below reads with NO `.include()` at all.
  */
 const config: OpenSaasConfig = {
@@ -193,7 +193,7 @@ describe('a bare read narrows a to-one whose foreign-key column is renamed', () 
  * the companion check; this forces the window instead, by giving the
  * relationship field's own `read` rule a side effect that deletes the related
  * row. That rule runs once per row, strictly before the companion query
- * (`narrowUnincludedForeignKeys`'s own ordering — see `read.ts`), which is
+ * (`narrowUnincludedForeignKeys`'s own ordering — see `field-visibility.ts`), which is
  * what makes the deletion land inside the window on every run rather than
  * racing it.
  */

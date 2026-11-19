@@ -1,6 +1,5 @@
 import type { AccessControl, Session, AccessContext, PrismaFilter } from './types.js'
-import type { FieldConfig, OpenSaasConfig, ListConfig } from '../config/types.js'
-import { resolveListMember } from '../members/list-members.js'
+import type { OpenSaasConfig, ListConfig } from '../config/types.js'
 import {
   InvalidCreateAccessResultError,
   UndefinedAccessFilterError,
@@ -47,37 +46,6 @@ export function getRelatedListConfig(
   }
 
   return { listName, listConfig }
-}
-
-/** A synthetic reverse relation, resolved back to the declared field that owns it. */
-export interface SyntheticReverseRelation {
-  sourceListName: string
-  sourceFieldName: string
-  sourceFieldConfig: FieldConfig
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
-  sourceListConfig: ListConfig<any>
-}
-
-/**
- * Resolve a candidate data key as the synthetic back-relation a list-only
- * `ref` (`ref: 'ListName'`, no target field) generates on its target model,
- * back to the declared relationship field that owns it. Returns `null` when
- * `fieldName` is not a `syntheticBackRelation` List member of `parentListName`.
- */
-export function resolveSyntheticReverseRelation(
-  fieldName: string,
-  parentListName: string,
-  config: OpenSaasConfig,
-): SyntheticReverseRelation | null {
-  const member = resolveListMember(config, parentListName, fieldName)
-  if (member?.kind !== 'syntheticBackRelation') return null
-  const sourceListConfig = config.lists[member.sourceList]
-  return {
-    sourceListName: member.sourceList,
-    sourceFieldName: member.sourceField,
-    sourceFieldConfig: sourceListConfig.fields[member.sourceField],
-    sourceListConfig,
-  }
 }
 
 /**

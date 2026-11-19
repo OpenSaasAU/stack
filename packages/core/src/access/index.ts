@@ -21,9 +21,7 @@ export {
   isBoolean,
   isPrismaFilter,
   getRelatedListConfig,
-  resolveSyntheticReverseRelation,
 } from './engine.js'
-export type { SyntheticReverseRelation } from './engine.js'
 // Canonical field-level access evaluation (shared by read and write paths).
 export {
   checkFieldAccess,
