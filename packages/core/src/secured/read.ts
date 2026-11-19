@@ -3,19 +3,9 @@
 // `all()`/`first()`/`nearest()`/`aggregate()` terminals the engine owns. See ADR-0041,
 // ADR-0044, ADR-0045, ADR-0046, ADR-0055 and ADR-0058.
 
-import type { AnyExpression, OrderByItem } from '@prisma/orm-postgres/relational-core'
-import type { OpenSaasConfig, ListConfig, TypeInfo } from '../config/types.js'
-import type { AccessContext, OrmClient, OrmRow, PrismaFilter, Session } from '../access/types.js'
-import {
-  assertAccessFilterConstrains,
-  checkAccess,
-  checkRowRead,
-  filterReadableFields,
-  NO_RULE_VIEWS,
-  ruleRowOf,
-  type RuleView,
-  type RuleViewTree,
-} from '../access/index.js'
+import type { AccessContext, OrmRow, PrismaFilter, Session } from '../access/types.js'
+import type { OpenSaasConfig } from '../config/types.js'
+import { assertAccessFilterConstrains, checkAccess } from '../access/index.js'
 import { withOrigin } from '../origin.js'
 import {
   lowerOrder,
@@ -26,11 +16,9 @@ import {
   type WhereCombinators,
 } from './lower.js'
 import {
-  listNamed,
   resolveColumns,
   resolveNearest,
   resolveOrderBy,
-  resolveRelatedAccessPlan,
   assertWhereWithinLimits,
   resolveWhere,
   unqueryableKey,
@@ -48,31 +36,26 @@ import {
   DECLARED_COUNT_BRANCH_KEY,
   DECLARED_ROWS_BRANCH_KEY,
   declaredRelations,
-  foreignKeyOwningRelations,
   orderList,
+  planLevel,
   resolveIncludes,
   type CombineBranchPlan,
   type IncludePlan,
   type IncludeRequest,
-  type ReducePlan,
+  type PlanLevel,
   type Refinement,
 } from './include.js'
+import { resolveProjection, type ProjectionPlan } from './select.js'
 import {
-  dependencyAdditions,
-  hasRowsBranch,
-  reducedDeclaredKeys,
-  resolveProjection,
-  selectionScope,
-  type ProjectionPlan,
-} from './select.js'
-import {
-  getListDependencies,
-  noDependencyAdditions,
-  noReducedDeclaredKeys,
-  type DependencyAdditions,
-  type FieldSelectionScope,
-  type ReducedDeclaredKeys,
-} from '../access/declared-dependencies.js'
+  collectionFor,
+  engineRead,
+  identityIn,
+  type IncludeBranch,
+  type ReadableCollection,
+  type ReadBinding,
+  type RefinableCollection,
+} from './binding.js'
+import { visibleRows, type VisibleRow, type WrittenRowRead } from './field-visibility.js'
 import { aggregations, checkSpec, specKeys, zeroed, type AggregateBuild } from './aggregate.js'
 import { distanceToScore, requireVector, vectorDistance } from './vector.js'
 import {
@@ -85,8 +68,8 @@ import {
   type RowLockLane,
 } from './lock.js'
 import { ValidationError } from '../hooks/index.js'
-import { partColumnsOf, resolveListMembers, type ListMembers } from '../members/list-members.js'
 
+export { SecuredCollectionMissingError } from './binding.js'
 export { AccessFilterRecursionError, ACCESS_FILTER_MAX_DEPTH } from './vocabulary.js'
 export { NEAREST_DEFAULT_LIMIT } from './vocabulary.js'
 export {
@@ -265,107 +248,6 @@ export interface NearestMatch<TRow = OrmRow> {
   score: number
 }
 
-/**
- * Thrown when the ORM client carries no collection for a list the config
- * declares — a generation or wiring fault rather than an access denial, so it
- * is reported rather than silently read as an empty result.
- */
-export class SecuredCollectionMissingError extends Error {
-  constructor(readonly listName: string) {
-    super(
-      `The ORM client has no collection for list "${listName}". Re-run \`opensaas generate\` so ` +
-        `the emitted contract matches the config.`,
-    )
-    this.name = 'SecuredCollectionMissingError'
-  }
-}
-
-/**
- * The part of a Prisma 8 collection the read path drives, structurally.
- * `where` appends a predicate — repeated calls are AND-combined by the ORM,
- * which is what makes the Access Filter a second entry rather than a merge.
- */
-interface RefinableCollection {
-  select(...fields: readonly string[]): RefinableCollection
-  where(predicate: (model: PredicateAccessor) => AnyExpression): RefinableCollection
-  orderBy(selection: readonly ((model: PredicateAccessor) => OrderByItem)[]): RefinableCollection
-  limit(count: number): RefinableCollection
-  offset(count: number): RefinableCollection
-  include(name: string, refine: (child: RefinableCollection) => IncludeBranch): RefinableCollection
-  /** The relation reads as how many rows matched, rather than as the rows. */
-  count(): IncludeReduction
-  /** Several named reductions over the same relation, each its own subquery. */
-  combine(spec: Record<string, IncludeBranch>): IncludeReduction
-}
-
-/**
- * What an include's refinement callback may hand back to the ORM: a composed
- * child collection, or the reduction that replaces it.
- */
-type IncludeBranch = RefinableCollection | IncludeReduction
-
-/** The ORM's reduced-relation value. Opaque here; only the ORM reads it. */
-interface IncludeReduction {
-  readonly reduced?: never
-}
-
-/** What a bare aggregate spec names on the ORM's aggregate accessor. */
-interface AggregateAccessor {
-  count(): AggregateReduction
-}
-
-interface AggregateReduction {
-  readonly aggregated?: never
-}
-
-interface ReadableCollection extends RefinableCollection {
-  select(...fields: readonly string[]): ReadableCollection
-  where(predicate: (model: PredicateAccessor) => AnyExpression): ReadableCollection
-  orderBy(selection: readonly ((model: PredicateAccessor) => OrderByItem)[]): ReadableCollection
-  include(name: string, refine: (child: RefinableCollection) => IncludeBranch): ReadableCollection
-  limit(rows: number): ReadableCollection
-  offset(rows: number): ReadableCollection
-  distinct(...fields: string[]): ReadableCollection
-  distinctOn(...fields: string[]): ReadableCollection
-  cursor(values: Record<string, unknown>): ReadableCollection
-  all(): PromiseLike<OrmRow[]>
-  first(): Promise<OrmRow | null>
-  aggregate(
-    build: (aggregate: AggregateAccessor) => Record<string, AggregateReduction>,
-  ): Promise<Record<string, unknown>>
-}
-
-/**
- * Presence, not completeness — the same rule `isDelegate` states in
- * `access/orm-client.ts`, and for the same reason. A test double implements
- * only the operations its test reaches, so requiring the full set would refuse
- * a client the engine can drive, and would refuse it with advice ("re-run
- * `opensaas generate`") that does not describe what is actually wrong. A
- * member that is genuinely absent surfaces at its own call site.
- */
-function isReadableCollection(value: unknown): value is ReadableCollection {
-  return typeof value === 'object' && value !== null
-}
-
-function collectionFor(ormHandle: OrmClient, listName: string): ReadableCollection {
-  const collection = ormHandle[listName]
-  if (!isReadableCollection(collection)) throw new SecuredCollectionMissingError(listName)
-  return collection
-}
-
-interface ReadBinding {
-  listName: string
-  listConfig: ListConfig<TypeInfo>
-  ormHandle: OrmClient
-  context: AccessContext
-  config: OpenSaasConfig
-  /**
-   * Present only on a context bound to a transaction, which is what makes
-   * `forUpdate()` answerable there and a refusal everywhere else (ADR-0047).
-   */
-  lock?: RowLockLane
-}
-
 /** How rows that agree on the named columns are collapsed. */
 interface DistinctRequest {
   readonly kind: 'all' | 'on'
@@ -389,20 +271,10 @@ interface QueryState {
 interface ReadPlan {
   readonly predicates: readonly WherePlan[]
   readonly orders: readonly OrderPlan[]
-  readonly includes: readonly IncludePlan[]
   /** The top level's projection, already widened (ADR-0041). */
   readonly projection: ProjectionPlan
-  /** What the caller may keep, level by level — `undefined` when nothing was projected. */
-  readonly selection: FieldSelectionScope | undefined
-  /** The relation branches only the widening asked for, level by level (ADR-0051). */
-  readonly additions: DependencyAdditions
-  /**
-   * Relation keys, level by level, that are both reduced and a live declared
-   * dependency (#1357) — `IncludePlan.declaredRows` on {@link includes}, in
-   * the shape Field Visibility consumes it in. See `maskReductions` and
-   * `restoreReductions` below.
-   */
-  readonly reducedDeclared: ReducedDeclaredKeys
+  /** The root level: its includes, and what Field Visibility reads at every level. */
+  readonly root: PlanLevel
   /** The caller's own row bound. */
   readonly limit?: number
   /** The caller's own row offset. */
@@ -420,8 +292,7 @@ interface ReadPlan {
 /**
  * What one terminal does with one member of a resolved plan.
  *
- * - `applied` — carried into the query (or, for `selection`/`additions`, into
- *   {@link visible}).
+ * - `applied` — carried into the query, and for `root` into Field Visibility.
  * - `refused` — the terminal cannot honour it and says so, at the cost of a
  *   `ValidationError` rather than a wrong answer.
  * - `inapplicable` — the terminal owns this axis itself, so there is nothing
@@ -433,17 +304,23 @@ type PlanDisposition = 'applied' | 'refused' | 'inapplicable'
 /**
  * Every {@link ReadPlan} member, and what a terminal does with it.
  *
- * The `Record<keyof ReadPlan, …>` is the whole point: a member added to
+ * The mapping over `keyof ReadPlan` is the whole point: a member added to
  * `ReadPlan` is a compile error in each terminal until that terminal says what
  * it does with it, and {@link scope} is the only way to the collection — so a
- * terminal cannot drop a plan member without writing the word down.
+ * terminal cannot drop a plan member without writing the word down. `root` is
+ * carried by every read, so refusing it would refuse every read: it cannot be
+ * marked `refused`.
  *
  * That is a rule with three counterexamples behind it. `runNearest` once
  * bypassed the include tree, `runAggregate` rebuilt the plan as a hand-written
  * literal, and `offset` reached `all()` alone; each was a member ignored in
  * silence, and each was found by review rather than by a test.
  */
-type PlanDispositions = Record<keyof ReadPlan, PlanDisposition>
+type PlanDispositions = {
+  readonly [Member in keyof ReadPlan]-?: Member extends 'root'
+    ? Exclude<PlanDisposition, 'refused'>
+    : PlanDisposition
+}
 
 /** Whether the plan actually carries this member — an empty one refuses nothing. */
 function carried(value: unknown): boolean {
@@ -472,7 +349,9 @@ function refuseCarried(
   if (refused.length > 0) refuse(refused.sort())
 }
 
-function resolveContext(binding: ReadBinding, secured: boolean): ResolveContext {
+type OrderingBinding = Omit<ReadBinding, 'rebindDb' | 'lock'>
+
+function resolveContext(binding: OrderingBinding, secured: boolean): ResolveContext {
   return {
     listName: binding.listName,
     listConfig: binding.listConfig,
@@ -556,11 +435,8 @@ async function resolvePlan(binding: ReadBinding, state: QueryState): Promise<Rea
   return {
     predicates,
     orders,
-    includes,
     projection,
-    selection: selectionScope(projection, includes),
-    additions: dependencyAdditions(includes),
-    reducedDeclared: reducedDeclaredKeys(includes),
+    root: planLevel(ctx, projection.caller, includes),
     limit: state.limit,
     offset: state.offset,
     ...(distinct ? { distinct } : {}),
@@ -819,628 +695,14 @@ function scope(
         : collection.distinct(...fields)
   }
   if (applies('cursor') && plan.cursor !== undefined) collection = collection.cursor(plan.cursor)
-  if (applies('includes')) {
-    for (const include of plan.includes) {
+  if (applies('root')) {
+    for (const include of plan.root.includes) {
       collection = collection.include(include.relation, (child) => refine(child, include, ops))
     }
   }
   if (applies('offset') && plan.offset !== undefined) collection = collection.offset(plan.offset)
   if (applies('limit') && plan.limit !== undefined) collection = collection.limit(plan.limit)
   return collection
-}
-
-function isRow(value: unknown): value is OrmRow {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-/**
- * The rows one include plan contributed to a row, whichever shape the key
- * holds them in: a to-many's array, a to-one's single row, and a reduction's
- * envelope before {@link maskReductions} substitutes its rows back out. Both
- * foreign-key passes walk a row through here, so neither can be reading a
- * shape the other is not.
- */
-function relatedRowsOf(row: OrmRow, plan: IncludePlan): OrmRow[] {
-  const value = row[plan.relation]
-  if (Array.isArray(value)) return value.filter(isRow)
-  if (plan.reduce !== undefined) return combinedRows(value, rowsKeyOf(plan))
-  return isRow(value) ? [value] : []
-}
-
-/**
- * Narrow the foreign-key column of every included to-one to what the caller
- * may see.
- *
- * The foreign key is a second name for the related row's identity, so a
- * relation the Access Filter scoped away or Field Visibility stripped would
- * otherwise survive under it as the invisible row's id.
- *
- * The pass is driven by the contract's own foreign-key member
- * (`IncludePlan.foreignKey`) rather than by the shape of whatever is stored,
- * which makes it independent of `db: { foreignKey: { map } }`; and it runs
- * AFTER Field Visibility, which makes visibility authoritative over the
- * column. The value written is the one the caller may see: the related row's
- * id when the relation is visible, `null` when it is not — denied, scoped away
- * and stripped alike, which is what a to-one the caller may not see means
- * everywhere else (ADR-0058).
- *
- * A relation the caller's own `where()` refined is the exception: a `null`
- * there may be the caller's filter rather than access, so the column is left
- * for {@link narrowUnincludedForeignKeys}, which decides on access alone.
- */
-function applyForeignKeys(row: OrmRow, plans: readonly IncludePlan[]): void {
-  for (const plan of plans) {
-    if (
-      !plan.declared &&
-      plan.arity === 'one' &&
-      plan.foreignKey !== undefined &&
-      plan.foreignKey in row
-    ) {
-      const value = row[plan.relation]
-      if (isRow(value)) row[plan.foreignKey] = value.id
-      else if (!plan.callerRefined) row[plan.foreignKey] = null
-    }
-    if (plan.includes.length === 0) continue
-    for (const related of relatedRowsOf(row, plan)) applyForeignKeys(related, plan.includes)
-  }
-}
-
-/** The `id IN (...)` predicate a batched existence check narrows its scan to. */
-function identityIn(
-  model: PredicateAccessor,
-  listName: string,
-  keys: readonly RowLockKey[],
-  column = 'id',
-): AnyExpression {
-  const expression = model[column]?.in?.(keys)
-  if (expression === undefined) throw unqueryableKey(listName, column)
-  return expression
-}
-
-/**
- * Resolve the read-time context `foreignKeyOwningRelations` and
- * `resolveRelatedAccessPlan` need for one list, mirroring what `resolveInclude`
- * builds for a relation it actually resolves.
- */
-function relatedResolveContext(
-  binding: ReadBinding,
-  listName: string,
-  listConfig: ListConfig<TypeInfo>,
-): ResolveContext {
-  return {
-    listName,
-    listConfig,
-    config: binding.config,
-    session: binding.context.session,
-    context: binding.context,
-    checkFieldRead: false,
-    applyRelationAccess: true,
-    accessFilterPath: [],
-  }
-}
-
-function assembleColumnFields(
-  row: OrmRow,
-  fieldConfigs: ListConfig<TypeInfo>['fields'],
-  members: ListMembers,
-): OrmRow {
-  const assembled: OrmRow = { ...row }
-  for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
-    const columnNames = partColumnsOf(members, fieldName)
-    if (!fieldConfig.assembleColumns || !columnNames) continue
-    if (!columnNames.some((name) => name in assembled)) continue
-    const value = fieldConfig.assembleColumns(fieldName, assembled)
-    for (const name of columnNames) delete assembled[name]
-    assembled[fieldName] = value
-  }
-  return assembled
-}
-
-/**
- * Narrow the foreign-key column of every to-one relationship this read did
- * NOT include or declare — the gap {@link applyForeignKeys} cannot close,
- * because a relation nobody named has no {@link IncludePlan} entry for it to
- * walk (issue #1243).
- *
- * The column is on the row regardless of `include` (ADR-0043), so it needs
- * its own visibility decision: the owning relationship field's own `read`
- * rule, evaluated per row against the row Field Visibility's rules see, and
- * the related list's own `query` access — `true`
- * leaves the column as the plain pass-through value it already is, `false`
- * nulls it outright, and a filter is resolved with one batched existence
- * check per relation across the whole page, keyed off the column's own value
- * rather than a fetched related row (there is no fetched related row here to
- * key off).
- *
- * That existence check cannot tell a row the filter denies from a row deleted
- * between the two statements — both come back absent from it. This function
- * does not try to: absence nulls the column either way, so a vanished row
- * fails exactly as closed as a denied one rather than surviving under the id
- * this statement read before it vanished (issue #1386).
- *
- * Runs AFTER {@link applyForeignKeys}, on its output — mutated in place —
- * and recurses into every relation THAT pass over its results the same way
- * {@link applyForeignKeys} does, so a related list reached only through an
- * include gets its own un-included to-ones narrowed too.
- */
-/**
- * Pairs each shown related row with its raw twin. Field Visibility may drop
- * rows from a to-many (a synthetic back-relation's source `read` rule), so
- * once the lengths differ the pairing is by `id`, never by position.
- */
-function pairRelatedRows(shown: readonly unknown[], raw: readonly unknown[]): [OrmRow, OrmRow][] {
-  const pairs: [OrmRow, OrmRow][] = []
-  if (shown.length === raw.length) {
-    shown.forEach((related, index) => {
-      const original = raw[index]
-      if (isRow(related) && isRow(original)) pairs.push([related, original])
-    })
-    return pairs
-  }
-  const rawById = new Map<string, OrmRow>()
-  for (const original of raw) if (isRow(original)) rawById.set(String(original.id), original)
-  for (const related of shown) {
-    if (!isRow(related)) continue
-    const original = rawById.get(String(related.id))
-    if (original !== undefined) pairs.push([related, original])
-  }
-  return pairs
-}
-
-async function narrowUnincludedForeignKeys(
-  binding: ReadBinding,
-  filteredRows: readonly OrmRow[],
-  rawRows: readonly OrmRow[],
-  listName: string,
-  listConfig: ListConfig<TypeInfo>,
-  resolvedIncludes: readonly IncludePlan[],
-  ruleViews: RuleViewTree,
-): Promise<void> {
-  if (binding.context._isSudo === true) return
-  const ctx = relatedResolveContext(binding, listName, listConfig)
-  const alreadyIncluded = new Set(
-    resolvedIncludes
-      .filter((plan) => !plan.declared && !plan.callerRefined)
-      .map((plan) => plan.relation),
-  )
-
-  const owners = foreignKeyOwningRelations(ctx)
-  const members = owners.length === 0 ? undefined : resolveListMembers(binding.config, listName)
-  const ruleRows =
-    members === undefined
-      ? []
-      : rawRows.map((row) =>
-          ruleRowOf(
-            assembleColumnFields(maskReductions(row, resolvedIncludes), listConfig.fields, members),
-            ruleViews,
-            listConfig.fields,
-            binding.config,
-            listName,
-          ),
-        )
-
-  for (const owner of owners) {
-    if (alreadyIncluded.has(owner.relation)) continue
-    if (!rawRows.some((row) => owner.foreignKey in row)) continue
-
-    const related = listNamed(ctx, owner.relatedList)
-    const access = await resolveRelatedAccessPlan(related, ctx)
-
-    for (let i = 0; i < filteredRows.length; i++) {
-      const raw = rawRows[i]
-      if (!(owner.foreignKey in raw) || !(owner.foreignKey in filteredRows[i])) continue
-      const canReadField = await checkRowRead(
-        owner.fieldConfig.access,
-        { session: binding.context.session, context: binding.context },
-        ruleRows[i],
-      )
-      if (!canReadField || access.kind === 'false') filteredRows[i][owner.foreignKey] = null
-    }
-
-    if (access.kind === 'true' || access.kind === 'false') continue
-
-    const idsByRow = rawRows.map((row) => row[owner.foreignKey])
-    const idMap = new Map<string, unknown>()
-    for (let i = 0; i < filteredRows.length; i++) {
-      if (!(owner.foreignKey in filteredRows[i]) || filteredRows[i][owner.foreignKey] === null)
-        continue
-      const value = idsByRow[i]
-      if (value !== null && value !== undefined) idMap.set(String(value), value)
-    }
-    if (idMap.size === 0) continue
-
-    const ops = await whereCombinators()
-    const visible = await engineRead(binding, () =>
-      collectionFor(binding.ormHandle, related.listName)
-        .where((model) => lowerWhere(access, model, ops))
-        .where((model) => identityIn(model, related.listName, [...idMap.values()] as RowLockKey[]))
-        .select('id')
-        .all(),
-    )
-    const visibleIds = new Set(visible.map((row) => String(row.id)))
-
-    for (let i = 0; i < filteredRows.length; i++) {
-      if (!(owner.foreignKey in filteredRows[i]) || filteredRows[i][owner.foreignKey] === null)
-        continue
-      const value = idsByRow[i]
-      if (value === null || value === undefined) continue
-      if (!visibleIds.has(String(value))) filteredRows[i][owner.foreignKey] = null
-    }
-  }
-
-  for (const plan of resolvedIncludes) {
-    const relatedListConfig = binding.config.lists[plan.relatedListName]
-    if (relatedListConfig === undefined) continue
-
-    const nestedFiltered: OrmRow[] = []
-    const nestedRaw: OrmRow[] = []
-    for (let i = 0; i < filteredRows.length; i++) {
-      const filteredValue = filteredRows[i][plan.relation]
-      const rawValue = rawRows[i][plan.relation]
-      if (Array.isArray(filteredValue) && Array.isArray(rawValue)) {
-        for (const [related, original] of pairRelatedRows(filteredValue, rawValue)) {
-          nestedFiltered.push(related)
-          nestedRaw.push(original)
-        }
-      } else if (plan.reduce !== undefined) {
-        const key = rowsKeyOf(plan)
-        for (const [related, original] of pairRelatedRows(
-          combinedRows(filteredValue, key),
-          combinedRows(rawValue, key),
-        )) {
-          nestedFiltered.push(related)
-          nestedRaw.push(original)
-        }
-      } else if (isRow(filteredValue) && isRow(rawValue)) {
-        nestedFiltered.push(filteredValue)
-        nestedRaw.push(rawValue)
-      }
-    }
-    if (nestedFiltered.length === 0) continue
-    await narrowUnincludedForeignKeys(
-      binding,
-      nestedFiltered,
-      nestedRaw,
-      plan.relatedListName,
-      relatedListConfig,
-      plan.includes,
-      ruleViews.nested[plan.relation] ?? NO_RULE_VIEWS,
-    )
-  }
-}
-
-function reduces(plans: readonly IncludePlan[]): boolean {
-  return plans.some((plan) => plan.reduce !== undefined || reduces(plan.includes))
-}
-
-/**
- * Stand an empty to-many in for every relation the read reduced.
- *
- * Field Visibility decides whether a relation key survives by evaluating the
- * relationship field's own `read` rule, and it reaches that decision on the
- * path it takes for a relation's ROWS. A count is not rows, so handing it the
- * reduced value would take it down neither path and the key would fall out of
- * the result whether or not the session may read it. Substituting `[]` puts
- * the decision back on the one path that makes it — Field Visibility runs the
- * same rule over the same parent row — and {@link restoreReductions} then
- * writes the count back under exactly the keys that survived. A reduction is
- * to-many only ({@link ReducedToOneIncludeError}), so `[]` is the shape the
- * relation would otherwise have had.
- *
- * A `combine` that named the relation's rows under one key stands in that
- * array instead of `[]`, and {@link restoreReductions} writes it back beside
- * the counts. What a `read` rule or a hook sees of it is {@link ruleViewFor}'s,
- * and it takes a `[]` standing in for rows nobody fetched back out (ADR-0082).
- *
- * A relation that is both reduced and a live declared dependency of a
- * computed field returned alongside it (#1357) is the third case: its
- * `IncludePlan.declaredRows` fetched real rows purely for that declaration,
- * under {@link DECLARED_ROWS_BRANCH_KEY}, and those are what stand in here —
- * never `[]` — so the declaring hook's `needs` sees them via its own `item`,
- * and a relationship `read` rule that inspects `item.<reducedRelation>`
- * decides against real rows rather than an empty array. Field Visibility
- * still must not compute over them as though they were an ordinary relation
- * (ADR-0051): `ReducedDeclaredKeys` (`select.ts`) is what tells it to treat
- * this key as a raw pass-through, and {@link restoreReductions} overwrites it
- * with the reduction's own value regardless of what Field Visibility computed
- * for it.
- */
-function maskReductions(row: OrmRow, plans: readonly IncludePlan[]): OrmRow {
-  if (!reduces(plans)) return row
-  const masked: OrmRow = { ...row }
-  for (const plan of plans) {
-    if (plan.reduce !== undefined) {
-      const rows =
-        plan.declaredRows !== undefined && !hasRowsBranch(plan)
-          ? declaredRowsOf(row[plan.relation])
-          : combinedRows(row[plan.relation], rowsKeyOf(plan))
-      masked[plan.relation] = reduces(plan.includes)
-        ? rows.map((related) => maskReductions(related, plan.includes))
-        : rows
-      continue
-    }
-    if (!reduces(plan.includes)) continue
-    const value = masked[plan.relation]
-    if (Array.isArray(value)) {
-      masked[plan.relation] = value.map((related) =>
-        isRow(related) ? maskReductions(related, plan.includes) : related,
-      )
-    } else if (isRow(value)) {
-      masked[plan.relation] = maskReductions(value, plan.includes)
-    }
-  }
-  return masked
-}
-
-/** The key a `combine` returned the relation's own rows under, if it named one. */
-function rowsKeyOf(plan: IncludePlan): string | undefined {
-  if (plan.reduce?.kind !== 'combine') return undefined
-  for (const branch of plan.reduce.branches) {
-    if (branch.kind === 'rows') return branch.key
-  }
-  return undefined
-}
-
-/** The rows an internal declared-dependency branch fetched (`IncludePlan.declaredRows`). */
-function declaredRowsOf(value: unknown): OrmRow[] {
-  return combinedRows(value, DECLARED_ROWS_BRANCH_KEY)
-}
-
-/** The rows a `combine` returned under {@link rowsKeyOf}, or `[]` for a bare count. */
-function combinedRows(value: unknown, key: string | undefined): OrmRow[] {
-  if (key === undefined || !isRow(value)) return []
-  const rows = value[key]
-  return Array.isArray(rows) ? rows.filter(isRow) : []
-}
-
-/**
- * The reduction's own value, once {@link declaredRowsBranch}'s internal
- * branch is spliced back out: a bare count unwrapped from
- * {@link DECLARED_COUNT_BRANCH_KEY}, or a caller's own combine object with
- * {@link DECLARED_ROWS_BRANCH_KEY} removed. The caller never sees either
- * reserved key.
- */
-function publicReductionValue(raw: unknown, reduce: ReducePlan): unknown {
-  if (!isRow(raw)) return raw
-  if (reduce.kind === 'count') return raw[DECLARED_COUNT_BRANCH_KEY] ?? 0
-  const publicValue: Record<string, unknown> = { ...raw }
-  delete publicValue[DECLARED_ROWS_BRANCH_KEY]
-  return publicValue
-}
-
-/** Write each reduced relation back, under the keys Field Visibility kept. */
-function restoreReductions(shown: OrmRow, source: OrmRow, plans: readonly IncludePlan[]): void {
-  for (const plan of plans) {
-    if (plan.reduce !== undefined) {
-      if (!(plan.relation in shown)) continue
-      const raw = source[plan.relation]
-      if (plan.declaredRows !== undefined && !hasRowsBranch(plan)) {
-        shown[plan.relation] = publicReductionValue(raw, plan.reduce)
-        continue
-      }
-      const key = rowsKeyOf(plan)
-      if (key === undefined || !isRow(raw)) {
-        shown[plan.relation] = raw
-        continue
-      }
-      const kept = shown[plan.relation]
-      if (reduces(plan.includes) && Array.isArray(kept)) {
-        const rows = combinedRows(raw, key)
-        for (const [related, original] of pairRelatedRows(kept, rows)) {
-          restoreReductions(related, original, plan.includes)
-        }
-      }
-      const base = publicReductionValue(raw, plan.reduce)
-      shown[plan.relation] = { ...(isRow(base) ? base : raw), [key]: kept }
-      continue
-    }
-    if (!reduces(plan.includes)) continue
-    const kept = shown[plan.relation]
-    const raw = source[plan.relation]
-    if (Array.isArray(kept) && Array.isArray(raw)) {
-      for (const [related, original] of pairRelatedRows(kept, raw)) {
-        restoreReductions(related, original, plan.includes)
-      }
-    } else if (isRow(kept) && isRow(raw)) {
-      restoreReductions(kept, raw, plan.includes)
-    }
-  }
-}
-
-declare const VISIBLE_ROW: unique symbol
-
-/**
- * A row that has been through {@link visibleRows} — Field Visibility and both
- * foreign-key passes — or is {@link systemFieldsRow}'s, and nothing else.
- * `OrmRow` has no property keyed by this module-private symbol, so an
- * unbranded row is not assignable where a `VisibleRow` is expected:
- * {@link minted} is the only place one is made, and every terminal and write
- * return is typed to return what it mints rather than a plain `OrmRow`. A
- * terminal or write path added later that materialises rows without calling
- * {@link visibleRows} therefore fails to compile instead of shipping the
- * silent access-control regression this codebase has shipped four times
- * (issue #1386). This closes the failure mode of *forgetting* the funnel, not
- * the one of a future author deliberately reaching for `as VisibleRow` on an
- * unfiltered row — no nominal brand in TypeScript stops that.
- */
-export type VisibleRow = OrmRow & { readonly [VISIBLE_ROW]: true }
-
-function minted(rows: OrmRow[]): VisibleRow[] {
-  return rows as VisibleRow[]
-}
-
-type VisibilityPlan = Pick<ReadPlan, 'includes' | 'selection' | 'additions' | 'reducedDeclared'>
-
-function emptyVisibilityPlan(): VisibilityPlan {
-  return {
-    includes: [],
-    selection: undefined,
-    additions: noDependencyAdditions(),
-    reducedDeclared: noReducedDeclaredKeys(),
-  }
-}
-
-async function unshapedDeclaredRows(
-  binding: ReadBinding,
-  listName: string,
-  rows: readonly OrmRow[],
-  plans: readonly IncludePlan[],
-): Promise<Map<string, Map<string, unknown>>> {
-  const byRelation = new Map<string, Map<string, unknown>>()
-  for (const plan of plans) {
-    if (plan.reduce === undefined || plan.declaredRows === undefined || !hasRowsBranch(plan)) {
-      continue
-    }
-    const values = new Map<string, unknown>()
-    for (const row of rows) values.set(String(row['id']), declaredRowsOf(row[plan.relation]))
-    byRelation.set(plan.relation, values)
-  }
-  const fetched = plans.filter((plan) => plan.declaredFetch !== undefined)
-  const ids = rows
-    .map((row) => row['id'])
-    .filter((id): id is RowLockKey => typeof id === 'string' || typeof id === 'number')
-  if (fetched.length === 0 || ids.length === 0) return byRelation
-  const ops = await whereCombinators()
-  for (const plan of fetched) {
-    const owners = await engineRead(binding, () =>
-      collectionFor(binding.ormHandle, listName)
-        .where((model) => identityIn(model, listName, ids))
-        .select('id')
-        .include(plan.relation, (child) => {
-          let scoped = child
-          for (const predicate of plan.declaredFetch ?? []) {
-            scoped = scoped.where((model) => lowerWhere(predicate, model, ops))
-          }
-          return scoped
-        })
-        .all(),
-    )
-    const values = new Map<string, unknown>()
-    for (const owner of owners) values.set(String(owner['id']), owner[plan.relation])
-    byRelation.set(plan.relation, values)
-  }
-  return byRelation
-}
-
-async function ruleViewTreeFor(
-  binding: ReadBinding,
-  listName: string,
-  rows: readonly OrmRow[],
-  plans: readonly IncludePlan[],
-): Promise<RuleViewTree> {
-  const unshaped = await unshapedDeclaredRows(binding, listName, rows, plans)
-  const nested: Record<string, RuleViewTree> = {}
-  for (const plan of plans) {
-    if (plan.declared || plan.includes.length === 0) continue
-    const rowsKey = rowsKeyOf(plan)
-    if (plan.reduce !== undefined && rowsKey === undefined) continue
-    const children: OrmRow[] = []
-    for (const row of rows) {
-      const value = row[plan.relation]
-      if (plan.reduce !== undefined) children.push(...combinedRows(value, rowsKey))
-      else if (Array.isArray(value)) children.push(...value.filter(isRow))
-      else if (isRow(value)) children.push(value)
-    }
-    if (children.length === 0) continue
-    nested[plan.relation] = await ruleViewTreeFor(
-      binding,
-      plan.relatedListName,
-      children,
-      plan.includes,
-    )
-  }
-  return { viewFor: (row) => ruleViewFor(row, plans, unshaped), nested }
-}
-
-function narrowsWhatARuleSees(plan: IncludePlan): boolean {
-  if (plan.declared || !plan.callerShaped) return false
-  return plan.reduce === undefined || hasRowsBranch(plan)
-}
-
-function isRowlessReduction(plan: IncludePlan): boolean {
-  return plan.reduce !== undefined && !hasRowsBranch(plan) && plan.declaredRows === undefined
-}
-
-/** A to-one reading `null` for a row the session cannot see. Inverse sides cannot be told apart. */
-function isScopedAway(row: OrmRow, plan: IncludePlan, value: unknown): boolean {
-  if (plan.arity !== 'one' || value !== null) return false
-  return plan.foreignKey === undefined ? plan.accessScoped : row[plan.foreignKey] !== null
-}
-
-function ruleViewFor(
-  row: OrmRow,
-  plans: readonly IncludePlan[],
-  unshaped: ReadonlyMap<string, ReadonlyMap<string, unknown>>,
-): RuleView {
-  const removed = new Set<string>()
-  const declared: Record<string, unknown> = {}
-  const scopedAway = new Set<string>()
-  for (const plan of plans) {
-    const values = unshaped.get(plan.relation)
-    const rows = values?.get(String(row['id']))
-    if (isScopedAway(row, plan, rows ?? row[plan.relation])) scopedAway.add(plan.relation)
-    if (rows !== undefined) declared[plan.relation] = rows
-    else if (values !== undefined || narrowsWhatARuleSees(plan) || isRowlessReduction(plan)) {
-      removed.add(plan.relation)
-    }
-  }
-  return { removed, declared, scopedAway }
-}
-
-/**
- * What every terminal returns rows through — the one place a row this engine
- * read becomes a row a caller may see, and the only place any foreign-key
- * pass runs. `all()`, `first()`, the `forUpdate()` lane and `nearest()` all
- * come through here, so none of them can drift apart on what a column reads
- * as, and neither can a hook or a `read` rule.
- *
- * The batch is what lets {@link narrowUnincludedForeignKeys} resolve a
- * to-one this read never named at all for a whole page in one query per
- * relation rather than one per row.
- */
-async function visibleRows(
-  binding: ReadBinding,
-  rows: readonly OrmRow[],
-  plan: VisibilityPlan,
-): Promise<VisibleRow[]> {
-  const { listConfig, context, config, listName } = binding
-  const ruleViews = await ruleViewTreeFor(binding, listName, rows, plan.includes)
-  const results = await Promise.all(
-    rows.map(async (row) => {
-      const filtered = await filterReadableFields(
-        maskReductions(row, plan.includes),
-        listConfig.fields,
-        { session: context.session, context },
-        config,
-        listName,
-        plan.additions,
-        plan.selection,
-        plan.reducedDeclared,
-        ruleViews,
-      )
-      applyForeignKeys(filtered, plan.includes)
-      restoreReductions(filtered, row, plan.includes)
-      return filtered
-    }),
-  )
-  await narrowUnincludedForeignKeys(
-    binding,
-    results,
-    rows,
-    listName,
-    listConfig,
-    plan.includes,
-    ruleViews,
-  )
-  return minted(results)
-}
-
-function systemFieldsRow(binding: ReadBinding, row: OrmRow): VisibleRow {
-  const kept: OrmRow = {}
-  for (const key of getListDependencies(binding.config, binding.listName).systemFields) {
-    if (key in row) kept[key] = row[key]
-  }
-  return minted([kept])[0]
 }
 
 /**
@@ -1475,17 +737,6 @@ async function writtenRowQueryable(
   return (await withOrigin('engine', () => collection.first())) !== null
 }
 
-/**
- * What decides a write's return: `hidden` when the session cannot `query` the
- * row, `written` when the row the write produced is the whole answer, and
- * `read` when a computed field on the list declares a relation, so the answer
- * is the row as `first()` reads it (ADR-0081).
- */
-export type WrittenRowRead =
-  | { readonly kind: 'hidden' }
-  | { readonly kind: 'written' }
-  | { readonly kind: 'read'; readonly row: OrmRow; readonly plan: ReadPlan }
-
 /** Whether a computed field on this list declares a relation a write's return must fetch. */
 export function writeReturnReadsRelations(binding: Omit<ReadBinding, 'lock'>): boolean {
   return declaredRelations(binding).length > 0
@@ -1497,7 +748,9 @@ export async function readWrittenRow(
   id: unknown,
 ): Promise<WrittenRowRead> {
   if ((typeof id !== 'string' && typeof id !== 'number') || !writeReturnReadsRelations(binding)) {
-    return (await writtenRowQueryable(binding, id)) ? { kind: 'written' } : { kind: 'hidden' }
+    return (await writtenRowQueryable(binding, id))
+      ? { kind: 'written', root: planLevel(binding, undefined, []) }
+      : { kind: 'hidden' }
   }
   const plan = await resolvePlan(binding, {
     predicates: [{ id: { equals: id } }],
@@ -1515,37 +768,15 @@ export async function readWrittenRow(
     unreachableRefusal,
   )
   const row = await engineRead(binding, () => collection.first())
-  return row === null ? { kind: 'hidden' } : { kind: 'read', row, plan }
-}
-
-/**
- * What a write hands back, through {@link visibleRows} like every read: the
- * re-read row under its own plan, or the write's own row under an empty one,
- * so `create()` and `update()` never return an id `first()` hides. A row the
- * session cannot `query` comes back as the list's system fields alone.
- */
-export async function visibleWrittenRow(
-  binding: Omit<ReadBinding, 'lock'>,
-  row: OrmRow,
-  read: WrittenRowRead,
-): Promise<VisibleRow> {
-  if (read.kind === 'hidden') return systemFieldsRow(binding, row)
-  const [visible] =
-    read.kind === 'read'
-      ? await visibleRows(binding, [read.row], read.plan)
-      : await visibleRows(binding, [row], emptyVisibilityPlan())
-  return visible
+  return row === null ? { kind: 'hidden' } : { kind: 'read', row, root: plan.root }
 }
 
 /** `all()` is the terminal every plan member was designed for. */
 const ALL_DISPOSITIONS: PlanDispositions = {
   predicates: 'applied',
   orders: 'applied',
-  includes: 'applied',
+  root: 'applied',
   projection: 'applied',
-  selection: 'applied',
-  additions: 'applied',
-  reducedDeclared: 'applied',
   limit: 'applied',
   offset: 'applied',
   distinct: 'applied',
@@ -1639,15 +870,6 @@ async function locked(
   return await engineRead(binding, () => refreshed.all())
 }
 
-async function engineRead<T>(binding: ReadBinding, run: () => PromiseLike<T>): Promise<T> {
-  try {
-    return await withOrigin('engine', run)
-  } catch (error) {
-    binding.context._transactionOwner?.poison(error)
-    throw error
-  }
-}
-
 async function runAll(binding: ReadBinding, state: QueryState): Promise<VisibleRow[]> {
   const plan = await resolvePlan(binding, state)
   if (plan === null) return []
@@ -1661,7 +883,7 @@ async function runAll(binding: ReadBinding, state: QueryState): Promise<VisibleR
   )
   const read = await engineRead(binding, () => collection.all())
   const rows = taken === undefined ? read : await locked(binding, taken, plan, read)
-  return await visibleRows(binding, rows, plan)
+  return await visibleRows(binding, rows, plan.root)
 }
 
 async function runFirst(binding: ReadBinding, state: QueryState): Promise<VisibleRow | null> {
@@ -1679,7 +901,7 @@ async function runFirst(binding: ReadBinding, state: QueryState): Promise<Visibl
   if (read === null) return null
   const rows = taken === undefined ? [read] : await locked(binding, taken, plan, [read])
   if (rows.length === 0) return null
-  return (await visibleRows(binding, rows, plan))[0]
+  return (await visibleRows(binding, rows, plan.root))[0]
 }
 
 function countOf(result: Record<string, unknown>, listName: string, key: string): number {
@@ -1708,11 +930,8 @@ function countOf(result: Record<string, unknown>, listName: string, key: string)
 const AGGREGATE_DISPOSITIONS: PlanDispositions = {
   predicates: 'applied',
   orders: 'inapplicable',
-  includes: 'inapplicable',
+  root: 'inapplicable',
   projection: 'inapplicable',
-  selection: 'inapplicable',
-  additions: 'inapplicable',
-  reducedDeclared: 'inapplicable',
   limit: 'refused',
   offset: 'refused',
   distinct: 'refused',
@@ -1794,11 +1013,8 @@ function present(near: NearestPlan): WherePlan {
 const NEAREST_DISPOSITIONS: PlanDispositions = {
   predicates: 'applied',
   orders: 'inapplicable',
-  includes: 'applied',
+  root: 'applied',
   projection: 'applied',
-  selection: 'applied',
-  additions: 'applied',
-  reducedDeclared: 'applied',
   limit: 'inapplicable',
   offset: 'refused',
   distinct: 'refused',
@@ -1885,7 +1101,7 @@ async function runNearest(
 
   const rows = await engineRead(binding, () => collection.limit(near.limit).all())
   const scores = rows.map((row) => score(near, row))
-  const items = await visibleRows(binding, rows, plan)
+  const items = await visibleRows(binding, rows, plan.root)
   return items.map((item, index) => ({ item, score: scores[index] }))
 }
 
@@ -1934,7 +1150,7 @@ function query(binding: ReadBinding, state: QueryState): SecuredQuery<VisibleRow
 }
 
 async function canOrderBy(
-  binding: ReadBinding,
+  binding: OrderingBinding,
   ctx: ResolveContext,
   key: string,
 ): Promise<boolean> {
@@ -1969,7 +1185,7 @@ function readBindingFor(
   context: AccessContext,
   config: OpenSaasConfig,
   listKey: string,
-): ReadBinding | undefined {
+): OrderingBinding | undefined {
   if (!Object.hasOwn(config.lists, listKey)) return undefined
   return {
     listName: listKey,
@@ -1981,7 +1197,7 @@ function readBindingFor(
 }
 
 async function orderableAmong(
-  binding: ReadBinding,
+  binding: OrderingBinding,
   secured: boolean,
   keys: readonly string[],
 ): Promise<ReadonlySet<string>> {

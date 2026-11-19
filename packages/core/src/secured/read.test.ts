@@ -7,7 +7,7 @@ import { createTestDatabase, type TestDatabase } from '../testing/context.js'
 import { createPlanRecorder } from '../testing/plans.js'
 import { ValidationError } from '../hooks/index.js'
 import { AccessFilterRecursionError, type Where } from './vocabulary.js'
-import type { VisibleRow, visibleWrittenRow } from './read.js'
+import type { VisibleRow, visibleWrittenRow } from './field-visibility.js'
 import type { runWritePipeline } from '../context/write-pipeline.js'
 
 const BOOT = 120_000

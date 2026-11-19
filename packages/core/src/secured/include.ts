@@ -226,7 +226,7 @@ export class InvalidCombineBranchError extends Error {
 /**
  * Thrown when a `combine` names the relation's rows under more than one key.
  * Field Visibility decides a relation's fate once, against one value — see
- * `maskReductions` in `read.ts` — so a second rows branch would return rows no
+ * `maskReductions` in `field-visibility.ts` — so a second rows branch would return rows no
  * access decision was made about.
  */
 export class MultipleCombineRowBranchesError extends Error {
@@ -293,8 +293,8 @@ export interface CombineBranchRequest {
 /**
  * The `combine()` branch key an internal declared-dependency rows fetch rides
  * under, on a relation that is reduced without a rows branch of its own (see
- * `IncludePlan.declaredRows`, `read.ts`'s `refine`/`maskReductions`/
- * `restoreReductions`, and #1357). Not reachable by a caller-authored
+ * `IncludePlan.declaredRows`, `read.ts`'s `refine`, `field-visibility.ts`'s
+ * `maskReductions`/`restoreReductions`, and #1357). Not reachable by a caller-authored
  * `combine()` spec — {@link ReservedCombineKeyError} refuses a caller key that
  * collides with it — so its presence in a raw DB result always means this
  * engine added it.
@@ -336,16 +336,15 @@ export type CombineBranchPlan =
     }
 
 /** A resolved include: every key checked, the Access Filter already folded in. */
-export interface IncludePlan {
+export interface IncludePlan extends PlanLevel {
   readonly relation: string
-  readonly relatedListName: string
   /** What the relation decodes to: one row (or `null`), or an array (ADR-0058). */
   readonly arity: 'one' | 'many'
   /**
    * The contract member the relation's foreign key decodes to (`<field>Id`),
    * on the to-one side that owns one. `undefined` for a to-many, for the
    * non-owning side of a one-to-one and for a synthetic back-relation, none of
-   * which carry a column here. Read by the foreign-key pass in `read.ts`.
+   * which carry a column here. Read by the foreign-key pass in `field-visibility.ts`.
    */
   readonly foreignKey?: string
   readonly predicates: readonly WherePlan[]
@@ -368,7 +367,6 @@ export interface IncludePlan {
   readonly orders: readonly OrderPlan[]
   readonly limit?: number
   readonly offset?: number
-  readonly includes: readonly IncludePlan[]
   /** The related read's own projection, already widened (ADR-0041). */
   readonly projection: ProjectionPlan
   /**
@@ -393,9 +391,94 @@ export interface IncludePlan {
    * inside the same `combine()` under {@link DECLARED_ROWS_BRANCH_KEY} — full
    * stored width, one hop, exactly what an ordinary declared branch fetches,
    * because that is what this stands in for. See `maskReductions` and
-   * `restoreReductions` in `read.ts`.
+   * `restoreReductions` in `field-visibility.ts`.
    */
   readonly declaredRows?: readonly WherePlan[]
+  /**
+   * Whether this relation's value is {@link declaredRows}' stand-in rather than
+   * what the caller will see: a reduction with no rows branch of its own.
+   */
+  readonly reducedDeclared: boolean
+  /** Present on a Synthetic back-relation: the declared field whose `read` rule gates each row. */
+  readonly synthetic?: { readonly gate: FieldConfig }
+  /** What a `read` rule and a hook on the parent row see under this relation (ADR-0082). */
+  readonly ruleView: RelationRuleView
+}
+
+/**
+ * - `fetched`: the relation's value as the read fetched it
+ * - `withheld`: nothing, because the caller shaped it or it is a count with no rows
+ * - `declaredRowsBranch`: the rows its `combine` fetched for the declaring hooks
+ * - `declaredFetch`: the unshaped rows fetched apart from the caller's view
+ */
+export type RelationRuleView = 'fetched' | 'withheld' | 'declaredRowsBranch' | 'declaredFetch'
+
+/** One level of a resolved read: the root, or the list one relation reaches. */
+export interface PlanLevel {
+  readonly listName: string
+  readonly listConfig: ListConfig<TypeInfo>
+  /** The fields the caller keeps at this level, or `undefined` when it projected nothing here. */
+  readonly selection: ReadonlySet<string> | undefined
+  readonly includes: readonly IncludePlan[]
+  /** Resolved on first call, so a read the foreign-key pass skips never pays for it. */
+  readonly foreignKeys: () => LevelForeignKeys
+}
+
+export interface LevelForeignKeys {
+  /** The to-ones owning a foreign-key column that no caller include at this level reaches. */
+  readonly unincluded: readonly ForeignKeyOwner[]
+  /** Whether any relationship field of this list owns a foreign-key column, included or not. */
+  readonly owned: boolean
+}
+
+type LevelContext = Pick<ResolveContext, 'listName' | 'listConfig' | 'config'>
+
+/**
+ * A level's own facts, resolved once here so Field Visibility reads them off
+ * the plan rather than looking the lists up again by name.
+ */
+export function planLevel(
+  ctx: LevelContext,
+  selection: ReadonlySet<string> | undefined,
+  includes: readonly IncludePlan[],
+): PlanLevel {
+  let resolved: LevelForeignKeys | undefined
+  const foreignKeys = (): LevelForeignKeys => {
+    if (resolved !== undefined) return resolved
+    const owners = foreignKeyOwningRelations(ctx)
+    const included = new Set(
+      includes.filter((plan) => !plan.declared && !plan.callerRefined).map((plan) => plan.relation),
+    )
+    resolved = {
+      unincluded: owners.filter((owner) => !included.has(owner.relation)),
+      owned: owners.length > 0,
+    }
+    return resolved
+  }
+  return {
+    listName: ctx.listName,
+    listConfig: ctx.listConfig,
+    selection,
+    includes,
+    foreignKeys,
+  }
+}
+
+function ruleViewOf(plan: {
+  declared: boolean
+  callerShaped: boolean
+  reduce?: ReducePlan
+  declaredRows?: readonly WherePlan[]
+  declaredFetch?: readonly WherePlan[]
+}): RelationRuleView {
+  const rowsBranch = plan.reduce !== undefined && rowsBranchKeyOf(plan.reduce) !== undefined
+  if (plan.declaredFetch !== undefined) return 'declaredFetch'
+  if (plan.reduce !== undefined && plan.declaredRows !== undefined && rowsBranch) {
+    return 'declaredRowsBranch'
+  }
+  const narrowed = !plan.declared && plan.callerShaped && (plan.reduce === undefined || rowsBranch)
+  const rowless = plan.reduce !== undefined && !rowsBranch && plan.declaredRows === undefined
+  return narrowed || rowless ? 'withheld' : 'fetched'
 }
 
 /** The key a resolved reduce's own rows branch sits under, if it composed one. */
@@ -497,7 +580,7 @@ interface IncludeTarget {
   /** The relationship field this key names, or `undefined` for a synthetic back-relation. */
   fieldConfig: FieldConfig | undefined
   /** The declared field whose `read` rule gates this key: the key's own field, or a synthetic's source field. */
-  readGate: FieldConfig | undefined
+  readGate: FieldConfig
   /** The contract member name of the foreign key this side owns. */
   foreignKey: string | undefined
 }
@@ -506,7 +589,7 @@ interface IncludeTarget {
 export interface ForeignKeyOwner {
   readonly relation: string
   readonly fieldConfig: FieldConfig
-  readonly relatedList: string
+  readonly related: { readonly listName: string; readonly listConfig: ListConfig<TypeInfo> }
   readonly foreignKey: string
 }
 
@@ -518,10 +601,10 @@ export interface ForeignKeyOwner {
  * regardless of `include`. `resolveInclude` only ever resolves a relation this
  * read actually named or declared, so a to-one nobody asked for has no
  * {@link IncludePlan} entry and nothing narrows its column — the gap issue
- * #1243 closes. `narrowUnincludedForeignKeys` (`read.ts`) is what actually
- * does that narrowing; this is the enumeration it walks.
+ * #1243 closes. `narrowUnincludedForeignKeys` (`field-visibility.ts`) is what
+ * actually does that narrowing; this is the enumeration it walks.
  */
-export function foreignKeyOwningRelations(ctx: ResolveContext): ForeignKeyOwner[] {
+function foreignKeyOwningRelations(ctx: LevelContext): ForeignKeyOwner[] {
   const owners: ForeignKeyOwner[] = []
   for (const member of resolveListMembers(ctx.config, ctx.listName).members.values()) {
     if (member.kind !== 'field' || member.storage.kind !== 'relation') continue
@@ -530,7 +613,7 @@ export function foreignKeyOwningRelations(ctx: ResolveContext): ForeignKeyOwner[
     owners.push({
       relation: member.name,
       fieldConfig: member.field,
-      relatedList,
+      related: listNamed(ctx, relatedList),
       foreignKey: foreignKey.name,
     })
   }
@@ -579,12 +662,14 @@ function resolveIncludeTarget(name: string, ctx: ResolveContext): IncludeTarget 
       return declaredIncludeTarget(member, ctx)
     case 'syntheticBackRelation': {
       const source = listNamed(ctx, member.sourceList)
+      const readGate = memberGate(member, ctx)
+      if (readGate === undefined) throw unqueryableKey(ctx.listName, name)
       return {
         relatedListName: source.listName,
         relatedListConfig: source.listConfig,
         arity: 'many',
         fieldConfig: undefined,
-        readGate: memberGate(member, ctx),
+        readGate,
         foreignKey: undefined,
       }
     }
@@ -621,7 +706,7 @@ async function isOmittedBeforeQuery(
   ctx: ResolveContext,
 ): Promise<boolean> {
   if (!ctx.checkFieldRead) return false
-  if (target.readGate?.access === undefined) return false
+  if (target.readGate.access === undefined) return false
   const answer = await classifyRowIndependentRead(target.readGate.access, {
     session: ctx.session,
     context: ctx.context,
@@ -723,8 +808,8 @@ async function resolveInclude(
       : undefined
 
   return {
+    ...planLevel(related, projection.caller, includes),
     relation: request.name,
-    relatedListName: target.relatedListName,
     arity: target.arity,
     ...(target.foreignKey ? { foreignKey: target.foreignKey } : {}),
     predicates,
@@ -735,11 +820,14 @@ async function resolveInclude(
     orders,
     limit: request.limit,
     offset: request.offset,
-    includes,
     projection,
     declared,
     ...(reduce ? { reduce } : {}),
     ...(declaredRows ? { declaredRows } : {}),
+    reducedDeclared:
+      declaredRows !== undefined && (reduce === undefined || rowsBranchKeyOf(reduce) === undefined),
+    ...(target.fieldConfig === undefined ? { synthetic: { gate: target.readGate } } : {}),
+    ruleView: ruleViewOf({ declared, callerShaped, reduce, declaredRows, declaredFetch }),
   }
 }
 
@@ -783,7 +871,7 @@ async function isRowDependentSyntheticRead(
   if (
     !ctx.checkFieldRead ||
     target.fieldConfig !== undefined ||
-    target.readGate?.access === undefined
+    target.readGate.access === undefined
   ) {
     return false
   }
@@ -834,7 +922,7 @@ async function resolveReduce(
   if (
     ctx.checkFieldRead &&
     target.fieldConfig === undefined &&
-    target.readGate?.access !== undefined
+    target.readGate.access !== undefined
   ) {
     const answer = await classifyRowIndependentRead(target.readGate.access, {
       session: ctx.session,

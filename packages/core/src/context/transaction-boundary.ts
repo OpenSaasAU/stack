@@ -1,6 +1,6 @@
 import type { ListConfig, OpenSaasConfig } from '../config/types.js'
 import type { AccessContext } from '../access/types.js'
-import type { VisibleRow } from '../secured/read.js'
+import type { VisibleRow } from '../secured/field-visibility.js'
 import {
   executeBeforeTransaction,
   executeAfterTransaction,

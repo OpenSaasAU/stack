@@ -1,19 +1,10 @@
 // The caller's projection and the engine's widening of it: which field keys a
-// level returns, which contract columns the query actually asks for, and the
-// trees Field Visibility needs to strip the difference back out. Nothing here
-// imports the ORM — the plan meets a collection in `read.ts`. See ADR-0027,
+// level returns, and which contract columns the query actually asks for. Nothing
+// here imports the ORM — the plan meets a collection in `read.ts`. See ADR-0027,
 // ADR-0041 and ADR-0051.
 
 import type { FieldConfig } from '../config/types.js'
-import type {
-  DependencyAdditions,
-  FieldSelectionScope,
-  ReducedDeclaredKeys,
-} from '../access/declared-dependencies.js'
-import {
-  noReducedDeclaredKeys,
-  resolveDeclaredDependencies,
-} from '../access/declared-dependencies.js'
+import { resolveDeclaredDependencies } from '../access/declared-dependencies.js'
 import { classifyRowIndependentRead } from '../access/field-access.js'
 import {
   resolveListMember,
@@ -24,7 +15,6 @@ import {
 } from '../members/list-members.js'
 import { ValidationError } from '../hooks/index.js'
 import { memberGate, memberOf, unqueryableKey, type ResolveContext } from './vocabulary.js'
-import type { IncludePlan } from './include.js'
 
 /**
  * Thrown when `.select()` names a relationship field. The ORM's own
@@ -198,76 +188,4 @@ export async function resolveProjection(
     columns: rowDependent ? undefined : [...columns],
     caller: new Set([...selected, ...includeNames]),
   }
-}
-
-/**
- * The relation keys the widening added, level by level. Field Visibility
- * strips them once the declaring hooks have read them, so a declared
- * dependency stays plumbing rather than becoming an implicit include.
- */
-export function dependencyAdditions(includes: readonly IncludePlan[]): DependencyAdditions {
-  const keys = new Set<string>()
-  const nested: Record<string, DependencyAdditions> = {}
-  for (const plan of includes) {
-    if (plan.declared) {
-      keys.add(plan.relation)
-      continue
-    }
-    const below = dependencyAdditions(plan.includes)
-    if (below.keys.size > 0 || Object.keys(below.nested).length > 0) {
-      nested[plan.relation] = below
-    }
-  }
-  return { keys, nested }
-}
-
-/**
- * The caller's projection as Field Visibility reads it, or `undefined` when
- * no level restricted anything — which keeps a read with no `.select()`
- * anywhere on exactly the unprojected path rather than on an equivalent one.
- */
-export function selectionScope(
-  projection: ProjectionPlan,
-  includes: readonly IncludePlan[],
-): FieldSelectionScope | undefined {
-  const nested: Record<string, FieldSelectionScope> = {}
-  for (const plan of includes) {
-    if (plan.declared) continue
-    const below = selectionScope(plan.projection, plan.includes)
-    if (below) nested[plan.relation] = below
-  }
-  if (projection.caller === undefined && Object.keys(nested).length === 0) return undefined
-  return { fields: projection.caller, nested }
-}
-
-export function hasRowsBranch(plan: IncludePlan): boolean {
-  return plan.reduce?.kind === 'combine' && plan.reduce.branches.some((b) => b.kind === 'rows')
-}
-
-/**
- * The relation keys, level by level, whose fetched value is a declared-
- * dependency rows stand-in rather than what the caller will see —
- * `plan.declaredRows` on {@link IncludePlan} (#1357). Field Visibility reads
- * this to skip recursing into such a key (ADR-0051: nothing computes on a
- * declared branch) while still leaving it present for `restoreReductions` in
- * `read.ts` to overwrite with the reduction's own value.
- */
-export function reducedDeclaredKeys(includes: readonly IncludePlan[]): ReducedDeclaredKeys {
-  const keys = new Set<string>()
-  const nested: Record<string, ReducedDeclaredKeys> = {}
-  for (const plan of includes) {
-    if (plan.declaredRows !== undefined && !hasRowsBranch(plan)) {
-      // `plan.includes` is always empty here (a reduce refuses `include()`),
-      // so there is nothing beneath this key to descend into.
-      keys.add(plan.relation)
-      continue
-    }
-    const below = reducedDeclaredKeys(plan.includes)
-    if (below.keys.size > 0 || Object.keys(below.nested).length > 0) {
-      nested[plan.relation] = below
-    }
-  }
-  return keys.size > 0 || Object.keys(nested).length > 0
-    ? { keys, nested }
-    : noReducedDeclaredKeys()
 }

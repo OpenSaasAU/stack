@@ -60,7 +60,7 @@ Built-in fields:
 
 - `engine.ts` - `checkAccess`, `checkCreateAccess` and the access-rule evaluation the terminals call
 - `field-access.ts` - Field-level rules, and the row-independent-rule classifier
-- `field-visibility.ts` - The post-query phase: strip, compute, resolve
+- `../secured/field-visibility.ts` - The post-query phase: a read binding, raw rows and the resolved plan in, the rows a caller may see out, for every read terminal and every write return
 - `rule-item.ts` - The guarded `item` a `read` rule runs on: a reach for a relation the row does not carry, enumerating such a row, or a write through it denies that rule (ADR-0082)
 - `../members/list-members.ts` - `resolveListMembers`/`resolveListMember`: what every name on a list is (its List members). Each read position decides which kinds it accepts (`secured/vocabulary.ts`, `secured/select.ts`, `secured/include.ts`)
 - `types.ts` - Type definitions (`AccessControl`, `OperationAccess`, `FieldAccess`, `Session`, `AccessContext`)
