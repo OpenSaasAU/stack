@@ -279,6 +279,10 @@ describe('Hook Pipeline — multi-column fields', () => {
           ],
         }),
         getColumnNames: () => ['amt', 'cur'],
+        assembleColumns: (_key: string, row: Record<string, unknown>) => ({
+          amt: row.amt,
+          cur: row.cur,
+        }),
         splitColumns: (_key: string, value: unknown) => {
           const v = value as { amt: number; cur: string }
           return { amt: v.amt, cur: v.cur }

@@ -19,7 +19,7 @@ export interface FieldConfigValidationError {
   /** The field's declared `type` discriminator (e.g. `'text'`, `'virtual'`). */
   fieldType: string
   /** The contract member that is missing. */
-  missingMember: 'getContractField' | 'getZodSchema' | 'outputType'
+  missingMember: 'getContractField' | 'getZodSchema' | 'outputType' | 'assembleColumns'
   /** A human-readable, ready-to-print message naming the list, field, and member. */
   message: string
 }
@@ -65,7 +65,8 @@ function buildMessage(
  *     `getZodSchema`.
  *   - a field whose contract descriptor is `kind: 'columns'` — one field over
  *     several physical columns — has no single column to type it from either,
- *     so it must declare `outputType` too.
+ *     so it must declare `outputType` too, and `assembleColumns`, without which
+ *     it has no value under its own key (#2481).
  *   - every other (stored scalar) field must provide `getContractField` and
  *     `getZodSchema`; its TypeScript face comes from its contract column, and
  *     `outputType` is an override it may omit.
@@ -124,6 +125,7 @@ export function validateFieldConfig(
   requireMember('getContractField', hasFieldMethod(field, 'getContractField'))
   if (descriptorKind === 'columns') {
     requireMember('outputType', field.outputType !== undefined)
+    requireMember('assembleColumns', hasFieldMethod(field, 'assembleColumns'))
   }
   requireMember('getZodSchema', hasFieldMethod(field, 'getZodSchema'))
 

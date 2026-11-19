@@ -61,3 +61,55 @@ describe('opensaas generate on a refusing config', () => {
     expect(fs.existsSync(path.join(scratchRoot, 'project', 'prisma', 'contract.ts'))).toBe(false)
   })
 })
+
+const UNASSEMBLED_CONFIG = `
+const avatar = {
+  type: 'avatar',
+  outputType: '{ filename: string | null; filesize: number | null }',
+  getZodSchema: () => undefined,
+  getContractField: () => ({
+    kind: 'columns',
+    columns: [
+      { name: 'avatar_filename', type: { pack: 'pg', type: 'text' }, nullable: true },
+      { name: 'avatar_filesize', type: { pack: 'pg', type: 'int' }, nullable: true },
+    ],
+  }),
+  getColumnNames: () => ['avatar_filename', 'avatar_filesize'],
+  splitColumns: () => ({}),
+}
+
+export default {
+  db: { provider: 'postgresql' },
+  lists: { Profile: { fields: { avatar } } },
+}
+`
+
+describe('opensaas generate on a multi-column field without assembleColumns (#2481)', () => {
+  let result: ReturnType<typeof spawnSync>
+  const projectDir = path.join(scratchRoot, 'unassembled')
+
+  beforeAll(() => {
+    fs.mkdirSync(projectDir, { recursive: true })
+    fs.writeFileSync(path.join(projectDir, 'opensaas.config.ts'), UNASSEMBLED_CONFIG, 'utf-8')
+
+    result = spawnSync(process.execPath, [cliEntry, 'generate'], {
+      cwd: projectDir,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+  }, 60_000)
+
+  test('exits non-zero', () => {
+    expect(result.status).not.toBe(0)
+  })
+
+  test('names the list, the field and assembleColumns', () => {
+    const output = `${result.stdout ?? ''}${result.stderr ?? ''}`
+    expect(output).toContain('Profile.avatar (type "avatar") is missing assembleColumns()')
+    expect(output).not.toContain('at Object.')
+  })
+
+  test('writes no contract artifacts', () => {
+    expect(fs.existsSync(path.join(projectDir, 'prisma', 'contract.ts'))).toBe(false)
+  })
+})

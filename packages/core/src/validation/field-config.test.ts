@@ -166,6 +166,7 @@ describe('validateFieldConfig', () => {
           { name: 'embeddingMetadata', type: { pack: 'pg', type: 'jsonb' }, nullable: true },
         ],
       }),
+      assembleColumns: (_fieldName, row) => row.embedding,
     }
 
     /**
@@ -210,6 +211,26 @@ describe('validateFieldConfig', () => {
       expect(
         validateFieldConfig(field, 'embedding', 'Article', CONFIG).map((e) => e.missingMember),
       ).toEqual(['outputType'])
+    })
+
+    it('requires assembleColumns from a field whose descriptor spans several columns (#2481)', () => {
+      const field: FieldConfig = { ...twoColumns }
+      delete field.assembleColumns
+
+      const errors = validateFieldConfig(field, 'embedding', 'Article', CONFIG)
+
+      expect(errors.map((e) => e.missingMember)).toEqual(['assembleColumns'])
+      expect(errors[0]).toMatchObject({ listKey: 'Article', fieldKey: 'embedding' })
+      expect(errors[0].message).toContain('"Article.embedding"')
+      expect(errors[0].message).toContain('assembleColumns()')
+    })
+
+    it('does not require assembleColumns from a single-column field', () => {
+      expect(text().assembleColumns).toBeUndefined()
+      expect(oneColumnWithColumnNames.assembleColumns).toBeUndefined()
+      expect(validateFieldConfig(oneColumnWithColumnNames, 'embedding', 'Article', CONFIG)).toEqual(
+        [],
+      )
     })
 
     it('does not require outputType from a single-column field that declares getColumnNames', () => {
@@ -411,6 +432,7 @@ describe('validateConfigFields', () => {
 
     expect(validateConfigFields(config).map((e) => [e.fieldKey, e.missingMember])).toEqual([
       ['spanning', 'outputType'],
+      ['spanning', 'assembleColumns'],
     ])
   })
 })

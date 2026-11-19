@@ -17,6 +17,7 @@ const addressField: FieldConfig = {
       { name: 'address_city', type: { pack: 'pg', type: 'text' }, nullable: true },
     ],
   }),
+  assembleColumns: (_fieldName, row) => row.address_line,
 }
 
 function config(): OpenSaasConfig {

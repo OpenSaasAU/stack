@@ -10,8 +10,19 @@ import { ValidationError } from '../hooks/index.js'
 import { createMcpHandlers } from '../mcp/handler.js'
 import { withOrigin } from '../origin.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
+import { assertListMembersResolve } from '../members/list-members.js'
 
 const BOOT = 120_000
+
+const unassembled: FieldConfig[] = []
+
+// The runtime refuses a multi-column field without assembleColumns (#2481), so
+// the Field Visibility gate is reached the way a field stripped of it after
+// validation reaches it: the config resolves whole, then the member goes.
+function dropAssemblyAfterResolution(config: OpenSaasConfig): void {
+  assertListMembersResolve(config)
+  for (const field of unassembled) delete field.assembleColumns
+}
 
 const PARTS = ['avatar_filename', 'avatar_filesize'] as const
 
@@ -29,6 +40,8 @@ function rawParts(access: FieldAccess): FieldConfig {
       typeof value === 'object' && value !== null ? value : {}
     return { [PARTS[0]]: metadata.filename ?? null, [PARTS[1]]: metadata.filesize ?? null }
   }
+  field.assembleColumns = (_fieldName, row) => ({ filename: row[PARTS[0]], filesize: row[PARTS[1]] })
+  unassembled.push(field)
   return field
 }
 
@@ -168,6 +181,7 @@ function expectParts(row: unknown): void {
 
 beforeAll(async () => {
   database = await createTestDatabase(config)
+  dropAssemblyAfterResolution(config)
 }, BOOT)
 
 afterAll(async () => {
@@ -521,6 +535,34 @@ describe('rule invocations', () => {
       expect(rows).toHaveLength(3)
       for (const row of rows) expectHidden(row)
       expect(ruleCalls).toBe(3)
+    },
+    BOOT,
+  )
+})
+
+describe('a multi-column field that arrives without assembleColumns', () => {
+  test(
+    'is refused when the context is built, naming the list, the field and assembleColumns (#2481)',
+    async () => {
+      const avatar = json({ access: adminOnly })
+      avatar.getContractField = () => ({
+        kind: 'columns',
+        columns: [
+          { name: PARTS[0], type: { pack: 'pg', type: 'text' }, nullable: true },
+          { name: PARTS[1], type: { pack: 'pg', type: 'int' }, nullable: true },
+        ],
+      })
+      const refused = await createTestDatabase({
+        db: { provider: 'postgresql' },
+        lists: { Bare: { fields: { title: text(), avatar }, access: { operation: open } } },
+      })
+      try {
+        expect(() => refused.context(admin)).toThrow(
+          /"Bare\.avatar".*does not declare assembleColumns\(\)/,
+        )
+      } finally {
+        await refused.close()
+      }
     },
     BOOT,
   )

@@ -5,8 +5,19 @@ import { integer, json, relationship, text, virtual } from '../fields/index.js'
 import { withOrigin } from '../origin.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
 import { READ_INCLUDE_MAX_DEPTH } from '../access/depth-limits.js'
+import { assertListMembersResolve } from '../members/list-members.js'
 
 const BOOT = 120_000
+
+const unassembled: FieldConfig[] = []
+
+// The runtime refuses a multi-column field without assembleColumns (#2481), so
+// the Field Visibility gate is reached the way a field stripped of it after
+// validation reaches it: the config resolves whole, then the member goes.
+function dropAssemblyAfterResolution(config: OpenSaasConfig): void {
+  assertListMembersResolve(config)
+  for (const field of unassembled) delete field.assembleColumns
+}
 
 function multiColumn(
   options: { access?: FieldConfig['access']; namesColumns?: boolean; assembles?: boolean } = {},
@@ -21,12 +32,11 @@ function multiColumn(
     ],
   })
   if (options.namesColumns !== false) field.getColumnNames = () => columns
-  if (options.assembles !== false) {
-    field.assembleColumns = (_fieldName, row) => ({
-      filename: row[columns[0]],
-      filesize: row[columns[1]],
-    })
-  }
+  field.assembleColumns = (_fieldName, row) => ({
+    filename: row[columns[0]],
+    filesize: row[columns[1]],
+  })
+  if (options.assembles === false) unassembled.push(field)
   field.splitColumns = (_fieldName, value) => {
     const metadata: { filename?: unknown; filesize?: unknown } =
       typeof value === 'object' && value !== null ? value : {}
@@ -163,6 +173,7 @@ const member: Session = { role: 'member' }
 
 beforeAll(async () => {
   database = await createTestDatabase(config)
+  dropAssemblyAfterResolution(config)
 }, BOOT)
 
 afterAll(async () => {
