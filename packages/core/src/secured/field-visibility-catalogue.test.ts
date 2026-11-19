@@ -61,6 +61,12 @@ function avatar(prefix = 'avatar'): FieldConfig {
   return field
 }
 
+function titlesOf(value: unknown): unknown {
+  return Array.isArray(value)
+    ? value.map((row: unknown) => (isRecord(row) ? row.title : row))
+    : (value ?? 'nothing')
+}
+
 function mutatedInPlace(field: FieldConfig): FieldConfig {
   field.hooks = {
     resolveOutput: ({ value }) => {
@@ -441,6 +447,81 @@ const config: OpenSaasConfig = {
           query: (args) => {
             record('query', 'Kit', keysOf(args))
             return true
+          },
+        },
+      },
+    },
+    Shelf: {
+      fields: {
+        name: text(),
+        books: relationship({ ref: 'Book.shelf', many: true }),
+        keeper: relationship({
+          ref: 'Coach',
+          access: {
+            read: ({ item }) => {
+              const titles = titlesOf(item.books)
+              record('read', 'Shelf.keeper', item.name, titles)
+              return !(Array.isArray(titles) && titles.includes('INJECTED'))
+            },
+          },
+        }),
+        weight: virtual({
+          type: 'number',
+          needs: ['books'],
+          hooks: {
+            resolveOutput: ({ item, context }) => {
+              const books: unknown = item.books
+              record('resolveOutput', 'Shelf.weight', keysOf(item), titlesOf(books))
+              if (!Array.isArray(books)) return -1
+              const visible = books.length
+              if (context.session?.mutate === true) {
+                books.push({ id: 0, title: 'INJECTED', pages: 0 })
+              }
+              return visible
+            },
+          },
+        }),
+      },
+      access: {
+        operation: {
+          query: (args) => {
+            record('query', 'Shelf', keysOf(args))
+            return true
+          },
+          update: () => true,
+          delete: () => true,
+        },
+      },
+    },
+    Book: {
+      fields: {
+        title: text({
+          access: {
+            read: ({ item }) => {
+              record('read', 'Book.title', item.title)
+              return item.title !== 'b2'
+            },
+          },
+        }),
+        pages: integer(),
+        hidden: checkbox(),
+        shelf: relationship({ ref: 'Shelf.books' }),
+        blurb: virtual({
+          type: 'string',
+          needs: ['pages'],
+          hooks: {
+            resolveOutput: ({ item }) => {
+              record('resolveOutput', 'Book.blurb', keysOf(item), item.pages)
+              return `${String(item.pages)}p`
+            },
+          },
+        }),
+      },
+      access: {
+        operation: {
+          query: (args) => {
+            record('query', 'Book', keysOf(args))
+            return { hidden: { equals: false } }
           },
         },
       },
@@ -1326,13 +1407,58 @@ describe('includes', () => {
       'n6',
     ])
   })
-})
 
-describe('the hand-off to the walks', () => {
-  test('a reduction is read by the walks', async () => {
+  test('a Synthetic back-relation beneath a to-one gates each row on its source field', async () => {
     await seedLeague()
 
-    const rows = await observe('a reduction hands off to the walks', 'walks', () =>
+    const rows = await observe('a Synthetic back-relation beneath a to-one', 'traversal', () =>
+      database
+        .context(member)
+        .db.Player.where({ id: { in: [1, 2, 3] } })
+        .orderBy({ id: 'asc' })
+        .include('coach', (coach) => coach.include('from_Player_coach'))
+        .all(),
+    )
+    const { awards: _awards, ...p1 } = shownPlayer(1)
+    const coached = [1, 5, 7].map((id) => {
+      const { awards: _unincluded, ...player } = shownPlayer(id)
+      return player
+    })
+    const { awards: _p2Awards, ...p2 } = shownPlayer(2)
+    const { awards: _p3Awards, ...p3 } = shownPlayer(3)
+    expect(rows).toEqual([
+      { ...p1, coach: { id: 1, name: 'c1', listed: true, from_Player_coach: coached } },
+      { ...p2, coach: null },
+      p3,
+    ])
+    expect(callsTo('read', 'Player.coach').map((call) => call[2])).toEqual([
+      'p1',
+      'p2',
+      'p3',
+      'p1',
+      'p3',
+      'p5',
+      'p7',
+      'p1',
+      'p5',
+      'p7',
+    ])
+    expect(callsTo('read', 'Player.rating').map((call) => call[2])).toEqual([
+      'p1',
+      'p2',
+      'p3',
+      'p1',
+      'p5',
+      'p7',
+    ])
+  })
+})
+
+describe('reductions', () => {
+  test('a count reads as a number, and a denied relation keeps no key', async () => {
+    await seedLeague()
+
+    const rows = await observe('a count reads as a number', 'traversal', () =>
       database
         .context(member)
         .db.Region.orderBy({ id: 'asc' })
@@ -1345,21 +1471,358 @@ describe('the hand-off to the walks', () => {
       { id: 2, name: 'r2', teams: 2 },
       { id: 3, name: 'r3', code: 'r3!', teams: 0 },
     ])
+    expect(callsTo('read', 'Region.teams').map((call) => call[2])).toEqual(['r1', 'r2', 'r3'])
   })
 
-  test('a caller-shaped declared relation is read by the walks', async () => {
+  test('a combine of counts reads as its counts', async () => {
+    await seedLeague()
+
+    const rows = await observe('a combine of counts', 'traversal', () =>
+      database
+        .context(member)
+        .db.Region.orderBy({ id: 'asc' })
+        .include('teams', (teams) =>
+          teams.combine({
+            all: teams.count(),
+            first: teams.where({ name: { equals: 't1' } }).count(),
+          }),
+        )
+        .all(),
+    )
+
+    expect(rows).toEqual([
+      { id: 1, name: 'r1', code: 'r1!', teams: { all: 2, first: 1 } },
+      { id: 2, name: 'r2', teams: { all: 2, first: 0 } },
+      { id: 3, name: 'r3', code: 'r3!', teams: { all: 0, first: 0 } },
+    ])
+  })
+
+  test('a combine rows branch strips, computes and narrows its rows, and counts beneath them', async () => {
     await seedLeague()
 
     const rows = await observe(
-      'a caller-shaped declared relation hands off to the walks',
-      'walks',
+      'a combine with a rows branch, nested includes and a nested count',
+      'traversal',
       () =>
         database
           .context(member)
-          .db.Award.where({ id: { in: [1, 2] } })
+          .db.Region.where({ id: { in: [1, 3] } })
           .orderBy({ id: 'asc' })
-          .include('sponsor', (sponsor) => sponsor.where({ name: { equals: 'nobody' } }))
+          .include('teams', (teams) =>
+            teams.combine({
+              total: teams.count(),
+              rows: teams.orderBy({ id: 'desc' }).include('players', (players) =>
+                players.combine({
+                  n: players.count(),
+                  top: players
+                    .orderBy({ id: 'asc' })
+                    .limit(1)
+                    .include('awards', (awards) => awards.count()),
+                }),
+              ),
+            }),
+          )
           .all(),
+    )
+
+    const player = (id: number) => {
+      const { awards: _awards, ...rest } = shownPlayer(id)
+      return { ...rest, awards: 2 }
+    }
+    const team = (id: number) => {
+      const { players: _players, ...rest } = shownTeam(id)
+      return { ...rest, players: { n: 2, top: [player(id * 2 - 1)] } }
+    }
+    expect(rows).toEqual([
+      { id: 1, name: 'r1', code: 'r1!', teams: { total: 2, rows: [team(2), team(1)] } },
+      { id: 3, name: 'r3', code: 'r3!', teams: { total: 0, rows: [] } },
+    ])
+    expect(callsTo('read', 'Team.motto').map((call) => call[2])).toEqual(['t2', 't1'])
+    expect(callsTo('read', 'Player.coach').map((call) => call[2])).toEqual(['p3', 'p1'])
+  })
+
+  test('reductions on a Synthetic back-relation whose source rule reads no row', async () => {
+    await seedMembers()
+    await database
+      .context(null)
+      .sudo()
+      .db.Member.create({ data: { name: 'dee', nickname: 'd', org: { connect: { id: 1 } } } })
+
+    const rows = await observe(
+      'reductions on a Synthetic back-relation whose source rule reads no row',
+      'traversal',
+      async () => {
+        const db = database.context(member).db
+        return {
+          count: await db.Org.include('from_Member_org', (members) => members.count()).all(),
+          counts: await db.Org.include('from_Member_org', (members) =>
+            members.combine({
+              all: members.count(),
+              ada: members.where({ name: { equals: 'ada' } }).count(),
+            }),
+          ).all(),
+          rows: await db.Org.include('from_Member_org', (members) =>
+            members.combine({ total: members.count(), all: members.orderBy({ id: 'asc' }) }),
+          ).all(),
+        }
+      },
+    )
+    const listed = { id: 1, name: 'listed', listed: true }
+    const ada = {
+      id: 1,
+      name: 'ada',
+      nickname: 'ADDY',
+      orgId: 1,
+      mentorId: null,
+      avatar: { filename: 'ada.png', filesize: 12 },
+      label: 'member ada',
+    }
+    const dee = {
+      id: 4,
+      name: 'dee',
+      nickname: 'D',
+      orgId: 1,
+      mentorId: null,
+      avatar: { filename: null, filesize: null },
+      label: 'member dee',
+    }
+    expect(rows).toEqual({
+      count: [{ ...listed, from_Member_org: 2 }],
+      counts: [{ ...listed, from_Member_org: { all: 2, ada: 1 } }],
+      rows: [{ ...listed, from_Member_org: { total: 2, all: [ada, dee] } }],
+    })
+    expect(ruleAndHookCalls().filter((call) => call[1] !== 'Member.org')).toEqual([
+      ['read', 'Member.salary', 'ada', 'not enumerated'],
+      ['read', 'Member.salary', 'dee', 'not enumerated'],
+      ['read', 'Member.secret', 'not enumerated'],
+      ['read', 'Member.secret', 'not enumerated'],
+      ['read', 'Member.badge', 'not enumerated'],
+      ['read', 'Member.badge', 'not enumerated'],
+      ['resolveOutput', 'Member.nickname', ['id']],
+      ['resolveOutput', 'Member.nickname', ['id']],
+      ['resolveOutput', 'Member.label', ['id', 'name']],
+      ['resolveOutput', 'Member.label', ['id', 'name']],
+    ])
+  })
+
+  test('reductions beneath a to-one count, combine and strip the rows they reach', async () => {
+    await seedLeague()
+
+    const rows = await observe('reductions beneath a to-one', 'traversal', async () => {
+      const awards = () =>
+        database
+          .context(member)
+          .db.Award.where({ id: { in: [1, 4] } })
+          .orderBy({ id: 'asc' })
+      return {
+        count: await awards()
+          .include('player', (player) => player.include('awards', (all) => all.count()))
+          .all(),
+        counts: await awards()
+          .include('player', (player) =>
+            player.include('awards', (all) =>
+              all.combine({
+                all: all.count(),
+                odd: all.where({ points: { in: [1, 3, 4] } }).count(),
+              }),
+            ),
+          )
+          .all(),
+        rows: await awards()
+          .include('player', (player) =>
+            player.include('awards', (all) =>
+              all.combine({ total: all.count(), top: all.orderBy({ id: 'desc' }).limit(1) }),
+            ),
+          )
+          .all(),
+      }
+    })
+    const award = (id: number, awards: unknown) => {
+      const { awards: _awards, ...player } = shownPlayer(Math.ceil(id / 2))
+      return { ...shownAward(id), player: { ...player, awards } }
+    }
+    expect(rows).toEqual({
+      count: [award(1, 2), award(4, 2)],
+      counts: [award(1, { all: 2, odd: 1 }), award(4, { all: 2, odd: 2 })],
+      rows: [
+        award(1, { total: 2, top: [shownAward(2)] }),
+        award(4, { total: 2, top: [shownAward(4)] }),
+      ],
+    })
+    expect(callsTo('read', 'Award.title').map((call) => call[2])).toEqual([
+      'a1',
+      'a4',
+      'a1',
+      'a4',
+      'a1',
+      'a4',
+      'a2',
+      'a4',
+    ])
+    expect(callsTo('resolveOutput', 'Award.worth').map((call) => call[3])).toEqual([
+      's1',
+      null,
+      's1',
+      null,
+      null,
+      null,
+      's1',
+      null,
+    ])
+  })
+
+  test('a combine of counts beneath a to-many reads as its counts on every row', async () => {
+    await seedLeague()
+
+    const rows = await observe('a combine of counts beneath a to-many', 'traversal', () =>
+      database
+        .context(member)
+        .db.Region.where({ id: { in: [1, 3] } })
+        .orderBy({ id: 'asc' })
+        .include('teams', (teams) =>
+          teams.orderBy({ id: 'asc' }).include('players', (players) =>
+            players.combine({
+              all: players.count(),
+              odd: players.where({ name: { in: ['p1', 'p3', 'p4'] } }).count(),
+            }),
+          ),
+        )
+        .all(),
+    )
+    const team = (id: number, odd: number) => {
+      const { players: _players, ...rest } = shownTeam(id)
+      return { ...rest, players: { all: 2, odd } }
+    }
+    expect(rows).toEqual([
+      { id: 1, name: 'r1', code: 'r1!', teams: [team(1, 1), team(2, 2)] },
+      { id: 3, name: 'r3', code: 'r3!', teams: [] },
+    ])
+    expect(callsTo('read', 'Team.motto').map((call) => call[2])).toEqual(['t2', 't1'])
+  })
+})
+
+/**
+ * Shelves sh1 and sh3 kept by the listed coach c1, sh2 by the unlisted c2;
+ * books b1 (120 pages), b2 (80) and the hidden b3 (200) on sh1, and b4 (150)
+ * on sh2.
+ */
+async function seedShelves(withCoaches = true): Promise<void> {
+  const sudo = database.context(null).sudo().db
+  if (withCoaches) {
+    await sudo.Coach.create({ data: { name: 'c1', listed: true } })
+    await sudo.Coach.create({ data: { name: 'c2', listed: false } })
+  }
+  for (const [name, keeper] of [
+    ['sh1', 1],
+    ['sh2', 2],
+    ['sh3', 1],
+  ] as const) {
+    await sudo.Shelf.create({ data: { name, keeper: { connect: { id: keeper } } } })
+  }
+  for (const [title, pages, hidden, shelf] of [
+    ['b1', 120, false, 1],
+    ['b2', 80, false, 1],
+    ['b3', 200, true, 1],
+    ['b4', 150, false, 2],
+  ] as const) {
+    await sudo.Book.create({ data: { title, pages, hidden, shelf: { connect: { id: shelf } } } })
+  }
+}
+
+const mutating: Session = { role: 'member', mutate: true }
+
+function shelf(id: number, books: unknown, weight: number): Record<string, unknown> {
+  return {
+    id,
+    name: `sh${id}`,
+    keeperId: id === 2 ? null : 1,
+    ...(books === undefined ? {} : { books }),
+    weight,
+  }
+}
+
+function book(id: number): Record<string, unknown> {
+  const pages = [120, 80, 200, 150][id - 1]
+  return {
+    id,
+    ...(id === 2 ? {} : { title: `b${id}` }),
+    pages,
+    hidden: false,
+    shelfId: id === 4 ? 2 : 1,
+    blurb: `${pages}p`,
+  }
+}
+
+/** The pages of each book `Book.blurb` computed on, in the order it ran. */
+function blurbed(): unknown[] {
+  return callsTo('resolveOutput', 'Book.blurb').map((call) => call[3])
+}
+
+function weighed(): unknown[] {
+  return callsTo('resolveOutput', 'Shelf.weight').map((call) => call[3])
+}
+
+describe('declared relations a caller reduces or shapes', () => {
+  test('a count over a declared relation hands the hook the declared rows and computes nothing on them', async () => {
+    await seedShelves()
+
+    const rows = await observe('a count standing in for a declared relation', 'traversal', () =>
+      database
+        .context(member)
+        .db.Shelf.orderBy({ id: 'asc' })
+        .include('books', (books) => books.count())
+        .all(),
+    )
+
+    expect(blurbed()).toEqual([])
+    expect(callsTo('read', 'Book.title')).toEqual([])
+    expect(rows).toEqual([shelf(1, 2, 2), shelf(2, 1, 1), shelf(3, 0, 0)])
+    expect(callsTo('resolveOutput', 'Shelf.weight')).toEqual([
+      ['resolveOutput', 'Shelf.weight', ['id', 'books'], ['b1', 'b2']],
+      ['resolveOutput', 'Shelf.weight', ['id', 'books'], ['b4']],
+      ['resolveOutput', 'Shelf.weight', ['id', 'books'], []],
+    ])
+  })
+
+  test('a combine rows branch beside a declared relation hands the hook the unshaped rows', async () => {
+    await seedShelves()
+
+    const rows = await observe(
+      'a combine rows branch beside a declared relation',
+      'traversal',
+      () =>
+        database
+          .context(member)
+          .db.Shelf.where({ id: { in: [1, 2] } })
+          .orderBy({ id: 'asc' })
+          .include('books', (books) =>
+            books.combine({ total: books.count(), top: books.orderBy({ pages: 'desc' }).limit(1) }),
+          )
+          .all(),
+    )
+
+    expect(rows).toEqual([
+      shelf(1, { total: 2, top: [book(1)] }, 2),
+      shelf(2, { total: 1, top: [book(4)] }, 1),
+    ])
+    expect(hookItems('Shelf.weight')).toEqual([
+      ['id', 'books'],
+      ['id', 'books'],
+    ])
+    expect(weighed()).toEqual([['b1', 'b2'], ['b4']])
+    expect(blurbed()).toEqual([120, 150])
+  })
+
+  test('a caller-shaped declared to-one hands the hook the unshaped row', async () => {
+    await seedLeague()
+
+    const rows = await observe('a caller-shaped declared to-one', 'traversal', () =>
+      database
+        .context(member)
+        .db.Award.where({ id: { in: [1, 2] } })
+        .orderBy({ id: 'asc' })
+        .include('sponsor', (sponsor) => sponsor.where({ name: { equals: 'nobody' } }))
+        .all(),
     )
 
     expect(rows).toEqual([
@@ -1367,5 +1830,544 @@ describe('the hand-off to the walks', () => {
       { ...shownAward(2), sponsor: null },
     ])
     expect(callsTo('resolveOutput', 'Award.worth').map((call) => call[3])).toEqual(['s1', null])
+  })
+
+  test('a caller-shaped declared to-many returns the shaped rows and hands the hook the unshaped ones', async () => {
+    await seedShelves()
+
+    const rows = await observe('a caller-shaped declared to-many', 'traversal', () =>
+      database
+        .context(member)
+        .db.Shelf.orderBy({ id: 'asc' })
+        .include('books', (books) => books.where({ pages: { gt: 100 } }))
+        .all(),
+    )
+
+    expect(rows).toEqual([shelf(1, [book(1)], 2), shelf(2, [book(4)], 1), shelf(3, [], 0)])
+    expect(weighed()).toEqual([[], ['b1', 'b2'], ['b4']])
+    expect(blurbed()).toEqual([120, 150])
+    expect(recorder.plans.map(statement)).toEqual([
+      expect.stringMatching(/^select:engine:/),
+      expect.stringMatching(/^select:engine:id,books/),
+      'select:engine:id',
+    ])
+  })
+
+  test('a caller-shaped declared relation inside a transaction fetches its unshaped rows there', async () => {
+    await seedShelves()
+
+    const rows = await observe(
+      'a caller-shaped declared relation inside a transaction',
+      'traversal',
+      () =>
+        database.context(member).transaction((tx) =>
+          tx.db.Shelf.where({ id: { equals: 1 } })
+            .include('books', (books) => books.where({ pages: { lt: 100 } }))
+            .all(),
+        ),
+    )
+
+    expect(rows).toEqual([shelf(1, [book(2)], 2)])
+    expect(weighed()).toEqual([['b1', 'b2']])
+    expect(blurbed()).toEqual([80])
+  })
+
+  test('a count beneath a Synthetic back-relation gates each row on its declared rows', async () => {
+    await seedShelves()
+
+    const rows = await observe('a count beneath a Synthetic back-relation', 'traversal', () =>
+      database
+        .context(member)
+        .db.Coach.orderBy({ id: 'asc' })
+        .include('from_Shelf_keeper', (shelves) =>
+          shelves.include('books', (books) => books.count()),
+        )
+        .all(),
+    )
+
+    expect(rows).toEqual([
+      { id: 1, name: 'c1', listed: true, from_Shelf_keeper: [shelf(1, 2, 2), shelf(3, 0, 0)] },
+    ])
+    expect(callsTo('read', 'Shelf.keeper').slice(0, 2)).toEqual([
+      ['read', 'Shelf.keeper', 'sh1', ['b1', 'b2']],
+      ['read', 'Shelf.keeper', 'sh3', []],
+    ])
+    expect(blurbed()).toEqual([])
+  })
+
+  test('a combine rows branch beneath a Synthetic back-relation strips the rows it reaches', async () => {
+    await seedShelves()
+
+    const rows = await observe(
+      'a combine rows branch beneath a Synthetic back-relation',
+      'traversal',
+      () =>
+        database
+          .context(member)
+          .db.Coach.orderBy({ id: 'asc' })
+          .include('from_Shelf_keeper', (shelves) =>
+            shelves.include('books', (books) =>
+              books.combine({ total: books.count(), all: books.orderBy({ id: 'asc' }) }),
+            ),
+          )
+          .all(),
+    )
+    expect(rows).toEqual([
+      {
+        id: 1,
+        name: 'c1',
+        listed: true,
+        from_Shelf_keeper: [
+          shelf(1, { total: 2, all: [book(1), book(2)] }, 2),
+          shelf(3, { total: 0, all: [] }, 0),
+        ],
+      },
+    ])
+    expect(ruleAndHookCalls()).toEqual([
+      ['read', 'Shelf.keeper', 'sh1', ['b1', 'b2']],
+      ['read', 'Shelf.keeper', 'sh3', []],
+      ['read', 'Book.title', 'b1'],
+      ['read', 'Book.title', 'b2'],
+      ['resolveOutput', 'Shelf.weight', ['id', 'books'], []],
+      ['resolveOutput', 'Book.blurb', ['id', 'pages'], 120],
+      ['resolveOutput', 'Book.blurb', ['id', 'pages'], 80],
+      ['resolveOutput', 'Shelf.weight', ['id', 'books'], ['b1', 'b2']],
+      ['read', 'Shelf.keeper', 'sh1', ['b1', 'b2']],
+      ['read', 'Shelf.keeper', 'sh3', []],
+    ])
+  })
+
+  test('reductions beneath a Synthetic back-relation count, combine and strip the rows they reach', async () => {
+    await seedLeague()
+    await seedShelves(false)
+
+    const rows = await observe(
+      'reductions beneath a Synthetic back-relation',
+      'traversal',
+      async () => {
+        const coaches = () => database.context(member).db.Coach.orderBy({ id: 'asc' })
+        return {
+          count: await coaches()
+            .include('from_Player_coach', (players) =>
+              players.include('awards', (awards) => awards.count()),
+            )
+            .all(),
+          counts: await coaches()
+            .include('from_Player_coach', (players) =>
+              players.include('awards', (awards) =>
+                awards.combine({
+                  all: awards.count(),
+                  odd: awards.where({ points: { in: [1, 9, 10] } }).count(),
+                }),
+              ),
+            )
+            .all(),
+          rows: await coaches()
+            .include('from_Player_coach', (players) =>
+              players.include('awards', (awards) =>
+                awards.combine({
+                  total: awards.count(),
+                  top: awards.orderBy({ id: 'desc' }).limit(1),
+                }),
+              ),
+            )
+            .all(),
+          declared: await coaches()
+            .include('from_Shelf_keeper', (shelves) =>
+              shelves.include('books', (books) =>
+                books.combine({
+                  total: books.count(),
+                  long: books.where({ pages: { gt: 100 } }).count(),
+                }),
+              ),
+            )
+            .all(),
+        }
+      },
+    )
+    const coach = (relation: string, related: unknown[]) => ({
+      id: 1,
+      name: 'c1',
+      listed: true,
+      [relation]: related,
+    })
+    const coached = (awards: (player: number) => unknown) =>
+      coach(
+        'from_Player_coach',
+        [1, 5, 7].map((id) => ({ ...shownPlayer(id), awards: awards(id) })),
+      )
+    const odd: Record<number, number> = { 1: 1, 5: 2, 7: 0 }
+    expect(rows).toEqual({
+      count: [coached(() => 2)],
+      counts: [coached((id) => ({ all: 2, odd: odd[id] }))],
+      rows: [coached((id) => ({ total: 2, top: [shownAward(id * 2)] }))],
+      declared: [
+        coach('from_Shelf_keeper', [
+          shelf(1, { total: 2, long: 1 }, 2),
+          shelf(3, { total: 0, long: 0 }, 0),
+        ]),
+      ],
+    })
+    expect(callsTo('read', 'Award.title').map((call) => call[2])).toEqual(['a2', 'a10', 'a14'])
+    expect(callsTo('resolveOutput', 'Award.worth').map((call) => call[3])).toEqual([
+      null,
+      null,
+      null,
+    ])
+    expect(callsTo('read', 'Player.coach').map((call) => call[2])).toEqual(
+      Array(3).fill(['p1', 'p3', 'p5', 'p7', 'p1', 'p5', 'p7']).flat(),
+    )
+    expect(weighed()).toEqual([['b1', 'b2'], []])
+    expect(blurbed()).toEqual([])
+  })
+
+  test('declared relations beneath a Synthetic back-relation hand the hook the unshaped rows', async () => {
+    await seedShelves()
+
+    const rows = await observe(
+      'declared relations beneath a Synthetic back-relation',
+      'traversal',
+      async () => {
+        const coaches = () => database.context(member).db.Coach.orderBy({ id: 'asc' })
+        return {
+          shaped: await coaches()
+            .include('from_Shelf_keeper', (shelves) =>
+              shelves.include('books', (books) => books.where({ pages: { gt: 100 } })),
+            )
+            .all(),
+          unshaped: await coaches().include('from_Shelf_keeper').all(),
+        }
+      },
+    )
+    const coach = (shelves: unknown[]) => ({
+      id: 1,
+      name: 'c1',
+      listed: true,
+      from_Shelf_keeper: shelves,
+    })
+    expect(rows).toEqual({
+      shaped: [coach([shelf(1, [book(1)], 2), shelf(3, [], 0)])],
+      unshaped: [coach([shelf(1, undefined, 2), shelf(3, undefined, 0)])],
+    })
+    expect(weighed()).toEqual([[], ['b1', 'b2'], ['b1', 'b2'], []])
+    expect(blurbed()).toEqual([120])
+    expect(callsTo('read', 'Book.title').map((call) => call[2])).toEqual(['b1'])
+  })
+
+  test('declared relations beneath a to-one hand the hook the unshaped rows', async () => {
+    await seedShelves()
+
+    const rows = await observe('declared relations beneath a to-one', 'traversal', async () => {
+      const books = () =>
+        database
+          .context(member)
+          .db.Book.where({ id: { in: [1, 4] } })
+          .orderBy({ id: 'asc' })
+      return {
+        shaped: await books()
+          .include('shelf', (shelf) =>
+            shelf.include('books', (all) => all.where({ pages: { lt: 100 } })),
+          )
+          .all(),
+        unshaped: await books().include('shelf').all(),
+      }
+    })
+    expect(rows).toEqual({
+      shaped: [
+        { ...book(1), shelf: shelf(1, [book(2)], 2) },
+        { ...book(4), shelf: shelf(2, [], 1) },
+      ],
+      unshaped: [
+        { ...book(1), shelf: shelf(1, undefined, 2) },
+        { ...book(4), shelf: shelf(2, undefined, 1) },
+      ],
+    })
+    expect(weighed()).toEqual([['b4'], ['b1', 'b2'], ['b1', 'b2'], ['b4']])
+    expect(blurbed()).toEqual([150, 80, 120, 120, 150])
+    expect(callsTo('read', 'Book.title').map((call) => call[2])).toEqual([
+      'b1',
+      'b4',
+      'b2',
+      'b1',
+      'b4',
+    ])
+  })
+
+  test('reductions over a declared relation beneath a to-one hand the hook the declared rows', async () => {
+    await seedShelves()
+
+    const rows = await observe(
+      'reductions over a declared relation beneath a to-one',
+      'traversal',
+      async () => {
+        const books = () =>
+          database
+            .context(member)
+            .db.Book.where({ id: { in: [1, 4] } })
+            .orderBy({ id: 'asc' })
+        return {
+          count: await books()
+            .include('shelf', (shelf) => shelf.include('books', (all) => all.count()))
+            .all(),
+          counts: await books()
+            .include('shelf', (shelf) =>
+              shelf.include('books', (all) =>
+                all.combine({
+                  total: all.count(),
+                  long: all.where({ pages: { gt: 100 } }).count(),
+                }),
+              ),
+            )
+            .all(),
+          rows: await books()
+            .include('shelf', (shelf) =>
+              shelf.include('books', (all) =>
+                all.combine({ total: all.count(), all: all.orderBy({ id: 'asc' }) }),
+              ),
+            )
+            .all(),
+        }
+      },
+    )
+    const read = (books1: unknown, books4: unknown) => [
+      { ...book(1), shelf: shelf(1, books1, 2) },
+      { ...book(4), shelf: shelf(2, books4, 1) },
+    ]
+    expect(rows).toEqual({
+      count: read(2, 1),
+      counts: read({ total: 2, long: 1 }, { total: 1, long: 1 }),
+      rows: read({ total: 2, all: [book(1), book(2)] }, { total: 1, all: [book(4)] }),
+    })
+    expect(weighed()).toEqual([['b1', 'b2'], ['b4'], ['b1', 'b2'], ['b4'], ['b1', 'b2'], ['b4']])
+    expect(blurbed()).toEqual([120, 150, 120, 150, 120, 80, 150, 120, 150])
+    expect(callsTo('read', 'Book.title').map((call) => call[2])).toEqual([
+      'b1',
+      'b4',
+      'b1',
+      'b4',
+      'b1',
+      'b4',
+      'b1',
+      'b2',
+      'b4',
+    ])
+  })
+
+  test('a caller-shaped declared to-one beneath a to-many hands the hook the unshaped row', async () => {
+    await seedLeague()
+
+    const rows = await observe(
+      'a caller-shaped declared to-one beneath a to-many',
+      'traversal',
+      () =>
+        database
+          .context(member)
+          .db.Player.where({ id: { in: [1, 2] } })
+          .orderBy({ id: 'asc' })
+          .include('awards', (awards) =>
+            awards.include('sponsor', (sponsor) => sponsor.where({ name: { equals: 'nobody' } })),
+          )
+          .all(),
+    )
+    const player = (id: number) => ({
+      ...shownPlayer(id),
+      awards: [id * 2 - 1, id * 2].map((award) => ({ ...shownAward(award), sponsor: null })),
+    })
+    expect(rows).toEqual([player(1), player(2)])
+    expect(callsTo('resolveOutput', 'Award.worth').map((call) => call[3])).toEqual([
+      's1',
+      null,
+      's1',
+      null,
+    ])
+    expect(callsTo('read', 'Award.title').map((call) => call[2])).toEqual(['a1', 'a2', 'a3', 'a4'])
+  })
+})
+
+describe('a hook mutating declared rows in place', () => {
+  test("a count's declared stand-in is fresh for the foreign-key pass", async () => {
+    await seedShelves()
+
+    const rows = await observe("a hook pushing into a count's declared stand-in", 'traversal', () =>
+      database
+        .context(mutating)
+        .db.Shelf.where({ id: { equals: 1 } })
+        .include('books', (books) => books.count())
+        .all(),
+    )
+
+    expect(rows).toEqual([shelf(1, 2, 2)])
+    expect(callsTo('read', 'Shelf.keeper')).toEqual([['read', 'Shelf.keeper', 'sh1', ['b1', 'b2']]])
+  })
+
+  test("a rows branch's declared rows are shared with the foreign-key pass", async () => {
+    await seedShelves()
+
+    const rows = await observe(
+      "a hook pushing into a rows branch's declared rows",
+      'traversal',
+      () =>
+        database
+          .context(mutating)
+          .db.Shelf.where({ id: { equals: 1 } })
+          .include('books', (books) => books.combine({ total: books.count(), all: books }))
+          .all(),
+    )
+
+    expect(rows).toEqual([
+      { ...shelf(1, { total: 2, all: [book(1), book(2)] }, 2), keeperId: null },
+    ])
+    expect(callsTo('read', 'Shelf.keeper')).toEqual([
+      ['read', 'Shelf.keeper', 'sh1', ['b1', 'b2', 'INJECTED']],
+    ])
+  })
+
+  test("a caller-shaped declared relation's unshaped rows are shared with the foreign-key pass", async () => {
+    await seedShelves()
+
+    const rows = await observe(
+      "a hook pushing into a caller-shaped declared relation's rows",
+      'traversal',
+      () =>
+        database
+          .context(mutating)
+          .db.Shelf.where({ id: { equals: 1 } })
+          .include('books', (books) => books.limit(1))
+          .all(),
+    )
+
+    expect(rows).toEqual([{ ...shelf(1, [book(1)], 2), keeperId: null }])
+    expect(callsTo('read', 'Shelf.keeper')).toEqual([
+      ['read', 'Shelf.keeper', 'sh1', ['b1', 'b2', 'INJECTED']],
+    ])
+  })
+})
+
+describe('the row lock with includes and reductions', () => {
+  test('forUpdate().all() re-reads and shows includes and a reduction', async () => {
+    await seedLeague()
+    await seedShelves(false)
+
+    const read = await observe('forUpdate().all() with includes and a reduction', 'traversal', () =>
+      database.context(member).transaction(async (tx) => ({
+        shelves: await tx.db.Shelf.orderBy({ id: 'asc' })
+          .include('books', (books) => books.count())
+          .forUpdate()
+          .all(),
+        teams: await tx.db.Team.where({ id: { in: [1, 2] } })
+          .orderBy({ id: 'asc' })
+          .include('players', (players) => players.include('awards', (awards) => awards.count()))
+          .forUpdate()
+          .all(),
+      })),
+    )
+
+    const team = (id: number) => ({
+      ...shownTeam(id),
+      players: [id * 2 - 1, id * 2].map((player) => ({ ...shownPlayer(player), awards: 2 })),
+    })
+    expect(read).toEqual({
+      shelves: [shelf(1, 2, 2), shelf(2, 1, 1), shelf(3, 0, 0)],
+      teams: [team(1), team(2)],
+    })
+  })
+
+  test('forUpdate().first() re-reads and shows a combine rows branch', async () => {
+    await seedShelves()
+
+    const row = await observe('forUpdate().first() with a combine rows branch', 'traversal', () =>
+      database.context(member).transaction((tx) =>
+        tx.db.Shelf.where({ id: { equals: 1 } })
+          .include('books', (books) => books.combine({ total: books.count(), all: books }))
+          .forUpdate()
+          .first(),
+      ),
+    )
+
+    expect(row).toEqual(shelf(1, { total: 2, all: [book(1), book(2)] }, 2))
+    expect(weighed()).toEqual([['b1', 'b2']])
+  })
+
+  test('forUpdate().all() re-reads and shows a to-one and a Synthetic back-relation', async () => {
+    await seedLeague()
+    await seedShelves(false)
+
+    const rows = await observe(
+      'forUpdate().all() with a to-one and a Synthetic back-relation',
+      'traversal',
+      () =>
+        database.context(member).transaction(async (tx) => ({
+          awards: await tx.db.Award.where({ id: { in: [1, 4] } })
+            .orderBy({ id: 'asc' })
+            .include('sponsor')
+            .include('player', (player) => player.include('coach'))
+            .forUpdate()
+            .all(),
+          coaches: await tx.db.Coach.orderBy({ id: 'asc' })
+            .include('from_Shelf_keeper', (shelves) =>
+              shelves.include('books', (books) =>
+                books.combine({ total: books.count(), all: books.orderBy({ id: 'asc' }) }),
+              ),
+            )
+            .forUpdate()
+            .all(),
+        })),
+    )
+    const player = (id: number, coach: unknown) => {
+      const { awards: _awards, ...rest } = shownPlayer(id)
+      return { ...rest, coach }
+    }
+    expect(rows).toEqual({
+      awards: [
+        {
+          ...shownAward(1),
+          sponsor: { id: 1, name: 's1', listed: true },
+          player: player(1, { id: 1, name: 'c1', listed: true }),
+        },
+        { ...shownAward(4), sponsor: null, player: player(2, null) },
+      ],
+      coaches: [
+        {
+          id: 1,
+          name: 'c1',
+          listed: true,
+          from_Shelf_keeper: [
+            shelf(1, { total: 2, all: [book(1), book(2)] }, 2),
+            shelf(3, { total: 0, all: [] }, 0),
+          ],
+        },
+      ],
+    })
+    expect(callsTo('read', 'Book.title').map((call) => call[2])).toEqual(['b1', 'b2'])
+    expect(blurbed()).toEqual([120, 80])
+  })
+})
+
+describe('writes on a list declaring a relation', () => {
+  test('update returns the re-read row computed over the declared rows', async () => {
+    await seedShelves()
+
+    const updated = await observe('update on a list declaring a relation', 'traversal', () =>
+      database.context(member).db.Shelf.update({ where: { id: 1 }, data: { name: 'sh1' } }),
+    )
+
+    expect(updated).toEqual(shelf(1, undefined, 2))
+    expect(weighed()).toEqual([['b1', 'b2']])
+    expect(blurbed()).toEqual([])
+  })
+
+  test('delete returns the row as it stood, computed over the declared rows', async () => {
+    await seedShelves()
+    await database
+      .context(null)
+      .sudo()
+      .db.Shelf.update({ where: { id: 3 }, data: { keeper: { connect: { id: 2 } } } })
+
+    const deleted = await observe('delete on a list declaring a relation', 'traversal', () =>
+      database.context(member).db.Shelf.delete({ where: { id: 3 } }),
+    )
+
+    expect(deleted).toEqual({ ...shelf(3, undefined, 0), keeperId: null })
+    expect(weighed()).toEqual([[]])
   })
 })

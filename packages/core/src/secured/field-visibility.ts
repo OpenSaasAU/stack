@@ -32,6 +32,7 @@ import {
   type IncludePlan,
   type PlanLevel,
   type ReducePlan,
+  rowsBranchKeyOf,
 } from './include.js'
 import type { RowLockKey } from './lock.js'
 import { collectionFor, engineRead, identityIn, type ReadBinding } from './binding.js'
@@ -75,7 +76,7 @@ export type WrittenRowRead =
  * What every read terminal returns rows through, and the only place any
  * foreign-key pass runs.
  *
- * The batch is what lets {@link narrowUnincludedForeignKeys} resolve a
+ * The batch is what lets the foreign-key pass resolve a
  * to-one this read never named at all for a whole page in one query per
  * relation rather than one per row.
  */
@@ -84,7 +85,7 @@ export async function visibleRows(
   rows: readonly OrmRow[],
   root: PlanLevel,
 ): Promise<VisibleRow[]> {
-  const traversed = implementation() === 'traversal' && traversable(root)
+  const traversed = implementation() === 'traversal'
   const shown = traversed ? await traverse(binding, rows, root) : await walk(binding, rows, root)
   runs[traversed ? 'traversal' : 'walks'] += 1
   return minted(shown)
@@ -115,52 +116,231 @@ export function fieldVisibilityRuns(): { readonly walks: number; readonly traver
   return { ...runs }
 }
 
-/** Whether no node of the plan carries a reduction or a caller-shaped declared relation. */
-function traversable(level: PlanLevel): boolean {
-  return level.includes.every(
-    (node) => node.reduce === undefined && node.declaredFetch === undefined && traversable(node),
-  )
-}
-
 interface VisitedRow {
   readonly raw: OrmRow
   readonly shown: OrmRow
   readonly related: ReadonlyMap<string, readonly VisitedRow[]>
 }
 
+/** The rule views of one read, by the plan level whose rows they describe. */
+type ReadViews = ReadonlyMap<PlanLevel, RuleViewTree>
+
 /**
- * The single traversal: each row's rule view, field strip, computed fields and
- * included foreign keys in one visit per node, then each node's un-included
- * foreign keys across every row that reached it.
+ * The single traversal: the unshaped declared rows each level's rules and
+ * hooks are owed, then each row's rule view, field strip, computed fields,
+ * reductions and included foreign keys in one visit per node, then each
+ * node's un-included foreign keys across every row that reached it.
  */
 async function traverse(
   binding: VisibilityBinding,
   rows: readonly OrmRow[],
   root: PlanLevel,
 ): Promise<OrmRow[]> {
-  const visited = await Promise.all(rows.map((row) => visitRow(binding, row, root)))
-  if (binding.context._isSudo !== true) await narrowForeignKeysAt(binding, visited, root)
+  const views = new Map<PlanLevel, RuleViewTree>()
+  await collectRuleViews(binding, root, rows, views)
+  const visited = await Promise.all(
+    rows.map((row) => visitRow(binding, row, ruleFacingRow(row, root), root, views)),
+  )
+  if (binding.context._isSudo !== true) await narrowForeignKeysAt(binding, visited, root, views)
   return visited.map((row) => row.shown)
 }
 
-const NO_UNSHAPED: ReadonlyMap<string, ReadonlyMap<string, unknown>> = new Map()
-const viewsByLevel = new WeakMap<PlanLevel, RuleViewTree>()
+function viewsOf(level: PlanLevel, views: ReadViews): RuleViewTree {
+  return views.get(level) ?? NO_RULE_VIEWS
+}
 
-function ruleViewsOf(level: PlanLevel): RuleViewTree {
-  const known = viewsByLevel.get(level)
-  if (known !== undefined) return known
-  const views: RuleViewTree = {
-    viewFor: (row) => ruleViewFor(row, level.includes, NO_UNSHAPED),
-    nested: {},
+/**
+ * A reduction's value, read here and nowhere else on the traversal: the rows
+ * of the caller's rows branch, the rows the declaring hooks are owed, what
+ * stands in for the value where a rule, a hook or the visit reads rows, and
+ * what the caller receives.
+ */
+interface Reduction {
+  readonly rowsKey: string | undefined
+  readonly rows: (value: unknown) => OrmRow[]
+  readonly declaredRows: (value: unknown) => OrmRow[]
+  readonly standIn: (value: unknown) => OrmRow[]
+  readonly shown: (value: unknown, kept: readonly OrmRow[]) => unknown
+}
+
+const reductionByNode = new WeakMap<IncludePlan, Reduction | undefined>()
+
+function reductionOf(node: IncludePlan): Reduction | undefined {
+  if (reductionByNode.has(node)) return reductionByNode.get(node)
+  const reduction = buildReduction(node)
+  reductionByNode.set(node, reduction)
+  return reduction
+}
+
+function buildReduction(node: IncludePlan): Reduction | undefined {
+  const reduce = node.reduce
+  if (reduce === undefined) return undefined
+  const rowsKey = rowsBranchKeyOf(reduce)
+  const branchRows = (value: unknown, key: string | undefined): OrmRow[] => {
+    if (key === undefined || !isRow(value)) return []
+    const rows = value[key]
+    return Array.isArray(rows) ? rows.filter(isRow) : []
   }
-  viewsByLevel.set(level, views)
-  return views
+  const withoutDeclared = (value: OrmRow): unknown => {
+    if (reduce.kind === 'count') return value[DECLARED_COUNT_BRANCH_KEY] ?? 0
+    const publicValue: Record<string, unknown> = { ...value }
+    delete publicValue[DECLARED_ROWS_BRANCH_KEY]
+    return publicValue
+  }
+  const declaredRows = (value: unknown): OrmRow[] => branchRows(value, DECLARED_ROWS_BRANCH_KEY)
+  const rows = (value: unknown): OrmRow[] => branchRows(value, rowsKey)
+  return {
+    rowsKey,
+    rows,
+    declaredRows,
+    standIn: node.reducedDeclared ? declaredRows : rows,
+    shown: (value, kept) => {
+      if (!isRow(value)) return value
+      if (node.reducedDeclared) return withoutDeclared(value)
+      if (rowsKey === undefined) return value
+      const base = withoutDeclared(value)
+      return { ...(isRow(base) ? base : value), [rowsKey]: kept }
+    },
+  }
+}
+
+const reducesBeneathByLevel = new WeakMap<PlanLevel, boolean>()
+
+function reducesBeneath(level: PlanLevel): boolean {
+  const known = reducesBeneathByLevel.get(level)
+  if (known !== undefined) return known
+  const found = level.includes.some((node) => node.reduce !== undefined || reducesBeneath(node))
+  reducesBeneathByLevel.set(level, found)
+  return found
+}
+
+/** One row as its level's rules and hooks read it: each reduced relation as the rows standing in for it. */
+function ruleFacingRow(row: OrmRow, level: PlanLevel): OrmRow {
+  if (!reducesBeneath(level)) return row
+  const facing: OrmRow = { ...row }
+  for (const node of level.includes) {
+    const reduction = reductionOf(node)
+    if (reduction !== undefined) {
+      const rows = reduction.standIn(row[node.relation])
+      facing[node.relation] = reducesBeneath(node)
+        ? rows.map((related) => ruleFacingRow(related, node))
+        : rows
+      continue
+    }
+    if (!reducesBeneath(node)) continue
+    const value = facing[node.relation]
+    if (Array.isArray(value)) {
+      facing[node.relation] = value.map((related) =>
+        isRow(related) ? ruleFacingRow(related, node) : related,
+      )
+    } else if (isRow(value)) {
+      facing[node.relation] = ruleFacingRow(value, node)
+    }
+  }
+  return facing
+}
+
+/**
+ * The rule views of every level the read reaches, each built over every row
+ * that reached it, fetching a caller-shaped declared relation's unshaped rows
+ * before any rule or hook runs.
+ */
+async function collectRuleViews(
+  binding: VisibilityBinding,
+  level: PlanLevel,
+  rows: readonly OrmRow[],
+  views: Map<PlanLevel, RuleViewTree>,
+): Promise<void> {
+  const unshaped = await unshapedRowsAt(binding, level, rows)
+  for (const node of level.includes) {
+    if (node.declared || node.includes.length === 0) continue
+    const reduction = reductionOf(node)
+    if (reduction !== undefined && reduction.rowsKey === undefined) continue
+    const children: OrmRow[] = []
+    for (const row of rows) {
+      const value = row[node.relation]
+      if (reduction !== undefined) children.push(...reduction.rows(value))
+      else if (Array.isArray(value)) children.push(...value.filter(isRow))
+      else if (isRow(value)) children.push(value)
+    }
+    if (children.length === 0) continue
+    await collectRuleViews(binding, node, children, views)
+  }
+  views.set(level, { viewFor: (row) => ruleViewFor(row, level.includes, unshaped), nested: {} })
+}
+
+/** The declared rows each relation's rules and hooks see in place of the caller's, by owner id. */
+async function unshapedRowsAt(
+  binding: VisibilityBinding,
+  level: PlanLevel,
+  rows: readonly OrmRow[],
+): Promise<Map<string, Map<string, unknown>>> {
+  const { listName } = level
+  const byRelation = new Map<string, Map<string, unknown>>()
+  for (const node of level.includes) {
+    const reduction = reductionOf(node)
+    if (node.ruleView !== 'declaredRowsBranch' || reduction === undefined) continue
+    const values = new Map<string, unknown>()
+    for (const row of rows)
+      values.set(String(row['id']), reduction.declaredRows(row[node.relation]))
+    byRelation.set(node.relation, values)
+  }
+  const fetched = level.includes.filter((node) => node.ruleView === 'declaredFetch')
+  const ids = rows.map((row) => row['id']).filter(isRowLockKey)
+  if (fetched.length === 0 || ids.length === 0) return byRelation
+  const ops = await whereCombinators()
+  for (const node of fetched) {
+    const owners = await engineRead(binding, () =>
+      collectionFor(binding.ormHandle, listName)
+        .where((model) => identityIn(model, listName, ids))
+        .select('id')
+        .include(node.relation, (child) => {
+          let scoped = child
+          for (const predicate of node.declaredFetch ?? []) {
+            scoped = scoped.where((model) => lowerWhere(predicate, model, ops))
+          }
+          return scoped
+        })
+        .all(),
+    )
+    const values = new Map<string, unknown>()
+    for (const owner of owners) values.set(String(owner['id']), owner[node.relation])
+    byRelation.set(node.relation, values)
+  }
+  return byRelation
+}
+
+/**
+ * Each related row a relation's value carries, paired with the raw row it was
+ * read from: the same row unless a reduction beneath it stands rows in.
+ */
+function relatedPairs(
+  facingValue: unknown,
+  rawValue: unknown,
+  reduction: Reduction | undefined,
+): [OrmRow, OrmRow][] {
+  const facing: readonly unknown[] = Array.isArray(facingValue) ? facingValue : [facingValue]
+  const raw: readonly unknown[] =
+    reduction !== undefined
+      ? reduction.standIn(rawValue)
+      : Array.isArray(rawValue)
+        ? rawValue
+        : [rawValue]
+  const pairs: [OrmRow, OrmRow][] = []
+  facing.forEach((related, index) => {
+    if (!isRow(related)) return
+    const original = raw[index]
+    pairs.push([related, isRow(original) ? original : related])
+  })
+  return pairs
 }
 
 async function visitRow(
   binding: VisibilityBinding,
   raw: OrmRow,
+  facing: OrmRow,
   level: PlanLevel,
+  views: ReadViews,
 ): Promise<VisitedRow> {
   const { config } = binding
   const { listName: listKey, selection } = level
@@ -170,8 +350,8 @@ async function visitRow(
   const declaredDependencies = getListDependencies(config, listKey).fields
   const systemFields = new Set<string>(members.systemFields)
 
-  const assembled = assembleColumnFields(raw, fieldConfigs, members)
-  const ruleRow = ruleRowOf(assembled, ruleViewsOf(level), fieldConfigs, config, listKey)
+  const assembled = assembleColumnFields(facing, fieldConfigs, members)
+  const ruleRow = ruleRowOf(assembled, viewsOf(level, views), fieldConfigs, config, listKey)
   const hookItemFor = (fieldName: string): Record<string, unknown> => {
     const declared = declaredDependencies[fieldName] ?? { columns: [], relations: [] }
     const hookItem: Record<string, unknown> = {}
@@ -208,21 +388,26 @@ async function visitRow(
     if (node === undefined && member !== undefined && isRelationMember(member)) continue
 
     if (node !== undefined && value !== null && value !== undefined) {
-      const reached = Array.isArray(value) ? value.filter(isRow) : isRow(value) ? [value] : []
+      const reduction = reductionOf(node)
+      const reached = relatedPairs(value, raw[fieldName], reduction)
       let kept = reached
       if (node.synthetic === undefined) {
         if (!(await checkRowRead(fieldConfigs[fieldName]?.access, args, ruleRow))) continue
         if (node.declared) continue
+        if (reduction !== undefined && node.reducedDeclared) {
+          shown[fieldName] = reduction.shown(raw[fieldName], [])
+          continue
+        }
       } else {
         const gate = node.synthetic.gate
         const allowed = await Promise.all(
-          reached.map((relatedRow) =>
+          reached.map(([relatedRow]) =>
             checkRowRead(
               gate.access,
               args,
               ruleRowOf(
                 relatedRow,
-                ruleViewsOf(node),
+                viewsOf(node, views),
                 node.listConfig.fields,
                 config,
                 node.listName,
@@ -232,14 +417,23 @@ async function visitRow(
         )
         kept = reached.filter((_, index) => allowed[index])
       }
-      if (Array.isArray(value)) {
+      if (reduction !== undefined || Array.isArray(value)) {
         const rows = await Promise.all(
-          kept.map((relatedRow) => visitRow(binding, relatedRow, node)),
+          kept.map(([relatedRow, original]) =>
+            visitRow(binding, original, relatedRow, node, views),
+          ),
         )
-        shown[fieldName] = rows.map((row) => row.shown)
-        related.set(fieldName, rows)
+        const shownRows = rows.map((row) => row.shown)
+        if (reduction === undefined) {
+          shown[fieldName] = shownRows
+          related.set(fieldName, rows)
+        } else {
+          shown[fieldName] = reduction.shown(raw[fieldName], shownRows)
+          if (reduction.rowsKey !== undefined) related.set(fieldName, rows)
+        }
       } else if (kept.length > 0) {
-        const row = await visitRow(binding, kept[0], node)
+        const [relatedRow, original] = kept[0]
+        const row = await visitRow(binding, original, relatedRow, node, views)
         shown[fieldName] = row.shown
         related.set(fieldName, [row])
       } else if (reached.length > 0) {
@@ -265,15 +459,17 @@ async function visitRow(
 }
 
 /**
- * Narrow each foreign-key column the node did not include to what the caller
- * may see, as {@link narrowUnincludedForeignKeys} does for a level, with one
- * batched existence query per owner whose related access is a filter; then
- * the same for every node beneath it, across the rows that reached it.
+ * Narrow each foreign-key column the level did not include to what the caller
+ * may see: the owning field's own `read` rule per row, and the related list's
+ * own `query` access, with one batched existence query per owner whose access
+ * is a filter; then the same for every level beneath it, across the rows that
+ * reached it.
  */
 async function narrowForeignKeysAt(
   binding: VisibilityBinding,
   rows: readonly VisitedRow[],
   level: PlanLevel,
+  views: ReadViews,
 ): Promise<void> {
   const { listName, listConfig } = level
   const ctx = relatedResolveContext(binding, level)
@@ -286,8 +482,8 @@ async function narrowForeignKeysAt(
       ? []
       : rows.map((row) =>
           ruleRowOf(
-            assembleColumnFields(row.raw, listConfig.fields, members),
-            ruleViewsOf(level),
+            assembleColumnFields(ruleFacingRow(row.raw, level), listConfig.fields, members),
+            viewsOf(level, views),
             listConfig.fields,
             binding.config,
             listName,
@@ -339,14 +535,15 @@ async function narrowForeignKeysAt(
 
   for (const node of level.includes) {
     const reached = rows.flatMap((row) => row.related.get(node.relation) ?? [])
-    if (reached.length > 0) await narrowForeignKeysAt(binding, reached, node)
+    if (reached.length > 0) await narrowForeignKeysAt(binding, reached, node, views)
   }
 }
 
 /**
- * Set the foreign-key column of each included to-one on one shown row, as
- * {@link applyForeignKeys} does, without descending: the rows beneath were set
- * on their own visit.
+ * Set the foreign-key column of each included to-one on one shown row to the
+ * related row's id, or `null` when the relation is not visible (ADR-0058),
+ * without descending: the rows beneath were set on their own visit. A relation
+ * the caller's own `where()` refined is left to the foreign-key pass.
  */
 function narrowIncludedForeignKeys(row: OrmRow, plans: readonly IncludePlan[]): void {
   for (const plan of plans) {
