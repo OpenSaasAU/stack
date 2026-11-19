@@ -388,7 +388,7 @@ describe('Projection', () => {
   test(
     'a projection naming a raw part column of a multi-column field is refused rather than dropped',
     async () => {
-      // `filterReadableFields` assembles the parts into the owning field's
+      // Field Visibility assembles the parts into the owning field's
       // value and never lets one reach a caller, so accepting the name would
       // return a row with the key silently absent.
       await expect(

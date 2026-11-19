@@ -93,7 +93,7 @@ function schemaConfig(): OpenSaasConfig {
           // Row-dependent, and dependent on the relation's own rows: Field
           // Visibility can only answer it against the value the include
           // fetched, so a relation read as a bare count decides against the
-          // `[]` stand-in and grants (`maskReductions`, `secured/field-visibility.ts`).
+          // `[]` stand-in and grants (`secured/field-visibility.ts`).
           gatedComments: relationship({
             ref: 'Comment.gatedPost',
             many: true,

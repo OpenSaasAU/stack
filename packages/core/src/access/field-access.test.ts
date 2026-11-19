@@ -313,7 +313,7 @@ describe('isFieldReadableForPredicate (#915)', () => {
     // The rule never touches `item` — it throws for a reason of its own.
     // This must NOT be folded into an ordinary `false` denial (that would
     // mask a real bug in the rule as "field not readable"), matching how the
-    // post-query path (`filterReadableFields`) already lets such a throw
+    // post-query path (Field Visibility) already lets such a throw
     // propagate unchanged.
     const fieldAccess: FieldAccess = {
       read: ({ session }) => {

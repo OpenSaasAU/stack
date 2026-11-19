@@ -567,9 +567,8 @@ function refine(
       return refined.combine(combineSpec(refined, plan, plan.reduce.branches, ops))
     }
     // Both the caller's own reduce AND the declared dependency's rows ride in
-    // this one query, under keys the caller cannot reach (#1357) —
-    // `maskReductions`/`restoreReductions` are where the two get split apart
-    // again on the way out.
+    // this one query, under keys the caller cannot reach (#1357) — Field
+    // Visibility's `Reduction` splits the two apart again on the way out.
     const spec: Record<string, IncludeBranch> = {
       [DECLARED_ROWS_BRANCH_KEY]: declaredRowsBranch(collection, plan, ops),
       ...(plan.reduce.kind === 'count'

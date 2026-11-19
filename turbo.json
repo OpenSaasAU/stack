@@ -46,13 +46,13 @@
     "test": {
       "dependsOn": ["build"],
       "cache": false,
-      "env": ["DATABASE_URL", "OPENSAAS_DEV_YES", "OPENAI_API_KEY", "OPENSAAS_FIELD_VISIBILITY"]
+      "env": ["DATABASE_URL", "OPENSAAS_DEV_YES", "OPENAI_API_KEY"]
     },
     "test:coverage": {
       "dependsOn": ["build"],
       "cache": false,
       "outputs": ["coverage/**"],
-      "env": ["DATABASE_URL", "OPENSAAS_DEV_YES", "OPENAI_API_KEY", "OPENSAAS_FIELD_VISIBILITY"]
+      "env": ["DATABASE_URL", "OPENSAAS_DEV_YES", "OPENAI_API_KEY"]
     },
     "dev": {
       "cache": false,

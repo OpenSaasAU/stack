@@ -8,9 +8,9 @@ const BOOT = 120_000
 /**
  * Regression coverage for issue #1243: a to-one's foreign-key column used to
  * leak the related row's id whenever the read never named the relation at
- * all — `applyForeignKeys` (the #1235 fix) only ever narrows a column for a
- * relation present in the resolved include tree, so a bare read had nothing
- * narrowing it. `narrowUnincludedForeignKeys` (`field-visibility.ts`) is what this file
+ * all — the #1235 fix only ever narrowed a column for a relation present in
+ * the resolved include tree, so a bare read had nothing narrowing it.
+ * `narrowForeignKeysAt` (`field-visibility.ts`) is what this file
  * exercises: every scenario below reads with NO `.include()` at all.
  */
 const config: OpenSaasConfig = {
@@ -185,7 +185,7 @@ describe('a bare read narrows a to-one whose foreign-key column is renamed', () 
 })
 
 /**
- * Regression coverage for issue #1386, item 2: `narrowUnincludedForeignKeys`'s
+ * Regression coverage for issue #1386, item 2: `narrowForeignKeysAt`'s
  * companion existence check cannot tell "the row is gone" from "the row is
  * denied" — both come back absent from it, and the code deliberately folds
  * them into the same `null`. PGlite serialises every statement, so a real
@@ -193,7 +193,7 @@ describe('a bare read narrows a to-one whose foreign-key column is renamed', () 
  * the companion check; this forces the window instead, by giving the
  * relationship field's own `read` rule a side effect that deletes the related
  * row. That rule runs once per row, strictly before the companion query
- * (`narrowUnincludedForeignKeys`'s own ordering — see `field-visibility.ts`), which is
+ * (`narrowForeignKeysAt`'s own ordering — see `field-visibility.ts`), which is
  * what makes the deletion land inside the window on every run rather than
  * racing it.
  */
@@ -213,7 +213,7 @@ describe('a related row deleted between the main read and the companion existenc
           Org: {
             fields: { handle: text({ validation: { isRequired: true } }) },
             // A Where-vocabulary filter, not a boolean — a boolean answer
-            // short-circuits `narrowUnincludedForeignKeys` before it ever
+            // short-circuits `narrowForeignKeysAt` before it ever
             // issues the companion existence check this test targets.
             access: { operation: { query: () => ({ handle: { contains: '' } }) } },
           },

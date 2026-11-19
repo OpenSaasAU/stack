@@ -90,7 +90,7 @@ function generateRemainderEntry(
     // `kind`, not by the `virtual` flag alone: a third-party field can
     // declare `kind: 'computed'` without also setting the flag, and the
     // descriptor is the source of truth (mirrors `validateFieldConfig`,
-    // `filterReadableFields`'s virtual-field pass, and `needsEntries` below —
+    // Field Visibility's computed-field pass, and `needsEntries` below —
     // `isComputedField` is the one predicate all four share, issue #1531).
     if (isComputedField(field, fieldName, listName, config, { kind: descriptor?.kind })) {
       // A computed field has no column, so the contract has no type for it. An

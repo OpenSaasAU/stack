@@ -10,8 +10,7 @@ import { createTestDatabase, type TestDatabase } from '../testing/context.js'
  * refused outright (`NestedToOneIncludeError`); now that the foreign key's
  * physical column no longer collides with the relation's own alias, the read
  * executes, and `restoreForeignKeys`'s removal must not have reopened the
- * fail-open the flat shapes above close (issue #1236, comment recording the
- * asymmetry between `restoreForeignKeys` and `applyForeignKeys`).
+ * fail-open the flat shapes above close (issue #1236).
  */
 const nestedConfig: OpenSaasConfig = {
   db: { provider: 'postgresql' },

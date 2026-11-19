@@ -1,16 +1,12 @@
-// Reads and writes through the secured surface whose rows, rule and hook calls
-// and statements `field-visibility-differential.test.ts` compares between the
-// two Field Visibility implementations (#2408). Each entry is a test on its own.
+// Field Visibility through the secured surface: what each read and write hands
+// back, and the rule and hook calls and statements it took to get there.
 
-import { writeFileSync } from 'node:fs'
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
 import type { FieldConfig, OpenSaasConfig } from '../config/types.js'
 import type { Session } from '../access/types.js'
 import { checkbox, integer, json, relationship, text, virtual } from '../fields/index.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
 import { createPlanRecorder, type RecordedPlan } from '../testing/plans.js'
-import type { CatalogueEntry } from './fixtures/field-visibility-catalogue-entries.js'
-import { fieldVisibilityRuns } from './field-visibility.js'
 
 const BOOT = 120_000
 
@@ -565,24 +561,6 @@ const member: Session = { role: 'member' }
 const admin: Session = { role: 'admin' }
 const enumerating: Session = { role: 'admin', enumerate: true }
 
-interface Statement {
-  readonly shape: string
-  readonly ast: unknown
-}
-
-interface Observation {
-  readonly result: unknown
-  readonly calls: readonly Call[]
-  readonly statements: readonly Statement[]
-}
-
-const observations: Partial<Record<CatalogueEntry, Observation>> = {}
-
-/** Which implementation an entry's reads reach under `=new`: the walks run every read under `=old`. */
-type Implementation = 'traversal' | 'walks' | 'none'
-
-const traversing = process.env.OPENSAAS_FIELD_VISIBILITY === 'new'
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
@@ -597,14 +575,6 @@ function projectedColumns(plan: RecordedPlan): string[] {
 
 function statement(plan: RecordedPlan): string {
   return `${plan.kind}:${String(plan.origin)}:${projectedColumns(plan).join(',')}`
-}
-
-function plainAst(plan: RecordedPlan): unknown {
-  return JSON.parse(
-    JSON.stringify(plan.ast, (_key, value: unknown) =>
-      typeof value === 'bigint' ? `${value}n` : value,
-    ),
-  )
 }
 
 function callsTo(kind: string, label: string): Call[] {
@@ -661,37 +631,11 @@ async function seedLedger(): Promise<void> {
     .db.Ledger.create({ data: { amount: 3, secretSauce: 41, note: 'n' } })
 }
 
-/**
- * Runs one catalogue entry, keeps what it observed for the differential, and
- * hands back the result for the entry's own assertion.
- */
-async function observe(
-  name: CatalogueEntry,
-  ran: Implementation,
-  run: () => Promise<unknown>,
-): Promise<unknown> {
-  if (name in observations) throw new Error(`catalogue entry "${name}" is observed twice`)
+/** Runs one read or write with the call log and the statement record cleared. */
+async function recorded<T>(run: () => Promise<T>): Promise<T> {
   calls.length = 0
   recorder.clear()
-  const before = fieldVisibilityRuns()
-  const result = await run()
-  const after = fieldVisibilityRuns()
-  expect(
-    {
-      walks: after.walks - before.walks > 0,
-      traversal: after.traversal - before.traversal > 0,
-    },
-    `the implementation that ran "${name}"`,
-  ).toEqual({
-    walks: ran === 'walks' || (ran === 'traversal' && !traversing),
-    traversal: ran === 'traversal' && traversing,
-  })
-  observations[name] = {
-    result: JSON.parse(JSON.stringify(result ?? null)),
-    calls: calls.map((call) => [...call]),
-    statements: recorder.plans.map((plan) => ({ shape: statement(plan), ast: plainAst(plan) })),
-  }
-  return result
+  return run()
 }
 
 beforeAll(async () => {
@@ -700,8 +644,6 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await database?.close()
-  const out = process.env.OPENSAAS_FIELD_VISIBILITY_CATALOGUE_OUT
-  if (out !== undefined && out !== '') writeFileSync(out, JSON.stringify(observations))
 })
 
 beforeEach(async () => {
@@ -722,7 +664,7 @@ describe('bare reads', () => {
   test('all() as a member strips denied fields, narrows foreign keys and computes', async () => {
     await seedMembers()
 
-    const rows = await observe('bare all() as a member', 'traversal', () =>
+    const rows = await recorded(() =>
       database.context(member).db.Member.orderBy({ id: 'asc' }).all(),
     )
 
@@ -758,7 +700,7 @@ describe('bare reads', () => {
   test('all() as an admin reads the salary its rule grants', async () => {
     await seedMembers()
 
-    const rows = await observe('bare all() as an admin', 'traversal', () =>
+    const rows = await recorded(() =>
       database
         .context(admin)
         .db.Member.where({ name: { equals: 'ada' } })
@@ -774,7 +716,7 @@ describe('bare reads', () => {
   test('first() anonymously nulls a foreign key whose field rule denies', async () => {
     await seedMembers()
 
-    const row = await observe('bare first() anonymously', 'traversal', () =>
+    const row = await recorded(() =>
       database.context(null).db.Member.orderBy({ id: 'asc' }).first(),
     )
 
@@ -784,7 +726,7 @@ describe('bare reads', () => {
   test('a sudo read skips every rule and the foreign-key pass', async () => {
     await seedMembers()
 
-    const row = await observe('bare first() under sudo', 'traversal', () =>
+    const row = await recorded(() =>
       database.context(null).sudo().db.Member.orderBy({ id: 'asc' }).first(),
     )
 
@@ -798,9 +740,7 @@ describe('bare reads', () => {
   test('a list with no relations computes every computed field from its declared set', async () => {
     await seedLedger()
 
-    const rows = await observe('bare all() on a list with no relations', 'traversal', () =>
-      database.context({ enumerate: true }).db.Ledger.all(),
-    )
+    const rows = await recorded(() => database.context({ enumerate: true }).db.Ledger.all())
 
     expect(rows).toEqual([{ id: 1, amount: 3, secretSauce: 41, total: 6, expensive: 42 }])
     expect(ruleAndHookCalls()).toEqual([
@@ -813,7 +753,7 @@ describe('bare reads', () => {
   test('a rule enumerating its row sees the stored columns, and denies while a relation is withheld', async () => {
     await seedMembers()
 
-    const rows = await observe('a rule enumerating its row', 'traversal', () =>
+    const rows = await recorded(() =>
       database
         .context(enumerating)
         .db.Member.where({ name: { equals: 'ada' } })
@@ -836,7 +776,7 @@ describe('projections', () => {
   test('a projection runs only the rules and hooks of the fields it names', async () => {
     await seedMembers()
 
-    const rows = await observe('select(name, label)', 'traversal', () =>
+    const rows = await recorded(() =>
       database
         .context(member)
         .db.Member.select('name', 'label')
@@ -853,7 +793,7 @@ describe('projections', () => {
   test('an unselected computed field neither runs nor widens the fetch', async () => {
     await seedLedger()
 
-    const rows = await observe('select(note, total) leaves expensive alone', 'traversal', () =>
+    const rows = await recorded(() =>
       database.context(member).db.Ledger.select('note', 'total').all(),
     )
 
@@ -867,7 +807,7 @@ describe('projections', () => {
   test('a projection naming a foreign key narrows it as a bare read does', async () => {
     await seedMembers()
 
-    const rows = await observe('select(orgId, mentorId)', 'traversal', () =>
+    const rows = await recorded(() =>
       database.context(member).db.Member.select('orgId', 'mentorId').orderBy({ id: 'asc' }).all(),
     )
 
@@ -884,7 +824,7 @@ describe('the row lock', () => {
   test('forUpdate().first() returns the re-read row through Field Visibility', async () => {
     await seedMembers()
 
-    const row = await observe('forUpdate().first()', 'traversal', () =>
+    const row = await recorded(() =>
       database.context(member).transaction((tx) =>
         tx.db.Member.where({ id: { equals: 1 } })
           .forUpdate()
@@ -900,7 +840,7 @@ describe('write returns', () => {
   test('create returns what first() would', async () => {
     await seedMembers()
 
-    const created = await observe('create', 'traversal', () =>
+    const created = await recorded(() =>
       database.context(member).db.Member.create({
         data: {
           name: 'dee',
@@ -926,7 +866,7 @@ describe('write returns', () => {
   test('update returns what first() would', async () => {
     await seedMembers()
 
-    const updated = await observe('update', 'traversal', () =>
+    const updated = await recorded(() =>
       database.context(member).db.Member.update({ where: { id: 2 }, data: { nickname: 'bobby' } }),
     )
 
@@ -944,7 +884,7 @@ describe('write returns', () => {
   test('delete returns the row as it stood', async () => {
     await seedMembers()
 
-    const deleted = await observe('delete', 'traversal', () =>
+    const deleted = await recorded(() =>
       database.context(member).db.Member.delete({ where: { id: 1 } }),
     )
 
@@ -952,7 +892,7 @@ describe('write returns', () => {
   })
 
   test('a row the session cannot query comes back as its system fields', async () => {
-    const created = await observe('create on a list the session cannot query', 'none', () =>
+    const created = await recorded(() =>
       database.context(member).db.Sealed.create({ data: { name: 'x' } }),
     )
 
@@ -960,7 +900,7 @@ describe('write returns', () => {
   })
 
   test('a list declaring a relation returns the re-read row through its rules', async () => {
-    const created = await observe('create on a list declaring a relation', 'traversal', () =>
+    const created = await recorded(() =>
       database.context(member).db.Order.create({ data: { ref: 'o' } }),
     )
 
@@ -1075,7 +1015,7 @@ describe('includes', () => {
   test('three levels of includes over several rows strip, compute and narrow at every node', async () => {
     await seedLeague()
 
-    const rows = await observe('nested includes three deep across several rows', 'traversal', () =>
+    const rows = await recorded(() =>
       database
         .context(member)
         .db.Region.orderBy({ id: 'asc' })
@@ -1182,7 +1122,7 @@ describe('includes', () => {
   test('a multi-column field reads assembled under its own key, its part columns never shown', async () => {
     await seedLeague()
 
-    const rows = await observe('a multi-column field reads assembled', 'traversal', () =>
+    const rows = await recorded(() =>
       database
         .context(member)
         .db.Team.where({ id: { equals: 1 } })
@@ -1211,9 +1151,7 @@ describe('includes', () => {
       })
     }
 
-    const rows = await observe('a hook mutating an assembled value in place', 'traversal', () =>
-      database.context(member).db.Kit.orderBy({ id: 'asc' }).all(),
-    )
+    const rows = await recorded(() => database.context(member).db.Kit.orderBy({ id: 'asc' }).all())
 
     expect(rows).toEqual(
       [1, 2].map((kit) => ({
@@ -1232,7 +1170,7 @@ describe('includes', () => {
   test('one multi-column row reached through two paths is assembled and narrowed on each', async () => {
     await seedLeague()
 
-    const rows = await observe('one multi-column row reached through two paths', 'traversal', () =>
+    const rows = await recorded(() =>
       database
         .context(member)
         .db.Team.where({ id: { equals: 1 } })
@@ -1269,7 +1207,7 @@ describe('includes', () => {
   test('a declared dependency the caller did not name reaches its hook and never the caller', async () => {
     await seedLeague()
 
-    const rows = await observe('a declared dependency the caller did not name', 'traversal', () =>
+    const rows = await recorded(() =>
       database
         .context(member)
         .db.Award.where({ id: { in: [1, 2] } })
@@ -1287,7 +1225,7 @@ describe('includes', () => {
   test('a to-one scoped away reads null by arity, nullable or not, and a to-many reads []', async () => {
     await seedLeague()
 
-    const read = await observe('a to-one scoped away reads null', 'traversal', async () => ({
+    const read = await recorded(async () => ({
       awards: await database
         .context(member)
         .db.Award.where({ id: { in: [1, 4, 5, 8] } })
@@ -1331,7 +1269,7 @@ describe('includes', () => {
   test('a nested rule reaching for a relation its row does not carry denies', async () => {
     await seedLeague()
 
-    const rows = await observe('a nested rule reaching for a withheld relation', 'traversal', () =>
+    const rows = await recorded(() =>
       database
         .context(member)
         .db.Player.where({ id: { equals: 1 } })
@@ -1350,7 +1288,7 @@ describe('includes', () => {
   test('a Synthetic back-relation keeps the rows its source field lets the session read', async () => {
     await seedLeague()
 
-    const rows = await observe('a Synthetic back-relation', 'traversal', () =>
+    const rows = await recorded(() =>
       database
         .context(member)
         .db.Coach.include('from_Player_coach', (players) => players.include('awards'))
@@ -1379,7 +1317,7 @@ describe('includes', () => {
       })
     }
 
-    const rows = await observe('an include at the depth cap', 'traversal', () =>
+    const rows = await recorded(() =>
       database
         .context(member)
         .db.Node.where({ label: { equals: 'n1' } })
@@ -1411,7 +1349,7 @@ describe('includes', () => {
   test('a Synthetic back-relation beneath a to-one gates each row on its source field', async () => {
     await seedLeague()
 
-    const rows = await observe('a Synthetic back-relation beneath a to-one', 'traversal', () =>
+    const rows = await recorded(() =>
       database
         .context(member)
         .db.Player.where({ id: { in: [1, 2, 3] } })
@@ -1458,7 +1396,7 @@ describe('reductions', () => {
   test('a count reads as a number, and a denied relation keeps no key', async () => {
     await seedLeague()
 
-    const rows = await observe('a count reads as a number', 'traversal', () =>
+    const rows = await recorded(() =>
       database
         .context(member)
         .db.Region.orderBy({ id: 'asc' })
@@ -1477,7 +1415,7 @@ describe('reductions', () => {
   test('a combine of counts reads as its counts', async () => {
     await seedLeague()
 
-    const rows = await observe('a combine of counts', 'traversal', () =>
+    const rows = await recorded(() =>
       database
         .context(member)
         .db.Region.orderBy({ id: 'asc' })
@@ -1500,29 +1438,26 @@ describe('reductions', () => {
   test('a combine rows branch strips, computes and narrows its rows, and counts beneath them', async () => {
     await seedLeague()
 
-    const rows = await observe(
-      'a combine with a rows branch, nested includes and a nested count',
-      'traversal',
-      () =>
-        database
-          .context(member)
-          .db.Region.where({ id: { in: [1, 3] } })
-          .orderBy({ id: 'asc' })
-          .include('teams', (teams) =>
-            teams.combine({
-              total: teams.count(),
-              rows: teams.orderBy({ id: 'desc' }).include('players', (players) =>
-                players.combine({
-                  n: players.count(),
-                  top: players
-                    .orderBy({ id: 'asc' })
-                    .limit(1)
-                    .include('awards', (awards) => awards.count()),
-                }),
-              ),
-            }),
-          )
-          .all(),
+    const rows = await recorded(() =>
+      database
+        .context(member)
+        .db.Region.where({ id: { in: [1, 3] } })
+        .orderBy({ id: 'asc' })
+        .include('teams', (teams) =>
+          teams.combine({
+            total: teams.count(),
+            rows: teams.orderBy({ id: 'desc' }).include('players', (players) =>
+              players.combine({
+                n: players.count(),
+                top: players
+                  .orderBy({ id: 'asc' })
+                  .limit(1)
+                  .include('awards', (awards) => awards.count()),
+              }),
+            ),
+          }),
+        )
+        .all(),
     )
 
     const player = (id: number) => {
@@ -1548,25 +1483,21 @@ describe('reductions', () => {
       .sudo()
       .db.Member.create({ data: { name: 'dee', nickname: 'd', org: { connect: { id: 1 } } } })
 
-    const rows = await observe(
-      'reductions on a Synthetic back-relation whose source rule reads no row',
-      'traversal',
-      async () => {
-        const db = database.context(member).db
-        return {
-          count: await db.Org.include('from_Member_org', (members) => members.count()).all(),
-          counts: await db.Org.include('from_Member_org', (members) =>
-            members.combine({
-              all: members.count(),
-              ada: members.where({ name: { equals: 'ada' } }).count(),
-            }),
-          ).all(),
-          rows: await db.Org.include('from_Member_org', (members) =>
-            members.combine({ total: members.count(), all: members.orderBy({ id: 'asc' }) }),
-          ).all(),
-        }
-      },
-    )
+    const rows = await recorded(async () => {
+      const db = database.context(member).db
+      return {
+        count: await db.Org.include('from_Member_org', (members) => members.count()).all(),
+        counts: await db.Org.include('from_Member_org', (members) =>
+          members.combine({
+            all: members.count(),
+            ada: members.where({ name: { equals: 'ada' } }).count(),
+          }),
+        ).all(),
+        rows: await db.Org.include('from_Member_org', (members) =>
+          members.combine({ total: members.count(), all: members.orderBy({ id: 'asc' }) }),
+        ).all(),
+      }
+    })
     const listed = { id: 1, name: 'listed', listed: true }
     const ada = {
       id: 1,
@@ -1608,7 +1539,7 @@ describe('reductions', () => {
   test('reductions beneath a to-one count, combine and strip the rows they reach', async () => {
     await seedLeague()
 
-    const rows = await observe('reductions beneath a to-one', 'traversal', async () => {
+    const rows = await recorded(async () => {
       const awards = () =>
         database
           .context(member)
@@ -1674,7 +1605,7 @@ describe('reductions', () => {
   test('a combine of counts beneath a to-many reads as its counts on every row', async () => {
     await seedLeague()
 
-    const rows = await observe('a combine of counts beneath a to-many', 'traversal', () =>
+    const rows = await recorded(() =>
       database
         .context(member)
         .db.Region.where({ id: { in: [1, 3] } })
@@ -1766,7 +1697,7 @@ describe('declared relations a caller reduces or shapes', () => {
   test('a count over a declared relation hands the hook the declared rows and computes nothing on them', async () => {
     await seedShelves()
 
-    const rows = await observe('a count standing in for a declared relation', 'traversal', () =>
+    const rows = await recorded(() =>
       database
         .context(member)
         .db.Shelf.orderBy({ id: 'asc' })
@@ -1787,18 +1718,15 @@ describe('declared relations a caller reduces or shapes', () => {
   test('a combine rows branch beside a declared relation hands the hook the unshaped rows', async () => {
     await seedShelves()
 
-    const rows = await observe(
-      'a combine rows branch beside a declared relation',
-      'traversal',
-      () =>
-        database
-          .context(member)
-          .db.Shelf.where({ id: { in: [1, 2] } })
-          .orderBy({ id: 'asc' })
-          .include('books', (books) =>
-            books.combine({ total: books.count(), top: books.orderBy({ pages: 'desc' }).limit(1) }),
-          )
-          .all(),
+    const rows = await recorded(() =>
+      database
+        .context(member)
+        .db.Shelf.where({ id: { in: [1, 2] } })
+        .orderBy({ id: 'asc' })
+        .include('books', (books) =>
+          books.combine({ total: books.count(), top: books.orderBy({ pages: 'desc' }).limit(1) }),
+        )
+        .all(),
     )
 
     expect(rows).toEqual([
@@ -1816,7 +1744,7 @@ describe('declared relations a caller reduces or shapes', () => {
   test('a caller-shaped declared to-one hands the hook the unshaped row', async () => {
     await seedLeague()
 
-    const rows = await observe('a caller-shaped declared to-one', 'traversal', () =>
+    const rows = await recorded(() =>
       database
         .context(member)
         .db.Award.where({ id: { in: [1, 2] } })
@@ -1835,7 +1763,7 @@ describe('declared relations a caller reduces or shapes', () => {
   test('a caller-shaped declared to-many returns the shaped rows and hands the hook the unshaped ones', async () => {
     await seedShelves()
 
-    const rows = await observe('a caller-shaped declared to-many', 'traversal', () =>
+    const rows = await recorded(() =>
       database
         .context(member)
         .db.Shelf.orderBy({ id: 'asc' })
@@ -1856,15 +1784,12 @@ describe('declared relations a caller reduces or shapes', () => {
   test('a caller-shaped declared relation inside a transaction fetches its unshaped rows there', async () => {
     await seedShelves()
 
-    const rows = await observe(
-      'a caller-shaped declared relation inside a transaction',
-      'traversal',
-      () =>
-        database.context(member).transaction((tx) =>
-          tx.db.Shelf.where({ id: { equals: 1 } })
-            .include('books', (books) => books.where({ pages: { lt: 100 } }))
-            .all(),
-        ),
+    const rows = await recorded(() =>
+      database.context(member).transaction((tx) =>
+        tx.db.Shelf.where({ id: { equals: 1 } })
+          .include('books', (books) => books.where({ pages: { lt: 100 } }))
+          .all(),
+      ),
     )
 
     expect(rows).toEqual([shelf(1, [book(2)], 2)])
@@ -1875,7 +1800,7 @@ describe('declared relations a caller reduces or shapes', () => {
   test('a count beneath a Synthetic back-relation gates each row on its declared rows', async () => {
     await seedShelves()
 
-    const rows = await observe('a count beneath a Synthetic back-relation', 'traversal', () =>
+    const rows = await recorded(() =>
       database
         .context(member)
         .db.Coach.orderBy({ id: 'asc' })
@@ -1898,19 +1823,16 @@ describe('declared relations a caller reduces or shapes', () => {
   test('a combine rows branch beneath a Synthetic back-relation strips the rows it reaches', async () => {
     await seedShelves()
 
-    const rows = await observe(
-      'a combine rows branch beneath a Synthetic back-relation',
-      'traversal',
-      () =>
-        database
-          .context(member)
-          .db.Coach.orderBy({ id: 'asc' })
-          .include('from_Shelf_keeper', (shelves) =>
-            shelves.include('books', (books) =>
-              books.combine({ total: books.count(), all: books.orderBy({ id: 'asc' }) }),
-            ),
-          )
-          .all(),
+    const rows = await recorded(() =>
+      database
+        .context(member)
+        .db.Coach.orderBy({ id: 'asc' })
+        .include('from_Shelf_keeper', (shelves) =>
+          shelves.include('books', (books) =>
+            books.combine({ total: books.count(), all: books.orderBy({ id: 'asc' }) }),
+          ),
+        )
+        .all(),
     )
     expect(rows).toEqual([
       {
@@ -1941,50 +1863,46 @@ describe('declared relations a caller reduces or shapes', () => {
     await seedLeague()
     await seedShelves(false)
 
-    const rows = await observe(
-      'reductions beneath a Synthetic back-relation',
-      'traversal',
-      async () => {
-        const coaches = () => database.context(member).db.Coach.orderBy({ id: 'asc' })
-        return {
-          count: await coaches()
-            .include('from_Player_coach', (players) =>
-              players.include('awards', (awards) => awards.count()),
-            )
-            .all(),
-          counts: await coaches()
-            .include('from_Player_coach', (players) =>
-              players.include('awards', (awards) =>
-                awards.combine({
-                  all: awards.count(),
-                  odd: awards.where({ points: { in: [1, 9, 10] } }).count(),
-                }),
-              ),
-            )
-            .all(),
-          rows: await coaches()
-            .include('from_Player_coach', (players) =>
-              players.include('awards', (awards) =>
-                awards.combine({
-                  total: awards.count(),
-                  top: awards.orderBy({ id: 'desc' }).limit(1),
-                }),
-              ),
-            )
-            .all(),
-          declared: await coaches()
-            .include('from_Shelf_keeper', (shelves) =>
-              shelves.include('books', (books) =>
-                books.combine({
-                  total: books.count(),
-                  long: books.where({ pages: { gt: 100 } }).count(),
-                }),
-              ),
-            )
-            .all(),
-        }
-      },
-    )
+    const rows = await recorded(async () => {
+      const coaches = () => database.context(member).db.Coach.orderBy({ id: 'asc' })
+      return {
+        count: await coaches()
+          .include('from_Player_coach', (players) =>
+            players.include('awards', (awards) => awards.count()),
+          )
+          .all(),
+        counts: await coaches()
+          .include('from_Player_coach', (players) =>
+            players.include('awards', (awards) =>
+              awards.combine({
+                all: awards.count(),
+                odd: awards.where({ points: { in: [1, 9, 10] } }).count(),
+              }),
+            ),
+          )
+          .all(),
+        rows: await coaches()
+          .include('from_Player_coach', (players) =>
+            players.include('awards', (awards) =>
+              awards.combine({
+                total: awards.count(),
+                top: awards.orderBy({ id: 'desc' }).limit(1),
+              }),
+            ),
+          )
+          .all(),
+        declared: await coaches()
+          .include('from_Shelf_keeper', (shelves) =>
+            shelves.include('books', (books) =>
+              books.combine({
+                total: books.count(),
+                long: books.where({ pages: { gt: 100 } }).count(),
+              }),
+            ),
+          )
+          .all(),
+      }
+    })
     const coach = (relation: string, related: unknown[]) => ({
       id: 1,
       name: 'c1',
@@ -2024,21 +1942,17 @@ describe('declared relations a caller reduces or shapes', () => {
   test('declared relations beneath a Synthetic back-relation hand the hook the unshaped rows', async () => {
     await seedShelves()
 
-    const rows = await observe(
-      'declared relations beneath a Synthetic back-relation',
-      'traversal',
-      async () => {
-        const coaches = () => database.context(member).db.Coach.orderBy({ id: 'asc' })
-        return {
-          shaped: await coaches()
-            .include('from_Shelf_keeper', (shelves) =>
-              shelves.include('books', (books) => books.where({ pages: { gt: 100 } })),
-            )
-            .all(),
-          unshaped: await coaches().include('from_Shelf_keeper').all(),
-        }
-      },
-    )
+    const rows = await recorded(async () => {
+      const coaches = () => database.context(member).db.Coach.orderBy({ id: 'asc' })
+      return {
+        shaped: await coaches()
+          .include('from_Shelf_keeper', (shelves) =>
+            shelves.include('books', (books) => books.where({ pages: { gt: 100 } })),
+          )
+          .all(),
+        unshaped: await coaches().include('from_Shelf_keeper').all(),
+      }
+    })
     const coach = (shelves: unknown[]) => ({
       id: 1,
       name: 'c1',
@@ -2057,7 +1971,7 @@ describe('declared relations a caller reduces or shapes', () => {
   test('declared relations beneath a to-one hand the hook the unshaped rows', async () => {
     await seedShelves()
 
-    const rows = await observe('declared relations beneath a to-one', 'traversal', async () => {
+    const rows = await recorded(async () => {
       const books = () =>
         database
           .context(member)
@@ -2096,39 +2010,35 @@ describe('declared relations a caller reduces or shapes', () => {
   test('reductions over a declared relation beneath a to-one hand the hook the declared rows', async () => {
     await seedShelves()
 
-    const rows = await observe(
-      'reductions over a declared relation beneath a to-one',
-      'traversal',
-      async () => {
-        const books = () =>
-          database
-            .context(member)
-            .db.Book.where({ id: { in: [1, 4] } })
-            .orderBy({ id: 'asc' })
-        return {
-          count: await books()
-            .include('shelf', (shelf) => shelf.include('books', (all) => all.count()))
-            .all(),
-          counts: await books()
-            .include('shelf', (shelf) =>
-              shelf.include('books', (all) =>
-                all.combine({
-                  total: all.count(),
-                  long: all.where({ pages: { gt: 100 } }).count(),
-                }),
-              ),
-            )
-            .all(),
-          rows: await books()
-            .include('shelf', (shelf) =>
-              shelf.include('books', (all) =>
-                all.combine({ total: all.count(), all: all.orderBy({ id: 'asc' }) }),
-              ),
-            )
-            .all(),
-        }
-      },
-    )
+    const rows = await recorded(async () => {
+      const books = () =>
+        database
+          .context(member)
+          .db.Book.where({ id: { in: [1, 4] } })
+          .orderBy({ id: 'asc' })
+      return {
+        count: await books()
+          .include('shelf', (shelf) => shelf.include('books', (all) => all.count()))
+          .all(),
+        counts: await books()
+          .include('shelf', (shelf) =>
+            shelf.include('books', (all) =>
+              all.combine({
+                total: all.count(),
+                long: all.where({ pages: { gt: 100 } }).count(),
+              }),
+            ),
+          )
+          .all(),
+        rows: await books()
+          .include('shelf', (shelf) =>
+            shelf.include('books', (all) =>
+              all.combine({ total: all.count(), all: all.orderBy({ id: 'asc' }) }),
+            ),
+          )
+          .all(),
+      }
+    })
     const read = (books1: unknown, books4: unknown) => [
       { ...book(1), shelf: shelf(1, books1, 2) },
       { ...book(4), shelf: shelf(2, books4, 1) },
@@ -2156,18 +2066,15 @@ describe('declared relations a caller reduces or shapes', () => {
   test('a caller-shaped declared to-one beneath a to-many hands the hook the unshaped row', async () => {
     await seedLeague()
 
-    const rows = await observe(
-      'a caller-shaped declared to-one beneath a to-many',
-      'traversal',
-      () =>
-        database
-          .context(member)
-          .db.Player.where({ id: { in: [1, 2] } })
-          .orderBy({ id: 'asc' })
-          .include('awards', (awards) =>
-            awards.include('sponsor', (sponsor) => sponsor.where({ name: { equals: 'nobody' } })),
-          )
-          .all(),
+    const rows = await recorded(() =>
+      database
+        .context(member)
+        .db.Player.where({ id: { in: [1, 2] } })
+        .orderBy({ id: 'asc' })
+        .include('awards', (awards) =>
+          awards.include('sponsor', (sponsor) => sponsor.where({ name: { equals: 'nobody' } })),
+        )
+        .all(),
     )
     const player = (id: number) => ({
       ...shownPlayer(id),
@@ -2188,7 +2095,7 @@ describe('a hook mutating declared rows in place', () => {
   test("a count's declared stand-in is fresh for the foreign-key pass", async () => {
     await seedShelves()
 
-    const rows = await observe("a hook pushing into a count's declared stand-in", 'traversal', () =>
+    const rows = await recorded(() =>
       database
         .context(mutating)
         .db.Shelf.where({ id: { equals: 1 } })
@@ -2203,15 +2110,12 @@ describe('a hook mutating declared rows in place', () => {
   test("a rows branch's declared rows are shared with the foreign-key pass", async () => {
     await seedShelves()
 
-    const rows = await observe(
-      "a hook pushing into a rows branch's declared rows",
-      'traversal',
-      () =>
-        database
-          .context(mutating)
-          .db.Shelf.where({ id: { equals: 1 } })
-          .include('books', (books) => books.combine({ total: books.count(), all: books }))
-          .all(),
+    const rows = await recorded(() =>
+      database
+        .context(mutating)
+        .db.Shelf.where({ id: { equals: 1 } })
+        .include('books', (books) => books.combine({ total: books.count(), all: books }))
+        .all(),
     )
 
     expect(rows).toEqual([
@@ -2225,15 +2129,12 @@ describe('a hook mutating declared rows in place', () => {
   test("a caller-shaped declared relation's unshaped rows are shared with the foreign-key pass", async () => {
     await seedShelves()
 
-    const rows = await observe(
-      "a hook pushing into a caller-shaped declared relation's rows",
-      'traversal',
-      () =>
-        database
-          .context(mutating)
-          .db.Shelf.where({ id: { equals: 1 } })
-          .include('books', (books) => books.limit(1))
-          .all(),
+    const rows = await recorded(() =>
+      database
+        .context(mutating)
+        .db.Shelf.where({ id: { equals: 1 } })
+        .include('books', (books) => books.limit(1))
+        .all(),
     )
 
     expect(rows).toEqual([{ ...shelf(1, [book(1)], 2), keeperId: null }])
@@ -2248,7 +2149,7 @@ describe('the row lock with includes and reductions', () => {
     await seedLeague()
     await seedShelves(false)
 
-    const read = await observe('forUpdate().all() with includes and a reduction', 'traversal', () =>
+    const read = await recorded(() =>
       database.context(member).transaction(async (tx) => ({
         shelves: await tx.db.Shelf.orderBy({ id: 'asc' })
           .include('books', (books) => books.count())
@@ -2275,7 +2176,7 @@ describe('the row lock with includes and reductions', () => {
   test('forUpdate().first() re-reads and shows a combine rows branch', async () => {
     await seedShelves()
 
-    const row = await observe('forUpdate().first() with a combine rows branch', 'traversal', () =>
+    const row = await recorded(() =>
       database.context(member).transaction((tx) =>
         tx.db.Shelf.where({ id: { equals: 1 } })
           .include('books', (books) => books.combine({ total: books.count(), all: books }))
@@ -2292,26 +2193,23 @@ describe('the row lock with includes and reductions', () => {
     await seedLeague()
     await seedShelves(false)
 
-    const rows = await observe(
-      'forUpdate().all() with a to-one and a Synthetic back-relation',
-      'traversal',
-      () =>
-        database.context(member).transaction(async (tx) => ({
-          awards: await tx.db.Award.where({ id: { in: [1, 4] } })
-            .orderBy({ id: 'asc' })
-            .include('sponsor')
-            .include('player', (player) => player.include('coach'))
-            .forUpdate()
-            .all(),
-          coaches: await tx.db.Coach.orderBy({ id: 'asc' })
-            .include('from_Shelf_keeper', (shelves) =>
-              shelves.include('books', (books) =>
-                books.combine({ total: books.count(), all: books.orderBy({ id: 'asc' }) }),
-              ),
-            )
-            .forUpdate()
-            .all(),
-        })),
+    const rows = await recorded(() =>
+      database.context(member).transaction(async (tx) => ({
+        awards: await tx.db.Award.where({ id: { in: [1, 4] } })
+          .orderBy({ id: 'asc' })
+          .include('sponsor')
+          .include('player', (player) => player.include('coach'))
+          .forUpdate()
+          .all(),
+        coaches: await tx.db.Coach.orderBy({ id: 'asc' })
+          .include('from_Shelf_keeper', (shelves) =>
+            shelves.include('books', (books) =>
+              books.combine({ total: books.count(), all: books.orderBy({ id: 'asc' }) }),
+            ),
+          )
+          .forUpdate()
+          .all(),
+      })),
     )
     const player = (id: number, coach: unknown) => {
       const { awards: _awards, ...rest } = shownPlayer(id)
@@ -2347,7 +2245,7 @@ describe('writes on a list declaring a relation', () => {
   test('update returns the re-read row computed over the declared rows', async () => {
     await seedShelves()
 
-    const updated = await observe('update on a list declaring a relation', 'traversal', () =>
+    const updated = await recorded(() =>
       database.context(member).db.Shelf.update({ where: { id: 1 }, data: { name: 'sh1' } }),
     )
 
@@ -2363,7 +2261,7 @@ describe('writes on a list declaring a relation', () => {
       .sudo()
       .db.Shelf.update({ where: { id: 3 }, data: { keeper: { connect: { id: 2 } } } })
 
-    const deleted = await observe('delete on a list declaring a relation', 'traversal', () =>
+    const deleted = await recorded(() =>
       database.context(member).db.Shelf.delete({ where: { id: 3 } }),
     )
 

@@ -225,9 +225,8 @@ export class InvalidCombineBranchError extends Error {
 
 /**
  * Thrown when a `combine` names the relation's rows under more than one key.
- * Field Visibility decides a relation's fate once, against one value — see
- * `maskReductions` in `field-visibility.ts` — so a second rows branch would return rows no
- * access decision was made about.
+ * Field Visibility decides a relation's fate once, against one value, so a
+ * second rows branch would return rows no access decision was made about.
  */
 export class MultipleCombineRowBranchesError extends Error {
   constructor(
@@ -294,7 +293,7 @@ export interface CombineBranchRequest {
  * The `combine()` branch key an internal declared-dependency rows fetch rides
  * under, on a relation that is reduced without a rows branch of its own (see
  * `IncludePlan.declaredRows`, `read.ts`'s `refine`, `field-visibility.ts`'s
- * `maskReductions`/`restoreReductions`, and #1357). Not reachable by a caller-authored
+ * `Reduction`, and #1357). Not reachable by a caller-authored
  * `combine()` spec — {@link ReservedCombineKeyError} refuses a caller key that
  * collides with it — so its presence in a raw DB result always means this
  * engine added it.
@@ -304,7 +303,7 @@ export const DECLARED_ROWS_BRANCH_KEY = '__opensaas_declared_rows__'
 /**
  * The `combine()` branch key a bare `.count()` reduce's own count rides under,
  * once {@link DECLARED_ROWS_BRANCH_KEY} forces the query onto `combine()`
- * instead of a bare `count()`. `restoreReductions` unwraps it back to the
+ * instead of a bare `count()`. Field Visibility unwraps it back to the
  * plain number a `.count()` caller expects.
  */
 export const DECLARED_COUNT_BRANCH_KEY = '__opensaas_declared_count__'
@@ -315,7 +314,7 @@ const RESERVED_COMBINE_KEYS: ReadonlySet<string> = new Set([
 ])
 
 /** A resolved reduction: every branch's predicates already carry the Access Filter. */
-export type ReducePlan =
+type ReducePlan =
   | { readonly kind: 'count' }
   | { readonly kind: 'combine'; readonly branches: readonly CombineBranchPlan[] }
 
@@ -390,8 +389,8 @@ export interface IncludePlan extends PlanLevel {
    * Access Filter predicates for an extra, caller-invisible rows fetch riding
    * inside the same `combine()` under {@link DECLARED_ROWS_BRANCH_KEY} — full
    * stored width, one hop, exactly what an ordinary declared branch fetches,
-   * because that is what this stands in for. See `maskReductions` and
-   * `restoreReductions` in `field-visibility.ts`.
+   * because that is what this stands in for. See `Reduction` in
+   * `field-visibility.ts`.
    */
   readonly declaredRows?: readonly WherePlan[]
   /**
@@ -601,8 +600,8 @@ export interface ForeignKeyOwner {
  * regardless of `include`. `resolveInclude` only ever resolves a relation this
  * read actually named or declared, so a to-one nobody asked for has no
  * {@link IncludePlan} entry and nothing narrows its column — the gap issue
- * #1243 closes. `narrowUnincludedForeignKeys` (`field-visibility.ts`) is what
- * actually does that narrowing; this is the enumeration it walks.
+ * #1243 closes. `narrowForeignKeysAt` (`field-visibility.ts`) is what
+ * actually does that narrowing; this is the enumeration it reads.
  */
 function foreignKeyOwningRelations(ctx: LevelContext): ForeignKeyOwner[] {
   const owners: ForeignKeyOwner[] = []
