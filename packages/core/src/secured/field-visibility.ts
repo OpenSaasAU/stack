@@ -1,6 +1,5 @@
-// Field Visibility: a read binding, raw rows and a resolved plan in, the rows a
-// caller may see out — for every read terminal and every write return. ADR-0001,
-// ADR-0027, ADR-0044, ADR-0051, ADR-0081, ADR-0082.
+// Field Visibility: raw rows and a resolved plan in, the rows a caller may see out,
+// for every read terminal and every write return (ADR-0027, ADR-0044, ADR-0051).
 
 import type { AccessContext, OrmRow } from '../access/types.js'
 import type { FieldConfig, ListConfig, TypeInfo } from '../config/types.js'
@@ -17,7 +16,13 @@ import { RESOLVE_CHAIN_MAX_LENGTH } from '../access/depth-limits.js'
 import { ResolveOutputCycleError } from '../access/errors.js'
 import { withDerivedSessionVocabulary } from '../access/session-vocabulary.js'
 import { getListDependencies } from '../access/declared-dependencies.js'
-import { partColumnsOf, resolveListMembers, type ListMembers } from '../members/list-members.js'
+import {
+  partColumnsOf,
+  resolveListMembers,
+  unhandledMember,
+  type ListMember,
+  type ListMembers,
+} from '../members/list-members.js'
 import type { FieldDependencySet } from '../contract/dependencies.js'
 import { lowerWhere, whereCombinators } from './lower.js'
 import { resolveRelatedAccessPlan, type ResolveContext } from './vocabulary.js'
@@ -251,21 +256,8 @@ async function filterReadableFields(
   }
   const filtered: Record<string, unknown> = {}
 
-  // A multi-column field's raw part columns never leak: its logical value is
-  // assembled under its own key and goes through the normal path (ADR-0006).
   const listMembers = resolveListMembers(config, listKey)
-  const workingItem: Record<string, unknown> = { ...item }
-  for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
-    const columnNames = partColumnsOf(listMembers, fieldName)
-    if (!fieldConfig.assembleColumns || !columnNames) continue
-    const hasAnyColumn = columnNames.some((name) => name in workingItem)
-    if (!hasAnyColumn) continue
-    const assembled = fieldConfig.assembleColumns(fieldName, workingItem)
-    for (const name of columnNames) {
-      delete workingItem[name]
-    }
-    workingItem[fieldName] = assembled
-  }
+  const workingItem = assembleColumnFields(item, fieldConfigs, listMembers)
 
   const declaredDependencies: Readonly<Record<string, FieldDependencySet>> = getListDependencies(
     config,
@@ -285,7 +277,7 @@ async function filterReadableFields(
     return hookItem
   }
 
-  const nodes = new Map(level.includes.map((plan) => [plan.relation, plan]))
+  const nodes = nodesOf(level)
 
   for (const [fieldName, rawValue] of Object.entries(workingItem)) {
     let value = rawValue
@@ -300,12 +292,13 @@ async function filterReadableFields(
       continue
     }
 
+    const member = listMembers.members.get(fieldName)
+    if (member === undefined || member.kind === 'partColumn') continue
+
     const node = nodes.get(fieldName)
 
     // A related row the plan has no node for has nothing to strip it by.
-    if (node === undefined && fieldConfig?.type === 'relationship' && value != null) {
-      continue
-    }
+    if (node === undefined && isRelationMember(member)) continue
 
     if (node !== undefined && value !== null && value !== undefined) {
       if (node.synthetic === undefined) {
@@ -331,7 +324,7 @@ async function filterReadableFields(
         const allowed = await Promise.all(
           value.map((relatedItem) =>
             checkRowRead(
-              gate?.access,
+              gate.access,
               args,
               ruleRowOf(
                 relatedItem,
@@ -389,8 +382,7 @@ async function filterReadableFields(
       continue
     }
 
-    // Checked last: it is the only one of the three that can run a
-    // third-party field's own `getContractField` (issue #1531).
+    // Checked last: it can run a third-party field's own `getContractField` (#1531).
     if (!isComputedField(fieldConfig, fieldName, listKey, config)) {
       continue
     }
@@ -418,6 +410,31 @@ async function filterReadableFields(
   }
 
   return filtered
+}
+
+const nodesByLevel = new WeakMap<PlanLevel, ReadonlyMap<string, IncludePlan>>()
+
+function nodesOf(level: PlanLevel): ReadonlyMap<string, IncludePlan> {
+  const known = nodesByLevel.get(level)
+  if (known !== undefined) return known
+  const nodes = new Map(level.includes.map((plan) => [plan.relation, plan]))
+  nodesByLevel.set(level, nodes)
+  return nodes
+}
+
+function isRelationMember(member: ListMember): boolean {
+  switch (member.kind) {
+    case 'field':
+      return member.storage.kind === 'relation'
+    case 'syntheticBackRelation':
+      return true
+    case 'foreignKey':
+    case 'partColumn':
+    case 'systemField':
+      return false
+    default:
+      return unhandledMember(member)
+  }
 }
 
 function isRow(value: unknown): value is OrmRow {
@@ -477,6 +494,7 @@ function relatedResolveContext(binding: VisibilityBinding, level: PlanLevel): Re
   }
 }
 
+/** A multi-column field's parts never leak: its value is assembled under its own key (ADR-0006). */
 function assembleColumnFields(
   row: OrmRow,
   fieldConfigs: ListConfig<TypeInfo>['fields'],
@@ -540,8 +558,9 @@ async function narrowUnincludedForeignKeys(
   if (binding.context._isSudo === true) return
   const ctx = relatedResolveContext(binding, level)
   const { listName, listConfig } = level
+  const foreignKeys = level.foreignKeys()
 
-  const members = level.ownsForeignKeys ? resolveListMembers(binding.config, listName) : undefined
+  const members = foreignKeys.owned ? resolveListMembers(binding.config, listName) : undefined
   const ruleRows =
     members === undefined
       ? []
@@ -555,7 +574,7 @@ async function narrowUnincludedForeignKeys(
           ),
         )
 
-  for (const owner of level.unincludedForeignKeys) {
+  for (const owner of foreignKeys.unincluded) {
     if (!rawRows.some((row) => owner.foreignKey in row)) continue
 
     const related = owner.related

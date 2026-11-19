@@ -2,7 +2,11 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
 import type { BaseFieldConfig, OpenSaasConfig, TypeInfo } from '../config/types.js'
 import { relationship, text, virtual } from '../fields/index.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
-import type { ReadBinding } from './binding.js'
+import type { AccessContext } from '../access/types.js'
+import { rebindDb } from '../context/index.js'
+import { collectionFor, engineRead, type ReadBinding } from './binding.js'
+import { visibleRows } from './field-visibility.js'
+import { buildIncludeRequest, planLevel, resolveIncludes } from './include.js'
 
 /**
  * Field Visibility reads each relation's list, its Synthetic flag and the
@@ -50,6 +54,8 @@ function tagged(list: string) {
 
 const OPEN = { query: () => true, create: () => true, update: () => true, delete: () => true }
 
+let engineContext: AccessContext | undefined
+
 const config: OpenSaasConfig = {
   db: { provider: 'postgresql' },
   lists: {
@@ -90,7 +96,15 @@ const config: OpenSaasConfig = {
     },
     Topic: {
       fields: { name: text(), note: text(), tag: tagged('Topic') },
-      access: { operation: OPEN },
+      access: {
+        operation: {
+          ...OPEN,
+          query: ({ context }) => {
+            engineContext = context
+            return true
+          },
+        },
+      },
     },
     Profile: {
       fields: {
@@ -165,7 +179,7 @@ describe('Field Visibility reads every relation shape off its plan node (#2406)'
   )
 
   test(
-    'a declared to-many is stripped and computed by the related list',
+    'an included to-many is stripped and computed by the related list',
     async () => {
       const [author] = await database
         .context(null)
@@ -182,7 +196,7 @@ describe('Field Visibility reads every relation shape off its plan node (#2406)'
   )
 
   test(
-    'a declared to-one is stripped and computed by the related list',
+    'an included to-one is stripped and computed by the related list',
     async () => {
       const post = await database
         .context(null)
@@ -267,6 +281,100 @@ describe('Field Visibility reads every relation shape off its plan node (#2406)'
         [ids.ada, expect.objectContaining({ name: 'ada' })],
         [ids.ada, expect.objectContaining({ name: 'ada' })],
       ])
+    },
+    BOOT,
+  )
+})
+
+describe('a relation value the plan has no node for is dropped (#2406)', () => {
+  let database: TestDatabase
+
+  beforeAll(async () => {
+    database = await createTestDatabase(config)
+  }, BOOT)
+
+  afterAll(async () => {
+    await database?.close()
+  })
+
+  async function readWithoutNode(listName: string, relation: string) {
+    const { db } = database.context(null)
+    const topic = await db.Topic.create({ data: { name: 't', note: 'topic note' } })
+    const author = await db.Author.create({ data: { name: 'ada', note: 'author note' } })
+    if (topic === null || author === null) throw new Error('setup')
+    for (const name of ['open', 'gated']) {
+      await db.Post.create({
+        data: {
+          name,
+          note: 'post note',
+          author: { connect: { id: author.id } },
+          topic: { connect: { id: topic.id } },
+        },
+      })
+    }
+    await db.Topic.all()
+    const context = engineContext
+    if (context === undefined) throw new Error('no engine context captured')
+    const listConfig = config.lists[listName]
+    const binding: ReadBinding = {
+      listName,
+      listConfig,
+      ormHandle: context.ormHandle,
+      context,
+      config,
+      rebindDb: rebindDb(config),
+    }
+    const ctx = {
+      listName,
+      listConfig,
+      config,
+      session: null,
+      context,
+      checkFieldRead: true,
+      applyRelationAccess: true,
+      accessFilterPath: [],
+    }
+    const includes = await resolveIncludes([buildIncludeRequest(relation)], ctx, 0)
+    const root = planLevel(ctx, undefined, includes)
+    const rows = await engineRead(binding, () =>
+      collectionFor(context.ormHandle, listName)
+        .include(relation, (child) => child)
+        .all(),
+    )
+    expect(rows[0][relation]).toEqual(
+      expect.arrayContaining([expect.objectContaining({ note: 'post note' })]),
+    )
+    const withNode = await visibleRows(binding, rows, root)
+    const withoutNode = await visibleRows(binding, rows, {
+      ...root,
+      includes: root.includes.filter((node) => node.relation !== relation),
+    })
+    return { withNode, withoutNode }
+  }
+
+  test(
+    'a Synthetic back-relation with no node is dropped rather than returned raw',
+    async () => {
+      await database.truncate()
+      const { withNode, withoutNode } = await readWithoutNode('Topic', 'from_Post_topic')
+      expect(withNode[0].from_Post_topic).toEqual([expect.objectContaining({ name: 'open' })])
+      expect(withoutNode[0]).not.toHaveProperty('from_Post_topic')
+      expect(withoutNode[0]).toMatchObject({ name: 't', note: 'topic note' })
+    },
+    BOOT,
+  )
+
+  test(
+    'a declared relationship with no node is dropped rather than returned raw',
+    async () => {
+      await database.truncate()
+      const { withNode, withoutNode } = await readWithoutNode('Author', 'posts')
+      expect(withNode[0].posts).toHaveLength(2)
+      expect(withNode[0].posts).not.toContainEqual(
+        expect.objectContaining({ note: expect.anything() }),
+      )
+      expect(withoutNode[0]).not.toHaveProperty('posts')
+      expect(withoutNode[0]).toMatchObject({ name: 'ada', note: 'author note' })
     },
     BOOT,
   )

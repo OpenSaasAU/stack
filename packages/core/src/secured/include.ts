@@ -226,7 +226,7 @@ export class InvalidCombineBranchError extends Error {
 /**
  * Thrown when a `combine` names the relation's rows under more than one key.
  * Field Visibility decides a relation's fate once, against one value — see
- * `maskReductions` in `read.ts` — so a second rows branch would return rows no
+ * `maskReductions` in `field-visibility.ts` — so a second rows branch would return rows no
  * access decision was made about.
  */
 export class MultipleCombineRowBranchesError extends Error {
@@ -293,8 +293,8 @@ export interface CombineBranchRequest {
 /**
  * The `combine()` branch key an internal declared-dependency rows fetch rides
  * under, on a relation that is reduced without a rows branch of its own (see
- * `IncludePlan.declaredRows`, `read.ts`'s `refine`/`maskReductions`/
- * `restoreReductions`, and #1357). Not reachable by a caller-authored
+ * `IncludePlan.declaredRows`, `read.ts`'s `refine`, `field-visibility.ts`'s
+ * `maskReductions`/`restoreReductions`, and #1357). Not reachable by a caller-authored
  * `combine()` spec — {@link ReservedCombineKeyError} refuses a caller key that
  * collides with it — so its presence in a raw DB result always means this
  * engine added it.
@@ -344,7 +344,7 @@ export interface IncludePlan extends PlanLevel {
    * The contract member the relation's foreign key decodes to (`<field>Id`),
    * on the to-one side that owns one. `undefined` for a to-many, for the
    * non-owning side of a one-to-one and for a synthetic back-relation, none of
-   * which carry a column here. Read by the foreign-key pass in `read.ts`.
+   * which carry a column here. Read by the foreign-key pass in `field-visibility.ts`.
    */
   readonly foreignKey?: string
   readonly predicates: readonly WherePlan[]
@@ -391,7 +391,7 @@ export interface IncludePlan extends PlanLevel {
    * inside the same `combine()` under {@link DECLARED_ROWS_BRANCH_KEY} — full
    * stored width, one hop, exactly what an ordinary declared branch fetches,
    * because that is what this stands in for. See `maskReductions` and
-   * `restoreReductions` in `read.ts`.
+   * `restoreReductions` in `field-visibility.ts`.
    */
   readonly declaredRows?: readonly WherePlan[]
   /**
@@ -400,7 +400,7 @@ export interface IncludePlan extends PlanLevel {
    */
   readonly reducedDeclared: boolean
   /** Present on a Synthetic back-relation: the declared field whose `read` rule gates each row. */
-  readonly synthetic?: { readonly gate: FieldConfig | undefined }
+  readonly synthetic?: { readonly gate: FieldConfig }
   /** What a `read` rule and a hook on the parent row see under this relation (ADR-0082). */
   readonly ruleView: RelationRuleView
 }
@@ -420,10 +420,15 @@ export interface PlanLevel {
   /** The fields the caller keeps at this level, or `undefined` when it projected nothing here. */
   readonly selection: ReadonlySet<string> | undefined
   readonly includes: readonly IncludePlan[]
+  /** Resolved on first call, so a read the foreign-key pass skips never pays for it. */
+  readonly foreignKeys: () => LevelForeignKeys
+}
+
+export interface LevelForeignKeys {
   /** The to-ones owning a foreign-key column that no caller include at this level reaches. */
-  readonly unincludedForeignKeys: readonly ForeignKeyOwner[]
+  readonly unincluded: readonly ForeignKeyOwner[]
   /** Whether any relationship field of this list owns a foreign-key column, included or not. */
-  readonly ownsForeignKeys: boolean
+  readonly owned: boolean
 }
 
 type LevelContext = Pick<ResolveContext, 'listName' | 'listConfig' | 'config'>
@@ -437,17 +442,25 @@ export function planLevel(
   selection: ReadonlySet<string> | undefined,
   includes: readonly IncludePlan[],
 ): PlanLevel {
-  const owners = foreignKeyOwningRelations(ctx)
-  const included = new Set(
-    includes.filter((plan) => !plan.declared && !plan.callerRefined).map((plan) => plan.relation),
-  )
+  let resolved: LevelForeignKeys | undefined
+  const foreignKeys = (): LevelForeignKeys => {
+    if (resolved !== undefined) return resolved
+    const owners = foreignKeyOwningRelations(ctx)
+    const included = new Set(
+      includes.filter((plan) => !plan.declared && !plan.callerRefined).map((plan) => plan.relation),
+    )
+    resolved = {
+      unincluded: owners.filter((owner) => !included.has(owner.relation)),
+      owned: owners.length > 0,
+    }
+    return resolved
+  }
   return {
     listName: ctx.listName,
     listConfig: ctx.listConfig,
     selection,
     includes,
-    unincludedForeignKeys: owners.filter((owner) => !included.has(owner.relation)),
-    ownsForeignKeys: owners.length > 0,
+    foreignKeys,
   }
 }
 
@@ -567,7 +580,7 @@ interface IncludeTarget {
   /** The relationship field this key names, or `undefined` for a synthetic back-relation. */
   fieldConfig: FieldConfig | undefined
   /** The declared field whose `read` rule gates this key: the key's own field, or a synthetic's source field. */
-  readGate: FieldConfig | undefined
+  readGate: FieldConfig
   /** The contract member name of the foreign key this side owns. */
   foreignKey: string | undefined
 }
@@ -649,12 +662,14 @@ function resolveIncludeTarget(name: string, ctx: ResolveContext): IncludeTarget 
       return declaredIncludeTarget(member, ctx)
     case 'syntheticBackRelation': {
       const source = listNamed(ctx, member.sourceList)
+      const readGate = memberGate(member, ctx)
+      if (readGate === undefined) throw unqueryableKey(ctx.listName, name)
       return {
         relatedListName: source.listName,
         relatedListConfig: source.listConfig,
         arity: 'many',
         fieldConfig: undefined,
-        readGate: memberGate(member, ctx),
+        readGate,
         foreignKey: undefined,
       }
     }
@@ -691,7 +706,7 @@ async function isOmittedBeforeQuery(
   ctx: ResolveContext,
 ): Promise<boolean> {
   if (!ctx.checkFieldRead) return false
-  if (target.readGate?.access === undefined) return false
+  if (target.readGate.access === undefined) return false
   const answer = await classifyRowIndependentRead(target.readGate.access, {
     session: ctx.session,
     context: ctx.context,
@@ -856,7 +871,7 @@ async function isRowDependentSyntheticRead(
   if (
     !ctx.checkFieldRead ||
     target.fieldConfig !== undefined ||
-    target.readGate?.access === undefined
+    target.readGate.access === undefined
   ) {
     return false
   }
@@ -907,7 +922,7 @@ async function resolveReduce(
   if (
     ctx.checkFieldRead &&
     target.fieldConfig === undefined &&
-    target.readGate?.access !== undefined
+    target.readGate.access !== undefined
   ) {
     const answer = await classifyRowIndependentRead(target.readGate.access, {
       session: ctx.session,
