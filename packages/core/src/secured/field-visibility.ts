@@ -84,6 +84,185 @@ export async function visibleRows(
   rows: readonly OrmRow[],
   root: PlanLevel,
 ): Promise<VisibleRow[]> {
+  if (implementation() === 'traversal' && root.includes.length === 0) {
+    return minted(await traverse(binding, rows, root))
+  }
+  return minted(await walk(binding, rows, root))
+}
+
+/**
+ * Which implementation of the phase this process runs, fixed at its first
+ * read: `OPENSAAS_FIELD_VISIBILITY=new` selects the single traversal while
+ * #2387 replaces the walks with it. A process never runs both.
+ */
+let chosenImplementation: 'walks' | 'traversal' | undefined
+
+function implementation(): 'walks' | 'traversal' {
+  if (chosenImplementation !== undefined) return chosenImplementation
+  const value = process.env.OPENSAAS_FIELD_VISIBILITY ?? ''
+  if (value === '' || value === 'old') chosenImplementation = 'walks'
+  else if (value === 'new') chosenImplementation = 'traversal'
+  else {
+    throw new Error(`OPENSAAS_FIELD_VISIBILITY is "${value}"; expected "old" or "new", or unset.`)
+  }
+  return chosenImplementation
+}
+
+interface VisitedRow {
+  readonly raw: OrmRow
+  readonly shown: OrmRow
+}
+
+/**
+ * The single traversal, for a plan with no relation nodes: each row's rule
+ * view, field strip and computed fields in one visit of the root node, then
+ * the node's un-included foreign keys across the batch.
+ */
+async function traverse(
+  binding: VisibilityBinding,
+  rows: readonly OrmRow[],
+  root: PlanLevel,
+): Promise<OrmRow[]> {
+  const visited = await Promise.all(rows.map((row) => visitRow(binding, row, root)))
+  await narrowForeignKeysAt(binding, visited, root)
+  return visited.map((row) => row.shown)
+}
+
+async function visitRow(
+  binding: VisibilityBinding,
+  raw: OrmRow,
+  level: PlanLevel,
+): Promise<VisitedRow> {
+  const { config } = binding
+  const { listName: listKey, selection } = level
+  const fieldConfigs = level.listConfig.fields
+  const args: FieldVisibilityArgs = { session: binding.context.session, context: binding.context }
+  const members = resolveListMembers(config, listKey)
+  const declaredDependencies = getListDependencies(config, listKey).fields
+  const systemFields = new Set<string>(members.systemFields)
+
+  const assembled = assembleColumnFields(raw, fieldConfigs, members)
+  const ruleRow = ruleRowOf(assembled, NO_RULE_VIEWS, fieldConfigs, config, listKey)
+  const hookItemFor = (fieldName: string): Record<string, unknown> => {
+    const declared = declaredDependencies[fieldName] ?? { columns: [], relations: [] }
+    const hookItem: Record<string, unknown> = {}
+    for (const key of [...systemFields, ...declared.columns, ...declared.relations]) {
+      if (key in ruleRow.item) hookItem[key] = ruleRow.item[key]
+    }
+    return hookItem
+  }
+  const selected = (fieldName: string): boolean =>
+    selection === undefined || selection.has(fieldName)
+  const resolve = (fieldName: string, value: unknown) =>
+    resolveReadableFieldValue({
+      fieldConfig: fieldConfigs[fieldName],
+      fieldName,
+      value,
+      ruleRow,
+      hookItem: hookItemFor(fieldName),
+      listKey,
+      args,
+      binding,
+    })
+
+  const shown: OrmRow = {}
+  for (const [fieldName, value] of Object.entries(assembled)) {
+    if (systemFields.has(fieldName)) {
+      shown[fieldName] = value
+      continue
+    }
+    if (!selected(fieldName)) continue
+    const member = members.members.get(fieldName)
+    if (member !== undefined && isRelationMember(member)) continue
+    const result = await resolve(fieldName, value)
+    if (result.readable) shown[fieldName] = result.value
+  }
+  for (const [fieldName, fieldConfig] of Object.entries(fieldConfigs)) {
+    if (fieldName in shown || !selected(fieldName) || !fieldConfig.hooks?.resolveOutput) continue
+    if (!isComputedField(fieldConfig, fieldName, listKey, config)) continue
+    const result = await resolve(fieldName, undefined)
+    if (result.readable) shown[fieldName] = result.value
+  }
+  return { raw, shown }
+}
+
+/**
+ * Narrow each foreign-key column the node did not include to what the caller
+ * may see, as {@link narrowUnincludedForeignKeys} does for a level, with one
+ * batched existence query per owner whose related access is a filter.
+ */
+async function narrowForeignKeysAt(
+  binding: VisibilityBinding,
+  rows: readonly VisitedRow[],
+  level: PlanLevel,
+): Promise<void> {
+  if (binding.context._isSudo === true) return
+  const foreignKeys = level.foreignKeys()
+  if (!foreignKeys.owned) return
+  const { listName, listConfig } = level
+  const members = resolveListMembers(binding.config, listName)
+  const ruleRows = rows.map(({ raw }) =>
+    ruleRowOf(
+      assembleColumnFields(raw, listConfig.fields, members),
+      NO_RULE_VIEWS,
+      listConfig.fields,
+      binding.config,
+      listName,
+    ),
+  )
+  const ctx = relatedResolveContext(binding, level)
+  const args = { session: binding.context.session, context: binding.context }
+
+  for (const owner of foreignKeys.unincluded) {
+    const column = owner.foreignKey
+    const carrying = rows.flatMap((row, index) =>
+      column in row.raw && column in row.shown ? [{ row, ruleRow: ruleRows[index] }] : [],
+    )
+    if (!rows.some(({ raw }) => column in raw)) continue
+
+    const access = await resolveRelatedAccessPlan(owner.related, ctx)
+    for (const { row, ruleRow } of carrying) {
+      const canReadField = await checkRowRead(owner.fieldConfig.access, args, ruleRow)
+      if (!canReadField || access.kind === 'false') row.shown[column] = null
+    }
+    if (access.kind === 'true' || access.kind === 'false') continue
+
+    const referenced = new Map<string, RowLockKey>()
+    for (const { row } of carrying) {
+      const value = row.raw[column]
+      if (row.shown[column] === null || value === null || value === undefined) continue
+      if (isRowLockKey(value)) referenced.set(String(value), value)
+      else row.shown[column] = null
+    }
+    if (referenced.size === 0) continue
+
+    const ops = await whereCombinators()
+    const relatedList = owner.related.listName
+    const visible = await engineRead(binding, () =>
+      collectionFor(binding.ormHandle, relatedList)
+        .where((model) => lowerWhere(access, model, ops))
+        .where((model) => identityIn(model, relatedList, [...referenced.values()]))
+        .select('id')
+        .all(),
+    )
+    const visibleIds = new Set(visible.map((related) => String(related.id)))
+    for (const { row } of carrying) {
+      const value = row.raw[column]
+      if (row.shown[column] === null || value === null || value === undefined) continue
+      if (!visibleIds.has(String(value))) row.shown[column] = null
+    }
+  }
+}
+
+function isRowLockKey(value: unknown): value is RowLockKey {
+  return typeof value === 'string' || typeof value === 'number'
+}
+
+async function walk(
+  binding: VisibilityBinding,
+  rows: readonly OrmRow[],
+  root: PlanLevel,
+): Promise<OrmRow[]> {
   const ruleViews = await ruleViewTreeFor(binding, root, rows)
   const results = await Promise.all(
     rows.map(async (row) => {
