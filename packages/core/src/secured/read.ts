@@ -304,17 +304,23 @@ type PlanDisposition = 'applied' | 'refused' | 'inapplicable'
 /**
  * Every {@link ReadPlan} member, and what a terminal does with it.
  *
- * The `Record<keyof ReadPlan, …>` is the whole point: a member added to
+ * The mapping over `keyof ReadPlan` is the whole point: a member added to
  * `ReadPlan` is a compile error in each terminal until that terminal says what
  * it does with it, and {@link scope} is the only way to the collection — so a
- * terminal cannot drop a plan member without writing the word down.
+ * terminal cannot drop a plan member without writing the word down. `root` is
+ * carried by every read, so refusing it would refuse every read: it cannot be
+ * marked `refused`.
  *
  * That is a rule with three counterexamples behind it. `runNearest` once
  * bypassed the include tree, `runAggregate` rebuilt the plan as a hand-written
  * literal, and `offset` reached `all()` alone; each was a member ignored in
  * silence, and each was found by review rather than by a test.
  */
-type PlanDispositions = Record<keyof ReadPlan, PlanDisposition>
+type PlanDispositions = {
+  readonly [Member in keyof ReadPlan]: Member extends 'root'
+    ? Exclude<PlanDisposition, 'refused'>
+    : PlanDisposition
+}
 
 /** Whether the plan actually carries this member — an empty one refuses nothing. */
 function carried(value: unknown): boolean {

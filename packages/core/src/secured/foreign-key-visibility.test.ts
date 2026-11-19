@@ -227,7 +227,7 @@ describe('a related row deleted between the main read and the companion existenc
                 db: { onDelete: 'setNull' },
                 access: {
                   // Runs once per row, before the companion existence check
-                  // (read.ts's own ordering) — deletes the related row out
+                  // (Field Visibility's own ordering) — deletes the related row out
                   // from under the read this session already issued.
                   read: async ({ item }) => {
                     const ownerId = item?.ownerId

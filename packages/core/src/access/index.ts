@@ -32,16 +32,12 @@ export {
 // The `item` a `read` rule runs against (ADR-0082).
 export { NO_RULE_VIEWS, ruleRowOf } from './rule-item.js'
 export type { RuleView, RuleViewTree } from './rule-item.js'
-// Declared Dependencies — widening a read for the emitted `needs` sets
-// without widening the result (ADR-0025, ADR-0051).
+// The emitted declared-dependency sets (ADR-0025, ADR-0051).
 export {
-  widenIncludeForDependencies,
   resolveDeclaredDependencies,
   getDependencyTable,
   getListDependencies,
-  noDependencyAdditions,
 } from './declared-dependencies.js'
-export type { DependencyAdditions, FieldSelectionScope } from './declared-dependencies.js'
 // Thrown when a caller include reaches past the depth the Access Filter can scope.
 export { AccessScopeDepthExceededError } from './errors.js'
 // Thrown when a resolveOutput hook's own resolve chain cycles back into itself.
