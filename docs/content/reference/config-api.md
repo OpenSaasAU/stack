@@ -586,7 +586,7 @@ Access control rules for this list.
 
 List-level hooks for data transformation and side effects.
 
-**Type:** [`Hooks`](#hooks)
+**Type:** [`Hooks`](#hooks-1)
 
 **See:** [Hooks guide](/docs/concepts/hooks)
 

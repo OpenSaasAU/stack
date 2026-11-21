@@ -15,11 +15,70 @@ function nodeText(node: Node): string {
   return node.children.map(nodeText).join('')
 }
 
+export interface HeadingEntry {
+  level: number
+  text: string
+  base: string
+  id: string
+  explicit: boolean
+}
+
+export function collectHeadings(ast: Node): HeadingEntry[] {
+  const used = new Set<string>()
+  const entries: Array<{ node: Node; entry: HeadingEntry }> = []
+  for (const node of ast.walk()) {
+    if (node.type !== 'heading') continue
+    const text = nodeText(node)
+    const explicit = typeof node.attributes.id === 'string' ? node.attributes.id : undefined
+    const base = explicit ?? slugifyHeading(text)
+    if (explicit !== undefined) used.add(explicit)
+    entries.push({
+      node,
+      entry: {
+        level: Number(node.attributes.level),
+        text,
+        base,
+        id: base,
+        explicit: explicit !== undefined,
+      },
+    })
+  }
+  const counts = new Map<string, number>()
+  for (const { entry } of entries) {
+    if (entry.explicit || entry.base === '') continue
+    const seen = counts.get(entry.base) ?? 0
+    counts.set(entry.base, seen + 1)
+    if (seen === 0 && !used.has(entry.base)) {
+      used.add(entry.base)
+      continue
+    }
+    let n = Math.max(seen, 1)
+    while (used.has(`${entry.base}-${n}`)) n++
+    entry.id = `${entry.base}-${n}`
+    used.add(entry.id)
+  }
+  return entries.map(({ entry }) => entry)
+}
+
 /**
  * Markdoc configuration with custom nodes and tags
  */
 export const markdocConfig = {
   nodes: {
+    document: {
+      ...Markdoc.nodes.document,
+      transform(node: Node, config: Config) {
+        const headings = [...node.walk()].filter((n) => n.type === 'heading')
+        collectHeadings(node).forEach((entry, i) => {
+          headings[i].attributes.id = entry.id || undefined
+        })
+        return new Markdoc.Tag(
+          'article',
+          node.transformAttributes(config),
+          node.transformChildren(config),
+        )
+      },
+    },
     heading: {
       ...Markdoc.nodes.heading,
       transform(node: Node, config: Config) {
@@ -27,7 +86,7 @@ export const markdocConfig = {
         const children = node.transformChildren(config)
         return new Markdoc.Tag(
           `h${node.attributes.level}`,
-          { ...attributes, id: attributes.id ?? (slugifyHeading(nodeText(node)) || undefined) },
+          { ...attributes, id: attributes.id },
           children,
         )
       },
@@ -111,19 +170,9 @@ export async function highlightCode(
  * Extract headings from markdown for table of contents
  */
 export function extractHeadings(content: string) {
-  const headingRegex = /^(#{2,3})\s+(.+)$/gm
-  const headings: Array<{ level: number; text: string; id: string }> = []
-
-  let match
-  while ((match = headingRegex.exec(content)) !== null) {
-    const level = match[1].length
-    const text = match[2]
-    const id = slugifyHeading(text)
-
-    headings.push({ level, text, id })
-  }
-
-  return headings
+  return collectHeadings(Markdoc.parse(content))
+    .filter((h) => h.level === 2 || h.level === 3)
+    .map(({ level, text, id }) => ({ level, text, id }))
 }
 
 import React from 'react'

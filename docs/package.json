@@ -11,7 +11,7 @@
     "link-check": "tsx scripts/link-check.ts",
     "prebuild": "tsx scripts/link-check.ts",
     "build": "next build",
-    "test": "node --import tsx --test tests/*.test.tsx",
+    "test": "node --import tsx --test tests/*.test.ts*",
     "start": "next start",
     "lint": "next lint",
     "format": "prettier --write .",

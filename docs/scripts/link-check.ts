@@ -24,23 +24,11 @@
  */
 
 import { getAllDocSlugs, getDocBySlug } from '../lib/content.js'
-import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { slugifyHeading } from '../lib/markdoc.js'
+import { checkPageLinks, hrefToSlug } from '../lib/link-check.js'
 import { DOC_REDIRECTS } from '../lib/redirects.mjs'
 
 const PUBLIC_DIR = join(import.meta.dirname, '..', 'public')
-
-function stripFences(content: string): string {
-  return content.replace(/^(```|~~~)[\s\S]*?^\1.*$/gm, '')
-}
-
-function headingIds(content: string): Set<string> {
-  const ids = new Set<string>()
-  for (const match of stripFences(content).matchAll(/^#{1,6}\s+(.+)$/gm))
-    ids.add(slugifyHeading(match[1]))
-  return ids
-}
 
 /**
  * Doc paths that MUST resolve, expressed as full `/docs/...` paths. The
@@ -73,13 +61,6 @@ function buildSlugSet(): Set<string> {
 
 const redirectMap = new Map<string, string>(DOC_REDIRECTS)
 
-/** Turn `/docs/core-concepts/queries#anchor` into the slug `core-concepts/queries`. */
-function hrefToSlug(href: string): string {
-  const withoutFragment = href.split('#')[0]
-  const withoutQuery = withoutFragment.split('?')[0]
-  return withoutQuery.replace(/^\/docs\//, '').replace(/\/$/, '')
-}
-
 /** A path resolves if it is content, or redirects (transitively) to content. */
 function resolves(path: string, slugSet: Set<string>): boolean {
   let current = path
@@ -92,26 +73,6 @@ function resolves(path: string, slugSet: Set<string>): boolean {
     current = next
   }
   return false
-}
-
-/**
- * Extract internal doc links from markdown.
- *
- * Matches markdown links `[text](href)` where href is an internal `/docs/...`
- * path. External URLs (http/https/mailto) and same-page anchors (`#...`) are
- * ignored. Root-relative links outside `/docs` must name a file in `public`.
- */
-function extractInternalDocLinks(markdown: string): string[] {
-  const links: string[] = []
-  const linkRegex = /\[[^\]]*\]\(([^)]+)\)/g
-  let match: RegExpExecArray | null
-  while ((match = linkRegex.exec(stripFences(markdown))) !== null) {
-    const href = match[1].trim()
-    if (href.startsWith('/') && !href.startsWith('//')) {
-      links.push(href)
-    }
-  }
-  return links
 }
 
 function main(): void {
@@ -137,37 +98,14 @@ function main(): void {
   for (const docSlug of getAllDocSlugs()) {
     const doc = getDocBySlug(docSlug)
     if (doc === null) continue
-    const fromKey = docSlug.join('/')
-    for (const href of extractInternalDocLinks(doc.content)) {
-      const target = href.split('#')[0].split('?')[0]
-      if (!(href.startsWith('/docs/') || href === '/docs')) {
-        if (!target.split('/').includes('..') === false && existsSync(join(PUBLIC_DIR, target))) {
-          errors.push(`Broken root-relative link in /docs/${fromKey}: ${href}`)
-        }
-        continue
-      }
-      const fragment = href.includes('#') ? href.split('#')[1] : ''
-      const targetSlug = hrefToSlug(href)
-      if (targetSlug === '') continue // bare `/docs` → docs landing, always valid
-      if (slugSet.has(targetSlug)) {
-        if (fragment !== '') {
-          const targetDoc = getDocBySlug(targetSlug.split('/'))
-          if (targetDoc !== null && !headingIds(targetDoc.content).has(fragment)) {
-            errors.push(`Broken anchor in /docs/${fromKey}: ${href}`)
-          }
-        }
-        continue
-      }
-      if (redirectMap.has(target)) {
-        warnings.push(
-          `Redirected internal link in /docs/${fromKey}: ${href} — update to ${redirectMap.get(target)}`,
-        )
-        continue
-      }
-      errors.push(
-        `Broken internal link in /docs/${fromKey}: ${href} → /docs/${targetSlug} does not exist`,
-      )
-    }
+    const found = checkPageLinks(docSlug.join('/'), doc.content, {
+      slugSet,
+      redirects: redirectMap,
+      publicDir: PUBLIC_DIR,
+      getContent: (slug) => getDocBySlug(slug.split('/'))?.content ?? null,
+    })
+    errors.push(...found.errors)
+    warnings.push(...found.warnings)
   }
 
   if (warnings.length > 0) {
