@@ -69,7 +69,7 @@ describe('advisoryLock()', () => {
       expect(injected).toHaveLength(1)
       expect(caught).toEqual([injected[0]])
       expect(rejection).toBeInstanceOf(TransactionRolledBackError)
-      if (rejection instanceof TransactionRolledBackError) expect(rejection.cause).toBe(caught[0])
+      expect(rejection).toMatchObject({ cause: caught[0] })
       expect(await harness.context.sudo().db.Note.all()).toEqual([])
     },
     BOOT,
