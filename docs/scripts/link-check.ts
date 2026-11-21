@@ -12,7 +12,9 @@
  *   2. Assert every redirect in the table lands on a page that exists
  *      (directly or via one more redirect hop).
  *
- *   3. Walk EVERY content page and flag any internal `/docs/...` link that
+ *   3. Walk EVERY content page and flag any broken link: `/docs/...` pages and
+ *      anchors (missing or duplicated heading ids), same-page `#fragment`s and
+ *      root-relative files absent from `public`. Any internal `/docs/...` link that
  *      points at a page that neither exists nor redirects, so broken
  *      cross-references don't silently regress. Links into the redirect
  *      table are reported as warnings — update them to the canonical URL.

@@ -22,13 +22,13 @@ export function stripFences(content: string): string {
 export function hrefToSlug(href: string): string {
   const withoutFragment = href.split('#')[0]
   const withoutQuery = withoutFragment.split('?')[0]
-  return withoutQuery.replace(/^\/docs\//, '').replace(/\/$/, '')
+  return withoutQuery.replace(/^\/docs(\/|$)/, '').replace(/\/$/, '')
 }
 
 function extractLinks(markdown: string): string[] {
   const links: string[] = []
   for (const match of stripFences(markdown).matchAll(/\[[^\]]*\]\(([^)]+)\)/g)) {
-    const href = match[1].trim()
+    const href = match[1].trim().split(/\s+/)[0]
     if (href.startsWith('#') || (href.startsWith('/') && !href.startsWith('//'))) links.push(href)
   }
   return links

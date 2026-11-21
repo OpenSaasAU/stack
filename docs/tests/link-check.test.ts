@@ -21,6 +21,8 @@ const run = (md: string) => checkPageLinks('a/c', md, env).errors
 test('a root-relative link to nothing fails', () => {
   assert.equal(run('[x](/guides/custom-fields)').length, 1)
   assert.equal(run('[x](/no-such-file.png)').length, 1)
+  assert.deepEqual(run('[x](/logo.png "alt")'), [])
+  assert.deepEqual(run('[x](/docs)'), [])
 })
 
 test('a root-relative link to a public file passes', () => {
@@ -39,6 +41,6 @@ test('a link to a duplicated id fails, the suffixed id passes', () => {
 })
 
 test('an explicit id disambiguates a duplicated heading', () => {
-  pages['a/b'] = '## Hooks {% #hooks %}\n\n## Hooks\n'
-  assert.deepEqual(run('[x](/docs/a/b#hooks)'), [])
+  const explicit = { ...env, getContent: () => '## Hooks {% #hooks %}\n\n## Hooks\n' }
+  assert.deepEqual(checkPageLinks('a/c', '[x](/docs/a/b#hooks)', explicit).errors, [])
 })
