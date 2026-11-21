@@ -595,7 +595,12 @@ function transactionFace(
     ...base,
     advisoryLock: async (key: string): Promise<void> => {
       if (lock === undefined) throw new RowLockUnavailableError('advisoryLock()')
-      await lock.advisory(key)
+      try {
+        await lock.advisory(key)
+      } catch (error) {
+        owner.poison(error)
+        throw error
+      }
     },
     sudo: () => transactionFace(base.sudo(), lock, owner),
     withSession: (session) => transactionFace(base.withSession(session), lock, owner),
