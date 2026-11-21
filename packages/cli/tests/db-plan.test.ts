@@ -53,7 +53,8 @@ describe.skipIf(serverUrl === undefined)(
     let databaseUrl = ''
 
     function adminUrl(): string {
-      return serverUrl as string
+      if (serverUrl === undefined) throw new Error('no Postgres named')
+      return serverUrl
     }
 
     function run(args: readonly string[]): Run {
@@ -167,7 +168,17 @@ describe.skipIf(serverUrl === undefined)(
               'utf-8',
             ),
           )
-          return manifest as { from: string; to: string }
+          if (
+            typeof manifest !== 'object' ||
+            manifest === null ||
+            !('from' in manifest) ||
+            !('to' in manifest) ||
+            typeof manifest.from !== 'string' ||
+            typeof manifest.to !== 'string'
+          ) {
+            throw new Error(`${dir} has no from/to hashes.`)
+          }
+          return { from: manifest.from, to: manifest.to }
         })
         const targets = new Set(manifests.map((manifest) => manifest.to))
         const roots = manifests.filter((manifest) => !targets.has(manifest.from))
