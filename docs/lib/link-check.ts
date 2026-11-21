@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { statSync } from 'node:fs'
 import { join } from 'node:path'
 import Markdoc from '@markdoc/markdoc'
 import { collectHeadings } from './markdoc.js'
@@ -25,6 +25,14 @@ export function hrefToSlug(href: string): string {
   return withoutQuery.replace(/^\/docs(\/|$)/, '').replace(/\/$/, '')
 }
 
+function isFile(path: string): boolean {
+  try {
+    return statSync(path).isFile()
+  } catch {
+    return false
+  }
+}
+
 function extractLinks(markdown: string): string[] {
   const links: string[] = []
   for (const match of stripFences(markdown).matchAll(/\[[^\]]*\]\(([^)]+)\)/g)) {
@@ -36,7 +44,9 @@ function extractLinks(markdown: string): string[] {
 
 function fragmentProblem(content: string, fragment: string): 'missing' | 'ambiguous' | null {
   const headings = collectHeadings(Markdoc.parse(content))
-  if (headings.some((h) => h.explicit && h.id === fragment)) return null
+  const explicit = headings.filter((h) => h.explicit && h.id === fragment).length
+  if (explicit > 1) return 'ambiguous'
+  if (explicit === 1) return null
   if (headings.filter((h) => !h.explicit && h.base === fragment).length > 1) return 'ambiguous'
   return headings.some((h) => h.id === fragment) ? null : 'missing'
 }
@@ -62,7 +72,7 @@ export function checkPageLinks(fromKey: string, markdown: string, env: LinkCheck
     }
     const target = href.split('#')[0].split('?')[0]
     if (!(href.startsWith('/docs/') || href === '/docs')) {
-      if (!existsSync(join(env.publicDir, target)) || target.split('/').includes('..')) {
+      if (!isFile(join(env.publicDir, target)) || target.split('/').includes('..')) {
         errors.push(`Broken root-relative link in /docs/${fromKey}: ${href}`)
       }
       continue

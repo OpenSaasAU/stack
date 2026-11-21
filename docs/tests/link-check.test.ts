@@ -44,3 +44,13 @@ test('an explicit id disambiguates a duplicated heading', () => {
   const explicit = { ...env, getContent: () => '## Hooks {% #hooks %}\n\n## Hooks\n' }
   assert.deepEqual(checkPageLinks('a/c', '[x](/docs/a/b#hooks)', explicit).errors, [])
 })
+
+test('a directory is not a public file, and a title is not part of an anchor', () => {
+  assert.equal(run('[x](/)').length, 1)
+  assert.deepEqual(run('# Title\n\n[x](#title "Jump")'), [])
+})
+
+test('two headings claiming one explicit id are ambiguous', () => {
+  const dup = { ...env, getContent: () => '## A {% #x %}\n\n## B {% #x %}\n' }
+  assert.equal(checkPageLinks('a/c', '[x](/docs/a/b#x)', dup).errors.length, 1)
+})
