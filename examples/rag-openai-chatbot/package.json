@@ -23,7 +23,7 @@
     "@prisma/orm-extension-pgvector": "8.0.0-rc.23",
     "@prisma/orm-postgres": "8.0.0-rc.23",
     "ai": "^7.0.173",
-    "next": "^16.4.2",
+    "next": "^16.4.6",
     "openai": "^7.53.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
