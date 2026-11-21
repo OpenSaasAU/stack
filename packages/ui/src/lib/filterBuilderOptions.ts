@@ -1708,6 +1708,10 @@ export function draftOptions(
     options.push(...presets)
   }
 
-  if (typed !== '') options.push(searchOption(typed))
+  const rejectedDate =
+    suggestion.datePicker === 'instant' &&
+    NUMERIC_DAY.test(typed) &&
+    normaliseInstant(typed, false) === null
+  if (typed !== '' && !rejectedDate) options.push(searchOption(typed))
   return { options, hint }
 }
