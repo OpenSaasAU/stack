@@ -171,14 +171,13 @@ describe.skipIf(serverUrl === undefined)(
           if (
             typeof manifest !== 'object' ||
             manifest === null ||
-            !('from' in manifest) ||
             !('to' in manifest) ||
-            typeof manifest.from !== 'string' ||
             typeof manifest.to !== 'string'
           ) {
-            throw new Error(`${dir} has no from/to hashes.`)
+            throw new Error(`${dir} has no "to" hash.`)
           }
-          return { from: manifest.from, to: manifest.to }
+          const from = 'from' in manifest && typeof manifest.from === 'string' ? manifest.from : ''
+          return { from, to: manifest.to }
         })
         const consumed = new Set<number>()
         const origins = new Set(manifests.map((manifest) => manifest.from))
