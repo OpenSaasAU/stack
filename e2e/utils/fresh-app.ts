@@ -5,6 +5,7 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import { startDevDatabase, type DevDatabase } from '@opensaas/stack-core/dev-database'
 import { runPrismaCli } from '@opensaas/stack-cli/generator'
+import pg from 'pg'
 import { REQUIRED_ENV } from './required-env.js'
 
 export type FreshAppMode = 'production' | 'dev'
@@ -52,41 +53,92 @@ async function stopProcess(child: ChildProcess): Promise<void> {
   await exited
 }
 
+function externalPostgresUrl(): string | undefined {
+  const base = process.env.DIRECT_DATABASE_URL || process.env.DATABASE_URL
+  return base !== undefined && /^postgres(ql)?:\/\//.test(base) ? base : undefined
+}
+
+/**
+ * `next dev` finds a Dev database only through the project's own state file,
+ * which the shared server may already hold, so under it a fresh database needs
+ * a Postgres named by `DATABASE_URL`.
+ */
+export function canStartFreshApp(mode: FreshAppMode): boolean {
+  return mode === 'production' || externalPostgresUrl() !== undefined
+}
+
+interface Provisioned {
+  readonly databaseUrl: string
+  readonly env: Record<string, string>
+  stop(): Promise<void>
+}
+
+async function provisionExternal(base: string, port: number): Promise<Provisioned> {
+  const name = `first_touch_${port}_${Date.now()}`
+  const admin = new pg.Client({ connectionString: base })
+  await admin.connect()
+  try {
+    await admin.query(`create database "${name}"`)
+  } finally {
+    await admin.end()
+  }
+  const url = new URL(base)
+  url.pathname = `/${name}`
+  return {
+    databaseUrl: url.toString(),
+    env: { DATABASE_URL: url.toString(), DIRECT_DATABASE_URL: '' },
+    stop: async () => {
+      const dropper = new pg.Client({ connectionString: base })
+      await dropper.connect()
+      try {
+        await dropper.query(`drop database if exists "${name}" with (force)`)
+      } finally {
+        await dropper.end()
+      }
+    },
+  }
+}
+
+async function provisionSidecar(): Promise<Provisioned> {
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opensaas-fresh-app-'))
+  const stateFile = path.join(stateDir, 'dev-db.json')
+  const database: DevDatabase = await startDevDatabase({ extensions: ['vector'], stateFile })
+  return {
+    databaseUrl: database.url,
+    env: {
+      NODE_ENV: 'production',
+      OPENSAAS_DEV_DATABASE_STATE_FILE: stateFile,
+      DATABASE_URL: '',
+      DIRECT_DATABASE_URL: '',
+    },
+    stop: async () => {
+      await database.stop()
+      fs.rmSync(stateDir, { recursive: true, force: true })
+    },
+  }
+}
+
 /**
  * A starter-auth server on `port` over a database no request has touched, so
  * the first thing a test sends is the process's first database touch. Production
  * mode serves the build the Playwright webServer already made.
  */
 export async function startFreshApp(mode: FreshAppMode, port: number): Promise<FreshApp> {
-  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opensaas-fresh-app-'))
-  const stateFile = path.join(stateDir, 'dev-db.json')
-  const database: DevDatabase = await startDevDatabase({ extensions: ['vector'], stateFile })
+  const external = externalPostgresUrl()
+  const database =
+    external !== undefined ? await provisionExternal(external, port) : await provisionSidecar()
   const baseURL = `http://localhost:${port}`
-  const lookup = {
-    OPENSAAS_DEV_DATABASE_STATE_FILE: stateFile,
-    DATABASE_URL: '',
-    DIRECT_DATABASE_URL: '',
-  }
   const env: typeof process.env = {
     ...process.env,
     ...Object.fromEntries(REQUIRED_ENV),
-    ...lookup,
+    ...database.env,
     BETTER_AUTH_URL: baseURL,
     DISABLE_RATE_LIMITING: 'true',
   }
   let child: ChildProcess | undefined
   try {
-    const prior = Object.fromEntries(Object.keys(lookup).map((key) => [key, process.env[key]]))
-    Object.assign(process.env, lookup)
-    try {
-      const update = await runPrismaCli(exampleDir, ['db', 'update'])
-      if (update.exitCode !== 0) throw new Error(`prisma db update failed.\n${update.output}`)
-    } finally {
-      for (const [key, value] of Object.entries(prior)) {
-        if (value === undefined) delete process.env[key]
-        else process.env[key] = value
-      }
-    }
+    const update = await runPrismaCli(exampleDir, ['db', 'update', '--db', database.databaseUrl])
+    if (update.exitCode !== 0) throw new Error(`prisma db update failed.\n${update.output}`)
 
     child = spawn('pnpm', ['exec', 'next', mode === 'dev' ? 'dev' : 'start', '-p', String(port)], {
       cwd: exampleDir,
@@ -98,7 +150,6 @@ export async function startFreshApp(mode: FreshAppMode, port: number): Promise<F
   } catch (error) {
     if (child !== undefined) await stopProcess(child)
     await database.stop()
-    fs.rmSync(stateDir, { recursive: true, force: true })
     throw error
   }
   const started = child
@@ -107,7 +158,6 @@ export async function startFreshApp(mode: FreshAppMode, port: number): Promise<F
     stop: async () => {
       await stopProcess(started)
       await database.stop()
-      fs.rmSync(stateDir, { recursive: true, force: true })
     },
   }
 }

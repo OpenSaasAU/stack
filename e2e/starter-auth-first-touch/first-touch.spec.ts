@@ -7,7 +7,12 @@ import {
   type Page,
 } from '@playwright/test'
 import { generateTestUser } from '../utils/auth.js'
-import { startFreshApp, type FreshApp, type FreshAppMode } from '../utils/fresh-app.js'
+import {
+  canStartFreshApp,
+  startFreshApp,
+  type FreshApp,
+  type FreshAppMode,
+} from '../utils/fresh-app.js'
 
 /**
  * The first database touch of a server process decides which bundle instance
@@ -88,6 +93,7 @@ for (const { mode, port } of modes) {
 
     for (const order of orders) {
       test(`${order}, then update, delete and a row action`, async ({ browser }) => {
+        test.skip(!canStartFreshApp(mode), 'next dev needs a Postgres named by DATABASE_URL')
         const app = await startFreshApp(mode, port)
         try {
           const user = generateTestUser()
