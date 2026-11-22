@@ -180,9 +180,24 @@ describe.skipIf(serverUrl === undefined)(
           }
           return { from: manifest.from, to: manifest.to }
         })
+        const consumed = new Set<number>()
+        const origins = new Set(manifests.map((manifest) => manifest.from))
         const targets = new Set(manifests.map((manifest) => manifest.to))
-        const roots = manifests.filter((manifest) => !targets.has(manifest.from))
-        expect(roots, 'the three packages form one chain').toHaveLength(1)
+        const roots = [...origins].filter((from) => !targets.has(from))
+        expect(roots, 'the packages share one origin').toHaveLength(1)
+        let head = roots[0]
+        for (;;) {
+          const next = manifests
+            .map((manifest, index) => ({ manifest, index }))
+            .filter(({ manifest }) => manifest.from === head)
+          const step = next[0]
+          if (step === undefined) break
+          expect(next, `exactly one package leaves ${head}`).toHaveLength(1)
+          expect(consumed.has(step.index), 'the chain does not loop').toBe(false)
+          consumed.add(step.index)
+          head = step.manifest.to
+        }
+        expect(consumed.size, 'every package is on the chain').toBe(3)
 
         const migrated = prisma(['db', 'migrate', '--yes'])
         expect(migrated.status, migrated.output).toBe(0)

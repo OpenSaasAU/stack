@@ -1,5 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import * as net from 'node:net'
+import * as fs from 'node:fs'
+import * as os from 'node:os'
 import * as path from 'node:path'
 import { startDevDatabase, type DevDatabase } from '@opensaas/stack-core/dev-database'
 import { runPrismaCli } from '@opensaas/stack-cli/generator'
@@ -56,30 +58,34 @@ async function stopProcess(child: ChildProcess): Promise<void> {
  * mode serves the build the Playwright webServer already made.
  */
 export async function startFreshApp(mode: FreshAppMode, port: number): Promise<FreshApp> {
-  const database: DevDatabase = await startDevDatabase({ extensions: ['vector'] })
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'opensaas-fresh-app-'))
+  const stateFile = path.join(stateDir, 'dev-db.json')
+  const database: DevDatabase = await startDevDatabase({ extensions: ['vector'], stateFile })
   const baseURL = `http://localhost:${port}`
+  const lookup = {
+    OPENSAAS_DEV_DATABASE_STATE_FILE: stateFile,
+    DATABASE_URL: '',
+    DIRECT_DATABASE_URL: '',
+  }
   const env: typeof process.env = {
     ...process.env,
     ...Object.fromEntries(REQUIRED_ENV),
-    DATABASE_URL: database.url,
-    DIRECT_DATABASE_URL: '',
+    ...lookup,
     BETTER_AUTH_URL: baseURL,
     DISABLE_RATE_LIMITING: 'true',
   }
   let child: ChildProcess | undefined
   try {
-    const priorUrl = process.env.DATABASE_URL
-    const priorDirect = process.env.DIRECT_DATABASE_URL
-    process.env.DATABASE_URL = database.url
-    process.env.DIRECT_DATABASE_URL = ''
+    const prior = Object.fromEntries(Object.keys(lookup).map((key) => [key, process.env[key]]))
+    Object.assign(process.env, lookup)
     try {
       const update = await runPrismaCli(exampleDir, ['db', 'update'])
       if (update.exitCode !== 0) throw new Error(`prisma db update failed.\n${update.output}`)
     } finally {
-      if (priorUrl === undefined) delete process.env.DATABASE_URL
-      else process.env.DATABASE_URL = priorUrl
-      if (priorDirect === undefined) delete process.env.DIRECT_DATABASE_URL
-      else process.env.DIRECT_DATABASE_URL = priorDirect
+      for (const [key, value] of Object.entries(prior)) {
+        if (value === undefined) delete process.env[key]
+        else process.env[key] = value
+      }
     }
 
     child = spawn('pnpm', ['exec', 'next', mode === 'dev' ? 'dev' : 'start', '-p', String(port)], {
@@ -92,6 +98,7 @@ export async function startFreshApp(mode: FreshAppMode, port: number): Promise<F
   } catch (error) {
     if (child !== undefined) await stopProcess(child)
     await database.stop()
+    fs.rmSync(stateDir, { recursive: true, force: true })
     throw error
   }
   const started = child
@@ -100,6 +107,7 @@ export async function startFreshApp(mode: FreshAppMode, port: number): Promise<F
     stop: async () => {
       await stopProcess(started)
       await database.stop()
+      fs.rmSync(stateDir, { recursive: true, force: true })
     },
   }
 }
