@@ -424,10 +424,7 @@ export function ListViewClient({
     status: bulkStatus,
     setStatus: setBulkStatus,
     clearStatus,
-  } = useBulkStatus(
-    listKey,
-    JSON.stringify([initialSort ?? null, initialSearch ?? null, page, pageSize]),
-  )
+  } = useBulkStatus(listKey, JSON.stringify([initialSort ?? null, initialSearch ?? null, pageSize]))
 
   const pageIds = items.map((item) => String(item.id))
 
@@ -1182,7 +1179,10 @@ export function ListViewClient({
               <>
                 <Button
                   variant="outline"
-                  onClick={() => router.push(buildPaginationUrl(page - 1))}
+                  onClick={() => {
+                    clearStatus()
+                    router.push(buildPaginationUrl(page - 1))
+                  }}
                   disabled={!hasPrevPage}
                 >
                   Previous
@@ -1192,7 +1192,10 @@ export function ListViewClient({
                 </span>
                 <Button
                   variant="outline"
-                  onClick={() => router.push(buildPaginationUrl(page + 1))}
+                  onClick={() => {
+                    clearStatus()
+                    router.push(buildPaginationUrl(page + 1))
+                  }}
                   disabled={!hasNextPage}
                 >
                   Next

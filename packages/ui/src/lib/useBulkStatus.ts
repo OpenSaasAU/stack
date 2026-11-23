@@ -70,6 +70,7 @@ export function useBulkStatus(listKey: string, resetKey?: string): BulkStatus {
   React.useEffect(() => {
     if (lastResetKey.current === resetKey) return
     lastResetKey.current = resetKey
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLocal(null)
     pending.delete(storageKey)
     try {
@@ -110,6 +111,7 @@ export function useBulkStatus(listKey: string, resetKey?: string): BulkStatus {
 
   const clearStatus = React.useCallback(() => {
     setLocal(null)
+    pending.delete(storageKey)
     try {
       window.sessionStorage.removeItem(storageKey)
     } catch {
