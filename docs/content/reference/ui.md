@@ -648,6 +648,16 @@ comparison or range chip shows an instant on a day boundary as its date, an
 "is" chip shows its instant as written, and a plain date already in a URL is
 shown as written until the chip is edited and applied again.
 
+Which day a date means depends on where it is written. A numeric date typed in
+the builder (`04/08/2026`, `4.8.2026`) is read in the day/month order of the
+viewer's locale, the order the list cells use, so it is 4 August under en-AU and
+8 April under en-US; one that is not a real date in that order is explained, not
+searched as text. The builder's chip is the browser-local day. A date-only
+`YYYY-MM-DD` in a URL or a preset chip is the **UTC** day: "is `2026-08-04`"
+covers that whole UTC day, and the end of a range such as
+`releasedAt:2026-08-03..2026-08-04` includes the whole of its last day. Only an
+exact `YYYY-MM-DD` has this meaning; `2026-08` is not a day.
+
 On a field with date inputs, Tab moves from the bar into them and on to
 **Apply dates**, and Shift+Tab from the first date input returns to the bar.
 There, Alt+← → switches the condition instead of Tab.

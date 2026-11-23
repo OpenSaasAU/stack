@@ -396,11 +396,37 @@ function plainDate(value: string): Date | null {
 const DAY_ONLY =
   /^(?:\d{1,2}[/.-]\d{1,2}[/.-]\d{4}|[A-Za-z]{3,9}\.? \d{1,2},? \d{4}|\d{1,2} [A-Za-z]{3,9}\.?,? \d{4})$/
 
+const NUMERIC_DAY = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/
+
+function viewerDayFirst(): boolean {
+  const locale = new Intl.DateTimeFormat().resolvedOptions().locale
+  const parts = new Intl.DateTimeFormat(locale, {
+    day: 'numeric',
+    month: 'numeric',
+    year: 'numeric',
+  }).formatToParts(new Date(2001, 10, 22))
+  const order = parts.filter((part) => part.type === 'day' || part.type === 'month')
+  return order[0]?.type === 'day'
+}
+
+function numericDay(typed: string): Date | null {
+  const match = NUMERIC_DAY.exec(typed)
+  if (!match) return null
+  const first = Number(match[1])
+  const second = Number(match[2])
+  const dayFirst = viewerDayFirst()
+  const day = dayFirst ? first : second
+  const month = (dayFirst ? second : first) - 1
+  const date = new Date(Number(match[3]), month, day)
+  return date.getMonth() === month && date.getDate() === day ? date : null
+}
+
 function typedDay(value: string): Date | null {
   const plain = plainDate(value)
   if (plain) return plain
   const typed = value.trim()
   if (!DAY_ONLY.test(typed) || PLAIN_DATE.test(typed)) return null
+  if (NUMERIC_DAY.test(typed)) return numericDay(typed)
   const parsed = new Date(typed)
   if (Number.isNaN(parsed.getTime())) return null
   return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate())
@@ -417,6 +443,7 @@ export function normaliseInstant(value: string, end: boolean): string | null {
   const typed = value.trim()
   const day = dayBoundary(typed, end)
   if (day !== null) return day
+  if (NUMERIC_DAY.test(typed)) return null
   const date = new Date(typed)
   if (Number.isNaN(date.getTime())) return null
   return ISO_INSTANT.test(typed) ? typed : localInstant(date)
@@ -1681,6 +1708,10 @@ export function draftOptions(
     options.push(...presets)
   }
 
-  if (typed !== '') options.push(searchOption(typed))
+  const rejectedDate =
+    suggestion.datePicker === 'instant' &&
+    NUMERIC_DAY.test(typed) &&
+    normaliseInstant(typed, false) === null
+  if (typed !== '' && !rejectedDate) options.push(searchOption(typed))
   return { options, hint }
 }

@@ -569,6 +569,18 @@ describe('Field Types', () => {
         })
       })
 
+      test('lte on a date-only value runs to the end of that UTC day', () => {
+        expect(spec?.toCondition('lte', '2026-08-04')).toEqual({
+          releasedAt: { lt: new Date('2026-08-05T00:00:00.000Z') },
+        })
+      })
+
+      test('a year-month value is not treated as a day', () => {
+        expect(spec?.toCondition('eq', '2026-08')).toEqual({
+          releasedAt: { equals: new Date('2026-08') },
+        })
+      })
+
       test('eq on an instant stays a single instant', () => {
         expect(spec?.toCondition('eq', '2026-08-04T05:30:00Z')).toEqual({
           releasedAt: { equals: new Date('2026-08-04T05:30:00Z') },

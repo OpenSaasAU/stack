@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FilterFieldSuggestion, FilterToken } from '@opensaas/stack-core'
 import {
   ALTERNATIVE_HINT,
@@ -22,6 +22,7 @@ import {
   hydrateTokens,
   joinChips,
   localInstant,
+  normaliseInstant,
   normaliseGroups,
   placeChoice,
   placeEntries,
@@ -293,6 +294,13 @@ describe('a typed or pasted timestamp token', () => {
 })
 
 describe('a date-only eq on a timestamp', () => {
+  beforeEach(() => {
+    vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockReturnValue({
+      locale: 'en-US',
+    } as Intl.ResolvedDateTimeFormatOptions)
+  })
+  afterEach(() => vi.restoreAllMocks())
+
   it('yields the same tokens for 8/4/2026 as for 2026-08-04', () => {
     expect(conditionTokens(at, 'eq', '8/4/2026')).toEqual(conditionTokens(at, 'eq', '2026-08-04'))
   })
@@ -1062,5 +1070,50 @@ describe('relationship condition labels', () => {
     expect(describeToken(hydrateTokens('-author:pri')[0], fields).sentence).toBe(
       'Author does not contain pri',
     )
+  })
+})
+
+describe('numeric dates follow the viewer locale', () => {
+  const inLocale = (locale: string) =>
+    vi
+      .spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions')
+      .mockReturnValue({ locale } as Intl.ResolvedDateTimeFormatOptions)
+  afterEach(() => vi.restoreAllMocks())
+
+  it('reads 04/08/2026 as 4 August under en-AU', () => {
+    inLocale('en-AU')
+    const start = new Date(dayBoundary('04/08/2026', false) ?? '')
+    expect([start.getMonth(), start.getDate()]).toEqual([7, 4])
+    expect(dayBoundary('13/08/2026', false)).not.toBeNull()
+  })
+
+  it('reads 04/08/2026 as 8 April under en-US', () => {
+    inLocale('en-US')
+    const start = new Date(dayBoundary('04/08/2026', false) ?? '')
+    expect([start.getMonth(), start.getDate()]).toEqual([3, 8])
+    expect(dayBoundary('13/08/2026', false)).toBeNull()
+  })
+
+  it('never turns an unreadable numeric date into an instant', () => {
+    inLocale('en-US')
+    expect(normaliseInstant('13/08/2026', false)).toBeNull()
+  })
+})
+
+describe('a rejected numeric date on a timestamp draft', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it('keeps the draft open with a hint and offers no text search', () => {
+    vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockReturnValue({
+      locale: 'en-AU',
+    } as Intl.ResolvedDateTimeFormatOptions)
+    const { options, hint } = draftOptions(
+      { field: at.field, condition: 'eq' } as Parameters<typeof draftOptions>[0],
+      '08/13/2026',
+      new Map([[at.field, at]]),
+      undefined,
+    )
+    expect(options.some((option) => option.group === 'Search')).toBe(false)
+    expect(hint).not.toBeNull()
   })
 })
