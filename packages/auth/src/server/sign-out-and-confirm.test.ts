@@ -154,4 +154,48 @@ describe('signOutAndConfirm', () => {
       ['a.dr', {}],
     ])
   })
+
+  it('resolves a callable $context, keeps partitioned and restores numbered chunks', async () => {
+    const restored: Array<[string, unknown]> = []
+    const auth = {
+      ...fakeAuth({ success: true }, { user: { id: '1' } }),
+      $context: () =>
+        Promise.resolve({
+          authCookies: {
+            sessionToken: { name: 'app.sid', attributes: { partitioned: true } },
+            sessionData: { name: 'app.data', attributes: { path: '/admin' } },
+            accountData: { name: 'app.acct', attributes: {} },
+          },
+        }),
+    }
+    await expect(
+      signOutAndConfirm(
+        auth,
+        new Headers({ cookie: 'app.sid=t; app.data.0=a; app.data.1=b; app.acct.0=c; app.sid.0=x' }),
+        (n, _v, a) => {
+          restored.push([n, a])
+        },
+      ),
+    ).rejects.toThrow('still active')
+    expect(restored).toEqual([
+      ['app.sid', { partitioned: true }],
+      ['app.data.0', { path: '/admin' }],
+      ['app.data.1', { path: '/admin' }],
+      ['app.acct.0', {}],
+    ])
+  })
+
+  it('matches numbered chunks in the fallback', async () => {
+    const restored: string[] = []
+    await expect(
+      signOutAndConfirm(
+        fakeAuth({ success: true }, { user: { id: '1' } }),
+        new Headers({ cookie: 'better-auth.session_data.0=a; better-auth.session_data.1=b' }),
+        (n) => {
+          restored.push(n)
+        },
+      ),
+    ).rejects.toThrow('still active')
+    expect(restored).toEqual(['better-auth.session_data.0', 'better-auth.session_data.1'])
+  })
 })

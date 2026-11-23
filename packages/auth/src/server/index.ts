@@ -746,6 +746,7 @@ export interface RestoredCookieAttributes {
   maxAge?: number
   httpOnly?: boolean
   secure?: boolean
+  partitioned?: boolean
   sameSite?: 'lax' | 'strict' | 'none'
 }
 
@@ -755,7 +756,8 @@ export type RestoreCookie = (
   attributes: RestoredCookieAttributes,
 ) => Promise<void> | void
 
-const SESSION_COOKIE_PATTERN = /session_(token|data)$/
+const SESSION_COOKIE_PATTERN = /session_(token|data)(\.\d+)?$/
+const CHUNK_SUFFIX_PATTERN = /^(.+)\.\d+$/
 const RESOLVED_COOKIE_KEYS = ['sessionToken', 'sessionData', 'dontRememberToken', 'accountData']
 
 async function restoreNextCookie(
@@ -776,12 +778,14 @@ function pickAttributes(raw: unknown): RestoredCookieAttributes {
   const maxAge = Reflect.get(raw, 'maxAge')
   const httpOnly = Reflect.get(raw, 'httpOnly')
   const secure = Reflect.get(raw, 'secure')
+  const partitioned = Reflect.get(raw, 'partitioned')
   const sameSite = Reflect.get(raw, 'sameSite')
   if (typeof path === 'string') attributes.path = path
   if (typeof domain === 'string') attributes.domain = domain
   if (typeof maxAge === 'number') attributes.maxAge = maxAge
   if (typeof httpOnly === 'boolean') attributes.httpOnly = httpOnly
   if (typeof secure === 'boolean') attributes.secure = secure
+  if (typeof partitioned === 'boolean') attributes.partitioned = partitioned
   if (typeof sameSite === 'string') {
     const lowered = sameSite.toLowerCase()
     if (lowered === 'lax' || lowered === 'strict' || lowered === 'none') {
@@ -796,7 +800,7 @@ async function resolveAuthCookies(
 ): Promise<Map<string, { key: string; attributes: RestoredCookieAttributes }> | null> {
   const pending: unknown = Reflect.get(auth, '$context')
   if (pending === undefined) return null
-  const context: unknown = await pending
+  const context: unknown = await (typeof pending === 'function' ? pending() : pending)
   if (typeof context !== 'object' || context === null) return null
   const authCookies: unknown = Reflect.get(context, 'authCookies')
   if (typeof authCookies !== 'object' || authCookies === null) return null
@@ -836,7 +840,11 @@ async function restoreSessionCookies(
   for (const [name, raw] of sent) {
     let attributes: RestoredCookieAttributes
     if (resolved) {
-      const entry = resolved.get(name)
+      const chunkBase = CHUNK_SUFFIX_PATTERN.exec(name)?.[1]
+      const chunked = chunkBase === undefined ? undefined : resolved.get(chunkBase)
+      const entry =
+        resolved.get(name) ??
+        (chunked?.key === 'sessionData' || chunked?.key === 'accountData' ? chunked : undefined)
       if (!entry) continue
       attributes = { ...entry.attributes }
       if (sessionOnly && entry.key === 'sessionToken') delete attributes.maxAge
