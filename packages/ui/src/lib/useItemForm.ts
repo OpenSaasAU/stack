@@ -202,6 +202,22 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return proto === Object.prototype || proto === null
 }
 
+function toPlainValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(toPlainValue)
+  if (isPlainObject(value)) {
+    const plain: Record<string, unknown> = {}
+    for (const [key, entry] of Object.entries(value)) plain[key] = toPlainValue(entry)
+    return plain
+  }
+  return value
+}
+
+function toPlainRecord(data: Record<string, unknown>): Record<string, unknown> {
+  const plain: Record<string, unknown> = {}
+  for (const [key, entry] of Object.entries(data)) plain[key] = toPlainValue(entry)
+  return plain
+}
+
 /** Deep equality over the JSON-shaped values a form field holds. Anything else (a `File`) is equal only to itself. */
 function isEqualValue(a: unknown, b: unknown): boolean {
   if (Object.is(a, b)) return true
@@ -605,7 +621,7 @@ export function useItemForm({
         } else {
           data = omitEmptiedDefaults(fields, full)
         }
-        const result = await onSubmit(data, mode)
+        const result = await onSubmit(toPlainRecord(data), mode)
         // void result → adapter handles its own success/navigation.
         if (result && result.success === false) {
           if (result.fieldErrors) setServerErrors(new Map(Object.entries(result.fieldErrors)))

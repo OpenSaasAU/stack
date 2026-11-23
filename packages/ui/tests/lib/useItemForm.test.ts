@@ -603,3 +603,22 @@ describe('a submit that ends in a Next redirect', () => {
     expect(result.current.generalError).toBeNull()
   })
 })
+
+describe('useItemForm submit payload', () => {
+  it('hands onSubmit plain objects when a field emits null-prototype values', async () => {
+    const onSubmit = vi.fn(async () => ({ success: true }) as const)
+    const { result } = renderHook(() =>
+      useItemForm({ fields: { body: { type: 'json' } }, mode: 'create', onSubmit }),
+    )
+    const inner = Object.assign(Object.create(null), { text: 'hi' })
+    const doc = Object.assign(Object.create(null), { type: 'doc', content: [inner] })
+    act(() => result.current.handleFieldChange('body', doc))
+    await act(async () => {
+      result.current.handleSubmit({ preventDefault: () => {}, stopPropagation: () => {} })
+    })
+    const sent = onSubmit.mock.calls[0] as unknown as [{ body: { content: unknown[] } }, string]
+    expect(Object.getPrototypeOf(sent[0].body)).toBe(Object.prototype)
+    expect(Object.getPrototypeOf(sent[0].body.content[0])).toBe(Object.prototype)
+    expect(sent[0].body).toEqual({ type: 'doc', content: [{ text: 'hi' }] })
+  })
+})

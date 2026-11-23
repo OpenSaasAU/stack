@@ -81,4 +81,43 @@ test.describe('tiptap-demo custom field registration', () => {
     // `excerpt` is the second declared richText field, and was never touched.
     await expect(editorsOnEditPage.nth(1)).toHaveText('')
   })
+  test('saves and reloads a heading, an ordered list, a typed link and a pasted link with a title', async ({
+    page,
+  }) => {
+    await page.goto(`${BASE_URL}/admin/article/create`)
+    await page.waitForLoadState('networkidle')
+
+    const unique = `Rich ${Date.now()}`
+    await page.fill('input[name="title"]', unique)
+    await page.fill('input[name="slug"]', `rich-${Date.now()}`)
+
+    const content = page.locator('.tiptap.ProseMirror').first()
+    await content.click()
+    await page.keyboard.type('# Heading')
+    await page.keyboard.press('Enter')
+    await page.keyboard.type('1. first item')
+    await page.keyboard.press('Enter')
+    await page.keyboard.type('second item')
+
+    await content.evaluate((el) => {
+      const data = new DataTransfer()
+      data.setData(
+        'text/html',
+        '<p>See <a href="https://en.wikipedia.org/wiki/Cat" title="Cat" class="external text" rel="nofollow" target="_self">cats</a></p>',
+      )
+      el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true }))
+    })
+
+    await submitAndAwaitServerAction(page)
+    await page.goto(`${BASE_URL}/admin/article`)
+    await page.waitForLoadState('networkidle')
+    const articleRow = page.locator('tr', { has: page.locator(`text=${unique}`) })
+    await articleRow.locator('[data-slot="row-title-link"]').click()
+    await page.waitForLoadState('networkidle')
+
+    const reloaded = page.locator('.tiptap.ProseMirror').first()
+    await expect(reloaded.locator('h1')).toHaveText('Heading')
+    await expect(reloaded.locator('ol li')).toHaveCount(2)
+    await expect(reloaded.locator('a[href="https://en.wikipedia.org/wiki/Cat"]')).toHaveText('cats')
+  })
 })
