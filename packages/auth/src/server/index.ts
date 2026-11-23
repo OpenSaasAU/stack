@@ -740,21 +740,52 @@ export interface SignOutAuth {
   }
 }
 
+export type RestoreCookie = (name: string, value: string) => Promise<void> | void
+
+const SESSION_COOKIE_PATTERN = /session_(token|data)$/
+
+async function restoreNextCookie(name: string, value: string): Promise<void> {
+  const { cookies } = await import('next/headers')
+  const store = await cookies()
+  store.set(name, value, {
+    path: '/',
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: name.startsWith('__Secure-'),
+  })
+}
+
+async function restoreSessionCookies(headers: Headers, restore: RestoreCookie): Promise<void> {
+  const header = headers.get('cookie')
+  if (!header) return
+  for (const part of header.split(';')) {
+    const index = part.indexOf('=')
+    if (index < 0) continue
+    const name = part.slice(0, index).trim()
+    if (SESSION_COOKIE_PATTERN.test(name)) await restore(name, part.slice(index + 1).trim())
+  }
+}
+
 /**
  * Signs out and confirms the session is really gone. Returns the identity
  * provider's logout URL when better-auth supplies one, else `null`. Throws
- * when the session survives, because better-auth swallows a failed delete.
+ * when the session survives, because better-auth swallows a failed delete;
+ * the browser's session cookies, already cleared by then, are put back.
  */
 export async function signOutAndConfirm(
   auth: SignOutAuth,
   headers: Headers,
+  restoreCookie: RestoreCookie = restoreNextCookie,
 ): Promise<string | null> {
   const result = await auth.api.signOut({ headers })
   const remaining = await auth.api.getSession({
     headers,
     query: { disableCookieCache: true },
   })
-  if (remaining) throw new Error('Sign out failed: the session is still active')
+  if (remaining) {
+    await restoreSessionCookies(headers, restoreCookie)
+    throw new Error('Sign out failed: the session is still active')
+  }
   if (typeof result === 'object' && result !== null) {
     const url = Reflect.get(result, 'url')
     if (typeof url === 'string' && url.length > 0 && Reflect.get(result, 'redirect') !== false) {

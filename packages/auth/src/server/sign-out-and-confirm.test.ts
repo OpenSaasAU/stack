@@ -27,4 +27,33 @@ describe('signOutAndConfirm', () => {
       url,
     )
   })
+
+  it('restores the session cookies when the session survives', async () => {
+    const restored: Array<[string, string]> = []
+    const headers = new Headers({
+      cookie:
+        'theme=dark; better-auth.session_token=abc.def; __Secure-better-auth.session_data=xyz',
+    })
+    await expect(
+      signOutAndConfirm(fakeAuth({ success: true }, { user: { id: '1' } }), headers, (n, v) => {
+        restored.push([n, v])
+      }),
+    ).rejects.toThrow('still active')
+    expect(restored).toEqual([
+      ['better-auth.session_token', 'abc.def'],
+      ['__Secure-better-auth.session_data', 'xyz'],
+    ])
+  })
+
+  it('leaves cookies alone when the session is gone', async () => {
+    const restored: string[] = []
+    await signOutAndConfirm(
+      fakeAuth({ success: true }, null),
+      new Headers({ cookie: 'better-auth.session_token=abc' }),
+      (n) => {
+        restored.push(n)
+      },
+    )
+    expect(restored).toEqual([])
+  })
 })
