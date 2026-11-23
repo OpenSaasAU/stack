@@ -99,7 +99,14 @@ test.describe('tiptap-demo custom field registration', () => {
     await page.keyboard.press('Enter')
     await page.keyboard.type('second item')
 
-    await content.evaluate((el) => {
+    const excerpt = page.locator('.tiptap.ProseMirror').nth(1)
+    await excerpt.click()
+    await page.keyboard.type('Typed ')
+    await page.getByRole('button', { name: 'Link' }).last().click()
+    await page.getByLabel('Link URL').fill('https://example.com/typed')
+    await page.getByRole('button', { name: 'Apply link' }).click()
+    await excerpt.click()
+    await excerpt.evaluate((el) => {
       const data = new DataTransfer()
       data.setData(
         'text/html',
@@ -107,6 +114,7 @@ test.describe('tiptap-demo custom field registration', () => {
       )
       el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true }))
     })
+    await expect(excerpt.locator('a[href="https://en.wikipedia.org/wiki/Cat"]')).toHaveText('cats')
 
     await submitAndAwaitServerAction(page)
     await page.goto(`${BASE_URL}/admin/article`)
@@ -118,6 +126,10 @@ test.describe('tiptap-demo custom field registration', () => {
     const reloaded = page.locator('.tiptap.ProseMirror').first()
     await expect(reloaded.locator('h1')).toHaveText('Heading')
     await expect(reloaded.locator('ol li')).toHaveCount(2)
-    await expect(reloaded.locator('a[href="https://en.wikipedia.org/wiki/Cat"]')).toHaveText('cats')
+    const reloadedExcerpt = page.locator('.tiptap.ProseMirror').nth(1)
+    await expect(reloadedExcerpt.locator('a[href="https://example.com/typed"]')).toHaveCount(1)
+    await expect(reloadedExcerpt.locator('a[href="https://en.wikipedia.org/wiki/Cat"]')).toHaveText(
+      'cats',
+    )
   })
 })

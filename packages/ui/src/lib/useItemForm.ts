@@ -205,17 +205,15 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 function toPlainValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(toPlainValue)
   if (isPlainObject(value)) {
-    const plain: Record<string, unknown> = {}
-    for (const [key, entry] of Object.entries(value)) plain[key] = toPlainValue(entry)
-    return plain
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [key, toPlainValue(entry)]),
+    )
   }
   return value
 }
 
 function toPlainRecord(data: Record<string, unknown>): Record<string, unknown> {
-  const plain: Record<string, unknown> = {}
-  for (const [key, entry] of Object.entries(data)) plain[key] = toPlainValue(entry)
-  return plain
+  return Object.fromEntries(Object.entries(data).map(([key, entry]) => [key, toPlainValue(entry)]))
 }
 
 /** Deep equality over the JSON-shaped values a form field holds. Anything else (a `File`) is equal only to itself. */

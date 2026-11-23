@@ -621,4 +621,19 @@ describe('useItemForm submit payload', () => {
     expect(Object.getPrototypeOf(sent[0].body.content[0])).toBe(Object.prototype)
     expect(sent[0].body).toEqual({ type: 'doc', content: [{ text: 'hi' }] })
   })
+
+  it('keeps an own __proto__ key from a parsed JSON value', async () => {
+    const onSubmit = vi.fn(async () => ({ success: true }) as const)
+    const { result } = renderHook(() =>
+      useItemForm({ fields: { body: { type: 'json' } }, mode: 'create', onSubmit }),
+    )
+    const doc: unknown = JSON.parse('{"__proto__":{"label":"kept"},"text":"hi"}')
+    act(() => result.current.handleFieldChange('body', doc))
+    await act(async () => {
+      result.current.handleSubmit({ preventDefault: () => {}, stopPropagation: () => {} })
+    })
+    const sent = onSubmit.mock.calls[0] as unknown as [{ body: object }, string]
+    expect(Object.getPrototypeOf(sent[0].body)).toBe(Object.prototype)
+    expect(Object.keys(sent[0].body)).toEqual(['__proto__', 'text'])
+  })
 })
