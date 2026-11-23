@@ -1,3 +1,4 @@
+import * as React from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, cleanup, act } from '@testing-library/react'
 import { ListViewClient } from '../../src/components/ListViewClient.js'
@@ -83,6 +84,47 @@ describe('list status line', () => {
     act(() => screen.getByText('set').click())
     expect(screen.getByTestId('s')).toHaveTextContent('Post published')
     view.rerender(<Probe resetKey="b" />)
+    expect(screen.getByTestId('s')).toBeEmptyDOMElement()
+  })
+
+  it('keeps a handed-off status under StrictMode effect replay', () => {
+    function Probe() {
+      const { status, setStatus } = useBulkStatus('Post')
+      return (
+        <>
+          <button onClick={() => setStatus('Post published', { handoff: true })}>set</button>
+          <span data-testid="s">{status}</span>
+        </>
+      )
+    }
+    const first = render(<Probe />)
+    act(() => screen.getByText('set').click())
+    first.unmount()
+    render(
+      <React.StrictMode>
+        <Probe />
+      </React.StrictMode>,
+    )
+    expect(screen.getByTestId('s')).toHaveTextContent('Post published')
+  })
+
+  it('keeps the status through one exempted reset, then clears on the next', () => {
+    function Probe({ resetKey }: { resetKey: string }) {
+      const { status, setStatus, keepThroughNextReset } = useBulkStatus('Post', resetKey)
+      return (
+        <>
+          <button onClick={() => setStatus('Post published')}>set</button>
+          <button onClick={keepThroughNextReset}>keep</button>
+          <span data-testid="s">{status}</span>
+        </>
+      )
+    }
+    const view = render(<Probe resetKey="p2" />)
+    act(() => screen.getByText('set').click())
+    act(() => screen.getByText('keep').click())
+    view.rerender(<Probe resetKey="p1" />)
+    expect(screen.getByTestId('s')).toHaveTextContent('Post published')
+    view.rerender(<Probe resetKey="p1-sorted" />)
     expect(screen.getByTestId('s')).toBeEmptyDOMElement()
   })
 

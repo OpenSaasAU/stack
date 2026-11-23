@@ -9,6 +9,8 @@ export interface BulkStatus {
   setStatus: (status: string, options?: { handoff?: boolean }) => void
   /** Dismiss the report. */
   clearStatus: () => void
+  /** Let the next change of the reset key pass without dismissing the report. */
+  keepThroughNextReset: () => void
 }
 
 const KEY_PREFIX = 'opensaas:bulk-status:'
@@ -59,18 +61,27 @@ export function useBulkStatus(listKey: string, resetKey?: string): BulkStatus {
   const storageKey = storageKeyFor(listKey)
   const [status, setLocal] = React.useState<string | null>(null)
 
+  const taken = React.useRef<{ key: string; text: string | null } | null>(null)
   React.useEffect(() => {
-    const handed = takeHandoff(storageKey)
+    if (taken.current?.key !== storageKey) {
+      taken.current = { key: storageKey, text: takeHandoff(storageKey) }
+    }
     // Reading sessionStorage must wait for the client to avoid a hydration mismatch.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLocal(handed)
+
+    setLocal(taken.current.text)
   }, [storageKey])
+
+  const skipNextReset = React.useRef(false)
 
   const lastResetKey = React.useRef(resetKey)
   React.useEffect(() => {
     if (lastResetKey.current === resetKey) return
     lastResetKey.current = resetKey
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (skipNextReset.current) {
+      skipNextReset.current = false
+      return
+    }
+
     setLocal(null)
     pending.delete(storageKey)
     try {
@@ -119,5 +130,9 @@ export function useBulkStatus(listKey: string, resetKey?: string): BulkStatus {
     }
   }, [storageKey])
 
-  return { status, setStatus, clearStatus }
+  const keepThroughNextReset = React.useCallback(() => {
+    skipNextReset.current = true
+  }, [])
+
+  return { status, setStatus, clearStatus, keepThroughNextReset }
 }

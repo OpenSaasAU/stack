@@ -424,7 +424,11 @@ export function ListViewClient({
     status: bulkStatus,
     setStatus: setBulkStatus,
     clearStatus,
-  } = useBulkStatus(listKey, JSON.stringify([initialSort ?? null, initialSearch ?? null, pageSize]))
+    keepThroughNextReset,
+  } = useBulkStatus(
+    listKey,
+    JSON.stringify([initialSort ?? null, initialSearch ?? null, page, pageSize]),
+  )
 
   const pageIds = items.map((item) => String(item.id))
 
@@ -538,6 +542,7 @@ export function ListViewClient({
   // is not served stale), then the push lands on page 1 and fetches the
   // now-shorter list fresh.
   const refreshFromFirstPage = () => {
+    if (page !== 1) keepThroughNextReset()
     router.refresh()
     router.push(buildPaginationUrl(1))
   }
@@ -1179,10 +1184,7 @@ export function ListViewClient({
               <>
                 <Button
                   variant="outline"
-                  onClick={() => {
-                    clearStatus()
-                    router.push(buildPaginationUrl(page - 1))
-                  }}
+                  onClick={() => router.push(buildPaginationUrl(page - 1))}
                   disabled={!hasPrevPage}
                 >
                   Previous
@@ -1192,10 +1194,7 @@ export function ListViewClient({
                 </span>
                 <Button
                   variant="outline"
-                  onClick={() => {
-                    clearStatus()
-                    router.push(buildPaginationUrl(page + 1))
-                  }}
+                  onClick={() => router.push(buildPaginationUrl(page + 1))}
                   disabled={!hasNextPage}
                 >
                   Next
