@@ -243,6 +243,13 @@ export function createMcpHandlers(options: {
         return new Response(null, { status: 204 })
       }
 
+      if (body.method === 'ping') {
+        return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id ?? null, result: {} }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
       if (body.method === 'tools/list') {
         const context = await getContext(toContextSession(session))
         return await handleToolsList(config, context, session, body.id)
@@ -575,7 +582,7 @@ async function handleToolsCall(
   const toolName = params?.name
   const toolArgs = params?.arguments || {}
 
-  if (!toolName) {
+  if (typeof toolName !== 'string' || !toolName) {
     return new Response(
       JSON.stringify({
         jsonrpc: '2.0',

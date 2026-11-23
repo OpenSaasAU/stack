@@ -2077,6 +2077,28 @@ describe('the MCP surface', () => {
     )
   })
 
+  describe('JSON-RPC envelope edges', () => {
+    test(
+      'a non-string tool name is -32602, not a 500',
+      async () => {
+        const { status, body } = await rpc('tools/call', { name: 5 })
+        expect(status).toBe(400)
+        expect(body?.error).toMatchObject({ code: -32602 })
+      },
+      BOOT,
+    )
+
+    test(
+      'ping answers an empty result',
+      async () => {
+        const { status, body } = await rpc('ping', {})
+        expect(status).toBe(200)
+        expect(body?.result).toEqual({})
+      },
+      BOOT,
+    )
+  })
+
   describe('errors outside the CRUD tools', () => {
     function withTool(handler: () => Promise<unknown>): OpenSaasConfig {
       const base = schemaConfig()
@@ -3287,7 +3309,7 @@ describe('the MCP surface', () => {
     }
 
     test(
-      'is absent from the fields schema, and from the write schemas when mcp.enabled is false',
+      'is absent from the fields schema, and from the write schemas when mcp.enabled or tools.read is false',
       async () => {
         const tools = await listTools()
         const query = tools.find((t) => t.name === 'list_post_query')
@@ -3301,7 +3323,7 @@ describe('the MCP surface', () => {
           const data = (tool?.inputSchema.properties as Record<string, { properties: object }>).data
             .properties as Record<string, unknown>
           expect(data.draftRef).toBeUndefined()
-          expect(data.unreadRef).toBeDefined()
+          expect(data.unreadRef).toBeUndefined()
         }
       },
       BOOT,
@@ -3325,6 +3347,17 @@ describe('the MCP surface', () => {
           data: { title: 't', draftRef: { connect: { id: 'x' } } },
         })
         expect(text).toContain('has no field "draftRef"')
+      },
+      BOOT,
+    )
+
+    test(
+      'connect into a tools.read false list is refused as an unknown field',
+      async () => {
+        const text = await refusal('list_post_create', {
+          data: { title: 't', unreadRef: { connect: { id: 'x' } } },
+        })
+        expect(text).toContain('has no field "unreadRef"')
       },
       BOOT,
     )

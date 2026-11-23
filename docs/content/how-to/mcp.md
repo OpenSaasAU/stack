@@ -449,7 +449,7 @@ All MCP tools respect your existing access control rules defined in `opensaas.co
 
 ### Tool Listing Is Per-Session
 
-`tools/list` is evaluated per session. A list whose operation-level `query` access denies the session outright (`=== false`) doesn't appear in the listing at all — none of its four CRUD tools, and no relation entry elsewhere pointing at it (including in another list's `fields` projection schema, above). A list with `mcp.enabled: false` is omitted the same way, as a relation target as well as a tool owner.
+`tools/list` is evaluated per session. A list whose operation-level `query` access denies the session outright (`=== false`) doesn't appear in the listing at all — none of its four CRUD tools, and no relation entry elsewhere pointing at it (including in another list's `fields` projection schema, above). A list with `mcp.enabled: false` is omitted the same way, as a relation target as well as a tool owner. A list whose read tool is off (`tools.read: false`) is likewise not a relation target: the relation is absent from other lists' `fields`, `where` and `orderBy`, and from the create and update schemas, so `connect` into it is refused.
 
 ### Scopes
 
