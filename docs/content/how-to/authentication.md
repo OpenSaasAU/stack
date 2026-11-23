@@ -180,7 +180,7 @@ three default names when the plugin declared none:
 import { createAuth, getSessionFromAuth } from '@opensaas/stack-auth/server'
 import type { Session } from '@opensaas/stack-core'
 import config from '../opensaas.config'
-import { headers } from 'next/headers'
+import { cookies, headers } from 'next/headers'
 import { rawOpensaasContext } from '@/.opensaas/context'
 
 export const auth = createAuth(config, rawOpensaasContext)
@@ -268,10 +268,10 @@ action performs a server-side `redirect()` to the provider and resolves to `void
 // lib/actions/auth.ts
 'use server'
 
-import { headers } from 'next/headers'
+import { cookies, headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
-import { signOutAndConfirm } from '@opensaas/stack-auth/server'
+import { postAuthEndpoint, signOutAndConfirm } from '@opensaas/stack-auth/server'
 import type {
   AuthActionResult,
   SignInInput,
@@ -284,15 +284,46 @@ function errorMessage(err: unknown, fallback: string): string {
   return err instanceof Error && err.message ? err.message : fallback
 }
 
+async function postToAuth(path: string, body: Record<string, unknown>): Promise<AuthActionResult> {
+  const cookieStore = await cookies()
+  return postAuthEndpoint(auth, {
+    path,
+    body,
+    headers: await headers(),
+    setCookie: (name, value, options) => cookieStore.set(name, value, options),
+  })
+}
+
 export async function signInAction(input: SignInInput): Promise<AuthActionResult> {
+  return postToAuth('/sign-in/email', { email: input.email, password: input.password })
+}
+
+export async function signUpAction(input: SignUpInput): Promise<AuthActionResult> {
+  return postToAuth('/sign-up/email', {
+    name: input.name,
+    email: input.email,
+    password: input.password,
+  })
+}
+
+export async function requestPasswordResetAction(
+  input: RequestPasswordResetInput,
+): Promise<AuthActionResult> {
+  return postToAuth('/request-password-reset', {
+    email: input.email,
+    redirectTo: '/reset-password',
+  })
+}
+
+export async function resetPasswordAction(input: ResetPasswordInput): Promise<AuthActionResult> {
   try {
-    await auth.api.signInEmail({
-      body: { email: input.email, password: input.password },
+    await auth.api.resetPassword({
+      body: { newPassword: input.password, token: input.token },
       headers: await headers(),
     })
     return { success: true }
   } catch (err) {
-    return { success: false, error: errorMessage(err, 'Sign in failed') }
+    return { success: false, error: errorMessage(err, 'Failed to reset password') }
   }
 }
 
@@ -856,7 +887,9 @@ authPlugin({
 
   extendUserList: {
     fields: {
-      role: select({/* ... */}),
+      role: select({
+        /* ... */
+      }),
       company: text(),
     },
   },
@@ -992,7 +1025,7 @@ redirects there.
 // lib/actions/auth.ts
 'use server'
 
-import { headers } from 'next/headers'
+import { cookies, headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
 
@@ -1982,23 +2015,20 @@ export const POST = auth.handler
 // lib/actions/auth.ts
 'use server'
 
-import { headers } from 'next/headers'
+import { cookies, headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
-import { signOutAndConfirm } from '@opensaas/stack-auth/server'
+import { postAuthEndpoint, signOutAndConfirm } from '@opensaas/stack-auth/server'
 import type { AuthActionResult, SignInInput } from '@opensaas/stack-auth/ui'
 
 export async function signInAction(input: SignInInput): Promise<AuthActionResult> {
-  try {
-    await auth.api.signInEmail({
-      body: { email: input.email, password: input.password },
-      headers: await headers(),
-    })
-    return { success: true }
-  } catch (err) {
-    const message = err instanceof Error && err.message ? err.message : 'Sign in failed'
-    return { success: false, error: message }
-  }
+  const cookieStore = await cookies()
+  return postAuthEndpoint(auth, {
+    path: '/sign-in/email',
+    body: { email: input.email, password: input.password },
+    headers: await headers(),
+    setCookie: (name, value, options) => cookieStore.set(name, value, options),
+  })
 }
 
 export async function signOutAction(): Promise<void> {
@@ -2127,7 +2157,9 @@ authPlugin({
   sessionFields: ['userId', 'email', 'name', 'role'], // Include 'role'
   extendUserList: {
     fields: {
-      role: select({/* ... */}),
+      role: select({
+        /* ... */
+      }),
     },
   },
 })

@@ -70,3 +70,7 @@ passes `Set-Cookie` values to `setCookie` (Next's `cookies().set`). The template
 rejection of shared action logic was about friction; this is a safety reason. Forms
 still submit through server actions with no browser dependency on the REST route.
 Actions that keep calling `auth.api.*` directly are not rate limited.
+
+## Amendment: client IP for rate limiting
+
+The limiter keys on the client IP and the stack does not choose its source. A rotating `X-Forwarded-For` from an untrusted position gets a fresh bucket per request, and with no header every client shares one per-path bucket. The with-auth template carries a commented `betterAuthOptions.advanced.ipAddress` block naming the trusted header, which must match the deployment. `DISABLE_RATE_LIMITING` is ignored when `NODE_ENV` is `production`.

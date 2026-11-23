@@ -85,11 +85,24 @@ export default config({
       // Configure session fields
       sessionFields: ['userId', 'email', 'name'],
 
-      // Disable rate limiting for E2E tests
-      // Set DISABLE_RATE_LIMITING=true in your environment to disable
+      // DISABLE_RATE_LIMITING=true turns the limiter off outside production only
       rateLimit: {
-        enabled: process.env.DISABLE_RATE_LIMITING !== 'true',
+        enabled:
+          process.env.NODE_ENV === 'production' || process.env.DISABLE_RATE_LIMITING !== 'true',
       },
+
+      // Rate limiting keys on the client IP. Behind a proxy, trust the header
+      // your deployment sets (it must match the deployment) — an untrusted
+      // X-Forwarded-For lets a client rotate buckets. With no header every
+      // client shares one bucket.
+      // betterAuthOptions: {
+      //   advanced: {
+      //     ipAddress: {
+      //       ipAddressHeaders: ['x-forwarded-for'], // Vercel: 'x-real-ip' / 'x-vercel-forwarded-for'
+      //       ipv6Subnet: 64,
+      //     },
+      //   },
+      // },
 
       // Extend User list with custom fields
       extendUserList: {
