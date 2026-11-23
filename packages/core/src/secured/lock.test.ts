@@ -591,30 +591,35 @@ describe.skipIf(escape.kind !== 'postgres')(
 )
 
 describe('lock statement across bundle module instances', () => {
+  let database: TestDatabase
+
+  beforeAll(async () => {
+    database = await createTestDatabase(config)
+  }, BOOT)
+
+  afterAll(async () => {
+    await database?.close()
+  })
+
   test('binds keys as plain values and casts in the statement text', async () => {
-    const database = await createTestDatabase(config)
-    try {
-      const seed = database.context(anonymous)
-      const slot = await seed.db.Slot.create({ data: { name: 'a', capacity: 1 } })
-      const bound: unknown[] = []
-      let text = ''
-      const recordingRaw = {
-        sql: (strings: TemplateStringsArray, ...values: (string | number)[]) => {
-          text = strings.join('?')
-          bound.push(...values)
-          return database.client.raw.sql(strings, ...values)
-        },
-      }
-      const locked = await database.client.transaction(async (tx) => {
-        const lane = createRowLockLane(recordingRaw, database.client.contract, tx)
-        if (lane === undefined) throw new Error('lane unavailable')
-        return await lane.lock('Slot', lane.identity('Slot'), [String(slot?.id)], 'forUpdate')
-      })
-      expect(locked).toEqual([String(slot?.id)])
-      expect(bound).toEqual([String(slot?.id), 1])
-      expect(text).toMatch(/IN \(\?(::\w+)?\) ORDER BY/)
-    } finally {
-      await database.close()
+    const seed = database.context(anonymous)
+    const slot = await seed.db.Slot.create({ data: { name: 'a', capacity: 1 } })
+    const bound: unknown[] = []
+    let text = ''
+    const recordingRaw = {
+      sql: (strings: TemplateStringsArray, ...values: (string | number)[]) => {
+        text = strings.join('?')
+        bound.push(...values)
+        return database.client.raw.sql(strings, ...values)
+      },
     }
+    const locked = await database.client.transaction(async (tx) => {
+      const lane = createRowLockLane(recordingRaw, database.client.contract, tx)
+      if (lane === undefined) throw new Error('lane unavailable')
+      return await lane.lock('Slot', lane.identity('Slot'), [String(slot?.id)], 'forUpdate')
+    })
+    expect(locked).toEqual([String(slot?.id)])
+    expect(bound).toEqual([String(slot?.id), 1])
+    expect(text).toMatch(/IN \(\?(::\w+)?\) ORDER BY/)
   })
 })
