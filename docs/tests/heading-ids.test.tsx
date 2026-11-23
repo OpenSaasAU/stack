@@ -20,3 +20,12 @@ test('an explicit id annotation is kept', () => {
   const html = renderToStaticMarkup(Markdoc.renderers.react(tree, React) as React.ReactElement)
   assert.ok(html.includes('id="custom"'), html)
 })
+
+test('duplicate headings get numeric suffixes, in the page and the table of contents', () => {
+  const dup = '## Hooks\n\n## Hooks\n\n## Hooks\n'
+  const tree = Markdoc.transform(Markdoc.parse(dup), markdocConfig)
+  const html = renderToStaticMarkup(Markdoc.renderers.react(tree, React) as React.ReactElement)
+  const ids = extractHeadings(dup).map((h) => h.id)
+  assert.deepEqual(ids, ['hooks', 'hooks-1', 'hooks-2'])
+  for (const id of ids) assert.ok(html.includes(`id="${id}"`), html)
+})

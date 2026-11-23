@@ -58,7 +58,7 @@ title: text({
 })
 ```
 
-##### `isIndexed`
+##### `isIndexed` {% #isindexed %}
 
 Database index configuration.
 
@@ -894,7 +894,7 @@ password(options?: {
 2. **Idempotent**: Already-hashed passwords are not re-hashed
 3. **Secure Output**: Query results return `HashedPassword` instances with a `compare()` method
 4. **No Exposure**: Only sends `{ isSet: boolean }` to client (not the hash)
-5. **Excluded from default admin columns**: sets `ui.listView.defaultColumn: false` by default (a presentation default, not an access control — see [`ui.listView`](/docs/reference/config-api#ui)); override with `ui: { listView: { defaultColumn: true } }` to show it anyway
+5. **Excluded from default admin columns**: sets `ui.listView.defaultColumn: false` by default (a presentation default, not an access control — see [`ui.listView`](/docs/reference/config-api#ui-1)); override with `ui: { listView: { defaultColumn: true } }` to show it anyway
 
 #### Options
 
@@ -1590,7 +1590,7 @@ The TypeScript type generator automatically collects and generates the necessary
 
 ##### `needs`
 
-The columns and relations the computation reads. See [`needs`](#needs) under Field Builder Contract for the full rules; on a virtual field it is the ordinary way to widen the read.
+The columns and relations the computation reads. See [`needs`](#needs-1) under Field Builder Contract for the full rules; on a virtual field it is the ordinary way to widen the read.
 
 **Type:** `string[]`
 
