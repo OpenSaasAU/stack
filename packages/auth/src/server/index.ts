@@ -740,30 +740,116 @@ export interface SignOutAuth {
   }
 }
 
-export type RestoreCookie = (name: string, value: string) => Promise<void> | void
-
-const SESSION_COOKIE_PATTERN = /session_(token|data)$/
-
-async function restoreNextCookie(name: string, value: string): Promise<void> {
-  const { cookies } = await import('next/headers')
-  const store = await cookies()
-  store.set(name, value, {
-    path: '/',
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: name.startsWith('__Secure-'),
-  })
+export interface RestoredCookieAttributes {
+  path?: string
+  domain?: string
+  maxAge?: number
+  httpOnly?: boolean
+  secure?: boolean
+  sameSite?: 'lax' | 'strict' | 'none'
 }
 
-async function restoreSessionCookies(headers: Headers, restore: RestoreCookie): Promise<void> {
+export type RestoreCookie = (
+  name: string,
+  value: string,
+  attributes: RestoredCookieAttributes,
+) => Promise<void> | void
+
+const SESSION_COOKIE_PATTERN = /session_(token|data)$/
+const RESOLVED_COOKIE_KEYS = ['sessionToken', 'sessionData', 'dontRememberToken', 'accountData']
+
+async function restoreNextCookie(
+  name: string,
+  value: string,
+  attributes: RestoredCookieAttributes,
+): Promise<void> {
+  const { cookies } = await import('next/headers')
+  const store = await cookies()
+  store.set(name, value, attributes)
+}
+
+function pickAttributes(raw: unknown): RestoredCookieAttributes {
+  const attributes: RestoredCookieAttributes = {}
+  if (typeof raw !== 'object' || raw === null) return attributes
+  const path = Reflect.get(raw, 'path')
+  const domain = Reflect.get(raw, 'domain')
+  const maxAge = Reflect.get(raw, 'maxAge')
+  const httpOnly = Reflect.get(raw, 'httpOnly')
+  const secure = Reflect.get(raw, 'secure')
+  const sameSite = Reflect.get(raw, 'sameSite')
+  if (typeof path === 'string') attributes.path = path
+  if (typeof domain === 'string') attributes.domain = domain
+  if (typeof maxAge === 'number') attributes.maxAge = maxAge
+  if (typeof httpOnly === 'boolean') attributes.httpOnly = httpOnly
+  if (typeof secure === 'boolean') attributes.secure = secure
+  if (typeof sameSite === 'string') {
+    const lowered = sameSite.toLowerCase()
+    if (lowered === 'lax' || lowered === 'strict' || lowered === 'none') {
+      attributes.sameSite = lowered
+    }
+  }
+  return attributes
+}
+
+async function resolveAuthCookies(
+  auth: object,
+): Promise<Map<string, { key: string; attributes: RestoredCookieAttributes }> | null> {
+  const pending: unknown = Reflect.get(auth, '$context')
+  if (pending === undefined) return null
+  const context: unknown = await pending
+  if (typeof context !== 'object' || context === null) return null
+  const authCookies: unknown = Reflect.get(context, 'authCookies')
+  if (typeof authCookies !== 'object' || authCookies === null) return null
+  const resolved = new Map<string, { key: string; attributes: RestoredCookieAttributes }>()
+  for (const key of RESOLVED_COOKIE_KEYS) {
+    const entry: unknown = Reflect.get(authCookies, key)
+    if (typeof entry !== 'object' || entry === null) continue
+    const name = Reflect.get(entry, 'name')
+    if (typeof name !== 'string') continue
+    resolved.set(name, { key, attributes: pickAttributes(Reflect.get(entry, 'attributes')) })
+  }
+  return resolved.size > 0 ? resolved : null
+}
+
+async function restoreSessionCookies(
+  auth: object,
+  headers: Headers,
+  restore: RestoreCookie,
+): Promise<void> {
   const header = headers.get('cookie')
   if (!header) return
+  let resolved: Awaited<ReturnType<typeof resolveAuthCookies>> = null
+  try {
+    resolved = await resolveAuthCookies(auth)
+  } catch {
+    resolved = null
+  }
+  const sent: Array<[string, string]> = []
   for (const part of header.split(';')) {
     const index = part.indexOf('=')
     if (index < 0) continue
-    const name = part.slice(0, index).trim()
-    if (!SESSION_COOKIE_PATTERN.test(name)) continue
-    const raw = part.slice(index + 1).trim()
+    sent.push([part.slice(0, index).trim(), part.slice(index + 1).trim()])
+  }
+  const sessionOnly = resolved
+    ? sent.some(([name]) => resolved.get(name)?.key === 'dontRememberToken')
+    : false
+  for (const [name, raw] of sent) {
+    let attributes: RestoredCookieAttributes
+    if (resolved) {
+      const entry = resolved.get(name)
+      if (!entry) continue
+      attributes = { ...entry.attributes }
+      if (sessionOnly && entry.key === 'sessionToken') delete attributes.maxAge
+    } else if (SESSION_COOKIE_PATTERN.test(name)) {
+      attributes = {
+        path: '/',
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: name.startsWith('__Secure-'),
+      }
+    } else {
+      continue
+    }
     let value = raw
     try {
       value = decodeURIComponent(raw)
@@ -771,7 +857,7 @@ async function restoreSessionCookies(headers: Headers, restore: RestoreCookie): 
       value = raw
     }
     try {
-      await restore(name, value)
+      await restore(name, value, attributes)
     } catch (error) {
       console.error('Could not restore the session cookie after a failed sign-out', error)
     }
@@ -795,7 +881,7 @@ export async function signOutAndConfirm(
     query: { disableCookieCache: true },
   })
   if (remaining) {
-    await restoreSessionCookies(headers, restoreCookie)
+    await restoreSessionCookies(auth, headers, restoreCookie)
     throw new Error('Sign out failed: the session is still active')
   }
   if (typeof result === 'object' && result !== null) {

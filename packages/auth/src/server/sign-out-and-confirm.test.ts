@@ -102,4 +102,56 @@ describe('signOutAndConfirm', () => {
     })
     vi.doUnmock('next/headers')
   })
+
+  it('restores cookies under the resolved names and attributes', async () => {
+    const restored: Array<[string, string, unknown]> = []
+    const auth = {
+      ...fakeAuth({ success: true }, { user: { id: '1' } }),
+      $context: Promise.resolve({
+        authCookies: {
+          sessionToken: {
+            name: 'app.sid',
+            attributes: { path: '/admin', sameSite: 'Strict', maxAge: 60, httpOnly: true },
+          },
+          sessionData: { name: 'app.data', attributes: { path: '/admin' } },
+          dontRememberToken: { name: 'app.dr', attributes: {} },
+          accountData: { name: 'app.acct', attributes: {} },
+        },
+      }),
+    }
+    await expect(
+      signOutAndConfirm(
+        auth,
+        new Headers({ cookie: 'other=1; app.sid=tok%3D; better-auth.session_token=ignored' }),
+        (n, v, a) => {
+          restored.push([n, v, a])
+        },
+      ),
+    ).rejects.toThrow('still active')
+    expect(restored).toEqual([
+      ['app.sid', 'tok=', { path: '/admin', sameSite: 'strict', maxAge: 60, httpOnly: true }],
+    ])
+  })
+
+  it('drops the session token lifetime when the dont-remember cookie is present', async () => {
+    const restored: Array<[string, unknown]> = []
+    const auth = {
+      ...fakeAuth({ success: true }, { user: { id: '1' } }),
+      $context: Promise.resolve({
+        authCookies: {
+          sessionToken: { name: 'a.token', attributes: { maxAge: 60 } },
+          dontRememberToken: { name: 'a.dr', attributes: {} },
+        },
+      }),
+    }
+    await expect(
+      signOutAndConfirm(auth, new Headers({ cookie: 'a.token=t; a.dr=true' }), (n, _v, a) => {
+        restored.push([n, a])
+      }),
+    ).rejects.toThrow('still active')
+    expect(restored).toEqual([
+      ['a.token', {}],
+      ['a.dr', {}],
+    ])
+  })
 })
