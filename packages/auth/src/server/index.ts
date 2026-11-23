@@ -762,7 +762,19 @@ async function restoreSessionCookies(headers: Headers, restore: RestoreCookie): 
     const index = part.indexOf('=')
     if (index < 0) continue
     const name = part.slice(0, index).trim()
-    if (SESSION_COOKIE_PATTERN.test(name)) await restore(name, part.slice(index + 1).trim())
+    if (!SESSION_COOKIE_PATTERN.test(name)) continue
+    const raw = part.slice(index + 1).trim()
+    let value = raw
+    try {
+      value = decodeURIComponent(raw)
+    } catch {
+      value = raw
+    }
+    try {
+      await restore(name, value)
+    } catch (error) {
+      console.error('Could not restore the session cookie after a failed sign-out', error)
+    }
   }
 }
 
