@@ -51,13 +51,39 @@ describe('list status line', () => {
     expect(screen.queryByText('Post published')).toBeNull()
   })
 
-  it('drops a status older than the hand-off window', () => {
+  it('does not replay a status that survived without a remount', async () => {
+    const { unmount } = render(<Setter />)
+    act(() => screen.getByText('set').click())
+    unmount()
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    render(<ListViewClient {...props} />)
+    expect(screen.queryByText('Post published')).toBeNull()
+  })
+
+  it('does not replay an entry from a previous page load', () => {
     window.sessionStorage.setItem(
       'opensaas:bulk-status:Post',
-      JSON.stringify({ text: 'Link copied', at: Date.now() - 60_000 }),
+      JSON.stringify({ text: 'Link copied', at: Date.now() }),
     )
     render(<ListViewClient {...props} />)
     expect(screen.queryByText('Link copied')).toBeNull()
+  })
+
+  it('clears the status when the list params change', () => {
+    function Probe({ resetKey }: { resetKey: string }) {
+      const { status, setStatus } = useBulkStatus('Post', resetKey)
+      return (
+        <>
+          <button onClick={() => setStatus('Post published')}>set</button>
+          <span data-testid="s">{status}</span>
+        </>
+      )
+    }
+    const view = render(<Probe resetKey="a" />)
+    act(() => screen.getByText('set').click())
+    expect(screen.getByTestId('s')).toHaveTextContent('Post published')
+    view.rerender(<Probe resetKey="b" />)
+    expect(screen.getByTestId('s')).toBeEmptyDOMElement()
   })
 
   it('clearAllBulkStatuses removes pending statuses', () => {

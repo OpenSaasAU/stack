@@ -420,7 +420,14 @@ export function ListViewClient({
   // they are not rendered.
   const canRunBulkActions = hasCustomBulkActions && !!serverAction
 
-  const { status: bulkStatus, setStatus: setBulkStatus, clearStatus } = useBulkStatus(listKey)
+  const {
+    status: bulkStatus,
+    setStatus: setBulkStatus,
+    clearStatus,
+  } = useBulkStatus(
+    listKey,
+    JSON.stringify([initialSort ?? null, initialSearch ?? null, page, pageSize]),
+  )
 
   const pageIds = items.map((item) => String(item.id))
 
