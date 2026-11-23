@@ -211,3 +211,13 @@ describe('editor and validator agree', () => {
     expect(parse(features, json).success).toBe(true)
   })
 })
+
+describe('stripPastedLinkAttributes', () => {
+  it('drops title, class, rel and target from pasted links and keeps href', async () => {
+    const { stripPastedLinkAttributes } = await import('../src/features/features.js')
+    const out = stripPastedLinkAttributes(
+      '<p><a href="https://x.test/" title="T" class="c" rel="nofollow" target="_self">a</a></p>',
+    )
+    expect(out).toBe('<p><a href="https://x.test/">a</a></p>')
+  })
+})

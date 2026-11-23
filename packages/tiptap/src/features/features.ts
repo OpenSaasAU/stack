@@ -1,5 +1,6 @@
 import StarterKit from '@tiptap/starter-kit'
-import type { Extensions } from '@tiptap/core'
+import { Extension, type Extensions } from '@tiptap/core'
+import { Plugin } from '@tiptap/pm/state'
 
 export type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6
 
@@ -68,6 +69,23 @@ export function isAllowedHref(href: string, link: LinkFeature): boolean {
   return protocols.includes(scheme[1].toLowerCase())
 }
 
+const LINK_PASTE_ATTRIBUTES = ['title', 'class', 'rel', 'target']
+
+export function stripPastedLinkAttributes(html: string): string {
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  for (const anchor of Array.from(doc.querySelectorAll('a'))) {
+    for (const name of LINK_PASTE_ATTRIBUTES) anchor.removeAttribute(name)
+  }
+  return doc.body.innerHTML
+}
+
+const LinkPasteNormaliser = Extension.create({
+  name: 'linkPasteNormaliser',
+  addProseMirrorPlugins() {
+    return [new Plugin({ props: { transformPastedHTML: stripPastedLinkAttributes } })]
+  },
+})
+
 export function richTextExtensions(
   features: RichTextFeatures,
   options: { editor: boolean },
@@ -105,5 +123,6 @@ export function richTextExtensions(
       gapcursor: editor ? undefined : false,
       trailingNode: editor ? {} : false,
     }),
+    ...(editor && link ? [LinkPasteNormaliser] : []),
   ]
 }
