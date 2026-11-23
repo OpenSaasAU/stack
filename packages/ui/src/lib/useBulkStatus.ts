@@ -63,7 +63,7 @@ export function useBulkStatus(listKey: string, resetKey?: string): BulkStatus {
     const handed = takeHandoff(storageKey)
     // Reading sessionStorage must wait for the client to avoid a hydration mismatch.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (handed !== null) setLocal(handed)
+    setLocal(handed)
   }, [storageKey])
 
   const lastResetKey = React.useRef(resetKey)
