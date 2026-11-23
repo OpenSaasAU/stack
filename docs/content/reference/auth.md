@@ -941,44 +941,6 @@ export async function signOutAction(): Promise<void> {
   redirect(logoutUrl ?? '/sign-in')
 }
 
-export async function signUpAction(input: SignUpInput): Promise<AuthActionResult> {
-  try {
-    await auth.api.signUpEmail({
-      body: { name: input.name, email: input.email, password: input.password },
-      headers: await headers(),
-    })
-    return { success: true }
-  } catch (err) {
-    return { success: false, error: errorMessage(err, 'Sign up failed') }
-  }
-}
-
-export async function requestPasswordResetAction(
-  input: RequestPasswordResetInput,
-): Promise<AuthActionResult> {
-  try {
-    await auth.api.requestPasswordReset({
-      body: { email: input.email, redirectTo: '/reset-password' },
-      headers: await headers(),
-    })
-    return { success: true }
-  } catch (err) {
-    return { success: false, error: errorMessage(err, 'Failed to send reset email') }
-  }
-}
-
-export async function resetPasswordAction(input: ResetPasswordInput): Promise<AuthActionResult> {
-  try {
-    await auth.api.resetPassword({
-      body: { newPassword: input.password, token: input.token },
-      headers: await headers(),
-    })
-    return { success: true }
-  } catch (err) {
-    return { success: false, error: errorMessage(err, 'Failed to reset password') }
-  }
-}
-
 export async function signInSocialAction(provider: string): Promise<void> {
   const response = await auth.api.signInSocial({
     body: { provider, callbackURL: '/admin' },

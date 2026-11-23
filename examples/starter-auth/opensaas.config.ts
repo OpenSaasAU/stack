@@ -85,10 +85,12 @@ export default config({
       // Configure session fields
       sessionFields: ['userId', 'email', 'name'],
 
-      // DISABLE_RATE_LIMITING=true turns the limiter off outside production only
+      // DISABLE_RATE_LIMITING=true turns the limiter off outside production only.
+      // E2E_DISABLE_RATE_LIMITING=true is the explicit switch for E2E runs under `next start`.
       rateLimit: {
         enabled:
-          process.env.NODE_ENV === 'production' || process.env.DISABLE_RATE_LIMITING !== 'true',
+          process.env.E2E_DISABLE_RATE_LIMITING !== 'true' &&
+          (process.env.NODE_ENV === 'production' || process.env.DISABLE_RATE_LIMITING !== 'true'),
       },
 
       // Rate limiting keys on the client IP. Behind a proxy, trust the header
