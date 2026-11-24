@@ -1014,6 +1014,37 @@ describe('deriveContract — db.foreignKeys', () => {
     ).toThrow(/column types differ/)
   })
 
+  test('accepts a foreign key between timestamp columns and refuses differing native enums', () => {
+    const target = {
+      fields: {
+        at: timestamp(),
+        kind: select({
+          options: [{ label: 'A', value: 'a' }],
+          db: { type: 'enum', enumName: 'KindA' },
+        }),
+      },
+      db: { indexes: [{ fields: ['at', 'kind'], unique: true }] },
+    }
+    const child = (kind: string) => ({
+      fields: {
+        at: timestamp(),
+        kind: select({
+          options: [{ label: 'A', value: 'a' }],
+          db: { type: 'enum', enumName: kind },
+        }),
+      },
+      db: {
+        foreignKeys: [
+          { fields: ['at', 'kind'], references: { list: 'T', fields: ['at', 'kind'] } },
+        ],
+      },
+    })
+    expect(() => single({ T: target, C: child('KindA') } as OpenSaasConfig['lists'])).not.toThrow()
+    expect(() => single({ T: target, C: child('KindB') } as OpenSaasConfig['lists'])).toThrow(
+      /column types differ/,
+    )
+  })
+
   test('refuses an index name over 63 bytes and a name shared across lists', () => {
     const idx = (name: string) => ({
       fields: { a: text() },

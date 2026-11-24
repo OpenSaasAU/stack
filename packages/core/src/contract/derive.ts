@@ -424,10 +424,18 @@ function assertNameFits(where: string, listKey: string, name: string): void {
   }
 }
 
+function comparableType(type: ColumnTypeDescriptor, enumName: string | undefined): string {
+  return JSON.stringify({
+    ...type,
+    type: type.type === 'dateTime' ? 'timestamptz' : type.type,
+    ...(enumName !== undefined ? { enum: enumName } : {}),
+  })
+}
+
 function columnType(draft: ModelDraft, column: string): string | undefined {
-  if (column === 'id') return JSON.stringify(draft.model.id.type)
+  if (column === 'id') return comparableType(draft.model.id.type, undefined)
   const found = draft.model.columns.find((candidate) => candidate.name === column)
-  return found ? JSON.stringify(found.type) : undefined
+  return found ? comparableType(found.type, found.enum?.name) : undefined
 }
 
 function deriveIndexes(
