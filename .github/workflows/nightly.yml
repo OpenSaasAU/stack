@@ -38,7 +38,9 @@ jobs:
       - name: Check out package.json for the pnpm version
         uses: actions/checkout@v7
         with:
-          sparse-checkout: package.json
+          sparse-checkout: |
+            package.json
+            .changeset/pre.json
           sparse-checkout-cone-mode: false
 
       - name: Setup Node.js
@@ -58,9 +60,15 @@ jobs:
           set -euo pipefail
           WORKDIR="$(mktemp -d)"
           echo "WORKDIR=$WORKDIR" >> "$GITHUB_ENV"
+          # Alpha pre-release mode publishes under its tag; `latest` only moves at stable release.
+          TAG=latest
+          PRE="$GITHUB_WORKSPACE/.changeset/pre.json"
+          if [ -f "$PRE" ] && [ "$(node -p "require('$PRE').mode")" = "pre" ]; then
+            TAG="$(node -p "require('$PRE').tag")"
+          fi
           cd "$WORKDIR"
           # Real, networked install of the published package + its template deps.
-          npx --yes create-opensaas-app myapp --no-auth --no-ai
+          npx --yes "create-opensaas-app@$TAG" myapp --no-auth --no-ai
           if [ ! -d myapp ]; then
             echo '::error::create-opensaas-app exited without scaffolding myapp (an unanswered prompt exits 0 without a TTY)'
             exit 1
