@@ -323,7 +323,9 @@ async function visitRow(
   const assembled = assembleColumnFields(facing, fieldConfigs, members)
   const ruleRow = ruleRowOf(assembled, viewsOf(level, views), fieldConfigs, config, listKey)
   const hookItemFor = (fieldName: string): Record<string, unknown> => {
-    const declared = declaredDependencies[fieldName] ?? { columns: [], relations: [] }
+    const declared = Object.hasOwn(declaredDependencies, fieldName)
+      ? declaredDependencies[fieldName]
+      : { columns: [], relations: [] }
     const hookItem: Record<string, unknown> = {}
     for (const key of [...systemFields, ...declared.columns, ...declared.relations]) {
       if (key in ruleRow.item) hookItem[key] = ruleRow.item[key]

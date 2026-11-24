@@ -678,7 +678,11 @@ function scope(
       collection = collection.where((model) => lowerWhere(predicate, model, ops))
     }
   }
-  if (applies('projection') && plan.projection.columns !== undefined) {
+  if (
+    applies('projection') &&
+    plan.projection.columns !== undefined &&
+    !plan.projection.columns.some((column) => column in Object.prototype)
+  ) {
     collection = collection.select(...plan.projection.columns)
   }
   if (applies('orders') && plan.orders.length > 0) {

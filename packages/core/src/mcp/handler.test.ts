@@ -473,6 +473,19 @@ describe('the MCP surface', () => {
     )
 
     test(
+      'list_settings_query refuses a where argument',
+      async () => {
+        const { body } = await callTool('list_settings_query', {
+          where: { siteName: { equals: 'x' } },
+        })
+        const result = body?.result as { isError?: boolean; content: { text: string }[] }
+        expect(result.isError).toBe(true)
+        expect(result.content[0]?.text).toContain('takes no "where"')
+      },
+      BOOT,
+    )
+
+    test(
       'a session denied query gets the empty value',
       async () => {
         const { body } = await rpc(

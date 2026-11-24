@@ -33,7 +33,7 @@ export function validateWithZod(
 ): { success: true } | { success: false; errors: Record<string, string> } {
   const schema = generateZodSchema(fieldConfigs, operation, defaults)
 
-  const result = schema.safeParse(data)
+  const result = schema.safeParse(Object.assign(Object.create(null), data))
 
   if (result.success) {
     return { success: true }
