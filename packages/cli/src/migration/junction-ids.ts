@@ -65,8 +65,12 @@ export function planJunctionIds(
     }
     const physical = (name: string) => model.columns.find((c) => c.name === name)?.map ?? name
     const pair = model.foreignKeys.map((fk) => physical(fk.column))
-    if (pair.length !== 2 || !sameColumns(key.columns, pair)) {
+    if (pair.length === 2 && sameColumns(key.columns, pair)) {
+      // fall through to the replacement below
+    } else if (key.columns.length > 1) {
       throw new CompositeKeyError(table, key.columns)
+    } else {
+      continue
     }
     const declared = model.indexes.find(
       (i) =>
