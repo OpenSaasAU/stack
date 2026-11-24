@@ -107,6 +107,17 @@ describe('resolveMigrationHead', () => {
     expect(resolveMigrationHead(cwd)).toBe('a')
   })
 
+  it('resolves a fork a sibling branch continues past even without timestamps', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    writePackage('1_init', 'empty', 'a')
+    writePackage('2_x', 'a', 'b')
+    writePackage('2_y', 'a', 'c')
+    writePackage('3_merge', 'b', 'd')
+    expect(resolveMigrationHead(cwd)).toBe('d')
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('2_y'))
+    warn.mockRestore()
+  })
+
   it('names the package it chose when walking without timestamps', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     writePackage('1_init', 'empty', 'a')
