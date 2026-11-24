@@ -1,7 +1,7 @@
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildPlanArgs, MultipleMigrationHeadsError, resolveMigrationHead } from './db-plan.js'
 
 let cwd: string
@@ -77,23 +77,51 @@ describe('resolveMigrationHead', () => {
       }
     })()
     expect(error).toBeInstanceOf(MultipleMigrationHeadsError)
-    expect(String(error)).toMatch(/2_x.*2_y/)
-    expect(String(error)).toMatch(/--from b/)
+    expect(String(error)).toMatch(/2_y.*2_x/)
+    expect(String(error)).toMatch(/--from c/)
     expect(buildPlanArgs(cwd, ['--from', 'b'])).toEqual(['migration', 'plan', '--from', 'b'])
   })
 
-  it('refuses a dead-end branch that is not at the latest package', () => {
+  it('names the newer fork first and says the other must be removed or joined', () => {
+    writePackage('1_x', 'a', 'b', '2026-07-20T10:00:00Z')
+    writePackage('2_y', 'a', 'c', '2026-07-20T11:00:00Z')
+    expect(() => resolveMigrationHead(cwd)).toThrow(/--from c.*1_x must then be removed or joined/)
+  })
+
+  it('treats a fork as resolved once a later package exists, warning about the leaf', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     writePackage('1_a', 'a', 'b', '2026-07-20T09:00:00Z')
     writePackage('2_b', 'a', 'c', '2026-07-20T10:00:00Z')
-    writePackage('3_c', 'c', 'd', '2026-07-20T11:00:00Z')
-    expect(() => resolveMigrationHead(cwd)).toThrow(/1_a.*3_c/)
+    writePackage('3_merge', 'b', 'd', '2026-07-20T11:00:00Z')
+    expect(resolveMigrationHead(cwd)).toBe('d')
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('2_b'))
+    writePackage('4_next', 'd', 'e', '2026-07-20T12:00:00Z')
+    expect(resolveMigrationHead(cwd)).toBe('e')
+    warn.mockRestore()
+  })
+
+  it('is not fooled by a package stamped ahead of a later one', () => {
+    writePackage('1_init', 'empty', 'a', '2026-07-20T09:00:00Z')
+    writePackage('2_add', 'a', 'b', '2026-07-25T09:00:00Z')
+    writePackage('3_drop', 'b', 'a', '2026-07-21T09:00:00Z')
+    expect(resolveMigrationHead(cwd)).toBe('a')
+  })
+
+  it('names the package it chose when walking without timestamps', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    writePackage('1_init', 'empty', 'a')
+    writePackage('2_add', 'a', 'b')
+    writePackage('3_drop', 'b', 'a')
+    expect(resolveMigrationHead(cwd)).toBe('a')
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('3_drop'))
+    warn.mockRestore()
   })
 
   it('refuses a fork when walking the chain without timestamps', () => {
     writePackage('1_init', 'empty', 'a')
     writePackage('2_x', 'a', 'b')
     writePackage('2_y', 'a', 'c')
-    expect(() => resolveMigrationHead(cwd)).toThrow(/2_x.*2_y/)
+    expect(() => resolveMigrationHead(cwd)).toThrow(/2_y.*2_x/)
   })
 })
 

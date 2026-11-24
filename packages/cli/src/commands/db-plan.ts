@@ -10,14 +10,17 @@ interface Edge {
   createdAt: number | null
 }
 
-/** Thrown when two migration packages leave the same state for different ones. */
+/** Thrown when two migration packages both claim to be the latest. */
 export class MultipleMigrationHeadsError extends Error {
   constructor(readonly candidates: readonly Edge[]) {
+    const [newest, ...others] = candidates
     super(
       'The app migration graph forks: ' +
         candidates.map((edge) => `${edge.dir} (${edge.from} -> ${edge.to})`).join(', ') +
-        '. Merge or remove the divergent migration packages, or pass --from <hash> ' +
-        `to choose an origin, e.g. --from ${candidates[0]?.to ?? '<hash>'}.`,
+        `. Pass --from <hash> to choose an origin, e.g. --from ${newest?.to ?? '<hash>'}` +
+        (others.length > 0
+          ? `; ${others.map((edge) => edge.dir).join(', ')} must then be removed or joined.`
+          : '.'),
     )
     this.name = 'MultipleMigrationHeadsError'
   }
@@ -55,55 +58,96 @@ function readEdges(appDir: string): Edge[] {
   return edges.sort((a, b) => (a.dir < b.dir ? -1 : a.dir > b.dir ? 1 : 0))
 }
 
+const byAge = (a: Edge, b: Edge): number =>
+  (a.createdAt ?? 0) - (b.createdAt ?? 0) || (a.dir < b.dir ? -1 : a.dir > b.dir ? 1 : 0)
+
+interface Walk {
+  head: string
+  last: Edge
+  forked: Edge[] | null
+}
+
+function walkChain(edges: readonly Edge[], order: (a: Edge, b: Edge) => number): Walk | null {
+  const targets = new Set(edges.map((edge) => edge.to))
+  const roots = [...new Set(edges.map((edge) => edge.from))].filter((from) => !targets.has(from))
+  const root = roots[0]
+  if (root === undefined || roots.length > 1) return null
+  const used = new Set<Edge>()
+  let current = root
+  let last: Edge | null = null
+  for (;;) {
+    const next = edges.filter((edge) => edge.from === current && !used.has(edge)).sort(order)
+    const first = next[0]
+    if (first === undefined) return last === null ? null : { head: current, last, forked: null }
+    if (new Set(next.map((edge) => edge.to)).size > 1) {
+      return { head: current, last: first, forked: next }
+    }
+    used.add(first)
+    last = first
+    current = first.to
+  }
+}
+
 function headByTimestamp(edges: readonly Edge[]): string {
-  const ordered = [...edges].sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0))
+  const ordered = [...edges].sort(byAge)
   const last = ordered[ordered.length - 1]!
-  const forks = ordered.filter(
+  const leaves = ordered.filter(
     (edge, index) =>
       edge !== last &&
       edge.to !== last.to &&
       !ordered.slice(index + 1).some((later) => later.from === edge.to),
   )
-  if (forks.length > 0) throw new MultipleMigrationHeadsError([...forks, last])
+  const unresolved = leaves.filter(
+    (edge) => !ordered.some((later) => byAge(later, edge) > 0 && later.from !== edge.from),
+  )
+  if (unresolved.length > 0) {
+    throw new MultipleMigrationHeadsError([last, ...unresolved.reverse()])
+  }
+  for (const edge of leaves) {
+    console.warn(
+      `Ignoring ${edge.dir}: it leaves ${edge.to}, which no later package builds on. ` +
+        `Planning from ${last.dir}.`,
+    )
+  }
   return last.to
 }
 
+function noOrigin(edges: readonly Edge[]): Error {
+  const latest = edges[edges.length - 1]!
+  return new Error(
+    `The app migration graph has no single origin (${edges.length} packages, no usable createdAt). ` +
+      `Pass --from <hash> to choose an origin, e.g. --from ${latest.to}.`,
+  )
+}
+
 function headByChain(edges: readonly Edge[]): string {
-  const targets = new Set(edges.map((edge) => edge.to))
-  const roots = [...new Set(edges.map((edge) => edge.from))].filter((from) => !targets.has(from))
-  const root = roots[0]
-  if (root === undefined || roots.length > 1) {
-    const latest = edges[edges.length - 1]!
-    throw new Error(
-      `The app migration graph has no single origin (${edges.length} packages, no usable createdAt). ` +
-        `Pass --from <hash> to choose an origin, e.g. --from ${latest.to}.`,
-    )
+  const walk = walkChain(edges, byAge)
+  if (walk === null) throw noOrigin(edges)
+  if (walk.forked !== null) {
+    const newestFirst = [...walk.forked].sort((a, b) => byAge(b, a))
+    throw new MultipleMigrationHeadsError(newestFirst)
   }
-  const used = new Set<Edge>()
-  let current = root
-  for (;;) {
-    const next = edges.filter((edge) => edge.from === current && !used.has(edge))
-    if (next.length === 0) return current
-    const distinct = new Set(next.map((edge) => edge.to))
-    if (distinct.size > 1) throw new MultipleMigrationHeadsError(next)
-    used.add(next[0]!)
-    current = next[0]!.to
-  }
+  console.warn(
+    `No createdAt on every package; walked the chain from the baseline and chose ${walk.last.dir} (-> ${walk.head}).`,
+  )
+  return walk.head
 }
 
 /**
  * The state the most recently planned migration package leaves, or `null` when
- * the app space has no package yet. Packages are ordered by their manifest's
- * `createdAt`; without one on every package the chain is walked from the baseline.
+ * the app space has no package yet. Packages are found by walking the chain from the baseline,
+ * with `createdAt` ordering forks. A fork a later package builds past is ignored with a warning.
  *
  * @throws {MultipleMigrationHeadsError} when two packages fork the graph.
  */
 export function resolveMigrationHead(cwd: string): string | null {
   const edges = readEdges(path.join(cwd, 'migrations', 'app'))
   if (edges.length === 0) return null
-  return edges.every((edge) => edge.createdAt !== null)
-    ? headByTimestamp(edges)
-    : headByChain(edges)
+  if (edges.every((edge) => edge.createdAt !== null)) {
+    const walk = walkChain(edges, byAge)
+    return walk !== null && walk.forked === null ? walk.head : headByTimestamp(edges)
+  }
+  return headByChain(edges)
 }
 
 /** The `prisma migration plan` arguments for the given forwarded arguments. */
