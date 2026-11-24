@@ -709,10 +709,14 @@ describe('ListView keeps a stable order (#2186)', () => {
     'breaks ties on a sorted column by id',
     async () => {
       const props = await render(ada, {
-        listKey: 'User',
-        sort: { field: 'name', direction: 'asc' },
+        listKey: 'Post',
+        sort: { field: 'published', direction: 'desc' },
       })
-      expect(props.items.map((item) => item.name)).toEqual(['Ada', 'Grace'])
+      const tied = props.items
+        .filter((item) => item.published === true)
+        .map((item) => String(item.id))
+      expect(tied.length).toBeGreaterThan(1)
+      expect(tied).toEqual([...tied].sort())
     },
     BOOT,
   )

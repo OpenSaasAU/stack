@@ -589,7 +589,7 @@ export async function ListView({
       activeSort
         ? withRelations.orderBy({ [activeSort.field]: activeSort.direction })
         : withRelations
-    ).orderBy({ id: 'asc' })
+    ).orderBy(activeSort?.field === 'id' ? [] : { id: 'asc' })
 
     // The total is the same scoped read, counted in the database — so it can
     // only ever equal the number of rows this session may page through.
