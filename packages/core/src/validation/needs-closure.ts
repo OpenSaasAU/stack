@@ -73,7 +73,9 @@ export function validateNeedsDeclarations(config: OpenSaasConfig): NeedsClosureE
       }
 
       for (const dependencyName of needs) {
-        const dependency = listConfig.fields[dependencyName]
+        const dependency = Object.hasOwn(listConfig.fields, dependencyName)
+          ? listConfig.fields[dependencyName]
+          : undefined
         if (isRelationshipFieldConfig(dependency)) continue
         if (dependency && dependency.virtual !== true && dependency.type !== 'virtual') continue
 

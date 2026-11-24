@@ -322,6 +322,10 @@ type PlanDispositions = {
     : PlanDisposition
 }
 
+/** Whether the ORM can select these columns by name: it keys them in a plain object. */
+const isProjectable = (columns: readonly string[]): boolean =>
+  !columns.some((column) => column in Object.prototype)
+
 /** Whether the plan actually carries this member — an empty one refuses nothing. */
 function carried(value: unknown): boolean {
   if (Array.isArray(value)) return value.length > 0
@@ -639,7 +643,7 @@ function shape(
   ops: WhereCombinators,
 ): RefinableCollection {
   let shaped = collection
-  if (plan.projection.columns !== undefined) {
+  if (plan.projection.columns !== undefined && isProjectable(plan.projection.columns)) {
     shaped = shaped.select(...plan.projection.columns)
   }
   if (rows.orders.length > 0) {
@@ -678,7 +682,11 @@ function scope(
       collection = collection.where((model) => lowerWhere(predicate, model, ops))
     }
   }
-  if (applies('projection') && plan.projection.columns !== undefined) {
+  if (
+    applies('projection') &&
+    plan.projection.columns !== undefined &&
+    isProjectable(plan.projection.columns)
+  ) {
     collection = collection.select(...plan.projection.columns)
   }
   if (applies('orders') && plan.orders.length > 0) {
