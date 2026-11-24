@@ -124,7 +124,7 @@ import '@opensaas/stack-ui/styles'
 
 The `AdminUI` component provides a complete admin interface with routing, navigation, and CRUD operations.
 
-Place it at `app/admin/[[...admin]]/page.tsx`. The catch-all segment is what carries the URL into `params`; without `params`, every URL renders the Dashboard.
+Place it at `app/admin/[[...admin]]/page.tsx`. The catch-all segment is what carries the URL into `params`; without `params`, every URL renders the Dashboard. The `params` key must match the folder's name: `[[...admin]]` gives `resolvedParams.admin`, and `[[...slug]]` would give `resolvedParams.slug`.
 
 ```typescript
 import { AdminUI } from '@opensaas/stack-ui'
