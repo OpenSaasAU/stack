@@ -29,8 +29,7 @@ export function holdsListScope(
   context: AccessContext,
   kind: 'read' | 'write',
 ): boolean {
-  const held = heldScopesByContext.get(context)
-  if (held === undefined) return true
+  const held = heldScopesByContext.get(context) ?? []
   return requiredListScopes(config, listKey, kind).every((scope) => held.includes(scope))
 }
 
