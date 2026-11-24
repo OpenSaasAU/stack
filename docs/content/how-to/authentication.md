@@ -849,9 +849,7 @@ authPlugin({
 
   extendUserList: {
     fields: {
-      role: select({
-        /* ... */
-      }),
+      role: select({/* ... */}),
       company: text(),
     },
   },
@@ -2119,9 +2117,7 @@ authPlugin({
   sessionFields: ['userId', 'email', 'name', 'role'], // Include 'role'
   extendUserList: {
     fields: {
-      role: select({
-        /* ... */
-      }),
+      role: select({/* ... */}),
     },
   },
 })

@@ -42,16 +42,10 @@ registerEmbeddingProvider('custom', (config) => {
     model,
     dimensions,
     async embed(text) {
-      return [
-        /* vector */
-      ]
+      return [/* vector */]
     },
     async embedBatch(texts) {
-      return [
-        [
-          /* vectors */
-        ],
-      ]
+      return [[/* vectors */]]
     },
   }
 })

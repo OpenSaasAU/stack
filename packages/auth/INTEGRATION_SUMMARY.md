@@ -116,9 +116,7 @@ import { authPlugin } from '@opensaas/stack-auth'
 
 export default config({
   db: { provider: 'sqlite', url: 'file:./dev.db' },
-  lists: {
-    /* your custom lists */
-  },
+  lists: {/* your custom lists */},
   plugins: [
     authPlugin({
       emailAndPassword: { enabled: true },

@@ -622,9 +622,7 @@ export function file<
             )) as FileMetadata
 
             const previous = logicalValue(fieldConfig, fieldKey, item) as
-              | FileMetadata
-              | null
-              | undefined
+              FileMetadata | null | undefined
             pendingFileUploads.set(inputData, fieldKey, {
               uploaded: metadata,
               replaced: fieldConfig.cleanupOnReplace ? (previous ?? null) : null,
@@ -812,9 +810,7 @@ export function image<
             )) as ImageMetadata
 
             const previous = logicalValue(fieldConfig, fieldKey, item) as
-              | ImageMetadata
-              | null
-              | undefined
+              ImageMetadata | null | undefined
             pendingImageUploads.set(inputData, fieldKey, {
               uploaded: metadata,
               replaced: fieldConfig.cleanupOnReplace ? (previous ?? null) : null,

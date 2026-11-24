@@ -40,15 +40,9 @@ export default config({
 
   lists: {
     ModelName: list({
-      fields: {
-        /* ... */
-      },
-      access: {
-        /* ... */
-      },
-      hooks: {
-        /* ... */
-      },
+      fields: {/* ... */},
+      access: {/* ... */},
+      hooks: {/* ... */},
     }),
   },
 

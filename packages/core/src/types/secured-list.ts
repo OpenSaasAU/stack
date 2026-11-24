@@ -71,15 +71,15 @@ type Arity<C, K extends string, Rel, Value> =
   IsToOne<C, K, Rel> extends true ? Value | null : Value[]
 
 type SelectResult<C, R extends RemainderBase, K extends keyof R & string, S> = {
-  -readonly [F in keyof S & keyof Row<C, R, K> as S[F] extends false | undefined
-    ? never
-    : F]-?: F extends RelationKey<C, K> ? SubResult<C, R, K, F, S[F]> : Row<C, R, K>[F]
+  -readonly [
+    F in keyof S & keyof Row<C, R, K> as S[F] extends false | undefined ? never : F
+  ]-?: F extends RelationKey<C, K> ? SubResult<C, R, K, F, S[F]> : Row<C, R, K>[F]
 }
 
 type IncludeMembers<C, R extends RemainderBase, K extends keyof R & string, I> = {
-  -readonly [Rel in keyof I & RelationKey<C, K> as I[Rel] extends false | undefined
-    ? never
-    : Rel]-?: SubResult<C, R, K, Rel, I[Rel]>
+  -readonly [
+    Rel in keyof I & RelationKey<C, K> as I[Rel] extends false | undefined ? never : Rel
+  ]-?: SubResult<C, R, K, Rel, I[Rel]>
 }
 
 /**

@@ -17,8 +17,7 @@ import { processGlobalKey } from '../lib/process-global.js'
  * and the one `AccessContext` already carries.
  */
 export type AnyStackContext =
-  | StackBaseContext<object, Session, Record<string, unknown>>
-  | AccessContext
+  StackBaseContext<object, Session, Record<string, unknown>> | AccessContext
 
 /**
  * The key under which an app-facing context carries its engine face.

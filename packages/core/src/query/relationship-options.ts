@@ -83,8 +83,7 @@ export async function getRelationshipOptions(
   }
   const take = Math.min(requestedTake, MAX_TAKE)
   const labelFieldConfig = relatedListConfig.fields[labelField] as
-    | { type?: string; virtual?: boolean }
-    | undefined
+    { type?: string; virtual?: boolean } | undefined
   const where = relationshipSearchWhere(config, relatedListKey, { search, labelReadable })
 
   // Virtual/computed label fields (resolved at read time via `resolveOutput`)

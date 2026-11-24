@@ -155,9 +155,7 @@ OpenSaaS Stack supports **PostgreSQL only** — `db.provider` is `'postgresql'` 
 ```typescript
 export default config({
   db: { provider: 'postgresql' },
-  lists: {
-    /* ... */
-  },
+  lists: {/* ... */},
 })
 ```
 
@@ -177,9 +175,7 @@ export default config({
       },
     },
   },
-  lists: {
-    /* ... */
-  },
+  lists: {/* ... */},
 })
 ```
 

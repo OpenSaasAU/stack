@@ -6,14 +6,7 @@ import type { z } from 'zod'
 import type { PostgresOptionsBase, PostgresOptions } from '@prisma/orm-postgres/runtime'
 
 export type FieldType =
-  | 'text'
-  | 'integer'
-  | 'checkbox'
-  | 'timestamp'
-  | 'password'
-  | 'select'
-  | 'relationship'
-  | string // Allow custom field types from third-party packages
+  'text' | 'integer' | 'checkbox' | 'timestamp' | 'password' | 'select' | 'relationship' | string // Allow custom field types from third-party packages
 
 /**
  * Field-level hook argument types (exported for user annotations)
@@ -830,12 +823,7 @@ export type BaseFieldConfig<
  * belongs here.
  */
 export type ContractLiteral =
-  | string
-  | number
-  | boolean
-  | null
-  | ContractLiteral[]
-  | { [key: string]: ContractLiteral }
+  string | number | boolean | null | ContractLiteral[] | { [key: string]: ContractLiteral }
 
 /**
  * A column's type as a pack-qualified type constructor —
@@ -1093,12 +1081,7 @@ export type PasswordField<
  * variants; `secondary` is the neutral fallback used for unmapped options.
  */
 export type SelectOptionVariant =
-  | 'default'
-  | 'secondary'
-  | 'success'
-  | 'warning'
-  | 'destructive'
-  | 'outline'
+  'default' | 'secondary' | 'success' | 'warning' | 'destructive' | 'outline'
 
 /**
  * A single choice in a `select` field.
@@ -2607,12 +2590,7 @@ export type ItemViewUIConfig = {
  * string.
  */
 export type BulkActionVariant =
-  | 'default'
-  | 'destructive'
-  | 'outline'
-  | 'secondary'
-  | 'ghost'
-  | 'link'
+  'default' | 'destructive' | 'outline' | 'secondary' | 'ghost' | 'link'
 
 /**
  * Arguments passed to a custom Bulk action's server-side `handler` (issue #736).

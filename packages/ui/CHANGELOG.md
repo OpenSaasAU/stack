@@ -110,6 +110,7 @@
   Two round-trip defects are fixed: an embedded quote is written as `\"` inside a quoted value, and a quoted `"status:draft"` stays a free-text word instead of coming back as a `status` filter.
 
   Some existing `?search=` URLs now read differently:
+
   - Inside a quoted value, `\"` is a literal quote and `\\` a literal backslash, so a quoted value containing either reads differently. A value the old serialiser wrote ending in a backslash, `name:"my dir\" beta`, no longer closes its quote.
   - Every whitespace character, including a non-breaking space, separates tokens.
 
@@ -274,6 +275,7 @@
   A timestamp still takes anything `Date` parses and declares no `valueFormat`.
 
 - [#2269](https://github.com/OpenSaasAU/stack/pull/2269) [`3b25a56`](https://github.com/OpenSaasAU/stack/commit/3b25a567086b032cad28c50bd6eb1713d445c63d) Thanks [@borisno2](https://github.com/borisno2)! - Filter from the table: header and value funnels, auto-shown filtered columns, and a zero-results empty state that names the filter to remove
+
   - A filterable column header has a funnel ("Filter by Status") that opens the Filter builder with that field staged.
   - A select value or a to-one relationship value has a funnel beside its Cell ("Filter to Status is Draft") that adds `status:draft` or `author:#<id>` to the current query. On an open Preset view it expands the preset first. The Cell registry and custom Cells are unchanged.
   - A field the query filters on is shown as a column for that render even when `?columns=` hides it. It is never written to `?columns=`.
@@ -321,6 +323,7 @@
   `@opensaas/stack-ui/primitives` gains a `DropdownMenu` primitive on the existing Radix dependency, with `dropdown-menu-*` slots. The list view adds the `row-actions-trigger` and `row-title-link` slots.
 
 - [#2259](https://github.com/OpenSaasAU/stack/pull/2259) [`f2af7cb`](https://github.com/OpenSaasAU/stack/commit/f2af7cb048f4c0000c44bbae209d4cc987037834) Thanks [@borisno2](https://github.com/borisno2)! - Refresh the admin list table: a column picker, density, page sizes, a toolbar sort control and cards on phones
+
   - `?columns=title,status,views` sets the visible columns, in order. The toolbar's Columns menu writes it. `ListView` resolves it on the server (new `visibleColumns` prop, which `AdminUI` fills from the URL), so a to-many count in an added column is read and correct. Unknown names are ignored, a column `initialColumns` names is accepted even outside the list's fields, and Field Visibility still applies. A pick that lands back on the default set drops `?columns=`.
   - Density is comfortable or compact, remembered in this browser under `opensaas-list-density` (`DENSITY_STORAGE_KEY`) like the theme choice, and rendered comfortable on the server. When this browser refuses to store a choice (private mode, quota, blocked site data), the density and theme choices still apply for the page.
   - Rows per page offers 25, 50 and 100 once there are more than 25 rows, and shows a `?pageSize=` outside those as its own pressed option. The default stays 50 and the `?pageSize=` cap stays 200.
@@ -335,6 +338,7 @@
     DropdownMenuContent,
     DropdownMenuCheckboxItem,
   } from '@opensaas/stack-ui/primitives'
+
   ;<DropdownMenu>
     <DropdownMenuTrigger asChild>
       <Button variant="outline">View</Button>
@@ -504,6 +508,7 @@ No changes in this release.
   cannot become a probing oracle.
 
   Three refusals name what a payload may carry on a relationship key:
+
   - `NonOwningRelationInputError` — relation input on a field that owns no
     foreign key (an inverse to-many, the non-owning half of a one-to-one, a
     junction list's inverse, a synthetic back-relation). The generated input
@@ -521,6 +526,7 @@ No changes in this release.
   A relationship whose foreign key lives on the related row — a to-many, or the
   non-owning half of a one-to-one — is not writable through the surfaces that
   carry a payload for a single row, so neither surface offers it any more:
+
   - The admin item form renders it read-only, stating that the related record
     holds the link, instead of a picker whose selection had nowhere to go. An
     item form ignores a change for any field it rendered read-only, so a field
@@ -684,6 +690,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
 
   Review round two swept each README against the built `.d.ts` rather than against
   another doc, and corrected what the grep-shaped sweep had missed:
+
   - The UI README's theming block documented bare `--background`/`--primary` HSL
     triplets under a `.dark` class. The shipped contract is `--color-*` tokens in
     `oklch()`, resolved through `light-dark()` and switched by `data-theme` — the
@@ -707,6 +714,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
 
   Round three corrected what round two's sweeps could not see, each having keyed
   on where a construct sat rather than on what it was:
+
   - The Vercel Blob README's **options listing** still named `cacheControl` 112
     lines above the call site round two fixed, so the page contradicted itself and
     the half a reader consults first was the wrong half.
@@ -768,6 +776,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
   contract module, not PSL (ADR-0040), and reads a field's TypeScript face from
   `outputType`/`inputType` (ADR-0052). Nothing consulted the PSL-shaped members
   any more, so they are gone from `BaseFieldConfig` and from every builder:
+
   - `getPrismaType`
   - `getPrismaColumns`
   - `getPrismaRelation`
@@ -894,6 +903,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
   that default is there to fill **and** the `''` it inserts. Both questions are
   asked of the schema rather than restated, so the column and the validator
   cannot drift apart:
+
   - a column default drops the column from the required half of the generated
     `CreateInput`, so carrying one where the validator refuses an omission would
     type-check a `create` that then threw `ValidationError`;
@@ -925,6 +935,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
 
   **Test coverage that thinned.** Three assertions were lost rather than ported,
   and are recorded here so the change is not silent:
+
   - `select()`'s "falls back to a capitalized `fieldName` when `listName` is not
     provided" — `getContractField` is always given a `listKey`.
   - The quoted-vs-unquoted PSL default rendering for a string versus an enum
@@ -1051,6 +1062,7 @@ undefined }` spelling of the same rule is refused. Making the lowering total is 
   **Watch for this when you upgrade.** The seven components above previously read `context.db[listKey]` and `context.session` and worked with any object carrying them. They now narrow through `engineContextOf`, which accepts a context the engine built or a full `AccessContext` and throws otherwise. A hand-assembled stand-in — a component test's double, a Storybook story, a wrapper that rebuilds `{ db, session, … }` by hand instead of passing `getContext()`'s result through — now throws at render. Pass a context from `getContext()`, or from `createTestContext` in `@opensaas/stack-core/testing`.
 
   Two engine fixes the first Next app on Prisma 8 exposed:
+
   - The origin store the tripwire reads, and the key an app-facing context carries its engine face under, are one per process rather than one per module instance. Next.js compiles the page layer and the route-handler layer separately, each with its own copy of the module, while the generated context caches one client for both: a query marked through one layer's Unsafe surface was refused as unmarked by the other layer's tripwire (every `/api/auth/*` route answered 500), and a context built by one layer's `getContext()` could not be narrowed by the other layer's `engineContextOf`. Both now resolve through one helper over the symbol registry `globalThis` shares.
   - On the include path the ORM hands an included to-one back under its foreign-key key as well as its own, so a row-dependent field `read` rule comparing `item.authorId` saw the related row rather than its id and denied the author. A field `read` rule is now answered against the row's own stored foreign key whichever way the row was read, so the same rule gives the same answer with and without `.include()` — including where the related list's Access Filter scopes the relation away, which previously made `item.authorId` read as `null` and could open a field whose rule tests for an absent relation. Every terminal (`all()`, `first()`, the `forUpdate()` lane, `nearest()`) returns rows through one funnel that runs both foreign-key passes; a read whose to-one include is narrowed costs one extra query to read the column the include's alias overwrites ([#1236](https://github.com/OpenSaasAU/stack/issues/1236)).
 
@@ -1529,6 +1541,7 @@ denied.`).
   ```
 
   New exports:
+
   - `@opensaas/stack-core`: `resolveNavCounts`, `isListQueryStaticallyDenied`
   - `@opensaas/stack-ui`: `Avatar` primitive, `AvatarLabelCell`, and the
     `getInitials`, `getAvatarTone`, `AVATAR_TONES` helpers. New Slots:
@@ -1540,14 +1553,7 @@ denied.`).
 
   ```typescript
   Post: list({
-    fields: {
-      title: text(),
-      status: select({
-        options: [
-          /* ... */
-        ],
-      }),
-    },
+    fields: { title: text(), status: select({ options: [/* ... */] }) },
     ui: {
       listView: {
         bulkActions: [
@@ -1657,6 +1663,7 @@ denied.`).
   (filter-scoped) denials surface at commit as a revert. Non-editable cells keep
   click-to-navigate; main list tables are unchanged (this is Relationship-table
   only).
+
   - `@opensaas/stack-core`: the generic server action gains a distinct
     `updateRelated` result shape (`{ updated, error?, fieldErrors? }`), and
     `checkFieldAccess` is exposed on `@opensaas/stack-core/internal` so the UI can
@@ -1856,6 +1863,7 @@ denied.`).
   The read-only Relationship tables on a record's edit page (issue [#734](https://github.com/OpenSaasAU/stack/issues/734)) previously
   fetched every related row unbounded. They now fetch a bounded page of related rows
   and surface the full access-scoped total in the footer.
+
   - **Bounded fetch:** each to-many Relationship table fetches at most a default cap
     of related rows (`DEFAULT_ITEM_VIEW_TAKE`, 10), overridable per relationship via
     `ui.itemView.take`. Rows are still fetched through the secured context, so only
@@ -1936,6 +1944,7 @@ denied.`).
 - [#723](https://github.com/OpenSaasAU/stack/pull/723) [`a7babf9`](https://github.com/OpenSaasAU/stack/commit/a7babf9c6f579c333462adf58018a594d09790c6) Thanks [@borisno2](https://github.com/borisno2)! - Admin chrome polish pass: consistent page headers, designed empty states, skeleton coverage, nav active states, and table density (issue [#710](https://github.com/OpenSaasAU/stack/issues/710)).
 
   The prebuilt admin now shares a restrained, token-driven chrome across every screen. Two new composable components are exported and used throughout:
+
   - `PageHeader` — the consistent title/description/back-link/actions pattern used by the dashboard, list, item, and singleton screens. Exposes `data-slot` parts (`page-header`, `page-header-title`, `page-header-description`, `page-header-actions`, `page-header-back`, `page-header-icon`) and a structured `classNames` contract. An opt-in `gradient` prop frames the dashboard — the design system's single signature gradient moment.
   - `EmptyState` — a designed empty surface (icon + title + description + actions) now shown on every list and relationship surface. Also exposes `data-slot` parts and a `classNames` contract.
 
@@ -1953,6 +1962,7 @@ denied.`).
   ```
 
   Also included:
+
   - Full-screen skeleton fallbacks (`DashboardSkeleton`, `ListViewSkeleton`, `ItemFormSkeleton`, `PageHeaderSkeleton`) wired through a `Suspense` boundary in `AdminUI`, so every data-loading screen streams behind a placeholder of the same shape.
   - Navigation active states now use `aria-current="page"` and a flat solid brand fill (no gradient/pulse); nav and dashboard icons use `lucide-react` instead of emoji.
   - Tables right-align numeric columns and use tabular numerals; a new `isNumericField(fieldType)` helper is exported.
@@ -1967,6 +1977,7 @@ denied.`).
   fully reskins the admin with no token falling through to another preset. Presets
   also carry their own shape and elevation, and the theme compiler merges them
   under any config overrides:
+
   - `modern` (default): the restrained, low-chroma direction with one saturated
     brand color and the gradient pair as garnish. Inherits the stylesheet's radius
     and soft shadows (kept in sync with `globals.css`).
@@ -1990,6 +2001,7 @@ denied.`).
   The admin chrome now ships a light/dark/system color-scheme control built on the
   `light-dark()` token contract. A `data-theme` attribute on the document root pins
   `color-scheme` (overriding the OS preference); its absence follows the system.
+
   - `ThemeToggle` — a client component that cycles light → dark → system, writes
     `data-theme` on `<html>`, persists the choice to `localStorage`
     (`opensaas-theme`), and restores it on mount. It appears in the default Admin
@@ -2023,6 +2035,7 @@ denied.`).
   **Field components** now share one label / help / error rhythm via a small shell (`FieldRoot`, `FieldLabel`, `FieldHelp`, `FieldError`, `FieldWarning`, `FieldReadValue`). Every field consumes theme tokens only — the previously hardcoded status colours (a green upload check, an amber JSON warning) now use the `success` / `warning` tokens. All fields accept a consistent `helpText` prop.
 
   **Composites accept structured, strongly-typed `classNames` slots** merged per part via tailwind-merge, and every part carries a stable `data-slot`:
+
   - `ListTable` — `classNames={{ root, frame, table, header, headerRow, headerCell, body, row, cell, actionsHeader, actionsCell, empty }}`; root `data-slot="list-table"`.
   - `SearchBar` — `classNames={{ root, form, inputWrapper, input, clearButton, submit }}`; root `data-slot="search-bar"`.
   - `DeleteButton` — `classNames={{ button, error }}`; error `data-slot="delete-button-error"`.
@@ -2033,6 +2046,7 @@ denied.`).
 
   ```tsx
   import { Badge } from '@opensaas/stack-ui/primitives'
+
   ;<Badge variant={post.status === 'published' ? 'success' : 'warning'}>{post.status}</Badge>
   ```
 

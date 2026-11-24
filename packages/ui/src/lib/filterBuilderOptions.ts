@@ -27,12 +27,7 @@ export type FilterFields = ReadonlyMap<string, FilterFieldSuggestion>
  * engine composes around them.
  */
 export type FilterBuilderCondition =
-  | FilterOperator
-  | 'range'
-  | 'not'
-  | 'anyOf'
-  | 'empty'
-  | 'notEmpty'
+  FilterOperator | 'range' | 'not' | 'anyOf' | 'empty' | 'notEmpty'
 
 export interface FilterDraft {
   field: string
@@ -1521,7 +1516,7 @@ export function alternativesOption(text: string, fields: FilterFields): FilterOp
   const typed = text.trim()
   const pieces = unquotedSides(typed)
   const sides: string[] = []
-  for (let first = 0; first < pieces.length; ) {
+  for (let first = 0; first < pieces.length;) {
     let last = first
     for (let end = pieces.length - 1; end > first; end--) {
       if (exactEnumTokens(typed.slice(pieces[first].from, pieces[end].to), fields).length > 0) {
