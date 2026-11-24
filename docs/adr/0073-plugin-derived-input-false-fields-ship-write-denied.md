@@ -38,3 +38,5 @@ The stack therefore also seeds an **update-only** deny on a curated list, `HOOK_
 ## Amendment: credential columns and identity foreign keys (issue #2153)
 
 An owner-update rule on `Session` or `Account` let a session repoint `user` at another user, or rewrite `token`/`password`, which is full impersonation. The stack therefore also seeds `create`/`update` denies on every `CREDENTIAL_FIELDS` entry (ADR-0036's set, which now includes `oauthRefreshToken.rotationReplayResponse`) and on the `session.userId` and `account.userId` foreign keys (`IDENTITY_FOREIGN_KEYS` in `derive-auth-lists.ts`). Both are reopenable through `authPlugin({ fieldAccess })`, which now accepts an id-referencing foreign key; a credential's `read` stays closed. better-auth's own flows write through the Auth adapter and are unaffected.
+
+A field an app adds through `credentialFields` takes the same write deny. Foreign keys on other models (`oauthAccessToken`, `member`, …) are out of this amendment's scope, as the issue named only `session` and `account`; they stay closed unless the app opens the list.
