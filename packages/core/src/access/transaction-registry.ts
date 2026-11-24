@@ -108,15 +108,17 @@ export class TransactionRegistry {
     this.queue.push(flush)
   }
 
-  /** The settle outcome this registry drained with; `undefined` while the transaction is still open. */
   get settledWith(): TransactionSettleOutcome | undefined {
     return this.drainedWith
   }
 
   async drain(settle: TransactionSettleOutcome, errors: AfterTransactionFailure[]): Promise<void> {
-    for (const flush of this.queue) {
-      await flush(settle, errors)
+    try {
+      for (const flush of this.queue) {
+        await flush(settle, errors)
+      }
+    } finally {
+      this.drainedWith = settle
     }
-    this.drainedWith = settle
   }
 }

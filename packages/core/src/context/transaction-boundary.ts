@@ -270,7 +270,11 @@ async function enqueueOrFlush(
     return
   }
   const errors: AfterTransactionFailure[] = []
-  await flush(settled, errors)
+  try {
+    await flush(settled, errors)
+  } catch (error) {
+    console.error('afterTransaction flush for a write after its transaction closed threw:', error)
+  }
   await reportAfterTransactionFailures(config, errors)
 }
 
