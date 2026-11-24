@@ -11,7 +11,8 @@ import { connection } from 'next/server'
 export default async function HomePage() {
   await connection()
   // Use context for access-controlled queries
-  const context = await getContext(await demoSession())
+  const session = await demoSession()
+  const context = await getContext(session)
 
   // Each count is an aggregate over the rows this session may see
   const [posts, published, drafts, users] = await Promise.all([
@@ -108,7 +109,10 @@ export default async function HomePage() {
               <CardTitle>Quick Actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              <CreatePostDialog fields={await serializeFieldConfigs(context, 'Post', 'create')} />
+              <CreatePostDialog
+                fields={await serializeFieldConfigs(context, 'Post', 'create')}
+                seeded={session !== undefined}
+              />
               <Link href="/posts" className="block">
                 <Button variant="outline" className="w-full">
                   View All Posts

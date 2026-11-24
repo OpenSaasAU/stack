@@ -3,6 +3,7 @@
 import { cookies, headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
+import { hasAuthBaseURL, MISSING_BASE_URL_MESSAGE } from '@/lib/base-url'
 import { postAuthEndpoint, signOutAndConfirm } from '@opensaas/stack-auth/server'
 import type { AuthActionResult, SignInInput } from '@opensaas/stack-auth/ui'
 
@@ -14,6 +15,7 @@ import type { AuthActionResult, SignInInput } from '@opensaas/stack-auth/ui'
  */
 
 async function postToAuth(path: string, body: Record<string, unknown>): Promise<AuthActionResult> {
+  if (!hasAuthBaseURL()) return { success: false, error: MISSING_BASE_URL_MESSAGE }
   const cookieStore = await cookies()
   return postAuthEndpoint(auth, {
     path,

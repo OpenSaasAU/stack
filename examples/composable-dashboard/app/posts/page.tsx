@@ -9,7 +9,8 @@ import { serializeFieldConfigs } from '@opensaas/stack-ui/server'
 export default async function PostsPage(props: { searchParams: Promise<{ search?: string }> }) {
   const searchParams = await props.searchParams
   const search = searchParams.search || ''
-  const context = await getContext(await demoSession())
+  const session = await demoSession()
+  const context = await getContext(session)
 
   // Fetch posts with search using context (access control applied). `OR` and
   // `contains` are both in the Where vocabulary, so the predicate is unchanged
@@ -59,7 +60,10 @@ export default async function PostsPage(props: { searchParams: Promise<{ search?
       <main className="container mx-auto px-6 py-8">
         <div className="mb-6 flex items-center justify-between">
           <h2 className="text-3xl font-bold">Posts</h2>
-          <CreatePostDialog fields={await serializeFieldConfigs(context, 'Post', 'create')} />
+          <CreatePostDialog
+            fields={await serializeFieldConfigs(context, 'Post', 'create')}
+            seeded={session !== undefined}
+          />
         </div>
 
         {/* Search Bar — structured classNames slots (issue #709) let us tune a

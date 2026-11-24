@@ -9,9 +9,23 @@ import { createPost } from '../lib/actions'
 import type { PostCreateInput } from '../.opensaas/types'
 import type { SerializableFieldConfig } from '@opensaas/stack-ui/server'
 
-export function CreatePostDialog({ fields }: { fields: Record<string, SerializableFieldConfig> }) {
+export function CreatePostDialog({
+  fields,
+  seeded,
+}: {
+  fields: Record<string, SerializableFieldConfig>
+  seeded: boolean
+}) {
   const [open, setOpen] = useState(false)
   const router = useRouter()
+
+  if (!seeded) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        Creating posts needs a user. Run <code>pnpm seed</code> first, then reload.
+      </p>
+    )
+  }
 
   return (
     <>

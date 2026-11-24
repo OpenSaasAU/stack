@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "opensaas dev",
-    "build": "pnpm generate && next build",
+    "build": "opensaas generate && next build",
     "clean": "rm -rf .turbo  .next .opensaas",
     "start": "next start",
     "generate": "opensaas generate",
