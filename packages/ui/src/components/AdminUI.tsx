@@ -1,6 +1,7 @@
 import * as React from 'react'
 import Link from 'next/link.js'
 import { notFound, redirect } from 'next/navigation.js'
+import { operationAvailable } from '../lib/operationAvailable.js'
 import { ADMIN_WORDMARK, Navigation, NavLink } from './Navigation.js'
 import { AdminShell } from './AdminShell.js'
 import { Dashboard } from './Dashboard.js'
@@ -246,6 +247,19 @@ export async function AdminUI({
     ? undefined
     : await resolveNavCounts(engineContextOf(context), config)
 
+  const hiddenLists = navigation
+    ? []
+    : (
+        await Promise.all(
+          Object.keys(config.lists).map(async (key) => ({
+            key,
+            visible: await operationAvailable(context, key, 'query'),
+          })),
+        )
+      )
+        .filter(({ visible }) => !visible)
+        .map(({ key }) => key)
+
   const sidebar = navigation ?? (
     <Navigation
       context={context}
@@ -254,6 +268,7 @@ export async function AdminUI({
       currentPath={currentPath}
       onSignOut={onSignOut}
       navCounts={navCounts}
+      hiddenLists={hiddenLists}
     >
       {navItems?.map((item) => (
         <NavLink key={item.href} href={item.href} icon={item.icon}>

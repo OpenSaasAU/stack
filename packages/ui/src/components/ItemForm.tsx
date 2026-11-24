@@ -17,7 +17,7 @@ import {
   OpenSaasConfig,
 } from '@opensaas/stack-core'
 import { resolveListUi } from '../lib/resolveListUi.js'
-import { operationAvailable } from '../lib/operationAvailable.js'
+import { itemOperationAvailable, operationAvailable } from '../lib/operationAvailable.js'
 import { UnavailableState } from './UnavailableState.js'
 import { buildRelationshipInclude, prepareItemForm } from '../lib/prepareItemForm.js'
 import { deriveItemViewLayout, type ItemViewLayout } from '../lib/deriveItemView.js'
@@ -154,8 +154,14 @@ async function ItemViewLayoutView({
   layout: ItemViewLayout
 }) {
   const urlKey = getUrlKey(listKey)
-  const { hideDelete, fieldMode } = await resolveListUi(listConfig, context)
-  const canDelete = !hideDelete && (await operationAvailable(context, listKey, 'delete'))
+  const resolvedUi = await resolveListUi(listConfig, context)
+  const { hideDelete } = resolvedUi
+  const [canUpdate, canDeleteRow] = await Promise.all([
+    itemOperationAvailable(context, listKey, itemId, 'update'),
+    itemOperationAvailable(context, listKey, itemId, 'delete'),
+  ])
+  const canDelete = !hideDelete && canDeleteRow
+  const fieldMode = canUpdate ? resolvedUi.fieldMode : 'read'
 
   // One secured read: the bounded rows each table renders and the total its
   // footer shows come back from the SAME call, both scoped by the related
@@ -378,9 +384,18 @@ export async function ItemForm({
     }
   }
 
-  const { hideDelete, fieldMode } = await resolveListUi(listConfig, context)
-  const canDelete =
-    mode === 'edit' && !hideDelete && (await operationAvailable(appContext, listKey, 'delete'))
+  const resolvedUi = await resolveListUi(listConfig, context)
+  const { hideDelete } = resolvedUi
+  const editingId = mode === 'edit' ? itemId : undefined
+  const [canUpdate, canDeleteRow] =
+    editingId === undefined
+      ? [true, false]
+      : await Promise.all([
+          itemOperationAvailable(appContext, listKey, editingId, 'update'),
+          itemOperationAvailable(appContext, listKey, editingId, 'delete'),
+        ])
+  const canDelete = !hideDelete && canDeleteRow
+  const fieldMode = canUpdate ? resolvedUi.fieldMode : 'read'
 
   // Also used by SingletonView so both editors serialize identically.
   const { serializableFields, initialData, relationshipData } = await prepareItemForm(

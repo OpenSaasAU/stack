@@ -29,6 +29,8 @@ export interface NavigationProps {
    * `query` the session's vocabulary denies, is absent and renders no badge.
    */
   navCounts?: Record<string, number>
+  /** Lists left out of the nav because the session's `query` access denies them. */
+  hiddenLists?: readonly string[]
   /**
    * Host-supplied navigation entries (ADR-0021), rendered in a dedicated
    * region after the Lists and Settings groups and above the footer. Absent
@@ -113,9 +115,12 @@ export function Navigation({
   currentPath = '',
   onSignOut,
   navCounts,
+  hiddenLists = [],
   children,
 }: NavigationProps) {
-  const allLists = Object.keys(config.lists || {})
+  const allLists = Object.keys(config.lists || {}).filter(
+    (listKey) => !hiddenLists.includes(listKey),
+  )
   // Split lists into standard lists (under "Lists") and singletons (under
   // "Settings"). A singleton edits a single record, so it belongs in a distinct
   // Settings group rather than the standard list grid.

@@ -22,7 +22,17 @@ export interface DashboardProps {
 export async function Dashboard({ context, config, basePath = '/admin' }: DashboardProps) {
   const engine = engineContextOf(context)
   const { db } = engine
-  const lists = Object.keys(config.lists || {})
+  const configuredLists = Object.keys(config.lists || {})
+  const lists = (
+    await Promise.all(
+      configuredLists.map(async (listKey) => ({
+        listKey,
+        visible: await operationAvailable(context, listKey, 'query'),
+      })),
+    )
+  )
+    .filter(({ visible }) => visible)
+    .map(({ listKey }) => listKey)
 
   // Split lists into standard lists (shown in the counted grid) and singletons
   // (shown in their own "Settings" section). A singleton's count is always 0/1,
@@ -68,7 +78,7 @@ export async function Dashboard({ context, config, basePath = '/admin' }: Dashbo
         gradient
       />
 
-      {lists.length === 0 ? (
+      {configuredLists.length === 0 ? (
         <EmptyState
           icon={<Package className="h-6 w-6" />}
           title="No lists configured"
