@@ -82,8 +82,9 @@ describe('a declared field named after an Object.prototype member', () => {
     const rows = await harness.context.db.Q.where({ id: { equals: owner?.id ?? '' } })
       .include('items', (items) => items.select('constructor'))
       .all()
-    const included = rows[0]?.items ?? []
+    const included: unknown = rows[0]?.items
+    if (!Array.isArray(included)) throw new Error('items were not included')
     expect(included).toHaveLength(1)
-    expect(Object.getOwnPropertyDescriptor(included[0] ?? {}, 'constructor')?.value).toBe('c')
+    expect(Object.getOwnPropertyDescriptor(included[0], 'constructor')?.value).toBe('c')
   })
 })
