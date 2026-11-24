@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'vitest'
 import { ValidationError } from '../hooks/index.js'
-import { WHERE_MAX_NODES, WHERE_RELATION_MAX_DEPTH } from '../access/depth-limits.js'
+import {
+  WHERE_MAX_LIST_ELEMENTS,
+  WHERE_MAX_NODES,
+  WHERE_RELATION_MAX_DEPTH,
+} from '../access/depth-limits.js'
 import { assertWhereWithinLimits } from './vocabulary.js'
 
 function nested(depth: number): Record<string, unknown> {
@@ -43,5 +47,24 @@ describe('assertWhereWithinLimits', () => {
     expect(() => assertWhereWithinLimits({ OR: [nested(WHERE_RELATION_MAX_DEPTH + 1)] })).toThrow(
       ValidationError,
     )
+  })
+
+  test('caps the elements of in and notIn lists', () => {
+    const list = (count: number): number[] => Array.from({ length: count }, (_, i) => i)
+    expect(() =>
+      assertWhereWithinLimits({ id: { in: list(WHERE_MAX_LIST_ELEMENTS) } }),
+    ).not.toThrow()
+    expect(() =>
+      assertWhereWithinLimits({ id: { in: list(WHERE_MAX_LIST_ELEMENTS + 1) } }),
+    ).toThrow(ValidationError)
+    expect(() =>
+      assertWhereWithinLimits({ NOT: { id: { notIn: list(WHERE_MAX_LIST_ELEMENTS + 1) } } }),
+    ).toThrow(ValidationError)
+  })
+
+  test('refuses an over-deep AND chain without overflowing the stack', () => {
+    let where: Record<string, unknown> = { title: 'x' }
+    for (let level = 0; level < 200_000; level++) where = { AND: where }
+    expect(() => assertWhereWithinLimits(where)).toThrow(ValidationError)
   })
 })

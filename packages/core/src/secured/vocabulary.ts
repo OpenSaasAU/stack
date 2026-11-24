@@ -21,7 +21,11 @@ import {
   type ListMember,
 } from '../members/list-members.js'
 import { ValidationError } from '../hooks/index.js'
-import { WHERE_MAX_NODES, WHERE_RELATION_MAX_DEPTH } from '../access/depth-limits.js'
+import {
+  WHERE_MAX_LIST_ELEMENTS,
+  WHERE_MAX_NODES,
+  WHERE_RELATION_MAX_DEPTH,
+} from '../access/depth-limits.js'
 import { likeContainsPattern } from '../where/like.js'
 import {
   VECTOR_DISTANCE_FUNCTIONS,
@@ -632,6 +636,16 @@ async function refuseUnlessForeignKeyVisible(
  */
 export function assertWhereWithinLimits(where: Record<string, unknown>): void {
   let nodes = 0
+  let listElements = 0
+  const countList = (list: unknown): void => {
+    if (!Array.isArray(list)) return
+    listElements += list.length
+    if (listElements > WHERE_MAX_LIST_ELEMENTS) {
+      throw new ValidationError([
+        `The where predicate has more than ${WHERE_MAX_LIST_ELEMENTS} elements in its in/notIn lists, the most a query may carry.`,
+      ])
+    }
+  }
   const count = (): void => {
     nodes += 1
     if (nodes > WHERE_MAX_NODES) {
@@ -649,6 +663,8 @@ export function assertWhereWithinLimits(where: Record<string, unknown>): void {
         continue
       }
       if (!isPlainObject(value)) continue
+      countList(value.in)
+      countList(value.notIn)
       for (const [quantifier, nested] of Object.entries(value)) {
         if (!RELATION_QUANTIFIER_SET.has(quantifier)) continue
         count()
