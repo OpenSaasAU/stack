@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import type { OpenSaasConfig } from '../config/types.js'
-import { text } from '../fields/index.js'
+import { relationship, text } from '../fields/index.js'
 import { createTestContext, type TestContext } from '../testing/context.js'
 
 const BOOT = 120_000
@@ -12,10 +12,22 @@ const config: OpenSaasConfig = {
     P: {
       fields: {
         title: text(),
+        owner: relationship({ ref: 'Q.items' }),
         constructor: text(),
         toString: text(),
         hasOwnProperty: text(),
       },
+      access: {
+        operation: {
+          query: () => true,
+          create: () => true,
+          update: () => true,
+          delete: () => true,
+        },
+      },
+    },
+    Q: {
+      fields: { name: text(), items: relationship({ ref: 'P.owner', many: true }) },
       access: {
         operation: {
           query: () => true,
@@ -59,5 +71,19 @@ describe('a declared field named after an Object.prototype member', () => {
     expect(updated).not.toBeNull()
     const ordered = await harness.context.db.P.orderBy({ [name]: 'asc' }).all()
     expect(ordered.length).toBeGreaterThan(0)
+  })
+
+  test('selecting a prototype-named field through an include', async () => {
+    const owner = await harness.context.db.Q.create({ data: { name: 'q' } })
+    const item = await harness.context.db.P.create({
+      data: { title: 't', constructor: 'c', owner: { connect: { id: owner?.id ?? '' } } },
+    })
+    expect(item).not.toBeNull()
+    const rows = await harness.context.db.Q.where({ id: { equals: owner?.id ?? '' } })
+      .include('items', (items) => items.select('constructor'))
+      .all()
+    const included = rows[0]?.items ?? []
+    expect(included).toHaveLength(1)
+    expect(Object.getOwnPropertyDescriptor(included[0] ?? {}, 'constructor')?.value).toBe('c')
   })
 })
