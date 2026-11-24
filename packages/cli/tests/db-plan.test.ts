@@ -93,6 +93,62 @@ describe.skipIf(serverUrl === undefined)(
       )
     }
 
+    function setFields(names: readonly string[]): void {
+      fs.copyFileSync(fixtureConfig, path.join(projectDir, 'opensaas.config.ts'))
+      for (const name of names) addField(name)
+    }
+
+    function plan(name: string, extra: readonly string[] = []): Run {
+      const generated = run(['generate'])
+      expect(generated.status, generated.output).toBe(0)
+      return run(['db', 'plan', '--name', name, '--yes', ...extra])
+    }
+
+    function headOf(dir: string): string {
+      const manifest: unknown = JSON.parse(
+        fs.readFileSync(path.join(projectDir, 'migrations', 'app', dir, 'migration.json'), 'utf-8'),
+      )
+      if (
+        typeof manifest !== 'object' ||
+        manifest === null ||
+        !('to' in manifest) ||
+        typeof manifest.to !== 'string'
+      ) {
+        throw new Error(`${dir} has no "to" hash.`)
+      }
+      return manifest.to
+    }
+
+    function createdAtOf(dir: string): number {
+      const manifest: unknown = JSON.parse(
+        fs.readFileSync(path.join(projectDir, 'migrations', 'app', dir, 'migration.json'), 'utf-8'),
+      )
+      const created =
+        typeof manifest === 'object' && manifest !== null && 'createdAt' in manifest
+          ? manifest.createdAt
+          : undefined
+      return typeof created === 'string' ? Date.parse(created) : 0
+    }
+
+    async function freshProject(): Promise<void> {
+      const admin = new pg.Client({ connectionString: adminUrl() })
+      await admin.connect()
+      const name = `db_plan_${process.pid}_${Date.now()}`
+      try {
+        await admin.query(`create database "${name}"`)
+        createdDatabases.push(name)
+      } finally {
+        await admin.end()
+      }
+      const url = new URL(adminUrl())
+      url.pathname = `/${name}`
+      databaseUrl = url.toString()
+      projectDir = fs.mkdtempSync(path.join(scratchRoot, 'project-'))
+      fs.copyFileSync(fixtureConfig, path.join(projectDir, 'opensaas.config.ts'))
+    }
+
+    const createdDatabases: string[] = []
+
     function appPackages(): string[] {
       const appDir = path.join(projectDir, 'migrations', 'app')
       return fs
@@ -129,7 +185,9 @@ describe.skipIf(serverUrl === undefined)(
       const admin = new pg.Client({ connectionString: adminUrl() })
       await admin.connect()
       try {
-        await admin.query(`drop database if exists "${databaseName}" with (force)`)
+        for (const name of [databaseName, ...createdDatabases]) {
+          await admin.query(`drop database if exists "${name}" with (force)`)
+        }
       } finally {
         await admin.end()
       }
@@ -217,5 +275,66 @@ describe.skipIf(serverUrl === undefined)(
         await client.end()
       }
     })
+
+    test(
+      'plans add, remove, add through the real command and applies it',
+      async () => {
+        await freshProject()
+        expect(plan('baseline').status).toBe(0)
+        setFields(['flag'])
+        const added = plan('add-flag')
+        expect(added.status, added.output).toBe(0)
+        setFields([])
+        const removed = plan('drop-flag', ['--delete', 'Note.flag'])
+        expect(removed.status, removed.output).toBe(0)
+        setFields(['flag'])
+        const again = plan('add-flag-again')
+        expect(again.status, again.output).toBe(0)
+        const byAge = appPackages()
+          .map((dir) => ({ dir, createdAt: createdAtOf(dir) }))
+          .sort((a, b) => a.createdAt - b.createdAt)
+        expect(byAge).toHaveLength(4)
+        expect(headOf(byAge[3]!.dir)).toBe(headOf(byAge[1]!.dir))
+        const migrated = prisma(['db', 'migrate', '--yes'])
+        expect(migrated.status, migrated.output).toBe(0)
+      },
+      BOOT,
+    )
+
+    test(
+      'keeps planning and applying after the fork remedy is followed twice',
+      async () => {
+        await freshProject()
+        expect(plan('baseline').status).toBe(0)
+        const origin = headOf(appPackages()[0]!)
+        setFields(['one'])
+        expect(plan('branch-one').status).toBe(0)
+        setFields(['two'])
+        const second = plan('branch-two', ['--from', origin])
+        expect(second.status, second.output).toBe(0)
+
+        setFields(['one', 'two'])
+        const refused = plan('merge')
+        expect(refused.status).not.toBe(0)
+        const remedy = /e\.g\. --from ([0-9a-z:]+)/.exec(refused.output)?.[1]
+        expect(remedy, refused.output).toBeDefined()
+        const merged = plan('merge', ['--from', remedy!])
+        expect(merged.status, merged.output).toBe(0)
+        expect(prisma(['db', 'migrate', '--yes']).status).toBe(0)
+
+        setFields(['one', 'two', 'three'])
+        const third = plan('add-three')
+        expect(third.status, third.output).toBe(0)
+        const afterThird = prisma(['db', 'migrate', '--yes'])
+        expect(afterThird.status, afterThird.output).toBe(0)
+        setFields(['one', 'two', 'three', 'four'])
+        const fourth = plan('add-four')
+        expect(fourth.status, fourth.output).toBe(0)
+
+        const migrated = prisma(['db', 'migrate', '--yes'])
+        expect(migrated.status, migrated.output).toBe(0)
+      },
+      BOOT,
+    )
   },
 )

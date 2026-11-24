@@ -1043,6 +1043,20 @@ const titles = await publishedPosts.select('title').all()
 
 Every operation runs through the secured terminals, so access control is enforced automatically and a denied read comes back as `[]` or `null` rather than throwing. For the dedicated reference see [Queries & projections](/docs/concepts/queries); for the complete Keystone-specific recipes, see the canonical [Migrating from KeystoneJS](/docs/how-to/migrate-from-keystone) guide.
 
+## Chained `needs` from 0.43
+
+In 0.43 an array-form `needs` also fetched what the related list's own computed fields needed. It now reaches one hop, so a hook reading past it finds nothing there. `pnpm generate` warns on each such field and prints its replacement.
+
+```typescript
+// 0.43: Post.label declares needs: ['author'], so Comment.label received post.author too
+label: virtual({ type: 'string', needs: ['post'] /* … */ })
+
+// Now: spell the chain out, with each column the hook reads off a spelled-out row
+label: virtual({ type: 'string', needs: { post: { title: true, author: true } } /* … */ })
+```
+
+See [Reaching past one hop](/docs/reference/fields-api#reaching-past-one-hop).
+
 ## Best Practices
 
 ### Start Small

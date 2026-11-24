@@ -230,7 +230,7 @@ All hooks receive these common arguments:
 
 **`afterTransaction` never changes a write's result.** A throw is reported to the config's `onAfterTransactionError` (default `console.error`), never propagated, so a rejected write always means nothing persisted (ADR-0074).
 
-A `resolveOutput` hook sees **exactly its own declared dependency set plus the list's system fields** — never another computed field's output, and never what the caller happened to select. Reaching for anything it did not declare finds nothing there. See `needs` in `packages/core/CLAUDE.md` and ADR-0051.
+A `resolveOutput` hook sees **exactly its own declared dependency set plus the list's system fields** — never another computed field's output, and never what the caller happened to select. Reaching for anything it did not declare finds nothing there. The array form of `needs` reaches one hop; the object form reaches any depth it spells out. See `needs` in `packages/core/CLAUDE.md`, ADR-0051 and ADR-0085.
 
 **List-level hook use cases:**
 

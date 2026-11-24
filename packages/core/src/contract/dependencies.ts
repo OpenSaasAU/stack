@@ -1,23 +1,27 @@
-import type { OpenSaasConfig } from '../config/types.js'
+import type { BaseFieldConfig, NeedsObject, OpenSaasConfig, TypeInfo } from '../config/types.js'
 import { isRelationshipField } from '../fields/index.js'
 import { unhandledMember, type ListMemberTable, type ListMembers } from '../members/list-members.js'
 import { deriveListMemberTable } from './derive.js'
 import type { ContractData, ContractModel } from './types.js'
 
 /**
- * One computed field's declared dependency set (ADR-0051): one hop,
- * non-transitive, resolved at generation and emitted rather than walked on
- * every read.
+ * What a `needs` declaration names on one list (ADR-0051, ADR-0085), resolved
+ * at generation and emitted rather than walked on every read.
  */
 export interface FieldDependencySet {
   /**
-   * Model field names the hook's `item` must carry — every `needs` entry that
-   * names a stored field, plus the foreign-key column each declared relation
-   * implies on the sides that own one.
+   * Field names the rows must carry — every `needs` entry that names a stored
+   * field, plus the foreign-key column each declared relation implies on the
+   * sides that own one.
    */
   columns: string[]
-  /** Relationship field keys to fetch one hop deep. No computed field runs on the rows they return. */
+  /** Relation keys to fetch. No computed field runs on the rows they return. */
   relations: string[]
+  /**
+   * What the object form names beneath a relation. A relation with no entry
+   * delivers its rows' whole stored width and reaches no further.
+   */
+  nested?: Record<string, FieldDependencySet>
 }
 
 /** One list's row in the dependency-set table. */
@@ -126,9 +130,86 @@ function listMembersOf(table: ListMemberTable, listKey: string): ListMembers {
   return members
 }
 
+/** A `needs` declaration of either form, as entries. */
+export function needsEntriesOf(
+  needs: NonNullable<BaseFieldConfig<TypeInfo>['needs']>,
+): [string, NeedsObject[string]][] {
+  return isNeedsArray(needs) ? needs.map((name) => [name, true]) : Object.entries(needs)
+}
+
+export function isNeedsArray(needs: NeedsObject[string]): needs is readonly string[] {
+  return Array.isArray(needs)
+}
+
+/** The list a relation key on these members reaches, or `undefined` when the key is not a relation. */
+export function relatedListOf(members: ListMembers, key: string): string | undefined {
+  const member = members.members.get(key)
+  if (member?.kind === 'syntheticBackRelation') return member.sourceList
+  if (member?.kind !== 'field' || member.storage.kind !== 'relation') return undefined
+  return member.storage.relatedList
+}
+
+/** What an object form names beneath `relation`, or `undefined` when it stops there. */
+export function nestedSetOf(
+  set: FieldDependencySet,
+  relation: string,
+): FieldDependencySet | undefined {
+  return set.nested !== undefined && Object.hasOwn(set.nested, relation)
+    ? set.nested[relation]
+    : undefined
+}
+
+/** Which list each relation key of each list reaches, synthetic back-relations included. */
+export function deriveRelatedLists(
+  config: OpenSaasConfig,
+): (listKey: string, key: string) => string | undefined {
+  const table = deriveListMemberTable(config)
+  return (listKey, key) => {
+    const members = table.lists.get(listKey)
+    return members && relatedListOf(members, key)
+  }
+}
+
+function resolveNeeds(
+  config: OpenSaasConfig,
+  members: ListMemberTable,
+  listKey: string,
+  needs: readonly string[] | NeedsObject,
+): FieldDependencySet {
+  const listMembers = members.lists.get(listKey)
+  const fieldConfigs = config.lists[listKey]?.fields ?? {}
+  const columns = new Set<string>()
+  const relations = new Set<string>()
+  const nested = new Map<string, FieldDependencySet>()
+  if (listMembers === undefined) return { columns: [], relations: [] }
+
+  for (const [name, beneath] of needsEntriesOf(needs)) {
+    const dependency = Object.hasOwn(fieldConfigs, name) ? fieldConfigs[name] : undefined
+    const related = relatedListOf(listMembers, name)
+    if ((dependency && isRelationshipField(dependency)) || (!dependency && related)) {
+      relations.add(name)
+      const column = foreignKeyMemberColumn(listMembers, name)
+      if (column) columns.add(column)
+      if (beneath !== true && related !== undefined) {
+        nested.set(name, resolveNeeds(config, members, related, beneath))
+      }
+      continue
+    }
+    if (dependency) columns.add(name)
+  }
+
+  return {
+    columns: [...columns].sort(),
+    relations: [...relations].sort(),
+    ...(nested.size > 0
+      ? { nested: Object.fromEntries([...nested].sort(([a], [b]) => (a < b ? -1 : 1))) }
+      : {}),
+  }
+}
+
 /**
- * Resolve every computed field's `needs` into its one-hop dependency set, and
- * each list's actual system fields (ADR-0051).
+ * Resolve every computed field's `needs` into its dependency set, and each
+ * list's actual system fields (ADR-0051).
  *
  * Reads the config, not the emitted contract — computing the set before
  * emission and reading it back would invert the dependency. It expects a
@@ -152,25 +233,7 @@ function dependencyTableFrom(config: OpenSaasConfig, members: ListMemberTable): 
       const fieldConfig = fieldConfigs[fieldKey]
       if (!fieldConfig?.hooks?.resolveOutput) continue
 
-      const columns = new Set<string>()
-      const relations = new Set<string>()
-
-      for (const name of fieldConfig.needs ?? []) {
-        const dependency = fieldConfigs[name]
-        if (dependency && isRelationshipField(dependency)) {
-          relations.add(name)
-          const column = foreignKeyMemberColumn(listMembers, name)
-          if (column) columns.add(column)
-          continue
-        }
-        if (!dependency) continue
-        columns.add(name)
-      }
-
-      fields[fieldKey] = {
-        columns: [...columns].sort(),
-        relations: [...relations].sort(),
-      }
+      fields[fieldKey] = resolveNeeds(config, members, listKey, fieldConfig.needs ?? [])
     }
 
     table[listKey] = {

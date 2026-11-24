@@ -96,6 +96,16 @@ function refuseReservedName(
       },
     ]
   }
+  if (fieldKey === '__proto__') {
+    return [
+      {
+        listKey,
+        entry: 'fields.__proto__',
+        reason: 'reserved-field-name',
+        message: `List "${listKey}": fields.__proto__ is reserved — a row cannot carry it as an own key. Rename the field.`,
+      },
+    ]
+  }
   if (fieldKey !== 'id') return []
   return [
     {
@@ -140,7 +150,13 @@ function refuseDerivedMemberCollisions(
           collision.owner.kind === 'foreignKey'
             ? 'foreign-key-column-collision'
             : 'part-column-collision',
-        message: derivedMemberCollision(listKey, fieldKey, collision.name, collision.owner),
+        message: derivedMemberCollision(
+          listKey,
+          fieldKey,
+          collision.name,
+          collision.owner,
+          collision.viaPartColumn,
+        ),
       },
     ]
   })

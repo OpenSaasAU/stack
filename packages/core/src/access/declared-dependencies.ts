@@ -1,8 +1,12 @@
 // The emitted declared-dependency sets, read per list (ADR-0025, ADR-0051).
 
 import type { OpenSaasConfig } from '../config/types.js'
-import type { DependencyTable, ListDependencies } from '../contract/dependencies.js'
-import { deriveDependencyTable } from '../contract/dependencies.js'
+import type {
+  DependencyTable,
+  FieldDependencySet,
+  ListDependencies,
+} from '../contract/dependencies.js'
+import { deriveDependencyTable, nestedSetOf } from '../contract/dependencies.js'
 
 const derived = new WeakMap<OpenSaasConfig, DependencyTable>()
 
@@ -45,6 +49,20 @@ export function getListDependencies(config: OpenSaasConfig, listKey: string): Li
   )
 }
 
+/** The relations to fetch at one level, each with what to fetch beneath it. */
+export type RelationTree = ReadonlyMap<string, RelationTree>
+
+type MutableRelationTree = Map<string, MutableRelationTree>
+
+function addRelations(tree: MutableRelationTree, set: FieldDependencySet): void {
+  for (const relation of set.relations) {
+    const beneath: MutableRelationTree = tree.get(relation) ?? new Map()
+    tree.set(relation, beneath)
+    const nested = nestedSetOf(set, relation)
+    if (nested !== undefined) addRelations(beneath, nested)
+  }
+}
+
 /**
  * The union of the dependency sets of the computed fields this read will
  * return (ADR-0027). `selectedFields`, when given, is the read's own
@@ -56,15 +74,15 @@ export function resolveDeclaredDependencies(
   config: OpenSaasConfig,
   listKey: string,
   selectedFields?: ReadonlySet<string>,
-): { columns: Set<string>; relations: Set<string> } {
+): { columns: Set<string>; relations: Set<string>; tree: RelationTree } {
   const columns = new Set<string>()
-  const relations = new Set<string>()
+  const tree: MutableRelationTree = new Map()
 
   for (const [fieldKey, set] of Object.entries(getListDependencies(config, listKey).fields)) {
     if (selectedFields && !selectedFields.has(fieldKey)) continue
     for (const column of set.columns) columns.add(column)
-    for (const relation of set.relations) relations.add(relation)
+    addRelations(tree, set)
   }
 
-  return { columns, relations }
+  return { columns, relations: new Set(tree.keys()), tree }
 }

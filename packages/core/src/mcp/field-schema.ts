@@ -191,6 +191,7 @@ export async function generateFieldSchemas(
       relation !== undefined &&
       !(await mcpListReachable(config, relation.relatedList, context, {
         requireReadTool: true,
+        requireScope: 'write',
       }))
     ) {
       if (isRequired) deniedRequiredField ??= fieldName

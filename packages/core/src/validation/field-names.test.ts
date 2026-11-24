@@ -64,6 +64,18 @@ describe('validateFieldNames', () => {
     })
   })
 
+  it('refuses a field named __proto__, naming the field', () => {
+    const refusals = validateFieldNames(
+      configWith({
+        Post: {
+          fields: Object.defineProperty({}, '__proto__', { value: text(), enumerable: true }),
+        },
+      }),
+    )
+    expect(refusals).toHaveLength(1)
+    expect(refusals[0]).toMatchObject({ entry: 'fields.__proto__', reason: 'reserved-field-name' })
+  })
+
   it.each(['some', 'every', 'none'])(
     'refuses a relationship named %s but not a text field',
     (name) => {
@@ -195,6 +207,20 @@ describe('validateFieldNames', () => {
           'fields.address derives for its multi-column field. Rename fields.address_city.',
       },
     ])
+  })
+
+  it('names a remedy that works when a part column collides with a foreign key (#2505)', () => {
+    const lists = (partName: string, authorKey: string) => ({
+      A: { fields: { [authorKey]: relationship({ ref: 'B' }), geo: partsField(partName) } },
+      B: { fields: { name: text() } },
+    })
+    const [refusal] = validateFieldNames(configWith(lists('authorId', 'author')))
+    expect(refusal?.message).toBe(
+      'List "A": the part column "authorId" of fields.geo collides with the foreign-key column ' +
+        '"authorId" that fields.author derives for its relationship. Rename that part column, or rename fields.author.',
+    )
+    expect(validateFieldNames(configWith(lists('geoId', 'author')))).toEqual([])
+    expect(validateFieldNames(configWith(lists('authorId', 'writer')))).toEqual([])
   })
 
   it('refuses a field keyed like a part column declared after it, naming the declared field', () => {

@@ -25,7 +25,15 @@ export function derivedMemberCollision(
   fieldKey: string,
   name: string,
   owner: DerivedMemberOwner,
+  viaPartColumn = false,
 ): string {
+  if (viaPartColumn) {
+    return (
+      `List "${listKey}": the part column "${name}" of fields.${fieldKey} collides with the foreign-key column ` +
+      `"${name}" that fields.${owner.field} derives for its relationship. Rename that part column, or rename ` +
+      `fields.${owner.field}.`
+    )
+  }
   return owner.kind === 'foreignKey'
     ? `List "${listKey}": fields.${fieldKey} collides with the foreign-key column "${name}" that ` +
         `fields.${owner.field} derives for its relationship. Rename fields.${fieldKey}, or remove it and ` +
@@ -204,7 +212,12 @@ export function fieldMemberClaims(
   }
 }
 
-export type DerivedMemberCollision = { field: string; name: string; owner: DerivedMemberOwner }
+export type DerivedMemberCollision = {
+  field: string
+  name: string
+  owner: DerivedMemberOwner
+  viaPartColumn?: true
+}
 
 export class DerivedMemberLedger {
   #declared = new Map<string, string>()
@@ -224,10 +237,10 @@ export class DerivedMemberLedger {
       return undefined
     }
     if (derived.kind === 'foreignKey' && owner.kind === 'partColumn') {
-      return { field: owner.field, name, owner: derived }
+      return { field: owner.field, name, owner: derived, viaPartColumn: true }
     }
     if (derived.kind === 'partColumn' && owner.kind === 'foreignKey') {
-      return { field: derived.field, name, owner }
+      return { field: derived.field, name, owner, viaPartColumn: true }
     }
     return undefined
   }
@@ -254,7 +267,13 @@ function walkField(
     const collision = list.ledger.claim(fieldKey, claim)
     if (collision !== undefined) {
       throw new MemberClaimRefusal(
-        derivedMemberCollision(listKey, collision.field, collision.name, collision.owner),
+        derivedMemberCollision(
+          listKey,
+          collision.field,
+          collision.name,
+          collision.owner,
+          collision.viaPartColumn,
+        ),
       )
     }
     claimListMember(listKey, list.claims, claim.name, claim.origin)

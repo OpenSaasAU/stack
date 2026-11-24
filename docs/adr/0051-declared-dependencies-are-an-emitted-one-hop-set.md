@@ -1,6 +1,6 @@
 # Declared dependencies are an emitted, one-hop set that outranks a read denial
 
-Status: accepted
+Status: accepted, amended by [ADR-0085](0085-the-object-form-of-needs-reaches-any-depth.md): one hop is the array form's rule; the object form reaches any depth
 
 ADR-0025 gave a computed field a way to name the relations its `resolveOutput` cannot compute without, and left the derivation of that dependency graph implicit. Three later records fixed the contract around it — [#1039](https://github.com/OpenSaasAU/stack/issues/1039) kept it config-derived, [ADR-0041](0041-the-secured-surface-is-an-opaque-wrapper-over-a-prisma-8-collection.md) made a terminal widen for it and strip its additions, [ADR-0044](0044-a-read-denied-relation-is-omitted-before-the-query.md) put a pre-query omission next to it — and none touched the derivation itself. This record does.
 

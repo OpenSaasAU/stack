@@ -75,7 +75,7 @@ A stored column or a relation a computed field names as an input it cannot compu
 _Avoid_: auto-include, eager load, field dependency, prefetch
 
 **Declared dependency set**:
-Everything one computed field declares, resolved once at generation time and emitted for the engine to read rather than worked out per read. It reaches exactly one hop and does not compose: a declared relation delivers its rows' stored columns, and no computed field runs on a branch the caller never receives, so nothing on that branch declares anything further. A read widens its projection by the union of the sets belonging to the fields it is about to compute, and strips the difference before returning. Because widening never triggers another computation, a set cannot cycle and cannot outgrow the read-include depth cap, which bounds the caller's own tree and exempts the widening.
+Everything one computed field declares, resolved once at generation time and emitted for the engine to read rather than worked out per read. It reaches exactly as far as it is written — one hop in the array form, any depth in the object form — and does not compose: no computed field runs on a branch the caller never receives, so nothing on that branch declares anything further. A read widens its projection by the union of the sets belonging to the fields it is about to compute, and strips the difference before returning. Because widening never triggers another computation, a set cannot cycle and cannot outgrow the read-include depth cap, which bounds the caller's own tree and exempts the widening.
 _Avoid_: declaration closure (it asserted a transitivity this does not have), dependency graph, needs chain, include tree
 
 **Session-relative value**:
