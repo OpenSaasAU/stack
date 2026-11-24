@@ -124,6 +124,8 @@ import '@opensaas/stack-ui/styles'
 
 The `AdminUI` component provides a complete admin interface with routing, navigation, and CRUD operations.
 
+Place it at `app/admin/[[...admin]]/page.tsx`. The catch-all segment is what carries the URL into `params`; without `params`, every URL renders the Dashboard. The `params` key must match the folder's name: `[[...admin]]` gives `resolvedParams.admin`, and `[[...slug]]` would give `resolvedParams.slug`.
+
 ```typescript
 import { AdminUI } from '@opensaas/stack-ui'
 import type { ServerActionInput } from '@opensaas/stack-ui/server'
@@ -138,12 +140,22 @@ async function serverAction(props: ServerActionInput) {
   return context.serverAction(props)
 }
 
-export default async function AdminPage() {
+interface AdminPageProps {
+  params: Promise<{ admin?: string[] }>
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
+}
+
+export default async function AdminPage({ params, searchParams }: AdminPageProps) {
+  const resolvedParams = await params
+  const resolvedSearchParams = await searchParams
   const session = await getSession()
   return (
     <AdminUI
       context={await getContext(session ?? undefined)}
       config={await config}
+      params={resolvedParams.admin}
+      searchParams={resolvedSearchParams}
+      basePath="/admin"
       serverAction={serverAction}
       onSignOut={signOutAction}
     />
@@ -155,6 +167,9 @@ export default async function AdminPage() {
 
 - `context` - Access-controlled context from `.opensaas/context`
 - `config` - OpenSaas configuration object
+- `params?` - The catch-all segments (`resolvedParams.admin`) that select the view: none is the Dashboard, `[list]` the list, `[list, 'create']` the create form, `[list, id]` the edit form. Omitted, every URL renders the Dashboard
+- `searchParams?` - The page's resolved search params, for list search, sorting and paging
+- `basePath?` - Where the page is mounted, default `/admin`. Set it when the route lives elsewhere so links resolve
 - `serverAction` - `'use server'` wrapper around `context.serverAction` for mutations
 - `onSignOut?` - Ends the session and should `redirect()` to the sign-in page, which keeps Next's `basePath`; one that returns without redirecting reloads the page. It must be a server action, because it crosses to a client component; see [Auth actions](/docs/reference/auth#auth-actions) for `signOutAction`. Without it no Sign Out control renders, and it is ignored when `navigation` is supplied: that chrome renders its own `UserMenu` and passes the action there
 - `navigation?` - Replaces the built-in sidebar wholesale (see [Admin chrome slot](#admin-chrome-slot-and-navitems) below)
