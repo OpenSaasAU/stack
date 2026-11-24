@@ -439,8 +439,13 @@ export function dayBoundary(day: string, end: boolean): string | null {
   return localInstant(date)
 }
 
+const LOOSE_DATE = /^\d{4}-\d{1,2}-\d{1,2}$/
+const YEARLESS_DATE = /^\d{1,2}[/.-]\d{1,2}$/
+
 export function normaliseInstant(value: string, end: boolean): string | null {
   const typed = value.trim()
+  if (LOOSE_DATE.test(typed) && !PLAIN_DATE.test(typed)) return null
+  if (YEARLESS_DATE.test(typed)) return null
   const day = dayBoundary(typed, end)
   if (day !== null) return day
   if (NUMERIC_DAY.test(typed)) return null
@@ -561,14 +566,20 @@ function idConditionLabel(negated: boolean, many: boolean): string {
   return many ? 'is any of' : 'is'
 }
 
+function utcDay(suggestion: FilterFieldSuggestion, written: string, shown: string): string {
+  return suggestion.datePicker === 'instant' && PLAIN_DATE.test(written.trim())
+    ? `${shown} (UTC)`
+    : shown
+}
+
 function describeRange(
   suggestion: FilterFieldSuggestion,
   range: FilterRange,
   negated = false,
 ): TokenDescription {
   const field = fieldLabel(suggestion.field)
-  const low = displayBound(suggestion, range.low, false)
-  const high = displayBound(suggestion, range.high, true)
+  const low = utcDay(suggestion, range.low, displayBound(suggestion, range.low, false))
+  const high = utcDay(suggestion, range.high, displayBound(suggestion, range.high, true))
   const condition = negated ? 'not between' : 'between'
   return {
     field,
@@ -624,7 +635,7 @@ export function describeToken(
           if (record) return record.label ?? record.id
           return operator === 'empty'
             ? written.text
-            : displayValue(suggestion, operator, written.text)
+            : utcDay(suggestion, written.text, displayValue(suggestion, operator, written.text))
         })
         .join(', ')
       const sentence = value ? `${field} ${condition} ${value}` : `${field} ${condition}`
@@ -1017,6 +1028,10 @@ export function checkValue(
     return match
       ? { ok: true, value: match.value }
       : { ok: false, message: `No ${label.toLowerCase()} matches “${value}”.` }
+  }
+  if (suggestion.datePicker === 'day') {
+    const day = typedDay(value)
+    if (day) return { ok: true, value: localDay(day) }
   }
   const format = suggestion.valueFormat?.operators?.[operator] ?? suggestion.valueFormat
   if (format && !matchesFormat(format.pattern, value)) {

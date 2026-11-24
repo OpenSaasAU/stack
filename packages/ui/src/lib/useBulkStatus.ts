@@ -43,6 +43,16 @@ function takeHandoff(storageKey: string): string | null {
   }
 }
 
+export function handOffStatus(listKey: string, text: string): void {
+  const storageKey = storageKeyFor(listKey)
+  pending.add(storageKey)
+  try {
+    window.sessionStorage.setItem(storageKey, JSON.stringify({ text, at: Date.now() }))
+  } catch {
+    // Storage unavailable: the list shows no confirmation.
+  }
+}
+
 export function clearAllBulkStatuses(): void {
   pending.clear()
   try {

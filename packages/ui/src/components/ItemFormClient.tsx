@@ -12,6 +12,7 @@ import type { SerializableFieldConfig } from '../lib/serializeFieldConfig.js'
 import { FieldValidityContext } from '../lib/fieldValidity.js'
 import { useItemForm, type ItemFormSubmitResult } from '../lib/useItemForm.js'
 import { applyEdgeWrites } from '../lib/applyEdgeWrites.js'
+import { handOffStatus } from '../lib/useBulkStatus.js'
 
 export interface ItemFormClientProps {
   listKey: string
@@ -109,6 +110,7 @@ export function ItemFormClient({
 
       const normalized = toSubmitResult(result, 'Access denied or operation failed')
       if (normalized.success) {
+        handOffStatus(listKey, action === 'create' ? 'Item created' : 'Changes saved')
         router.push(`${basePath}/${urlKey}`)
         router.refresh()
       }

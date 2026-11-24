@@ -6,6 +6,7 @@ import {
   alternativeRefusal,
   alternativesOption,
   checkRange,
+  checkValue,
   chipEditText,
   chipsOf,
   conditionLabel,
@@ -289,7 +290,7 @@ describe('a typed or pasted timestamp token', () => {
 
   it('shows a plain date already in a URL as written', () => {
     const [chip] = chipsOf(ungrouped(hydrateTokens('at:2026-01-01..2026-01-31')), everyField)
-    expect(chip.description.sentence).toBe('At between 2026-01-01 and 2026-01-31')
+    expect(chip.description.sentence).toBe('At between 2026-01-01 (UTC) and 2026-01-31 (UTC)')
   })
 })
 
@@ -1115,5 +1116,49 @@ describe('a rejected numeric date on a timestamp draft', () => {
     )
     expect(options.some((option) => option.group === 'Search')).toBe(false)
     expect(hint).not.toBeNull()
+  })
+})
+
+describe('calendarDay values typed in the viewer locale', () => {
+  afterEach(() => vi.restoreAllMocks())
+  const inLocale = (locale: string) =>
+    vi
+      .spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions')
+      .mockReturnValue({ locale } as Intl.ResolvedDateTimeFormatOptions)
+
+  it('reads 07/08/2026 as 2026-08-07 under en-AU', () => {
+    inLocale('en-AU')
+    expect(checkValue(due, 'eq', '07/08/2026')).toEqual({ ok: true, value: '2026-08-07' })
+  })
+
+  it('reads 07/08/2026 as 2026-07-08 under en-US', () => {
+    inLocale('en-US')
+    expect(checkValue(due, 'eq', '07/08/2026')).toEqual({ ok: true, value: '2026-07-08' })
+  })
+
+  it('still rejects an unreadable day with the format hint', () => {
+    inLocale('en-US')
+    expect(checkValue(due, 'eq', '13/08/2026').ok).toBe(false)
+  })
+})
+
+describe('loose instants', () => {
+  it.each(['2026-8-4', '8/4'])('treats %s as unparseable', (typed) => {
+    expect(normaliseInstant(typed, false)).toBeNull()
+  })
+})
+
+describe('date-only timestamp chips', () => {
+  it('say (UTC) when the value is a bare day', () => {
+    const description = describeToken(
+      {
+        field: 'at',
+        operator: 'eq',
+        negated: false,
+        values: [{ text: '2026-08-04' }],
+      } as FilterToken,
+      fields,
+    )
+    expect(description.sentence).toBe('At is 2026-08-04 (UTC)')
   })
 })
