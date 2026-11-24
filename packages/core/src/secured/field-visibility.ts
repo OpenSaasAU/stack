@@ -23,7 +23,7 @@ import {
   type ListMember,
   type ListMembers,
 } from '../members/list-members.js'
-import { relatedListOf, type FieldDependencySet } from '../contract/dependencies.js'
+import { nestedSetOf, relatedListOf, type FieldDependencySet } from '../contract/dependencies.js'
 import { declaredBranch } from './declared-branch.js'
 import { lowerWhere, whereCombinators } from './lower.js'
 import { resolveRelatedAccessPlan, type ResolveContext } from './vocabulary.js'
@@ -327,7 +327,9 @@ async function visitRow(
   const assembled = assembleColumnFields(facing, fieldConfigs, members)
   const ruleRow = ruleRowOf(assembled, viewsOf(level, views), fieldConfigs, config, listKey)
   const hookItemFor = (fieldName: string): Record<string, unknown> => {
-    const declared = declaredDependencies[fieldName] ?? { columns: [], relations: [] }
+    const declared = Object.hasOwn(declaredDependencies, fieldName)
+      ? declaredDependencies[fieldName]
+      : { columns: [], relations: [] }
     return declaredItem(config, members, ruleRow.item, declared)
   }
   const selected = (fieldName: string): boolean =>
@@ -744,15 +746,15 @@ function declaredItem(
 ): OrmRow {
   const item: OrmRow = {}
   for (const key of [...members.systemFields, ...declared.columns]) {
-    if (key in row) item[key] = row[key]
+    if (Object.hasOwn(row, key)) item[key] = row[key]
   }
   for (const relation of declared.relations) {
-    if (!(relation in row)) continue
+    if (!Object.hasOwn(row, relation)) continue
     const related = relatedListOf(members, relation)
     item[relation] =
       related === undefined
         ? row[relation]
-        : declaredValue(config, related, row[relation], declared.nested?.[relation])
+        : declaredValue(config, related, row[relation], nestedSetOf(declared, relation))
   }
   return item
 }

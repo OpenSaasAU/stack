@@ -149,6 +149,16 @@ export function relatedListOf(members: ListMembers, key: string): string | undef
   return member.storage.relatedList
 }
 
+/** What an object form names beneath `relation`, or `undefined` when it stops there. */
+export function nestedSetOf(
+  set: FieldDependencySet,
+  relation: string,
+): FieldDependencySet | undefined {
+  return set.nested !== undefined && Object.hasOwn(set.nested, relation)
+    ? set.nested[relation]
+    : undefined
+}
+
 /** Which list each relation key of each list reaches, synthetic back-relations included. */
 export function deriveRelatedLists(
   config: OpenSaasConfig,
@@ -170,7 +180,7 @@ function resolveNeeds(
   const fieldConfigs = config.lists[listKey]?.fields ?? {}
   const columns = new Set<string>()
   const relations = new Set<string>()
-  const nested: Record<string, FieldDependencySet> = {}
+  const nested = new Map<string, FieldDependencySet>()
   if (listMembers === undefined) return { columns: [], relations: [] }
 
   for (const [name, beneath] of needsEntriesOf(needs)) {
@@ -181,19 +191,18 @@ function resolveNeeds(
       const column = foreignKeyMemberColumn(listMembers, name)
       if (column) columns.add(column)
       if (beneath !== true && related !== undefined) {
-        nested[name] = resolveNeeds(config, members, related, beneath)
+        nested.set(name, resolveNeeds(config, members, related, beneath))
       }
       continue
     }
     if (dependency) columns.add(name)
   }
 
-  const nestedKeys = Object.keys(nested).sort()
   return {
     columns: [...columns].sort(),
     relations: [...relations].sort(),
-    ...(nestedKeys.length > 0
-      ? { nested: Object.fromEntries(nestedKeys.map((key) => [key, nested[key]])) }
+    ...(nested.size > 0
+      ? { nested: Object.fromEntries([...nested].sort(([a], [b]) => (a < b ? -1 : 1))) }
       : {}),
   }
 }

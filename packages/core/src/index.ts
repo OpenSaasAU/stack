@@ -357,6 +357,7 @@ export {
   deriveDependencyTable,
   deriveGeneratedTables,
   deriveRelatedLists,
+  nestedSetOf,
 } from './contract/dependencies.js'
 export type {
   ConstraintMap,

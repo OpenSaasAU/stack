@@ -5,7 +5,7 @@ import type {
   FieldConfig,
   OpenSaasConfig,
 } from '@opensaas/stack-core'
-import { deriveRelatedLists } from '@opensaas/stack-core'
+import { deriveRelatedLists, nestedSetOf } from '@opensaas/stack-core'
 import type { TypeDescriptor } from '@opensaas/stack-core/extend'
 import { isComputedField, typeDescriptorToTypeString } from '@opensaas/stack-core/extend'
 import * as fs from 'fs'
@@ -190,7 +190,7 @@ function renderNeedsBranch(
 ): string {
   const columns = new Set([...dependencies[listName].systemFields, ...set.columns])
   const relations = set.relations.map((relation) => {
-    const nested = set.nested?.[relation]
+    const nested = nestedSetOf(set, relation)
     const related = relatedOf(listName, relation)
     const beneath =
       nested === undefined || related === undefined

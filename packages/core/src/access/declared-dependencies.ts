@@ -6,7 +6,7 @@ import type {
   FieldDependencySet,
   ListDependencies,
 } from '../contract/dependencies.js'
-import { deriveDependencyTable } from '../contract/dependencies.js'
+import { deriveDependencyTable, nestedSetOf } from '../contract/dependencies.js'
 
 const derived = new WeakMap<OpenSaasConfig, DependencyTable>()
 
@@ -58,7 +58,7 @@ function addRelations(tree: MutableRelationTree, set: FieldDependencySet): void 
   for (const relation of set.relations) {
     const beneath: MutableRelationTree = tree.get(relation) ?? new Map()
     tree.set(relation, beneath)
-    const nested = set.nested?.[relation]
+    const nested = nestedSetOf(set, relation)
     if (nested !== undefined) addRelations(beneath, nested)
   }
 }

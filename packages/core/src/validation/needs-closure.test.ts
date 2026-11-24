@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { config, list } from '../config/index.js'
 import { text, integer, relationship, virtual } from '../fields/index.js'
-import { deriveDependencyTable } from '../contract/dependencies.js'
+import { deriveDependencyTable, nestedSetOf } from '../contract/dependencies.js'
 import { findChainedNeeds, validateNeedsDeclarations } from './needs-closure.js'
 
 /**
@@ -358,6 +358,27 @@ describe('needs — the object form (ADR-0085)', () => {
     expect(found[0]).toContain('"Attendance.label"')
     expect(found[0]).toContain(why)
     expect(found[0]).toContain(path)
+  })
+
+  it('resolves prototype-named relations from the declaration alone', async () => {
+    const named = await config({
+      db: { provider: 'postgresql' },
+      lists: {
+        Post: list({
+          fields: {
+            constructor: relationship({ ref: 'User' }),
+            label: virtual({ type: 'string', needs: { constructor: true as const }, hooks }),
+            deep: virtual({ type: 'string', needs: { constructor: ['toString'] }, hooks }),
+          },
+        }),
+        User: list({ fields: { toString: text() } }),
+      },
+    })
+    expect(validateNeedsDeclarations(named)).toEqual([])
+    const { label, deep } = deriveDependencyTable(named).Post.fields
+    expect(nestedSetOf(label, 'constructor')).toBeUndefined()
+    expect(nestedSetOf({ ...label, nested: {} }, 'constructor')).toBeUndefined()
+    expect(nestedSetOf(deep, 'constructor')).toEqual({ columns: ['toString'], relations: [] })
   })
 
   it('refuses an object that contains itself', async () => {
