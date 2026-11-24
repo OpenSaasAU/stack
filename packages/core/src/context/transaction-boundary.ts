@@ -11,6 +11,7 @@ import {
 import type { WriteOperation } from './write-pipeline.js'
 import type {
   AfterTransactionFailure,
+  QueuedTransactionFlush,
   TransactionRegistry,
   TransactionSettleOutcome,
 } from '../access/transaction-registry.js'
@@ -258,6 +259,25 @@ function resolveDeferredOutcome(
   return { status: 'rolled-back', error: settle.error }
 }
 
+async function enqueueOrFlush(
+  config: OpenSaasConfig,
+  owner: TransactionRegistry,
+  flush: QueuedTransactionFlush,
+): Promise<void> {
+  const settled = owner.settledWith
+  if (settled === undefined) {
+    owner.enqueue(flush)
+    return
+  }
+  const errors: AfterTransactionFailure[] = []
+  try {
+    await flush(settled, errors)
+  } catch (error) {
+    console.error('afterTransaction flush for a write after its transaction closed threw:', error)
+  }
+  await reportAfterTransactionFailures(config, errors)
+}
+
 /**
  * Brackets a write's transaction with the transaction-boundary hooks (#590,
  * ADR-0028 / #899): runs every involved list's `beforeTransaction` eagerly —
@@ -336,7 +356,7 @@ export async function runWithTransactionBoundary(args: {
   if (beforeError !== undefined) {
     const outcome: TransactionOutcome = { status: 'rolled-back', error: beforeError }
     if (joinedOwner) {
-      joinedOwner.enqueue(async (_settle, errors) => {
+      await enqueueOrFlush(config, joinedOwner, async (_settle, errors) => {
         for (const involved of ran) {
           await runAfterTransactionForList(involved, outcome, afterTransactionContext, errors)
         }
@@ -379,7 +399,7 @@ export async function runWithTransactionBoundary(args: {
   if (joinedOwner) {
     // Deferred (ADR-0028) — only afterTransaction waits; this write's own
     // result/throw is returned/thrown normally below.
-    joinedOwner.enqueue(async (settle, errors) => {
+    await enqueueOrFlush(config, joinedOwner, async (settle, errors) => {
       const finalOutcome = resolveDeferredOutcome(outcome, settle)
       for (const involved of ran) {
         await runAfterTransactionForList(involved, finalOutcome, afterTransactionContext, errors)
