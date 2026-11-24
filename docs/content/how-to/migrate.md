@@ -226,6 +226,20 @@ The plan id is the one the loop printed with the plan; if the plan has changed s
 
 Production is a different command: deploys run `prisma db migrate` from the committed `migrations/` directory. There is no `opensaas db migrate` — `opensaas db` carries only `update`, and `opensaas migrate` is the project-analysis assistant this page is about, not a schema command.
 
+#### Adding a required column to a populated table
+
+Prisma's planner classes a new required column as additive, so it applies without a prompt and fills every existing row with a placeholder (`''`, `0`, `{}` or the epoch). Turning on `db.timestamps` on a populated table sets every existing `updatedAt` to `1970-01-01`. The plan output does not name the backfilled column, so the loop cannot warn you.
+
+Give the column a real default:
+
+```typescript
+import { integer } from '@opensaas/stack-core/fields'
+
+const rank = integer({ defaultValue: 100, db: { isNullable: false } })
+```
+
+Or backfill in two steps: ship the column as nullable, fill it with your own data, then tighten it to `db: { isNullable: false }` in a second change.
+
 #### Adopting an existing many-to-many table
 
 Prisma's implicit many-to-many tables (`_Lesson_teachers(A, B)`) have no `id`. Declare a junction list mapped onto the table:
