@@ -27,12 +27,14 @@ import {
   assertRelationGraphAgrees,
   deriveContract,
   deriveGeneratedTables,
+  findChainedNeeds,
   validateConfigFields,
   validateNeedsDeclarations,
   validateDatabaseConfig,
   validateRelations,
 } from '@opensaas/stack-core'
 import type {
+  ChainedNeedsWarning,
   ConfigRefusal,
   ContractData,
   EmittedContract,
@@ -69,6 +71,13 @@ export function formatNeedsClosureErrors(errors: NeedsClosureError[]): string {
   const lines = errors.map((error) => `  • ${error.message}`)
 
   return [`${errors.length} field(s) declare an unsatisfiable \`needs\`:`, ...lines].join('\n')
+}
+
+/** Format array-form `needs` chains that stop at one hop (ADR-0085), each with its replacement. */
+export function formatChainedNeedsWarnings(warnings: ChainedNeedsWarning[]): string {
+  const lines = warnings.map((warning) => `  • ${warning.message}`)
+
+  return [`${warnings.length} array-form \`needs\` may chain past one hop:`, ...lines].join('\n')
 }
 
 /**
@@ -226,6 +235,11 @@ export async function generateCommand(
       throw new GenerationFailedError('config surface invalid')
     }
     surfaceSpinner.succeed(chalk.green('Config surface valid'))
+
+    const chainedNeeds = findChainedNeeds(config)
+    if (chainedNeeds.length > 0) {
+      console.warn(chalk.yellow('\n⚠️  Warning:'), formatChainedNeedsWarnings(chainedNeeds))
+    }
 
     const deriveSpinner = ora('Deriving the contract...').start()
     let contractData: ContractData

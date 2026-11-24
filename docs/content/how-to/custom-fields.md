@@ -569,12 +569,12 @@ export function displayName<
 
 The rules `opensaas generate` enforces:
 
-- Entries are **column keys on the same list** — stored columns and immediate relationship fields. No dotted paths, and never another computed field.
+- Entries are **stored columns and relations**. No dotted paths, and never another computed field.
 - A `needs` on a field with **no `resolveOutput` hook** is refused: nothing could consume it.
-- Dependencies are **one hop and non-transitive**, and are **stripped from the result** unless the caller named them too — so declaring one never changes the shape of every read of the list.
+- The array form is **one hop and non-transitive**; the [object form](/docs/reference/fields-api#reaching-past-one-hop) reaches as deep as it is written. Both are **stripped from the result** unless the caller named them too — so declaring one never changes the shape of every read of the list.
 - A relation dependency is **scoped by the Access Filter** like any other read, so write the hook to tolerate a session that cannot see it.
 
-`needs` itself stays a plain `string[]` on `BaseFieldConfig`, even though the builder above is generic over the list's `TypeInfo` and its own field key (`TKey`, threaded the same way for every built-in field so `hooks.resolveOutput` sees the mounted field's real value type — see the [Fields API reference](/docs/reference/fields-api)): a `needs` entry names a _different_ field on the same list, so narrowing it would need that field's own key threaded too, for no benefit `opensaas generate` (`validateNeedsDeclarations`) doesn't already provide by rejecting a misspelled or non-relation entry at generate time. Test the field against a real config before publishing it.
+`needs` itself is not narrowed to the list's own keys on `BaseFieldConfig`, even though the builder above is generic over the list's `TypeInfo` and its own field key (`TKey`, threaded the same way for every built-in field so `hooks.resolveOutput` sees the mounted field's real value type — see the [Fields API reference](/docs/reference/fields-api)): a `needs` entry names a _different_ field on the same list, so narrowing it would need that field's own key threaded too, for no benefit `opensaas generate` (`validateNeedsDeclarations`) doesn't already provide by rejecting a misspelled or non-relation entry at generate time. Test the field against a real config before publishing it.
 
 ## Best Practices
 

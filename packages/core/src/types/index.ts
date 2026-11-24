@@ -21,7 +21,15 @@ export type {
   ListId,
 } from './contract.js'
 
-export type { Row, StoredRow, NeedsRow, RelationValue, SystemFieldKey } from './rows.js'
+export type {
+  Row,
+  StoredRow,
+  NeedsBranch,
+  NeedsBranchRow,
+  NeedsRow,
+  RelationValue,
+  SystemFieldKey,
+} from './rows.js'
 
 export type { CreateInput, UpdateInput, WritableColumn } from './inputs.js'
 

@@ -1483,7 +1483,7 @@ import { virtual } from '@opensaas/stack-core/fields'
 
 virtual(options: {
   type: TypeDescriptor
-  needs?: string[]
+  needs?: readonly string[] | NeedsObject
   hooks: FieldHooks<TTypeInfo> & {
     resolveOutput: NonNullable<FieldHooks<TTypeInfo>['resolveOutput']>
   }
@@ -1592,7 +1592,7 @@ The TypeScript type generator automatically collects and generates the necessary
 
 The columns and relations the computation reads. See [`needs`](#needs-1) under Field Builder Contract for the full rules; on a virtual field it is the ordinary way to widen the read.
 
-**Type:** `string[]`
+**Type:** `readonly string[] | NeedsObject`
 
 **Example:**
 
@@ -1606,7 +1606,7 @@ byline: virtual({
 })
 ```
 
-`opensaas generate` refuses an entry that names nothing on the list, names a computed field, or reaches through a relation with a dotted path — and refuses a `needs` on a field with no `resolveOutput` hook.
+`opensaas generate` refuses an entry that names nothing on the list, names a computed field, or uses a dotted path — and refuses a `needs` on a field with no `resolveOutput` hook.
 
 ##### `hooks.resolveOutput` (required)
 
@@ -2135,21 +2135,27 @@ inputType?: TypeDescriptor
 
 ### `needs`
 
-The immediate columns and relations this field's `resolveOutput` hook cannot compute without.
+The columns and relations this field's `resolveOutput` hook cannot compute without.
 
 **Signature:**
 
 ```typescript
-needs?: string[]
+needs?: readonly string[] | NeedsObject
+
+interface NeedsObject {
+  readonly [key: string]: true | readonly string[] | NeedsObject
+}
 ```
 
-Entries are **column keys** on the same list: stored columns and immediate relationship fields, spelled by their config key.
+The **array form** names stored columns and relations of the same list, by config key, and reaches one hop. The **object form** reaches as deep as you write it. See [Reaching past one hop](#reaching-past-one-hop).
+
+A synthetic back-relation (`from_<List>_<field>`) is a relation here too.
 
 **The rules:**
 
-- **Same list only.** No dotted paths, no reaching through a relation, and never a computed field. `opensaas generate` refuses an entry that names none of the above.
+- **Stored columns and relations only.** No dotted paths, and never a computed field, at any depth. `opensaas generate` refuses anything else, naming the list, the field and the path.
 - **Requires a `resolveOutput` hook.** A `needs` on a field without one is dead config and is refused at generate time, since nothing could consume the declaration.
-- **One hop, non-transitive.** A declared relation is fetched; what that relation's own computed fields need is that relation's business.
+- **Non-transitive.** A declared relation is fetched; what that relation's own computed fields need is that relation's business.
 - **Private plumbing, not an implicit include.** Each dependency is fetched wherever the field is computed — at the root of a read and at every nested level alike — and then stripped from the result unless the caller named it too. Adding or removing one changes the field's implementation, never the shape of every read of the list.
 - **Scoped like any other read.** A relation dependency goes through the Access Filter exactly as a caller-named include does. A session that cannot query it does not get it fetched, and the hook sees nothing in its place.
 - **A write returns what a read would.** `create` and `update` compute the field over the row as `first()` reads it inside the write's transaction, and `delete` over the row as it stood when the delete locked it, before any hook. A list declaring a relation pays one more read per write, and that read fetches every visible child on every write, while the row lock is held: `update` took 4 ms at 1k children, 33 ms at 20k and 150 ms at 100k, against 1 ms for a list with no relation in `needs`.
@@ -2168,6 +2174,30 @@ itemCount: virtual({
   },
 }),
 ```
+
+#### Reaching past one hop
+
+```typescript
+label: virtual({
+  type: 'string',
+  needs: { enrolment: { student: true, classTerm: ['class', 'term'] } },
+  hooks: {
+    resolveOutput: ({ item }) =>
+      `${item.enrolment?.student?.name} in ${item.enrolment?.classTerm?.class?.title}`,
+  },
+}),
+```
+
+| Value              | On a column | On a relation                                                                                               |
+| ------------------ | ----------- | ----------------------------------------------------------------------------------------------------------- |
+| `true`             | Delivers it | Delivers its rows' stored columns, and none of their relations                                              |
+| An array or object | Refused     | Delivers exactly what it names, plus the list's system fields and the foreign key of each relation it names |
+
+- A row reached by an array or object carries only the columns named there. To read `ref` off the enrolment above, add it: `{ enrolment: { ref: true, student: true, … } }`.
+- Every hop keeps its list's `query` access. A to-one the session cannot see is `null` and a to-many leaves it out, so every to-one hop is a null check.
+- A declaration outranks a field-level `read` denial at every depth. A nested entry naming a read-denied column hands it to your hook.
+- Hops are fetched with the read, so a page never costs a query per row.
+- `opensaas generate` warns when an array form names a relation whose list has a computed field with relation `needs` of its own, and prints the object form. Write `{ relation: true }` when one hop is what you mean.
 
 ---
 

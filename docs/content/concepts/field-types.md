@@ -528,8 +528,8 @@ fields: {
 
 The rules are narrow on purpose:
 
-- Entries are **column keys** on this same list — stored columns and immediate relationship fields. No dotted paths, no reaching through a relation, never another computed field. `opensaas generate` refuses an entry that names none of those, and refuses a `needs` on a field with no `resolveOutput` hook, since nothing could consume it.
-- One hop, and **non-transitive**. A declared relation is fetched; what that relation's own computed fields need is that relation's business.
+- An array's entries are stored columns and relations of this same list. No dotted paths, never another computed field. `opensaas generate` refuses an entry that names none of those, and refuses a `needs` on a field with no `resolveOutput` hook, since nothing could consume it.
+- The array form is one hop and **non-transitive**: what a declared relation's own computed fields need is that relation's business. To reach further, spell it out: `needs: { post: ['author'] }`. See [Reaching past one hop](/docs/reference/fields-api#reaching-past-one-hop).
 - A dependency is **private plumbing, not an implicit include**. It is fetched wherever the field is computed — at the root of a read and at every nested level alike — and then **stripped from the result** unless the caller named it too. Adding or removing one changes this field's implementation, never the shape of every read of the list.
 - A relation dependency is scoped by the Access Filter exactly like a caller-named one. A session that cannot query the relation does not get it fetched, and the hook sees nothing in its place — so write the hook to tolerate that.
 
@@ -949,7 +949,7 @@ Required on a `kind: 'columns'` field: it builds the field's logical value from 
 
 ### `needs`
 
-The column keys this field's `resolveOutput` hook cannot compute without — stored columns and immediate relations on the same list, one hop, non-transitive, and stripped from the result unless the caller named them too. It is the only supported way for a field to widen the read it is computed inside. Declaring it without a `resolveOutput` hook is a refusal at generate time, because nothing would consume the declaration. See [Declared Dependencies](#declared-dependencies-needs) above.
+The column keys this field's `resolveOutput` hook cannot compute without — stored columns and relations, one hop as an array or as deep as written as an object, non-transitive, and stripped from the result unless the caller named them too. It is the only supported way for a field to widen the read it is computed inside. Declaring it without a `resolveOutput` hook is a refusal at generate time, because nothing would consume the declaration. See [Declared Dependencies](#declared-dependencies-needs) above.
 
 ## Best Practices
 

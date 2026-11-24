@@ -131,6 +131,7 @@ export type {
   ListAccessControl,
   FieldConfig,
   BaseFieldConfig,
+  NeedsObject,
   TextField,
   IntegerField,
   CheckboxField,

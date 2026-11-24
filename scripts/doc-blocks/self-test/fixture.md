@@ -527,7 +527,12 @@ import type {
   VectorColumnDescriptor,
   VectorDistanceFunction,
 } from '@opensaas/stack-core'
-import type { BaseFieldConfig, TypeDescriptor, TypeInfo } from '@opensaas/stack-core/extend'
+import type {
+  BaseFieldConfig,
+  NeedsObject,
+  TypeDescriptor,
+  TypeInfo,
+} from '@opensaas/stack-core/extend'
 import type { EmbeddingIndexConfig, ResolvedEmbeddingIndex } from '@opensaas/stack-rag'
 
 export type EmbeddingField = {
@@ -567,7 +572,7 @@ export type EmbeddingField = {
   isFilterable?: boolean
   outputType?: TypeDescriptor
   inputType?: TypeDescriptor
-  needs?: string[]
+  needs?: readonly string[] | NeedsObject
   sourceField?: string
   provider?: string
   dimensions?: number
@@ -591,7 +596,12 @@ import type {
   VectorColumnDescriptor,
   VectorDistanceFunction,
 } from '@opensaas/stack-core'
-import type { BaseFieldConfig, TypeDescriptor, TypeInfo } from '@opensaas/stack-core/extend'
+import type {
+  BaseFieldConfig,
+  NeedsObject,
+  TypeDescriptor,
+  TypeInfo,
+} from '@opensaas/stack-core/extend'
 import type { EmbeddingIndexConfig, ResolvedEmbeddingIndex } from '@opensaas/stack-rag'
 
 export type EmbeddingField = {
@@ -631,7 +641,7 @@ export type EmbeddingField = {
   isFilterable?: boolean
   outputType?: TypeDescriptor
   inputType?: TypeDescriptor
-  needs?: string[]
+  needs?: readonly string[] | NeedsObject
   sourceField?: string
   provider?: string
   dimensions?: number

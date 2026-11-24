@@ -2107,7 +2107,7 @@ describe('a hook mutating declared rows in place', () => {
     expect(callsTo('read', 'Shelf.keeper')).toEqual([['read', 'Shelf.keeper', 'sh1', ['b1', 'b2']]])
   })
 
-  test("a rows branch's declared rows are shared with the foreign-key pass", async () => {
+  test("a rows branch's declared rows are out of its reach", async () => {
     await seedShelves()
 
     const rows = await recorded(() =>
@@ -2118,15 +2118,11 @@ describe('a hook mutating declared rows in place', () => {
         .all(),
     )
 
-    expect(rows).toEqual([
-      { ...shelf(1, { total: 2, all: [book(1), book(2)] }, 2), keeperId: null },
-    ])
-    expect(callsTo('read', 'Shelf.keeper')).toEqual([
-      ['read', 'Shelf.keeper', 'sh1', ['b1', 'b2', 'INJECTED']],
-    ])
+    expect(rows).toEqual([shelf(1, { total: 2, all: [book(1), book(2)] }, 2)])
+    expect(callsTo('read', 'Shelf.keeper')).toEqual([['read', 'Shelf.keeper', 'sh1', ['b1', 'b2']]])
   })
 
-  test("a caller-shaped declared relation's unshaped rows are shared with the foreign-key pass", async () => {
+  test("a caller-shaped declared relation's unshaped rows are out of its reach", async () => {
     await seedShelves()
 
     const rows = await recorded(() =>
@@ -2137,10 +2133,8 @@ describe('a hook mutating declared rows in place', () => {
         .all(),
     )
 
-    expect(rows).toEqual([{ ...shelf(1, [book(1)], 2), keeperId: null }])
-    expect(callsTo('read', 'Shelf.keeper')).toEqual([
-      ['read', 'Shelf.keeper', 'sh1', ['b1', 'b2', 'INJECTED']],
-    ])
+    expect(rows).toEqual([shelf(1, [book(1)], 2)])
+    expect(callsTo('read', 'Shelf.keeper')).toEqual([['read', 'Shelf.keeper', 'sh1', ['b1', 'b2']]])
   })
 })
 

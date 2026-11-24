@@ -789,11 +789,13 @@ export type BaseFieldConfig<
    * or removing one changes this field's implementation, never the shape of
    * every read of the list.
    *
-   * Names stored columns and immediate relations on the same list only — no
-   * dotted paths, and never a computed field. A declaration on a field with
-   * no `resolveOutput` hook is dead config and fails `pnpm generate`.
+   * The array form names stored columns and immediate relations on the same
+   * list, and reaches one hop. The object form reaches any depth (ADR-0085):
+   * see {@link NeedsObject}. Neither names a computed field. A declaration on
+   * a field with no `resolveOutput` hook is dead config and fails
+   * `pnpm generate`.
    *
-   * Typed as a plain `string[]`, not narrowed to this list's own relation
+   * Not narrowed to this list's own relation
    * keys, unlike {@link BaseFieldConfig}'s own `TKey` (issue #1306): a
    * `needs` entry names a DIFFERENT field on the SAME list, so narrowing it
    * would require threading that field's key too, for no reader-facing
@@ -813,7 +815,27 @@ export type BaseFieldConfig<
    * }),
    * ```
    */
-  needs?: string[]
+  needs?: readonly string[] | NeedsObject
+}
+
+/**
+ * The object form of {@link BaseFieldConfig.needs} (ADR-0085). Each key is a
+ * stored column, a relationship field or a synthetic back-relation
+ * (`from_<List>_<field>`) of the list at that level.
+ *
+ * - A column takes `true`.
+ * - A relation takes `true` for its rows' stored columns, or an array or a
+ *   nested object for exactly what is named beneath it. Every level also
+ *   carries its list's system fields and the foreign key of each relation it
+ *   names.
+ *
+ * @example
+ * ```typescript
+ * needs: { enrolment: { student: true, classTerm: ['class', 'term'] } }
+ * ```
+ */
+export interface NeedsObject {
+  readonly [key: string]: true | readonly string[] | NeedsObject
 }
 
 /**

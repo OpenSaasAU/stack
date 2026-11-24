@@ -2,7 +2,7 @@
 // for every read terminal and every write return (ADR-0027, ADR-0044, ADR-0051).
 
 import type { AccessContext, OrmRow } from '../access/types.js'
-import type { FieldConfig, ListConfig, TypeInfo } from '../config/types.js'
+import type { FieldConfig, ListConfig, OpenSaasConfig, TypeInfo } from '../config/types.js'
 import { isComputedField } from '../config/field-kind.js'
 import { checkRowRead } from '../access/field-access.js'
 import {
@@ -23,6 +23,8 @@ import {
   type ListMember,
   type ListMembers,
 } from '../members/list-members.js'
+import { nestedSetOf, relatedListOf, type FieldDependencySet } from '../contract/dependencies.js'
+import { declaredBranch } from './declared-branch.js'
 import { lowerWhere, whereCombinators } from './lower.js'
 import { resolveRelatedAccessPlan, type ResolveContext } from './vocabulary.js'
 import {
@@ -239,6 +241,9 @@ async function collectRuleViews(
   views.set(level, { viewFor: (row) => ruleViewFor(row, level.includes, unshaped) })
 }
 
+/** Postgres caps a statement at 65,535 bind parameters. */
+const UNSHAPED_READ_KEYS = 10_000
+
 /** The declared rows each relation's rules and hooks see in place of the caller's, by owner id. */
 async function unshapedRowsAt(
   binding: VisibilityBinding,
@@ -260,21 +265,20 @@ async function unshapedRowsAt(
   if (fetched.length === 0 || ids.length === 0) return byRelation
   const ops = await whereCombinators()
   for (const node of fetched) {
-    const owners = await engineRead(binding, () =>
-      collectionFor(binding.ormHandle, listName)
-        .where((model) => identityIn(model, listName, ids))
-        .select('id')
-        .include(node.relation, (child) => {
-          let scoped = child
-          for (const predicate of node.declaredFetch ?? []) {
-            scoped = scoped.where((model) => lowerWhere(predicate, model, ops))
-          }
-          return scoped
-        })
-        .all(),
-    )
     const values = new Map<string, unknown>()
-    for (const owner of owners) values.set(String(owner['id']), owner[node.relation])
+    for (let start = 0; start < ids.length; start += UNSHAPED_READ_KEYS) {
+      const batch = ids.slice(start, start + UNSHAPED_READ_KEYS)
+      const owners = await engineRead(binding, () =>
+        collectionFor(binding.ormHandle, listName)
+          .where((model) => identityIn(model, listName, batch))
+          .select('id')
+          .include(node.relation, (child) =>
+            declaredBranch(child, node.declaredFetch ?? [], node.declaredIncludes, ops),
+          )
+          .all(),
+      )
+      for (const owner of owners) values.set(String(owner['id']), owner[node.relation])
+    }
     byRelation.set(node.relation, values)
   }
   return byRelation
@@ -326,11 +330,7 @@ async function visitRow(
     const declared = Object.hasOwn(declaredDependencies, fieldName)
       ? declaredDependencies[fieldName]
       : { columns: [], relations: [] }
-    const hookItem: Record<string, unknown> = {}
-    for (const key of [...systemFields, ...declared.columns, ...declared.relations]) {
-      if (key in ruleRow.item) hookItem[key] = ruleRow.item[key]
-    }
-    return hookItem
+    return declaredItem(config, members, ruleRow.item, declared)
   }
   const selected = (fieldName: string): boolean =>
     selection === undefined || selection.has(fieldName)
@@ -340,7 +340,7 @@ async function visitRow(
       fieldName,
       value,
       ruleRow,
-      hookItem: hookItemFor(fieldName),
+      hookItem: () => hookItemFor(fieldName),
       listKey,
       args,
       binding,
@@ -374,14 +374,15 @@ async function visitRow(
       const reduction = reductionOf(node)
       const reached = relatedPairs(value, raw[fieldName], reduction)
       let kept = reached
+      if (node.declared) continue
       if (node.synthetic === undefined) {
         if (!(await checkRowRead(fieldConfigs[fieldName]?.access, args, ruleRow))) continue
-        if (node.declared) continue
-        if (reduction !== undefined && node.reducedDeclared) {
-          shown[fieldName] = reduction.shown(raw[fieldName], [])
-          continue
-        }
-      } else {
+      }
+      if (reduction !== undefined && node.reducedDeclared) {
+        shown[fieldName] = reduction.shown(raw[fieldName], [])
+        continue
+      }
+      if (node.synthetic !== undefined) {
         const gate = node.synthetic.gate
         const allowed = await Promise.all(
           reached.map(([relatedRow]) =>
@@ -606,7 +607,7 @@ function deriveResolveOutputContext(
  * granted, produce the output value by running any `resolveOutput` hook.
  *
  * `ruleRow` is the row used to evaluate field access: the fetched row under its
- * `RuleView`, which a rule reads through a guard (ADR-0082). `hookItem` is the object passed
+ * `RuleView`, which a rule reads through a guard (ADR-0082). `hookItem` builds the object passed
  * to the hook as `item`: exactly the field's own declared dependency set plus
  * the list's system fields, so a hook never sees another computed field's
  * resolved value and never sees what some other call site's projection
@@ -617,7 +618,7 @@ async function resolveReadableFieldValue(params: {
   fieldName: string
   value: unknown
   ruleRow: RuleRow
-  hookItem: Record<string, unknown>
+  hookItem: () => Record<string, unknown>
   listKey: string
   args: FieldVisibilityArgs
   binding: VisibilityBinding
@@ -666,7 +667,7 @@ async function resolveReadableFieldValue(params: {
         operation: 'query',
         fieldName,
         listKey,
-        item: hookItem,
+        item: hookItem(),
         context: deriveResolveOutputContext(binding, args.context, link),
       }),
     )
@@ -736,6 +737,48 @@ function assembleColumnFields(
   return assembled
 }
 
+/** What a hook is handed of one row: what `declared` names on it and the list's system fields. */
+function declaredItem(
+  config: OpenSaasConfig,
+  members: ListMembers,
+  row: OrmRow,
+  declared: FieldDependencySet,
+): OrmRow {
+  const item: OrmRow = {}
+  for (const key of [...members.systemFields, ...declared.columns]) {
+    if (Object.hasOwn(row, key)) item[key] = row[key]
+  }
+  for (const relation of declared.relations) {
+    if (!Object.hasOwn(row, relation)) continue
+    const related = relatedListOf(members, relation)
+    item[relation] =
+      related === undefined
+        ? row[relation]
+        : declaredValue(config, related, row[relation], nestedSetOf(declared, relation))
+  }
+  return item
+}
+
+function declaredValue(
+  config: OpenSaasConfig,
+  listName: string,
+  value: unknown,
+  declared: FieldDependencySet | undefined,
+): unknown {
+  if (Array.isArray(value)) {
+    return value.map((row) => declaredValue(config, listName, row, declared))
+  }
+  if (!isRow(value)) return value
+  const members = resolveListMembers(config, listName)
+  const assembled = assembleColumnFields(value, config.lists[listName].fields, members)
+  if (declared !== undefined) return declaredItem(config, members, assembled, declared)
+  for (const key of Object.keys(assembled)) {
+    const member = members.members.get(key)
+    if (member !== undefined && isRelationMember(member)) delete assembled[key]
+  }
+  return assembled
+}
+
 /** A to-one reading `null` for a row the session cannot see. Inverse sides cannot be told apart. */
 function isScopedAway(row: OrmRow, plan: IncludePlan, value: unknown): boolean {
   if (plan.arity !== 'one' || value !== null) return false
@@ -755,7 +798,12 @@ function ruleViewFor(
     const rows = values?.get(String(row['id']))
     if (isScopedAway(row, plan, rows ?? row[plan.relation])) scopedAway.add(plan.relation)
     if (rows !== undefined) declared[plan.relation] = rows
-    else if (plan.ruleView !== 'fetched') removed.add(plan.relation)
+    else if (plan.ruleView === 'declaredFetch') {
+      // The owner went between the two statements: a hook is owed an empty
+      // value, and a rule must not read it as no row.
+      declared[plan.relation] = plan.arity === 'many' ? [] : null
+      scopedAway.add(plan.relation)
+    } else if (plan.ruleView !== 'fetched') removed.add(plan.relation)
   }
   return { removed, declared, scopedAway }
 }
