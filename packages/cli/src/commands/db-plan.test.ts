@@ -118,6 +118,29 @@ describe('resolveMigrationHead', () => {
     warn.mockRestore()
   })
 
+  it('treats a revisit of a state as sequential, not a fork, with or without timestamps', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    writePackage('1_init', 'empty', 'a', '2026-07-20T09:00:00Z')
+    writePackage('2_add', 'a', 'b', '2026-07-29T09:00:00Z')
+    writePackage('3_drop', 'b', 'a', '2026-07-21T09:00:00Z')
+    writePackage('4_other', 'a', 'c', '2026-07-22T09:00:00Z')
+    expect(resolveMigrationHead(cwd)).toBe('c')
+    fs.rmSync(path.join(cwd, 'migrations', 'app', '1_init'), { recursive: true })
+    writePackage('1_init', 'empty', 'a')
+    expect(resolveMigrationHead(cwd)).toBe('c')
+    warn.mockRestore()
+  })
+
+  it('applies the resolved-fork policy when the baseline has no createdAt', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    writePackage('1_init', 'empty', 'a')
+    writePackage('2_x', 'a', 'b', '2026-07-20T10:00:00Z')
+    writePackage('2_y', 'a', 'c', '2026-07-20T11:00:00Z')
+    writePackage('3_merge', 'c', 'd', '2026-07-20T12:00:00Z')
+    expect(resolveMigrationHead(cwd)).toBe('d')
+    warn.mockRestore()
+  })
+
   it('names the package it chose when walking without timestamps', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     writePackage('1_init', 'empty', 'a')

@@ -320,10 +320,13 @@ describe.skipIf(serverUrl === undefined)(
         expect(remedy, refused.output).toBeDefined()
         const merged = plan('merge', ['--from', remedy!])
         expect(merged.status, merged.output).toBe(0)
+        expect(prisma(['db', 'migrate', '--yes']).status).toBe(0)
 
         setFields(['one', 'two', 'three'])
         const third = plan('add-three')
         expect(third.status, third.output).toBe(0)
+        const afterThird = prisma(['db', 'migrate', '--yes'])
+        expect(afterThird.status, afterThird.output).toBe(0)
         setFields(['one', 'two', 'three', 'four'])
         const fourth = plan('add-four')
         expect(fourth.status, fourth.output).toBe(0)

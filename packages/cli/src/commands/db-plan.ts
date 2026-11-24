@@ -68,6 +68,26 @@ interface Walk {
   abandoned: Edge[]
 }
 
+function returnsTo(
+  edges: readonly Edge[],
+  used: ReadonlySet<Edge>,
+  via: Edge,
+  state: string,
+): boolean {
+  const seen = new Set<Edge>([via])
+  const queue = [via.to]
+  while (queue.length > 0) {
+    const at = queue.shift()!
+    if (at === state) return true
+    for (const edge of edges) {
+      if (edge.from !== at || used.has(edge) || seen.has(edge)) continue
+      seen.add(edge)
+      queue.push(edge.to)
+    }
+  }
+  return false
+}
+
 function walkChain(edges: readonly Edge[]): Walk | null {
   const targets = new Set(edges.map((edge) => edge.to))
   const roots = [...new Set(edges.map((edge) => edge.from))].filter((from) => !targets.has(from))
@@ -79,6 +99,8 @@ function walkChain(edges: readonly Edge[]): Walk | null {
   let last: Edge | null = null
   for (;;) {
     let next = edges.filter((edge) => edge.from === current && !used.has(edge)).sort(byAge)
+    const looping = next.find((edge) => returnsTo(edges, used, edge, current))
+    if (looping !== undefined) next = [looping]
     if (new Set(next.map((edge) => edge.to)).size > 1) {
       const continuing = next.filter((edge) =>
         edges.some((other) => other.from === edge.to && !used.has(other)),
