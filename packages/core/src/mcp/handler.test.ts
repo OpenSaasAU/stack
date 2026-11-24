@@ -1931,6 +1931,91 @@ describe('the MCP surface', () => {
       BOOT,
     )
 
+    describe('across a relation', () => {
+      const base = schemaConfig()
+      const config: OpenSaasConfig = {
+        ...base,
+        mcp: { ...base.mcp, enabled: true, scopes: { read: 'r:base', write: 'w:base' } },
+        lists: {
+          ...base.lists,
+          User: { ...base.lists.User, mcp: { scopes: { read: 'u:read', write: 'u:write' } } },
+        },
+      }
+      const holding =
+        (...scopes: string[]): McpSessionProvider =>
+        async () => ({ userId: 'user-123', scopes: ['r:base', 'w:base', ...scopes] })
+      type Schema = { properties?: Record<string, unknown> }
+      const schemas = async (provider: McpSessionProvider, tool: string) => {
+        const { body } = await rpc('tools/list', undefined, config, provider)
+        const found = (
+          body?.result as { tools: { name: string; inputSchema: Schema }[] }
+        ).tools.find((t) => t.name === tool)
+        return found?.inputSchema.properties ?? {}
+      }
+      const isError = (body: Record<string, unknown> | null) =>
+        (body?.result as { isError?: boolean }).isError === true
+      const query = (args: Record<string, unknown>, provider: McpSessionProvider) =>
+        rpc('tools/call', { name: 'list_post_query', arguments: args }, config, provider)
+
+      test(
+        'a relation to a list whose read scope is missing is not advertised, and is refused by name',
+        async () => {
+          const without = holding()
+          const fieldsWithout = (await schemas(without, 'list_post_query')).fields as Schema
+          expect(fieldsWithout.properties).not.toHaveProperty('author')
+          expect(
+            isError(
+              (await query({ fields: { author: { fields: { name: true } } } }, without)).body,
+            ),
+          ).toBe(true)
+
+          const withRead = holding('u:read')
+          const fieldsWith = (await schemas(withRead, 'list_post_query')).fields as Schema
+          expect(fieldsWith.properties).toHaveProperty('author')
+          expect(
+            isError(
+              (await query({ fields: { author: { fields: { name: true } } } }, withRead)).body,
+            ),
+          ).toBe(false)
+        },
+        BOOT,
+      )
+
+      test(
+        'where and orderBy through a relation need the target read scope',
+        async () => {
+          const where = { author: { some: { name: { equals: 'x' } } } }
+          expect(isError((await query({ where }, holding())).body)).toBe(true)
+          expect(isError((await query({ where }, holding('u:read'))).body)).toBe(false)
+          expect(isError((await query({ where }, holding('u:write'))).body)).toBe(true)
+        },
+        BOOT,
+      )
+
+      test(
+        'connect needs the target write scope, independently of its read scope',
+        async () => {
+          const create = (provider: McpSessionProvider) =>
+            schemas(provider, 'list_post_create').then((data) => data.data as Schema)
+          expect((await create(holding())).properties).not.toHaveProperty('author')
+          expect((await create(holding('u:read'))).properties).not.toHaveProperty('author')
+          expect((await create(holding('u:write'))).properties).toHaveProperty('author')
+
+          const refused = await rpc(
+            'tools/call',
+            {
+              name: 'list_post_create',
+              arguments: { data: { title: 't', author: { connect: { id: 'x' } } } },
+            },
+            config,
+            holding('u:read'),
+          )
+          expect(isError(refused.body)).toBe(true)
+        },
+        BOOT,
+      )
+    })
+
     test(
       'a list override takes precedence over the config-level scope',
       async () => {
