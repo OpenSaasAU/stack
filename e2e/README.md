@@ -462,3 +462,17 @@ To add E2E tests for a new example:
 - [Playwright Best Practices](https://playwright.dev/docs/best-practices)
 - [Playwright Selectors](https://playwright.dev/docs/selectors)
 - [Playwright Assertions](https://playwright.dev/docs/test-assertions)
+
+## First-touch cases under `next dev`
+
+`e2e/starter-auth-first-touch` runs each first-touch order (route handler first,
+page first) in production and under `next dev`. The `next dev` cases need a
+Postgres named by `DATABASE_URL` and are skipped without one, so a local run
+reports them as skipped. To run them:
+
+```bash
+DATABASE_URL=postgres://user:pass@localhost:5432/postgres pnpm test:e2e -g "under dev"
+```
+
+Each case creates and drops its own database on that server. The orders are
+independent: one failing does not skip the other.
