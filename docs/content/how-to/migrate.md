@@ -1287,7 +1287,9 @@ export default config({
     provider: 'postgresql',
     extensions: [{ name: 'pgvector', from: '@prisma/orm-extension-pgvector' }],
   },
-  lists: {/* ... */},
+  lists: {
+    /* ... */
+  },
 })
 ```
 
