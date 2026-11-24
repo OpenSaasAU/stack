@@ -64,7 +64,7 @@ jobs:
           TAG=latest
           PRE="$GITHUB_WORKSPACE/.changeset/pre.json"
           if [ -f "$PRE" ] && [ "$(node -p "require('$PRE').mode")" = "pre" ]; then
-            TAG="$(node -p "require('$PRE').tag")"
+            TAG="$(node -p "require('$PRE').tag || 'latest'")"
           fi
           cd "$WORKDIR"
           # Real, networked install of the published package + its template deps.
