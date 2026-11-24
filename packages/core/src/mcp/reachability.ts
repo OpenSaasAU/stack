@@ -72,7 +72,6 @@ export function mcpReadableList(
   return mcpListReachable(config, listKey, context, { requireReadTool: true, requireScope: 'read' })
 }
 
-/** The named lists this session may read, filter or connect through over MCP. */
 export async function readableAmong(
   config: OpenSaasConfig,
   context: AccessContext,

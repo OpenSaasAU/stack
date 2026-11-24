@@ -60,7 +60,6 @@ export function assertOrderByReachable(
   }
 }
 
-/** The lists a `where` filters through, so reachability is decided only for those. */
 export function whereRelationTargets(
   where: Record<string, unknown>,
   config: OpenSaasConfig,
@@ -87,7 +86,6 @@ export function whereRelationTargets(
   return found
 }
 
-/** The lists an `orderBy` sorts through. */
 export function orderByRelationTargets(
   orderBy: unknown,
   config: OpenSaasConfig,
