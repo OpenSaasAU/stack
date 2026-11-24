@@ -27,6 +27,7 @@ import {
   type RowAction,
   engineContextOf,
   buildFilterWhere,
+  FilterTooLongError,
   collectFilterSpecs,
   filterSuggestionsOf,
   filterValueRecordId,
@@ -302,19 +303,39 @@ async function resolveCountLinks(
   return Object.fromEntries(entries.filter((entry) => entry !== null))
 }
 
-function ListLoadFailure({ title, href }: { title: string; href: string }) {
+function ListLoadFailure({
+  title,
+  href,
+  filtered = false,
+  tooLong = false,
+}: {
+  title: string
+  href: string
+  filtered?: boolean
+  tooLong?: boolean
+}) {
   return (
     <div className="p-4 md:p-8">
       <PageHeader title={title} />
       <div role="alert" data-slot="list-view-error">
         <EmptyState
           icon={<AlertTriangle className="h-6 w-6" />}
-          title="This list could not be loaded"
-          description="Something went wrong while reading it, so its records are not shown here. Nothing has been changed."
+          title={tooLong ? 'This search is too long' : 'This list could not be loaded'}
+          description={
+            tooLong
+              ? 'It has more words or values than a search can carry. Clear the filters and search again with fewer.'
+              : 'Something went wrong while reading it, so its records are not shown here. Nothing has been changed.'
+          }
           actions={
-            <Button asChild size="sm" variant="outline">
-              <Link href={href}>Reload list</Link>
-            </Button>
+            filtered ? (
+              <Button asChild size="sm" variant="outline">
+                <Link href={href}>Clear filters</Link>
+              </Button>
+            ) : (
+              <Button asChild size="sm" variant="outline">
+                <Link href={href}>Reload list</Link>
+              </Button>
+            )
           }
         />
       </div>
@@ -601,8 +622,16 @@ export async function ListView({
     countLinks = links
   } catch (error) {
     unstable_rethrow(error)
-    console.error(`Failed to fetch ${listKey}:`, error)
-    return <ListLoadFailure title={title} href={listHref} />
+    const tooLong = error instanceof FilterTooLongError
+    if (!tooLong) console.error(`Failed to fetch ${listKey}:`, error)
+    return (
+      <ListLoadFailure
+        title={title}
+        href={listHref}
+        filtered={searchEntries.length > 0}
+        tooLong={tooLong}
+      />
+    )
   }
 
   const relationshipRefs: Record<string, string> = {}

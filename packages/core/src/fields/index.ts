@@ -485,7 +485,10 @@ export function integer<
       toCondition: (operator, value) => {
         const trimmed = value.trim()
         if (!WHOLE_NUMBER_MATCH.test(trimmed)) return null
-        return { [fieldName]: { [prismaComparisonKey(operator)]: Number(trimmed) } }
+        const parsed = Number(trimmed)
+        if (options?.db?.nativeType === undefined && (parsed < INT32_MIN || parsed > INT32_MAX))
+          return null
+        return { [fieldName]: { [prismaComparisonKey(operator)]: parsed } }
       },
       empty: emptyWhenNullable(
         fieldName,
@@ -765,7 +768,9 @@ export function bigInt<
       toCondition: (operator, value) => {
         const trimmed = value.trim()
         if (!WHOLE_NUMBER_MATCH.test(trimmed)) return null
-        return { [fieldName]: { [prismaComparisonKey(operator)]: BigInt(trimmed) } }
+        const parsed = BigInt(trimmed)
+        if (parsed < INT64_MIN || parsed > INT64_MAX) return null
+        return { [fieldName]: { [prismaComparisonKey(operator)]: parsed } }
       },
       empty: emptyWhenNullable(
         fieldName,

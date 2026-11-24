@@ -388,6 +388,7 @@ export {
   FILTER_OPERATOR_PREFIXES,
   FILTER_COMPARISON_PREFIXES,
   buildFilterWhere,
+  FilterTooLongError,
   filterTokenFreeTextWord,
   isEmptyFilterToken,
   filterTokenRecordId,

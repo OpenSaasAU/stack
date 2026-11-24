@@ -1113,6 +1113,34 @@ describe('ListView when the read fails (#2180)', () => {
   )
 
   it(
+    'offers Clear filters when the failed read carried a search',
+    async () => {
+      await create('Fragile', { name: 'Breaks on read' })
+      readsFail = true
+      const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      let html: string
+      try {
+        html = renderToStaticMarkup(
+          await ListView({
+            context: contextAt(ada),
+            config,
+            basePath: '/admin',
+            listKey: 'Fragile',
+            search: 'name:Breaks',
+          }),
+        )
+      } finally {
+        readsFail = false
+        log.mockRestore()
+      }
+      expect(html).toContain('This list could not be loaded')
+      expect(html).toContain('Clear filters')
+      expect(html).toContain('href="/admin/fragile"')
+    },
+    BOOT,
+  )
+
+  it(
     'keeps the cause in the server log and out of the page',
     async () => {
       const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)

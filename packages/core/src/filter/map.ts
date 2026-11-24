@@ -114,6 +114,29 @@ export function filterTokenFreeTextWord(token: FilterToken): string {
     .join(',')
 }
 
+export const FILTER_MAX_ENTRIES = 200
+
+export class FilterTooLongError extends Error {
+  constructor() {
+    super('The search is too long to run. Remove some of its words or values.')
+    this.name = 'FilterTooLongError'
+  }
+}
+
+function countEntries(condition: unknown): number {
+  if (Array.isArray(condition)) return condition.reduce((sum, item) => sum + countEntries(item), 0)
+  if (typeof condition !== 'object' || condition === null) return 0
+  return Object.entries(condition).reduce(
+    (sum, [key, value]) =>
+      sum + 1 + (key === 'AND' || key === 'OR' || key === 'NOT' ? countEntries(value) : 0),
+    0,
+  )
+}
+
+function hasNul(text: string): boolean {
+  return text.includes('\u0000')
+}
+
 function anyOf(conditions: FilterCondition[]): FilterCondition {
   return conditions.length === 1 ? conditions[0] : { OR: conditions }
 }
@@ -122,6 +145,7 @@ function rangeCondition(token: FilterToken, spec: FilterSpec): FilterCondition |
   if (token.values.length !== 2) return null
   const [low, high] = token.values
   if (low.text === '' || high.text === '') return null
+  if (hasNul(low.text) || hasNul(high.text)) return null
   const lower = spec.toCondition('gte', low.text)
   const upper = lower === null ? null : spec.toCondition('lte', high.text)
   return lower === null || upper === null ? null : { AND: [lower, upper] }
@@ -135,6 +159,7 @@ function valuesCondition(
   const conditions: FilterCondition[] = []
   for (const value of token.values) {
     if (value.text === '') continue
+    if (hasNul(value.text)) return null
     const recordId = operator === 'eq' ? filterValueRecordId(value) : null
     const condition =
       recordId !== null && spec.toIdCondition
@@ -236,6 +261,7 @@ export function buildFilterWhere(
     Object.hasOwn(specs, field) ? specs[field] : undefined
 
   const freeText = (word: string): FilterCondition => {
+    if (hasNul(word)) return NEVER_MATCHES
     const conditions = freeTextFields
       .map((field) => specs[field].toCondition('eq', word))
       .filter((condition): condition is FilterCondition => condition !== null)
@@ -290,6 +316,7 @@ export function buildFilterWhere(
 
   const andConditions = [...fieldConditions, ...textConditions]
   if (andConditions.length === 0) return undefined
-  if (andConditions.length === 1) return andConditions[0]
-  return { AND: andConditions }
+  const built = andConditions.length === 1 ? andConditions[0] : { AND: andConditions }
+  if (countEntries(built) > FILTER_MAX_ENTRIES) throw new FilterTooLongError()
+  return built
 }

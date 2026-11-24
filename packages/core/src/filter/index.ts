@@ -12,6 +12,7 @@ export { serializeFilterQuery, quoteFilterValue } from './serialize.js'
 export { filterTokenRecordId, filterValueRecordId, recordIdFilterToken } from './record-id.js'
 export {
   buildFilterWhere,
+  FilterTooLongError,
   filterTokenFreeTextWord,
   isEmptyFilterToken,
   isFieldConditionToken,
