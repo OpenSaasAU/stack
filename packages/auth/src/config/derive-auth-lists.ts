@@ -128,7 +128,7 @@ const CREDENTIAL_FIELDS: Record<string, readonly string[]> = {
   account: ['password', 'accessToken', 'refreshToken', 'idToken'],
   oauthClient: ['clientSecret'],
   oauthAccessToken: ['token'],
-  oauthRefreshToken: ['token'],
+  oauthRefreshToken: ['token', 'rotationReplayResponse'],
   twoFactor: ['secret', 'backupCodes'],
   jwks: ['privateKey'],
   deviceCode: ['deviceCode', 'userCode'],
@@ -164,6 +164,15 @@ const DENY_UPDATE: Exclude<FieldAccess, { write: 'hooks' }> = { update: () => fa
  */
 export const HOOK_GUARDED_IDENTITY_FIELDS: Readonly<Record<string, readonly string[]>> = {
   user: ['email', 'phoneNumber', 'username'],
+}
+
+/**
+ * Identity foreign keys: repointing one resolves the holder's session or
+ * account to another user (ADR-0073 amendment). Keyed by better-auth model key.
+ */
+const IDENTITY_FOREIGN_KEYS: Readonly<Record<string, readonly string[]>> = {
+  session: ['userId'],
+  account: ['userId'],
 }
 
 /** Every better-auth model/field key marked as a credential — the stack's own {@link CREDENTIAL_FIELDS} plus an app's `credentialFields`. */
@@ -269,12 +278,6 @@ function buildFieldAccessOverrideRegistry(
           `deriveAuthLists: fieldAccess names "${modelKey}.${fieldKey}", but "${modelKey}" has no field "${fieldKey}"`,
         )
       }
-      if (upstream.references?.field === 'id' && relationshipFieldName(fieldKey) !== fieldKey) {
-        throw new Error(
-          `deriveAuthLists: fieldAccess names "${modelKey}.${fieldKey}", but "${fieldKey}" is a ` +
-            `relationship field (references "${upstream.references.model}.id"), not a scalar column`,
-        )
-      }
       // `'read' in access` (not `access.read !== undefined`) so an explicit
       // `{ read: undefined }` is rejected too — TypeScript's optional-property
       // syntax accepts that shape, and letting it through here would only
@@ -325,7 +328,10 @@ function withFieldAccess<T extends FieldConfig>(
   field: T,
 ): T {
   const isCredential = credentialRegistry[modelKey]?.has(fieldKey) ?? false
-  const isWriteDenied = upstream.input === false
+  const isWriteDenied =
+    upstream.input === false ||
+    isCredential ||
+    (IDENTITY_FOREIGN_KEYS[modelKey]?.includes(fieldKey) ?? false)
   const isUpdateDenied = HOOK_GUARDED_IDENTITY_FIELDS[modelKey]?.includes(fieldKey) ?? false
   const override = overrideRegistry[modelKey]?.[fieldKey]
 
