@@ -737,14 +737,18 @@ export function validateFieldRules(
   fieldConfigs: Record<string, FieldConfig>,
   operation: 'create' | 'update' = 'create',
   defaults?: ValidationDefaults,
-): { errors: string[]; fieldErrors: Record<string, string> } {
+): { errors: string[]; fieldErrors: Record<string, string>; coerced: Record<string, bigint> } {
   const result = validateWithZod(data, fieldConfigs, operation, defaults)
 
   if (result.success) {
-    return { errors: [], fieldErrors: {} }
+    const coerced: Record<string, bigint> = {}
+    for (const [key, value] of Object.entries(result.data)) {
+      if (typeof value === 'bigint' && typeof data[key] !== 'bigint') coerced[key] = value
+    }
+    return { errors: [], fieldErrors: {}, coerced }
   }
 
   const errors = Object.entries(result.errors).map(([_field, message]) => message)
 
-  return { errors, fieldErrors: result.errors }
+  return { errors, fieldErrors: result.errors, coerced: {} }
 }
