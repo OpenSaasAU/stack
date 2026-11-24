@@ -54,6 +54,21 @@ describe('RelationshipTableClient', () => {
     expect(screen.getByText('Second')).toBeInTheDocument()
   })
 
+  it('links to the filtered list and labels sums as partial when rows are bounded', () => {
+    render(<RelationshipTableClient {...baseProps()} total={42} />)
+
+    const link = screen.getByRole('link', { name: 'View all' })
+    expect(link).toHaveAttribute('href', '/admin/post?search=author%3A%23u1')
+    expect(screen.getByText('(visible rows)')).toBeInTheDocument()
+  })
+
+  it('shows no View all link or partial label when every row is loaded', () => {
+    render(<RelationshipTableClient {...baseProps()} total={2} />)
+
+    expect(screen.queryByRole('link', { name: 'View all' })).toBeNull()
+    expect(screen.queryByText('(visible rows)')).toBeNull()
+  })
+
   it('always shows the row count and sums configured numeric columns via the Cell', () => {
     render(<RelationshipTableClient {...baseProps()} />)
 

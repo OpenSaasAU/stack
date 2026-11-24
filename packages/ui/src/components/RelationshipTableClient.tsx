@@ -219,6 +219,11 @@ export function RelationshipTableClient({
 
   const columnFieldType = (column: string): string | undefined => fields[column]?.type
   const countLabel = unavailable ? '' : formatCountLabel(count, total)
+  const isPartial = !unavailable && total !== undefined && total > count
+  const viewAllHref =
+    isPartial && backReferenceField
+      ? `${basePath}/${relatedUrlKey}?search=${encodeURIComponent(`${backReferenceField}:#${parentId}`)}`
+      : null
   const showRemove = removeMode !== null
   const removeVerb = removeMode === 'delete' ? 'Delete' : 'Disconnect'
   const totalColumns = columns.length + (showRemove ? 1 : 0)
@@ -446,7 +451,19 @@ export function RelationshipTableClient({
                 colSpan={Math.max(totalColumns, 1)}
                 className="text-sm text-muted-foreground"
               >
-                {countLabel}
+                <span>{countLabel}</span>
+                {viewAllHref && (
+                  <>
+                    {' · '}
+                    <a
+                      href={viewAllHref}
+                      data-slot="relationship-table-view-all"
+                      className="underline"
+                    >
+                      View all
+                    </a>
+                  </>
+                )}
               </TableCell>
             ) : (
               <>
@@ -456,7 +473,21 @@ export function RelationshipTableClient({
                   return (
                     <TableCell key={column} className={cn(numeric && 'text-right')}>
                       {index === 0 && (
-                        <span className="text-sm text-muted-foreground">{countLabel}</span>
+                        <span className="text-sm text-muted-foreground">
+                          <span>{countLabel}</span>
+                          {viewAllHref && (
+                            <>
+                              {' · '}
+                              <a
+                                href={viewAllHref}
+                                data-slot="relationship-table-view-all"
+                                className="underline"
+                              >
+                                View all
+                              </a>
+                            </>
+                          )}
+                        </span>
                       )}
                       {isSummed && !unavailable && (
                         <span className={cn('font-medium', index === 0 && 'ml-2')}>
@@ -466,6 +497,11 @@ export function RelationshipTableClient({
                             fieldName={column}
                             basePath={basePath}
                           />
+                          {isPartial && (
+                            <span className="ml-1 text-xs font-normal text-muted-foreground">
+                              (visible rows)
+                            </span>
+                          )}
                         </span>
                       )}
                     </TableCell>
