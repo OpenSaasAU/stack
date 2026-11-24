@@ -1131,6 +1131,18 @@ export function normaliseTokens(
 ): FilterToken[] {
   return tokens.flatMap((token) => {
     const suggestion = token.field === null ? undefined : fields.get(token.field)
+    if (suggestion?.datePicker === 'day' && isFieldCondition(token, fields)) {
+      if (token.operator === 'empty') return [token]
+      return [
+        {
+          ...token,
+          values: token.values.map((value) => {
+            const day = typedDay(value.text)
+            return day ? { ...value, text: localDay(day) } : value
+          }),
+        },
+      ]
+    }
     if (!suggestion || suggestion.datePicker !== 'instant' || !isFieldCondition(token, fields)) {
       return [token]
     }

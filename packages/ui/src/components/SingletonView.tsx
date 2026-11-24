@@ -168,6 +168,7 @@ export async function SingletonView({
             serverAction={serverAction}
             relationshipData={createRelationshipData}
             canDelete={false}
+            singleton
           />
         </div>
       </div>
@@ -208,6 +209,7 @@ export async function SingletonView({
           serverAction={serverAction}
           relationshipData={relationshipData}
           canDelete={false}
+          singleton
           fieldMode={fieldMode}
         />
       </div>

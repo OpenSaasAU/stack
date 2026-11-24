@@ -24,6 +24,7 @@ import {
   joinChips,
   localInstant,
   normaliseInstant,
+  normaliseTokens,
   normaliseGroups,
   placeChoice,
   placeEntries,
@@ -1160,5 +1161,23 @@ describe('date-only timestamp chips', () => {
       fields,
     )
     expect(description.sentence).toBe('At is 2026-08-04 (UTC)')
+  })
+})
+
+describe('pasted calendarDay tokens in the viewer locale', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it('normalises single values and range bounds to ISO days', () => {
+    vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockReturnValue({
+      locale: 'en-AU',
+    } as Intl.ResolvedDateTimeFormatOptions)
+    const tokens = normaliseTokens(
+      hydrateTokens('due:07/08/2026 due:01/02/2026..03/02/2026'),
+      fields,
+    )
+    expect(tokens.map((token) => token.values.map((value) => value.text))).toEqual([
+      ['2026-08-07'],
+      ['2026-02-01', '2026-02-03'],
+    ])
   })
 })
