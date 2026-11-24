@@ -134,7 +134,8 @@ function renamed(name: string, table: string, from: string, to: string) {
       name === clipIdentifier(`${table}_${from}_${suffix}`) ||
       name === prisma7Name(table, [from], suffix)
     ) {
-      return [{ from: name, to: prisma7Name(table, [to], suffix) }]
+      const target = prisma7Name(table, [to], suffix)
+      return target === name ? [] : [{ from: name, to: target }]
     }
   }
   return []

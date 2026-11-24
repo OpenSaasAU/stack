@@ -175,6 +175,22 @@ describe('planFkRenames identifier handling', () => {
     expect(plan[0].constraints[0].to.endsWith('_fkey')).toBe(true)
   })
 
+  it('omits a rename whose suffix-preserving name does not change', () => {
+    const longTable = 'T'.repeat(50)
+    const longModel = model(longTable, { ...enrolment, name: longTable })
+    const same = `${`${longTable}_lessonTerm`.slice(0, 58)}_fkey`
+    const plan = planFkRenames([longModel, lessonTerm], {
+      columns: [
+        { schema: 'public', table: 'LessonTerm', column: 'id', type: 'uuid' },
+        { schema: 'public', table: longTable, column: 'lessonTerm', type: 'uuid' },
+      ],
+      constraints: [{ schema: 'public', table: longTable, name: same }],
+      indexes: [],
+    })
+    expect(plan).toHaveLength(1)
+    expect(plan[0].constraints).toEqual([])
+  })
+
   it('uses the supplied default schema for models without a namespace', () => {
     const schema = live(['id', 'lessonTerm'])
     const moved: LiveSchema = {
