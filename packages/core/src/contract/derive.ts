@@ -424,10 +424,10 @@ function assertNameFits(where: string, listKey: string, name: string): void {
   }
 }
 
-function columnType(draft: ModelDraft, column: string): string {
+function columnType(draft: ModelDraft, column: string): string | undefined {
   if (column === 'id') return JSON.stringify(draft.model.id.type)
   const found = draft.model.columns.find((candidate) => candidate.name === column)
-  return JSON.stringify(found?.type)
+  return found ? JSON.stringify(found.type) : undefined
 }
 
 function deriveIndexes(
@@ -537,13 +537,19 @@ function deriveCompositeForeignKeys(
       )
     }
     if (foreignKey.name !== undefined) assertNameFits(entry, listKey, foreignKey.name)
-    if (derived.some((existing) => sameColumnSet(existing.columns, columns))) {
+    if (
+      derived.some(
+        (existing) => sameColumnSet(existing.columns, columns) && existing.name === foreignKey.name,
+      )
+    ) {
       throw new Error(
-        `${entry} on list "${listKey}" constrains (${fields.join(', ')}), which an earlier db.foreignKeys entry already constrains — two foreign keys on the same columns derive the same name; remove one of them`,
+        `${entry} on list "${listKey}" constrains (${fields.join(', ')}), which an earlier db.foreignKeys entry already constrains under the same ${foreignKey.name === undefined ? 'derived' : 'explicit'} name — give each entry its own "name", or remove one of them`,
       )
     }
     columns.forEach((column, position) => {
-      if (columnType(draft, column) !== columnType(targetDraft, targetColumns[position])) {
+      const own = columnType(draft, column)
+      const theirs = columnType(targetDraft, targetColumns[position])
+      if (own !== undefined && theirs !== undefined && own !== theirs) {
         throw new Error(
           `${entry} on list "${listKey}" pairs "${column}" with "${references.fields[position]}" on "${references.list}", whose column types differ — Postgres refuses a foreign key across them; make the two fields the same type`,
         )

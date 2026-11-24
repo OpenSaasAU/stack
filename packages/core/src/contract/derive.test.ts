@@ -980,6 +980,14 @@ describe('deriveContract — db.foreignKeys', () => {
     ).toThrow(/already constrains/)
   })
 
+  test('accepts two foreign keys on the same columns under distinct names', () => {
+    const data = derive([
+      { fields: ['enrolment'], references: { list: 'Enrolment', fields: ['id'] }, name: 'a_fk' },
+      { fields: ['enrolment'], references: { list: 'Enrolment', fields: ['id'] }, name: 'b_fk' },
+    ])
+    expect(data.models[1].compositeForeignKeys).toHaveLength(2)
+  })
+
   test('refuses a foreign key name over 63 bytes', () => {
     expect(() =>
       derive([
