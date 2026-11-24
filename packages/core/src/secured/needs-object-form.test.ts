@@ -94,6 +94,11 @@ const config: OpenSaasConfig = {
         classTerm: relationship({ ref: 'ClassTerm' }),
         roll: probe('Enrolment.roll', { attendances: { enrolment: { attendances: true } } }),
         chained: probe('Enrolment.chained', ['student']),
+        sealed: virtual({
+          type: 'string',
+          access: { read: ({ item }) => item.classTerm !== null },
+          hooks: { resolveOutput: () => 'sealed' },
+        }),
       },
       access: { operation: open },
     },
@@ -467,9 +472,12 @@ describe('the object form of needs', () => {
     expect(recorder.plans.length).toBe(bare)
   })
 
-  test('a relation one level declared is not the next level’s to see', async () => {
-    await staff.db.Attendance.include('enrolment').all()
-    expect(seen.get('Enrolment.chained')).not.toHaveProperty('classTerm')
+  test('a relation one level declared is not for the next level’s read rules', async () => {
+    const [row] = await staff.db.Attendance.include('enrolment').all()
+    expect(row).toMatchObject({ enrolment: { ref: 'E' } })
+    expect(row.enrolment).not.toHaveProperty('sealed')
+    const [own] = await staff.db.Enrolment.include('classTerm').all()
+    expect(own).toHaveProperty('sealed', 'sealed')
   })
 
   test('a scoped-away hop is null at any depth, and delivers nothing beneath it', async () => {
