@@ -1910,6 +1910,28 @@ describe('the MCP surface', () => {
     )
 
     test(
+      'a write returns only the id to a token without the list read scope',
+      async () => {
+        const config = scoped({ read: 'mcp:read', write: 'mcp:write' })
+        const call = async (scopes: string[]) => {
+          const { body } = await rpc(
+            'tools/call',
+            { name: 'list_user_create', arguments: { data: {} } },
+            config,
+            async () => ({ userId: 'user-123', scopes }),
+          )
+          return JSON.parse(resultText(body)) as Record<string, unknown>
+        }
+        const writeOnly = await call(['mcp:write'])
+        expect(writeOnly).toHaveProperty('id')
+        expect(writeOnly).not.toHaveProperty('item')
+        const both = await call(['mcp:write', 'mcp:read'])
+        expect(both).toHaveProperty('item')
+      },
+      BOOT,
+    )
+
+    test(
       'a list override takes precedence over the config-level scope',
       async () => {
         const config = scoped({ write: 'mcp:write' }, { write: 'user:write' })
