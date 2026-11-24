@@ -1,3 +1,8 @@
+/**
+ * Better Auth API routes
+ * Handles all authentication endpoints including MCP OAuth
+ */
+
 import { auth } from '@/lib/auth'
 import { hasAuthBaseURL, MISSING_BASE_URL_MESSAGE } from '@/lib/base-url'
 
