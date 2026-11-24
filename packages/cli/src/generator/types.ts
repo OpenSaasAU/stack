@@ -5,6 +5,7 @@ import type {
   FieldConfig,
   OpenSaasConfig,
 } from '@opensaas/stack-core'
+import { deriveRelatedLists } from '@opensaas/stack-core'
 import type { TypeDescriptor } from '@opensaas/stack-core/extend'
 import { isComputedField, typeDescriptorToTypeString } from '@opensaas/stack-core/extend'
 import * as fs from 'fs'
@@ -181,12 +182,23 @@ function union(keys: readonly string[]): string {
 }
 
 /** One level of an object-form `needs`, as the `NeedsBranch` core resolves against the contract. */
-function renderNeedsBranch(set: FieldDependencySet): string {
+function renderNeedsBranch(
+  set: FieldDependencySet,
+  listName: string,
+  dependencies: DependencyTable,
+  relatedOf: ReturnType<typeof deriveRelatedLists>,
+): string {
+  const columns = new Set([...dependencies[listName].systemFields, ...set.columns])
   const relations = set.relations.map((relation) => {
     const nested = set.nested?.[relation]
-    return `${relation}: ${nested === undefined ? 'true' : renderNeedsBranch(nested)}`
+    const related = relatedOf(listName, relation)
+    const beneath =
+      nested === undefined || related === undefined
+        ? 'true'
+        : renderNeedsBranch(nested, related, dependencies, relatedOf)
+    return `${relation}: ${beneath}`
   })
-  return `{ columns: ${union(set.columns)}; relations: ${relations.length === 0 ? EMPTY : `{ ${relations.join('; ')} }`} }`
+  return `{ columns: ${union([...columns])}; relations: ${relations.length === 0 ? EMPTY : `{ ${relations.join('; ')} }`} }`
 }
 
 /**
@@ -417,11 +429,12 @@ export function generateTypes(
 
   // The declared-dependency item types `lists.ts` hands each hook. Named here
   // rather than inlined so `lists.ts` stays a namespace of references.
+  const relatedOf = deriveRelatedLists(config)
   const needsInterfaces = needsFields.map(([listName, fieldName]) => {
     const name = `${listName}${capitalize(fieldName)}NeedsItem`
     const key = `${imported('Contract')}, Remainder, '${listName}'`
     return isObjectNeeds(config, listName, fieldName)
-      ? `export interface ${name} extends ${imported('NeedsBranchRow')}<${key}, ${renderNeedsBranch(dependencies[listName].fields[fieldName])}> {}`
+      ? `export interface ${name} extends ${imported('NeedsBranchRow')}<${key}, ${renderNeedsBranch(dependencies[listName].fields[fieldName], listName, dependencies, relatedOf)}> {}`
       : `export interface ${name} extends ${imported('NeedsRow')}<${key}, Remainder['${listName}']['needs']['${fieldName}']> {}`
   })
   if (needsInterfaces.length > 0) {

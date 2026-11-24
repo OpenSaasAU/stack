@@ -1,6 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { ListConfig, OpenSaasConfig } from '@opensaas/stack-core'
-import { checkbox, integer, json, relationship, text, virtual } from '@opensaas/stack-core/fields'
+import {
+  checkbox,
+  integer,
+  json,
+  relationship,
+  text,
+  timestamp,
+  virtual,
+} from '@opensaas/stack-core/fields'
 import {
   CONSUMER_PRELUDE,
   emitTypeFixture,
@@ -32,6 +40,7 @@ function buildLargeSchemaConfig(): OpenSaasConfig {
     Tenant: {
       fields: {
         name: text({ validation: { isRequired: true } }),
+        createdAt: timestamp(),
       },
     },
     Settings: {
@@ -276,6 +285,7 @@ type Item = Lists.Placement.Needs['label']['item']
 assertType<Exact<keyof Item, 'id' | 'membershipId' | 'membership' | 'from_Seat_placement'>>()
 type Member = NonNullable<Item['membership']>
 assertType<Exact<keyof Member, 'id' | 'role' | 'tenantId' | 'tenant'>>()
+// An application-declared \`createdAt\` is an ordinary column, not a system field.
 type Tenant = NonNullable<Member['tenant']>
 assertType<Exact<keyof Tenant, 'id' | 'name' | 'from_Membership_tenant'>>()
 assertType<null extends Item['membership'] ? true : false>()

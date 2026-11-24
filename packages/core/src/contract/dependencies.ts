@@ -149,6 +149,17 @@ export function relatedListOf(members: ListMembers, key: string): string | undef
   return member.storage.relatedList
 }
 
+/** Which list each relation key of each list reaches, synthetic back-relations included. */
+export function deriveRelatedLists(
+  config: OpenSaasConfig,
+): (listKey: string, key: string) => string | undefined {
+  const table = deriveListMemberTable(config)
+  return (listKey, key) => {
+    const members = table.lists.get(listKey)
+    return members && relatedListOf(members, key)
+  }
+}
+
 function resolveNeeds(
   config: OpenSaasConfig,
   members: ListMemberTable,

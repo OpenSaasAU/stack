@@ -1,7 +1,12 @@
 import { isComputedField } from '../config/field-kind.js'
 import type { NeedsObject, OpenSaasConfig } from '../config/types.js'
 import { deriveListMemberTable } from '../contract/derive.js'
-import { isNeedsArray, needsEntriesOf, relatedListOf } from '../contract/dependencies.js'
+import {
+  deriveRelatedLists,
+  isNeedsArray,
+  needsEntriesOf,
+  relatedListOf,
+} from '../contract/dependencies.js'
 import type { ListMemberTable } from '../members/list-members.js'
 
 /**
@@ -208,13 +213,9 @@ const REPLACEMENT_MAX_LENGTH = 1000
  * Expects a config that passed {@link validateNeedsDeclarations}.
  */
 export function findChainedNeeds(config: OpenSaasConfig): ChainedNeedsWarning[] {
-  const table = deriveListMemberTable(config)
+  const relatedOf = deriveRelatedLists(config)
   const warnings: ChainedNeedsWarning[] = []
 
-  const relatedOf = (listKey: string, key: string): string | undefined => {
-    const members = table.lists.get(listKey)
-    return members && relatedListOf(members, key)
-  }
   const chainedFields = (listKey: string): [string, Needs][] =>
     Object.entries(config.lists[listKey]?.fields ?? {}).flatMap(([key, field]) => {
       const needs = field.needs

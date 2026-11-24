@@ -107,7 +107,7 @@ export type NeedsRow<
 
 /** One level of an object-form `needs` (ADR-0085), as the generated types render it. */
 export interface NeedsBranch {
-  /** The stored columns named at this level, foreign keys included; `never` for none. */
+  /** The list's system fields and the stored columns named at this level, foreign keys included. */
   columns: string
   /** Each relation named at this level: `true` for its rows' stored columns, or what is named beneath it. */
   relations: Record<string, true | NeedsBranch>
@@ -123,7 +123,7 @@ export type NeedsBranchRow<
   R extends RemainderBase,
   K extends keyof R & string,
   B extends NeedsBranch,
-> = Pick<StoredRow<C, R, K>, Extract<B['columns'] | SystemFieldKey, keyof StoredRow<C, R, K>>> & {
+> = Pick<StoredRow<C, R, K>, Extract<B['columns'], keyof StoredRow<C, R, K>>> & {
   [Rel in Extract<keyof B['relations'], RelationKey<C, K>>]: NeedsBranchValue<
     C,
     R,
