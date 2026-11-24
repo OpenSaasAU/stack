@@ -743,7 +743,8 @@ export function validateFieldRules(
   if (result.success) {
     const coerced: Record<string, bigint> = {}
     for (const [key, value] of Object.entries(result.data)) {
-      if (typeof value === 'bigint' && typeof data[key] !== 'bigint') coerced[key] = value
+      if (typeof value === 'bigint' && key in data && typeof data[key] !== 'bigint')
+        coerced[key] = value
     }
     return { errors: [], fieldErrors: {}, coerced }
   }
