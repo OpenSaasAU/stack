@@ -60,8 +60,9 @@ describe('credential and identity columns are write-denied under an owner-update
         context.db.Session.update({ where: { id: row.id }, data: { token: 'stolen' } }),
       ).rejects.toThrow(/field-level access denied/)
 
-      const after = await root.db.Session.where({ id: { equals: row.id } }).first()
-      expect(after?.userId).toBe(attacker.id)
+      const sessions = await root.db.Session.all()
+      expect(sessions).toHaveLength(1)
+      expect(sessions[0]?.userId).toBe(attacker.id)
     } finally {
       await database.close()
     }
