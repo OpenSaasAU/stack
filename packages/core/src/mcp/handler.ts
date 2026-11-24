@@ -806,7 +806,7 @@ async function handleCrudTool(
         }
 
         if (resolveListMembers(config, listKey).singleton) {
-          if (args.where !== undefined) {
+          if (isPlainObject(args.where) && Object.keys(args.where).length > 0) {
             return createErrorResultResponse(
               `"${listKey}" is a singleton; it takes no "where".`,
               id,

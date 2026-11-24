@@ -52,5 +52,12 @@ describe('a declared field named after an Object.prototype member', () => {
     expect(Object.getOwnPropertyDescriptor(selected[0], name)?.value).toBe(`v-${name}`)
     const found = await harness.context.db.P.where({ [name]: { equals: `v-${name}` } }).all()
     expect(found).toHaveLength(1)
+    const updated = await harness.context.db.P.update({
+      where: { id: created?.id ?? '' },
+      data: Object.defineProperty({}, name, { value: 'u', enumerable: true }),
+    })
+    expect(updated).not.toBeNull()
+    const ordered = await harness.context.db.P.orderBy({ [name]: 'asc' }).all()
+    expect(ordered.length).toBeGreaterThan(0)
   })
 })
