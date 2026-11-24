@@ -89,7 +89,15 @@ export async function fkRenamesCommand(options: FkRenamesOptions = {}): Promise<
     return
   }
 
-  const client = new pg.Client({ connectionString: resolveDatabaseUrl().url })
+  let connectionString: string
+  try {
+    connectionString = resolveDatabaseUrl().url
+  } catch (error) {
+    console.error(chalk.red(errorMessage(error)))
+    process.exitCode = 1
+    return
+  }
+  const client = new pg.Client({ connectionString })
   try {
     await client.connect()
   } catch (error) {
@@ -119,7 +127,7 @@ export async function fkRenamesCommand(options: FkRenamesOptions = {}): Promise<
       return
     }
     if (options.out) {
-      fs.writeFileSync(path.resolve(cwd, options.out), `${sql}\n`)
+      fs.writeFileSync(path.resolve(cwd, options.out), `BEGIN;\n${sql}\nCOMMIT;\n`)
       console.log(chalk.green(`Wrote ${plan.length} rename(s) to ${options.out}`))
       return
     }

@@ -123,15 +123,18 @@ export function planFkRenames(
   return renames
 }
 
-function prisma7Name(table: string, columns: string[], suffix: 'idx' | 'key'): string {
+function prisma7Name(table: string, columns: string[], suffix: 'idx' | 'key' | 'fkey'): string {
   const room = MAX_IDENTIFIER_BYTES - suffix.length - 1
   return `${clipIdentifier(`${table}_${columns.join('_')}`, room)}_${suffix}`
 }
 
 function renamed(name: string, table: string, from: string, to: string) {
-  for (const suffix of ['fkey', 'key', 'idx']) {
-    if (name === clipIdentifier(`${table}_${from}_${suffix}`)) {
-      return [{ from: name, to: clipIdentifier(`${table}_${to}_${suffix}`) }]
+  for (const suffix of ['fkey', 'key', 'idx'] as const) {
+    if (
+      name === clipIdentifier(`${table}_${from}_${suffix}`) ||
+      name === prisma7Name(table, [from], suffix)
+    ) {
+      return [{ from: name, to: prisma7Name(table, [to], suffix) }]
     }
   }
   return []

@@ -166,8 +166,13 @@ describe('planFkRenames identifier handling', () => {
       indexes: [],
     })
     expect(plan[0].constraints).toEqual([
-      { from: clip(`${longTable}_lessonTerm_fkey`), to: clip(`${longTable}_lessonTermId_fkey`) },
+      {
+        from: clip(`${longTable}_lessonTerm_fkey`),
+        to: `${clip(`${longTable}_lessonTermId`).slice(0, 58)}_fkey`,
+      },
     ])
+    expect(plan[0].constraints[0].to.length).toBeLessThanOrEqual(63)
+    expect(plan[0].constraints[0].to.endsWith('_fkey')).toBe(true)
   })
 
   it('uses the supplied default schema for models without a namespace', () => {
