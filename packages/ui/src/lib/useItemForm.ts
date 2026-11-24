@@ -403,7 +403,7 @@ export interface UseItemFormOptions {
    * from the loaded values and no edge changed. Wire it to the same success
    * path `onSubmit` takes.
    */
-  onUnchanged?: () => void
+  onUnchanged?: (outcome: { edgesCommitted: boolean }) => void
   /** Optional fallback message when a submit throws without a message. */
   errorFallback?: string
 }
@@ -613,7 +613,7 @@ export function useItemForm({
             }
           }
           if (Object.keys(data).length === 0) {
-            onUnchanged?.()
+            onUnchanged?.({ edgesCommitted })
             return
           }
         } else {

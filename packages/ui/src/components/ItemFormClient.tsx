@@ -12,6 +12,7 @@ import type { SerializableFieldConfig } from '../lib/serializeFieldConfig.js'
 import { FieldValidityContext } from '../lib/fieldValidity.js'
 import { useItemForm, type ItemFormSubmitResult } from '../lib/useItemForm.js'
 import { applyEdgeWrites } from '../lib/applyEdgeWrites.js'
+import { handOffStatus } from '../lib/useBulkStatus.js'
 
 export interface ItemFormClientProps {
   listKey: string
@@ -36,6 +37,8 @@ export interface ItemFormClientProps {
    * Defaults to `'edit'`.
    */
   fieldMode?: 'edit' | 'read'
+  /** A singleton returns to its own editor, which shows no list status. */
+  singleton?: boolean
 }
 
 /**
@@ -73,6 +76,7 @@ export function ItemFormClient({
   relationshipData = {},
   canDelete = true,
   fieldMode = 'edit',
+  singleton = false,
 }: ItemFormClientProps) {
   const router = useRouter()
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -97,7 +101,8 @@ export function ItemFormClient({
     mode: mode === 'create' ? 'create' : 'update',
     errorFallback: 'Access denied or operation failed',
     onEdgeWrites: (changes) => applyEdgeWrites({ changes, parentId: itemId ?? '', serverAction }),
-    onUnchanged: () => {
+    onUnchanged: ({ edgesCommitted }) => {
+      if (edgesCommitted && !singleton) handOffStatus(listKey, 'Changes saved')
       router.push(`${basePath}/${urlKey}`)
       router.refresh()
     },
@@ -109,6 +114,8 @@ export function ItemFormClient({
 
       const normalized = toSubmitResult(result, 'Access denied or operation failed')
       if (normalized.success) {
+        if (!singleton)
+          handOffStatus(listKey, action === 'create' ? 'Item created' : 'Changes saved')
         router.push(`${basePath}/${urlKey}`)
         router.refresh()
       }
