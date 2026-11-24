@@ -146,7 +146,7 @@ export default config({
         // Auto-set publishedAt when status changes to published
         resolveInput: async ({ operation, resolvedData, item, context }) => {
           const data = { ...resolvedData }
-          if (operation === 'create' && !data.author && context.session?.userId) {
+          if (operation === 'create' && !data.author && !data.authorId && context.session?.userId) {
             data.author = { connect: { id: context.session.userId } }
           }
           // If changing status to published and publishedAt isn't set yet
