@@ -430,7 +430,9 @@ and [ADR-0052](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0052-the-g
 import { list, transitionGuard } from '@opensaas/stack-core'
 
 Operation: list({
-  fields: {/* action, state */},
+  fields: {
+    /* action, state */
+  },
   hooks: {
     validate: transitionGuard({
       field: 'state',

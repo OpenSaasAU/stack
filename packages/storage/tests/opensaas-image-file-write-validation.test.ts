@@ -48,26 +48,30 @@ function legacyUploadWrapper(): unknown {
 }
 
 function makeContext() {
-  const uploadImage = vi.fn(async (): Promise<ImageMetadata> => ({
-    filename: 'new.png',
-    originalFilename: 'photo.png',
-    url: '/uploads/new.png',
-    mimeType: 'image/png',
-    size: 3,
-    width: 10,
-    height: 10,
-    uploadedAt: new Date().toISOString(),
-    storageProvider: 'images',
-  }))
-  const uploadFile = vi.fn(async (): Promise<FileMetadata> => ({
-    filename: 'new.pdf',
-    originalFilename: 'doc.pdf',
-    url: '/uploads/new.pdf',
-    mimeType: 'application/pdf',
-    size: 3,
-    uploadedAt: new Date().toISOString(),
-    storageProvider: 'documents',
-  }))
+  const uploadImage = vi.fn(
+    async (): Promise<ImageMetadata> => ({
+      filename: 'new.png',
+      originalFilename: 'photo.png',
+      url: '/uploads/new.png',
+      mimeType: 'image/png',
+      size: 3,
+      width: 10,
+      height: 10,
+      uploadedAt: new Date().toISOString(),
+      storageProvider: 'images',
+    }),
+  )
+  const uploadFile = vi.fn(
+    async (): Promise<FileMetadata> => ({
+      filename: 'new.pdf',
+      originalFilename: 'doc.pdf',
+      url: '/uploads/new.pdf',
+      mimeType: 'application/pdf',
+      size: 3,
+      uploadedAt: new Date().toISOString(),
+      storageProvider: 'documents',
+    }),
+  )
   return {
     context: { storage: { uploadImage, uploadFile, deleteImage: vi.fn(), deleteFile: vi.fn() } },
     uploadImage,

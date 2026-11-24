@@ -165,7 +165,9 @@ export default config({
     provider: 'postgresql',
     timestamps: true,
   },
-  lists: {/* ... */},
+  lists: {
+    /* ... */
+  },
 })
 ```
 
@@ -192,7 +194,9 @@ export default config({
     provider: 'postgresql',
     keystoneCompat: true,
   },
-  lists: {/* ... */},
+  lists: {
+    /* ... */
+  },
 })
 ```
 
@@ -551,11 +555,15 @@ export default config({
   },
   lists: {
     AuthUser: list({
-      fields: {/* ... */},
+      fields: {
+        /* ... */
+      },
       db: { schema: 'auth', map: 'user' },
     }),
     Post: list({
-      fields: {/* ... */},
+      fields: {
+        /* ... */
+      },
     }),
   },
 })
@@ -616,7 +624,9 @@ export default config({
     opensaasDir: '.opensaas',
   },
   db: { provider: 'postgresql' },
-  lists: {/* ... */},
+  lists: {
+    /* ... */
+  },
 })
 ```
 

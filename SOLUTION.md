@@ -29,25 +29,21 @@ export type UserGetPayload<T extends { select?: any; include?: any } = {}> = Omi
     ? T['select'] extends true
       ? UserVirtualFields
       : {
-          [
-            K in keyof UserVirtualFields as K extends keyof T['select']
-              ? T['select'][K] extends true
-                ? K
-                : never
+          [K in keyof UserVirtualFields as K extends keyof T['select']
+            ? T['select'][K] extends true
+              ? K
               : never
-          ]: UserVirtualFields[K]
+            : never]: UserVirtualFields[K]
         }
     : T extends { include: any }
       ? T['include'] extends true
         ? UserVirtualFields
         : {
-            [
-              K in keyof UserVirtualFields as K extends keyof T['include']
-                ? T['include'][K] extends true
-                  ? K
-                  : never
+            [K in keyof UserVirtualFields as K extends keyof T['include']
+              ? T['include'][K] extends true
+                ? K
                 : never
-            ]: UserVirtualFields[K]
+              : never]: UserVirtualFields[K]
           }
       : UserVirtualFields)
 ```

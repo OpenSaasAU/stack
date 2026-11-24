@@ -25,7 +25,8 @@ import { resolveWhere, type WherePlan } from '../secured/vocabulary.js'
  * was (ADR-0044).
  */
 export type TargetResolution =
-  { status: 'ok'; originalItem: OrmRow | undefined; scope: WriteScope } | { status: 'denied' }
+  | { status: 'ok'; originalItem: OrmRow | undefined; scope: WriteScope }
+  | { status: 'denied' }
 
 /**
  * The Access Filter as a predicate to AND into the write's own, lowered

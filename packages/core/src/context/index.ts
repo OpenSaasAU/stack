@@ -1305,7 +1305,8 @@ export function getContext<TConfig extends OpenSaasConfig>(
     try {
       if (props.action === 'relationshipOptions') {
         const fieldConfig = listConfig.fields[props.field] as
-          { type?: string; ref?: string } | undefined
+          | { type?: string; ref?: string }
+          | undefined
         if (!fieldConfig || fieldConfig.type !== 'relationship' || !fieldConfig.ref) {
           return {
             success: false,

@@ -144,15 +144,16 @@ export default config({
       },
       hooks: {
         // Auto-set publishedAt when status changes to published
-        resolveInput: async ({ resolvedData, item }) => {
-          // If changing status to published and publishedAt isn't set yet
-          if (resolvedData?.status === 'published' && !item?.publishedAt) {
-            return {
-              ...resolvedData,
-              publishedAt: new Date().toISOString(),
-            }
+        resolveInput: async ({ operation, resolvedData, item, context }) => {
+          const data = { ...resolvedData }
+          if (operation === 'create' && !data.author && context.session?.userId) {
+            data.author = { connect: { id: context.session.userId } }
           }
-          return { ...resolvedData }
+          // If changing status to published and publishedAt isn't set yet
+          if (data.status === 'published' && !item?.publishedAt) {
+            data.publishedAt = new Date().toISOString()
+          }
+          return data
         },
         // Example validation: title must not contain "spam"
         validateInput: async (args) => {

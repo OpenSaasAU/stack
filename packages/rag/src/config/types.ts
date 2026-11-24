@@ -35,7 +35,9 @@ export type ChunkingConfig = {
 export type EmbeddingProviderName = 'openai' | 'ollama' | string
 
 export type OpenAIEmbeddingModel =
-  'text-embedding-3-small' | 'text-embedding-3-large' | 'text-embedding-ada-002'
+  | 'text-embedding-3-small'
+  | 'text-embedding-3-large'
+  | 'text-embedding-ada-002'
 
 export type OpenAIEmbeddingConfig = {
   type: 'openai'
@@ -70,7 +72,9 @@ export type CustomEmbeddingConfig = {
 }
 
 export type EmbeddingProviderConfig =
-  OpenAIEmbeddingConfig | OllamaEmbeddingConfig | CustomEmbeddingConfig
+  | OpenAIEmbeddingConfig
+  | OllamaEmbeddingConfig
+  | CustomEmbeddingConfig
 
 export type RAGConfig = {
   /** Can be overridden per field via `providers`. */

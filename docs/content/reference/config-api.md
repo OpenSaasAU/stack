@@ -36,9 +36,15 @@ Defines a list (data model) with type-safe field definitions, access control, an
 import { list } from '@opensaas/stack-core'
 
 User: list({
-  fields: {/* ... */},
-  access: {/* ... */},
-  hooks: {/* ... */},
+  fields: {
+    /* ... */
+  },
+  access: {
+    /* ... */
+  },
+  hooks: {
+    /* ... */
+  },
 })
 ```
 
@@ -534,8 +540,7 @@ async function teacherNames(context: Context, lessonId: string) {
 }
 ```
 
-Each to-one hop off an included row is a null check — see [arity decides nullability](/docs/reference/context-api#cost-every-to-one-read-off-an-included-row-is-a-null-check).
----
+## Each to-one hop off an included row is a null check — see [arity decides nullability](/docs/reference/context-api#cost-every-to-one-read-off-an-included-row-is-a-null-check).
 
 ### `ListConfig`
 

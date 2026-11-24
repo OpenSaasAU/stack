@@ -476,11 +476,17 @@ registerEmbeddingProvider('custom', (config) => {
     dimensions: config.dimensions,
     async embed(text) {
       // Your implementation
-      return [/* vector */]
+      return [
+        /* vector */
+      ]
     },
     async embedBatch(texts) {
       // Batch implementation
-      return [[/* vectors */]]
+      return [
+        [
+          /* vectors */
+        ],
+      ]
     },
   }
 })

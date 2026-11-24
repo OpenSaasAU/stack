@@ -1021,7 +1021,9 @@ Default selected value (must match one of the option values).
 
 ```typescript
 status: select({
-  options: [/* ... */],
+  options: [
+    /* ... */
+  ],
   defaultValue: 'draft',
 })
 ```
@@ -1063,7 +1065,9 @@ Database index configuration.
 
 ```typescript
 status: select({
-  options: [/* ... */],
+  options: [
+    /* ... */
+  ],
   isIndexed: true,
 })
 ```
@@ -1996,7 +2000,9 @@ Default value when creating new items.
 
 ```typescript
 status: select({
-  options: [/* ... */],
+  options: [
+    /* ... */
+  ],
   defaultValue: 'draft',
 })
 

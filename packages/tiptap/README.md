@@ -404,6 +404,5 @@ MIT
 
 ```tsx
 import { RichTextContent } from '@opensaas/stack-tiptap/render'
-
 ;<RichTextContent value={post.content} features={features} />
 ```
