@@ -863,10 +863,13 @@ describe('deriveContract — db.indexNaming', () => {
 describe('deriveContract — db.foreignKeys', () => {
   const parent = {
     fields: { student: text(), lessonTerm: text() },
-    db: { indexes: [{ fields: ['id', 'student', 'lessonTerm'], unique: true }] },
+    db: {
+      idField: 'int autoincrement',
+      indexes: [{ fields: ['id', 'student', 'lessonTerm'], unique: true }],
+    },
   }
   const child = (foreignKeys: unknown) => ({
-    fields: { enrolment: text(), student: text(), lessonTerm: text() },
+    fields: { enrolment: integer(), student: text(), lessonTerm: text() },
     db: { foreignKeys },
   })
   const derive = (foreignKeys: unknown) =>
@@ -952,6 +955,66 @@ describe('deriveContract — db.foreignKeys', () => {
       { fields: ['enrolment'], references: { list: 'Enrolment', fields: ['id'] } },
     ])
     expect(data.models[1].compositeForeignKeys?.[0].references.columns).toEqual(['id'])
+  })
+
+  test('refuses a reference to a partial unique', () => {
+    expect(() =>
+      single({
+        Enrolment: {
+          fields: { student: text() },
+          db: { indexes: [{ fields: ['student'], unique: true, name: 'e_s', where: 'true' }] },
+        },
+        Slot: child([
+          { fields: ['student'], references: { list: 'Enrolment', fields: ['student'] } },
+        ]),
+      } as OpenSaasConfig['lists']),
+    ).toThrow(/not a declared unique/)
+  })
+
+  test('refuses two foreign keys on the same columns', () => {
+    expect(() =>
+      derive([
+        { fields: ['enrolment'], references: { list: 'Enrolment', fields: ['id'] } },
+        { fields: ['enrolment'], references: { list: 'Enrolment', fields: ['id'] } },
+      ]),
+    ).toThrow(/already constrains/)
+  })
+
+  test('refuses a foreign key name over 63 bytes', () => {
+    expect(() =>
+      derive([
+        {
+          fields: ['enrolment'],
+          references: { list: 'Enrolment', fields: ['id'] },
+          name: 'x'.repeat(64),
+        },
+      ]),
+    ).toThrow(/63-byte/)
+  })
+
+  test('refuses a foreign key across differing column types', () => {
+    expect(() =>
+      single({
+        Enrolment: parent,
+        Slot: {
+          fields: { n: text() },
+          db: {
+            foreignKeys: [{ fields: ['n'], references: { list: 'Enrolment', fields: ['id'] } }],
+          },
+        },
+      } as OpenSaasConfig['lists']),
+    ).toThrow(/column types differ/)
+  })
+
+  test('refuses an index name over 63 bytes and a name shared across lists', () => {
+    const idx = (name: string) => ({
+      fields: { a: text() },
+      db: { indexes: [{ fields: ['a'], name, where: 'true' }] },
+    })
+    expect(() => single({ A: idx('x'.repeat(64)) } as OpenSaasConfig['lists'])).toThrow(/63-byte/)
+    expect(() => single({ A: idx('dup'), B: idx('dup') } as OpenSaasConfig['lists'])).toThrow(
+      /already has/,
+    )
   })
 
   test('refuses a repeated field', () => {

@@ -416,6 +416,20 @@ function adoptFieldLevelIndex(
   draft.fieldLevelIndexes.delete(column)
 }
 
+function assertNameFits(where: string, listKey: string, name: string): void {
+  if (Buffer.byteLength(name, 'utf8') > POSTGRES_IDENTIFIER_BYTES) {
+    throw new Error(
+      `${where} on list "${listKey}" has the name "${name}", over Postgres's ${POSTGRES_IDENTIFIER_BYTES}-byte identifier limit — shorten the name`,
+    )
+  }
+}
+
+function columnType(draft: ModelDraft, column: string): string {
+  if (column === 'id') return JSON.stringify(draft.model.id.type)
+  const found = draft.model.columns.find((candidate) => candidate.name === column)
+  return JSON.stringify(found?.type)
+}
+
 function deriveIndexes(
   members: MemberTable,
   listKey: string,
@@ -434,6 +448,7 @@ function deriveIndexes(
       resolveIndexColumn(members, listKey, entry, fieldRef),
     )
     const unique = index.unique === true
+    if (index.name !== undefined) assertNameFits(entry, listKey, index.name)
     if (index.where !== undefined) {
       if (typeof index.where !== 'string' || index.where.trim() === '') {
         throw new Error(
@@ -464,7 +479,11 @@ function sameColumnSet(a: string[], b: string[]): boolean {
 
 function declaresUnique(draft: ModelDraft, columns: string[]): boolean {
   if (columns.length === 1 && columns[0] === 'id') return true
-  if (draft.model.indexes.some((index) => index.unique && sameColumnSet(index.columns, columns))) {
+  if (
+    draft.model.indexes.some(
+      (index) => index.unique && index.where === undefined && sameColumnSet(index.columns, columns),
+    )
+  ) {
     return true
   }
   if (columns.length !== 1) return false
@@ -481,7 +500,8 @@ function deriveCompositeForeignKeys(
   const draft = drafts.get(listKey)
   const listConfig = config.lists[listKey]
   if (!draft || !listConfig) return []
-  return (listConfig.db?.foreignKeys ?? []).map((foreignKey, i) => {
+  const derived: ContractCompositeForeignKey[] = []
+  for (const [i, foreignKey] of (listConfig.db?.foreignKeys ?? []).entries()) {
     const entry = `Foreign key db.foreignKeys[${i}]`
     const { fields, references } = foreignKey
     if (fields.length === 0) {
@@ -516,20 +536,58 @@ function deriveCompositeForeignKeys(
         `${entry} on list "${listKey}" constrains "${columns[0]}", which a relationship field already references with its own foreign key — remove the entry`,
       )
     }
+    if (foreignKey.name !== undefined) assertNameFits(entry, listKey, foreignKey.name)
+    if (derived.some((existing) => sameColumnSet(existing.columns, columns))) {
+      throw new Error(
+        `${entry} on list "${listKey}" constrains (${fields.join(', ')}), which an earlier db.foreignKeys entry already constrains — two foreign keys on the same columns derive the same name; remove one of them`,
+      )
+    }
+    columns.forEach((column, position) => {
+      if (columnType(draft, column) !== columnType(targetDraft, targetColumns[position])) {
+        throw new Error(
+          `${entry} on list "${listKey}" pairs "${column}" with "${references.fields[position]}" on "${references.list}", whose column types differ — Postgres refuses a foreign key across them; make the two fields the same type`,
+        )
+      }
+    })
     if (!declaresUnique(targetDraft, targetColumns)) {
       throw new Error(
         `${entry} on list "${listKey}" references (${references.fields.join(', ')}) on "${references.list}", which is not a declared unique there. ` +
           `Add db.indexes: [{ fields: [${references.fields.map((f) => `'${f}'`).join(', ')}], unique: true }] to "${references.list}", or reference its id`,
       )
     }
-    return {
+    derived.push({
       columns,
       references: { model: references.list, columns: targetColumns },
       ...(foreignKey.onDelete !== undefined ? { onDelete: foreignKey.onDelete } : {}),
       ...(foreignKey.onUpdate !== undefined ? { onUpdate: foreignKey.onUpdate } : {}),
       ...(foreignKey.name !== undefined ? { name: foreignKey.name } : {}),
+    })
+  }
+  return derived
+}
+
+function assertNoCrossListNameClashes(models: ContractModel[]): void {
+  const owners = new Map<string, string>()
+  const claim = (namespace: string | undefined, name: string, owner: string): void => {
+    const key = `${namespace ?? ''}\0${name}`
+    const existing = owners.get(key)
+    if (existing !== undefined && existing !== owner) {
+      throw new Error(
+        `${owner} has the name "${name}", which ${existing} already has — index and table names share one namespace in a Postgres schema; rename one of them`,
+      )
     }
-  })
+    owners.set(key, owner)
+  }
+  for (const model of models) {
+    claim(model.namespace, model.table ?? model.name, `list "${model.name}"'s table`)
+  }
+  for (const model of models) {
+    model.indexes.forEach((index, i) => {
+      if (index.name !== undefined) {
+        claim(model.namespace, index.name, `list "${model.name}" db.indexes[${i}]`)
+      }
+    })
+  }
 }
 
 function collectEnums(models: ContractModel[]): ContractEnum[] {
@@ -833,6 +891,8 @@ export function deriveContract(config: OpenSaasConfig): ContractData {
     const composite = deriveCompositeForeignKeys(listKey, config, drafts, members)
     if (composite.length > 0) draft.model.compositeForeignKeys = composite
   }
+
+  assertNoCrossListNameClashes([...drafts.values()].map((draft) => draft.model))
 
   const models = [...drafts.values()].map((draft) => draft.model)
   return {
