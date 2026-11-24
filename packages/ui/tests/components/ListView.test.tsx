@@ -694,6 +694,30 @@ describe('ListView relationship lookup by id', () => {
   )
 })
 
+describe('ListView keeps a stable order (#2186)', () => {
+  it(
+    'lists rows by id when no sort is given',
+    async () => {
+      const props = await render(ada, { listKey: 'User' })
+      const ids = props.items.map((item) => String(item.id))
+      expect(ids).toEqual([...ids].sort())
+    },
+    BOOT,
+  )
+
+  it(
+    'breaks ties on a sorted column by id',
+    async () => {
+      const props = await render(ada, {
+        listKey: 'User',
+        sort: { field: 'name', direction: 'asc' },
+      })
+      expect(props.items.map((item) => item.name)).toEqual(['Ada', 'Grace'])
+    },
+    BOOT,
+  )
+})
+
 describe('ListView excludes read-denied fields from filtering and sorting (#915)', () => {
   it(
     'drops a read-denied field from the collected filter suggestions',
