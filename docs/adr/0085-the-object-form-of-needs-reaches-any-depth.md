@@ -27,7 +27,7 @@ No computed field runs on a declared branch, so nothing on one declares anything
 
 ## It is fetched with the read
 
-The emitted table gains `nested` beneath a relation, and the include plan nests it, so the hops travel as nested includes of the read that computes the field. A relation the caller also names is fetched apart from the caller's view of it when anything is declared beneath it: one batched read for each such relation at each level. Query count never depends on row count.
+The emitted table gains `nested` beneath a relation, and the include plan nests it, so the hops travel as nested includes of the read that computes the field. A plain include of the same relation carries them too, withheld from that level's own rules and hooks. A relation the caller shaped is fetched apart from the caller's view, as one hop already was: one batched read for each such relation at each level, per 10,000 rows.
 
 ## Access
 
@@ -37,7 +37,7 @@ Every hop carries the target list's `query` access, so a row the session cannot 
 
 **A `read` rule still sees one hop.** ADR-0082 denies a rule reaching for a relation the row does not carry. Rows beneath a declared relation can now carry relations, and a scoped-away `null` there would read as "no row". The guard therefore withholds every relation of a related row, and enumeration leaves them out.
 
-**A hook's item is cut to its own declaration at every depth.** Two fields naming the same relation to different depths share one fetch, and neither sees the other's reach. The rows are copies, so a hook that mutates one no longer reaches a later access decision, and a multi-column field is assembled under its own key as the types already claimed.
+**A hook's item is cut to its own declaration at every depth.** Two fields naming the same relation to different depths share one fetch, and neither sees the other's reach. The row objects are copies, so assigning a key on one no longer reaches a later access decision; a JSON value inside a row is still shared. A multi-column field is assembled under its own key, as the types already claimed.
 
 ## Types
 

@@ -11,7 +11,7 @@
 //   can be enumerated by a caller who can already read the list. Relation
 //   names are configuration rather than data, and closing it would mean either
 //   fetching every denied relation or varying the refusal by session — see
-//   {@link isOmittedBeforeQuery}.
+//   {@link isDeniedBeforeQuery}.
 
 import type { FieldConfig, ListConfig, TypeInfo } from '../config/types.js'
 import { classifyRowIndependentRead } from '../access/field-access.js'
@@ -748,7 +748,12 @@ async function resolveInclude(
   const orders = await resolveOrderBy(request.orders, related)
   const shape = rowsBranchOf(request) ?? request
   const projection = await resolveProjectionForTarget(shape, target, related, ctx)
-  const includes = await resolveIncludes(shape.includes, related, depth + 1, projection.caller)
+  const callerIncludes = await resolveIncludes(
+    shape.includes,
+    related,
+    depth + 1,
+    projection.caller,
+  )
 
   if (await isDeniedBeforeQuery(target, ctx)) {
     return declaredTree === undefined ? null : resolveDeclared(request.name, ctx, declaredTree)
@@ -786,7 +791,7 @@ async function resolveInclude(
 
   const callerShaped = composesShape(request) || composesShape(shape)
   const declaredFetch =
-    liveDeclaredDependency && reduce === undefined && (callerShaped || declaredTree.size > 0)
+    liveDeclaredDependency && reduce === undefined && callerShaped
       ? access.kind !== 'true'
         ? [access]
         : []
@@ -795,6 +800,10 @@ async function resolveInclude(
     declaredTree !== undefined && (declaredRows ?? declaredFetch) !== undefined
       ? await resolveDeclaredBeneath(related, declaredTree)
       : []
+  const includes =
+    declaredTree !== undefined && reduce === undefined && !callerShaped
+      ? await withDeclaredBeneath(callerIncludes, related, declaredTree)
+      : callerIncludes
 
   return {
     ...planLevel(related, projection.caller, includes),
@@ -860,6 +869,36 @@ async function resolveDeclared(
     ...(target.fieldConfig === undefined ? { synthetic: { gate: target.readGate } } : {}),
     ruleView: 'fetched',
   }
+}
+
+/**
+ * An unshaped caller include, carrying what the level above declared beneath
+ * it. What only the level above declared is withheld from this level's own
+ * rules and hooks: it is not theirs (ADR-0085).
+ */
+async function withDeclaredBeneath(
+  own: readonly IncludePlan[],
+  ctx: ResolveContext,
+  tree: RelationTree,
+): Promise<IncludePlan[]> {
+  const ownTree = declaredRelations(ctx)
+  const plans = own.filter((plan) => !tree.has(plan.relation))
+  for (const [name, beneath] of tree) {
+    const ownBeneath = ownTree.get(name)
+    const merged = ownBeneath === undefined ? beneath : mergedTree(ownBeneath, beneath)
+    const plan = await resolveDeclared(name, ctx, merged)
+    plans.push(ownBeneath === undefined ? { ...plan, ruleView: 'withheld' } : plan)
+  }
+  return plans
+}
+
+function mergedTree(a: RelationTree, b: RelationTree): RelationTree {
+  const merged = new Map(a)
+  for (const [name, beneath] of b) {
+    const existing = merged.get(name)
+    merged.set(name, existing === undefined ? beneath : mergedTree(existing, beneath))
+  }
+  return merged
 }
 
 async function resolveDeclaredBeneath(

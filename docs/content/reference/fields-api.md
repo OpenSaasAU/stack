@@ -1483,7 +1483,7 @@ import { virtual } from '@opensaas/stack-core/fields'
 
 virtual(options: {
   type: TypeDescriptor
-  needs?: string[]
+  needs?: readonly string[] | NeedsObject
   hooks: FieldHooks<TTypeInfo> & {
     resolveOutput: NonNullable<FieldHooks<TTypeInfo>['resolveOutput']>
   }
@@ -2196,7 +2196,7 @@ label: virtual({
 - A row reached by an array or object carries only the columns named there. To read `ref` off the enrolment above, add it: `{ enrolment: { ref: true, student: true, … } }`.
 - Every hop keeps its list's `query` access. A to-one the session cannot see is `null` and a to-many leaves it out, so every to-one hop is a null check.
 - A declaration outranks a field-level `read` denial at every depth. A nested entry naming a read-denied column hands it to your hook.
-- Hops are fetched with the read, so the number of queries does not depend on the number of rows.
+- Hops are fetched with the read, so a page never costs a query per row.
 - `opensaas generate` warns when an array form names a relation whose list has a computed field with relation `needs` of its own, and prints the object form. Write `{ relation: true }` when one hop is what you mean.
 
 ---

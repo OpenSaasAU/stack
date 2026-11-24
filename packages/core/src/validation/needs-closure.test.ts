@@ -350,12 +350,41 @@ describe('needs — the object form (ADR-0085)', () => {
     ['enrolment', 'neither an array', ''],
     [[1], 'neither an array', ''],
     [null, 'neither an array', ''],
+    [new Set(['note']), 'neither an array', ''],
+    [{ enrolment: new Map() }, 'must be true, an array', '{ enrolment: … }'],
   ])('refuses %j by list, field and path', async (needs, why, path) => {
     const found = await messages(needs)
     expect(found).toHaveLength(1)
     expect(found[0]).toContain('"Attendance.label"')
     expect(found[0]).toContain(why)
     expect(found[0]).toContain(path)
+  })
+
+  it('refuses an object that contains itself', async () => {
+    const loop: Record<string, unknown> = {}
+    loop.from_Attendance_enrolment = { enrolment: loop }
+    expect((await messages({ enrolment: loop }))[0]).toContain('refers back')
+  })
+
+  it('warns once per field, with a bounded message, on a dense schema', async () => {
+    const names = ['A', 'B', 'C', 'D', 'E', 'F']
+    const lists = Object.fromEntries(
+      names.map((name) => [
+        name,
+        list({
+          fields: {
+            ...Object.fromEntries(
+              names.map((other) => [`to${other}`, relationship({ ref: other })]),
+            ),
+            one: virtual({ type: 'string', needs: names.map((other) => `to${other}`), hooks }),
+            two: virtual({ type: 'string', needs: names.map((other) => `to${other}`), hooks }),
+          },
+        }),
+      ]),
+    )
+    const warnings = findChainedNeeds(await config({ db: { provider: 'postgresql' }, lists }))
+    expect(warnings).toHaveLength(names.length * 2)
+    for (const { message } of warnings) expect(message.length).toBeLessThan(2500)
   })
 
   it('refuses a computed field named by its descriptor alone', async () => {
@@ -371,7 +400,7 @@ describe('needs — the object form (ADR-0085)', () => {
     const chained = await schoolConfig(virtual({ type: 'string', needs: ['enrolment'], hooks }))
     const warnings = findChainedNeeds(chained)
     expect(warnings).toHaveLength(1)
-    expect(warnings[0]).toMatchObject({ target: 'Enrolment.display', relation: 'enrolment' })
+    expect(warnings[0]).toMatchObject({ targets: ['Enrolment.display'] })
     expect(warnings[0].message).toContain('"Attendance.label"')
     expect(warnings[0].message).toContain('"Enrolment.display"')
     expect(warnings[0].message).toContain('needs: { enrolment: { student: true } }')

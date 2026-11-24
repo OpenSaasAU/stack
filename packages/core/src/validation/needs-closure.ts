@@ -28,17 +28,15 @@ export interface NeedsClosureError {
 }
 
 /**
- * An array-form `needs` naming a relation whose target list has a computed
- * field with a relation in its own `needs`. Reported, never refused: the
+ * An array-form `needs` naming relations whose target lists have computed
+ * fields with a relation in its own `needs`. Reported, never refused: the
  * declaration is valid and reaches one hop.
  */
 export interface ChainedNeedsWarning {
   listKey: string
   fieldKey: string
-  /** The relation the declaration names. */
-  relation: string
-  /** The computed field on the target list, as `List.field`. */
-  target: string
+  /** The computed fields on the target lists, as `List.field`. */
+  targets: string[]
   /** The object form that spells the chain out. */
   replacement: NeedsObject
   message: string
@@ -48,7 +46,9 @@ type Needs = readonly string[] | NeedsObject
 
 /** A plain-JS config can put anything here, so nothing narrower is assumed. */
 function isNeedsObject(value: unknown): value is NeedsObject {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
+  if (typeof value !== 'object' || value === null) return false
+  const proto: unknown = Object.getPrototypeOf(value)
+  return proto === Object.prototype || proto === null
 }
 
 function isStringArray(value: unknown): value is readonly string[] {
@@ -129,6 +129,7 @@ export function validateNeedsDeclarations(config: OpenSaasConfig): NeedsClosureE
         declared: Needs,
         path: readonly string[],
         chain: readonly string[],
+        within: readonly Needs[],
       ): void => {
         const fields = config.lists[onList]?.fields ?? {}
         for (const [name, beneath] of needsEntriesOf(declared)) {
@@ -172,10 +173,16 @@ export function validateNeedsDeclarations(config: OpenSaasConfig): NeedsClosureE
             refuse(`"${name}" is a stored column on "${onList}", which takes only \`true\`.`)
             continue
           }
-          if (related !== undefined) walk(related, beneath, here, [...chain, related])
+          if (within.includes(beneath)) {
+            refuse(`"${name}" refers back to an object that contains it.`)
+            continue
+          }
+          if (related !== undefined) {
+            walk(related, beneath, here, [...chain, related], [...within, beneath])
+          }
         }
       }
-      walk(listKey, needs, [], [listKey])
+      walk(listKey, needs, [], [listKey], [needs])
     }
   }
 
@@ -190,7 +197,10 @@ function isComputed(config: OpenSaasConfig, listKey: string, fieldKey: string): 
 type NeedsNode = Map<string, NeedsNode | true>
 
 /** How deep a suggested replacement spells a chain out. */
-const CHAIN_MAX_DEPTH = 5
+const CHAIN_MAX_DEPTH = 4
+
+/** Past this many characters a suggested replacement is cut short in the message. */
+const REPLACEMENT_MAX_LENGTH = 1000
 
 /**
  * Every array-form `needs` whose chain stopped at one hop when the runtime
@@ -238,30 +248,37 @@ export function findChainedNeeds(config: OpenSaasConfig): ChainedNeedsWarning[] 
       const needs = field.needs
       if (!needs || !isNeedsArray(needs) || !field.hooks?.resolveOutput) continue
       const origin = `${listKey}.${fieldKey}`
-      const replacement: NeedsNode = new Map()
-      spell(listKey, needs, [origin], replacement)
-      for (const relation of needs) {
-        const related = relatedOf(listKey, relation)
-        if (related === undefined) continue
-        for (const [targetField, targetNeeds] of chainedFields(related)) {
-          const target = `${related}.${targetField}`
-          if (target === origin) continue
-          warnings.push({
-            listKey,
-            fieldKey,
-            relation,
-            target,
-            replacement: needsOf(replacement),
-            message:
-              `"${origin}" declares needs: ${renderNeeds(needs)}, and "${target}" declares ` +
-              `needs: ${renderNeeds(targetNeeds)} of its own, which "${origin}" does not receive: ` +
-              `the array form reaches one hop. If its hook reads past "${relation}", declare ` +
-              `needs: ${renderNeeds(needsOf(replacement))}, adding each column it reads off a ` +
-              `row the object spells out. If it does not, declare needs: ` +
-              `${renderNeeds(oneHop(needs))} to say so.`,
-          })
-        }
-      }
+      const targets = new Set(
+        needs.flatMap((relation) => {
+          const related = relatedOf(listKey, relation)
+          return related === undefined
+            ? []
+            : chainedFields(related).map(([key]) => `${related}.${key}`)
+        }),
+      )
+      targets.delete(origin)
+      if (targets.size === 0) continue
+
+      const node: NeedsNode = new Map()
+      spell(listKey, needs, [origin], node)
+      const replacement = needsOf(node)
+      const rendered = renderNeeds(replacement)
+      const shown =
+        rendered.length > REPLACEMENT_MAX_LENGTH
+          ? `${rendered.slice(0, REPLACEMENT_MAX_LENGTH)}… (cut short: spell out only what the hook reads)`
+          : rendered
+      warnings.push({
+        listKey,
+        fieldKey,
+        targets: [...targets],
+        replacement,
+        message:
+          `"${origin}" declares needs: ${renderNeeds(needs)}, which reaches one hop. ` +
+          `${[...targets].map((target) => `"${target}"`).join(', ')} declare relations of their ` +
+          `own, which "${origin}" does not receive. If its hook reads past one hop, declare ` +
+          `needs: ${shown}, adding each column it reads off a row the object spells out. If it ` +
+          `does not, declare needs: ${renderNeeds(oneHop(needs))} to say so.`,
+      })
     }
   }
 

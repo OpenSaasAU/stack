@@ -15,8 +15,9 @@ export interface RuleView {
   readonly removed: ReadonlySet<string>
   readonly declared: Readonly<Record<string, unknown>>
   /**
-   * To-ones whose `null` stands for a row the session cannot see rather than no
-   * row at all. A hook is still owed that `null` (ADR-0058); a rule is not.
+   * Relations whose empty value stands for a row the session cannot see, or
+   * one that went mid-read, rather than no row at all. A hook is still owed
+   * that value (ADR-0058); a rule is not.
    */
   readonly scopedAway: ReadonlySet<string>
 }

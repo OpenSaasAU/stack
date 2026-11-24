@@ -241,6 +241,9 @@ async function collectRuleViews(
   views.set(level, { viewFor: (row) => ruleViewFor(row, level.includes, unshaped) })
 }
 
+/** Postgres caps a statement at 65,535 bind parameters. */
+const UNSHAPED_READ_KEYS = 10_000
+
 /** The declared rows each relation's rules and hooks see in place of the caller's, by owner id. */
 async function unshapedRowsAt(
   binding: VisibilityBinding,
@@ -262,17 +265,20 @@ async function unshapedRowsAt(
   if (fetched.length === 0 || ids.length === 0) return byRelation
   const ops = await whereCombinators()
   for (const node of fetched) {
-    const owners = await engineRead(binding, () =>
-      collectionFor(binding.ormHandle, listName)
-        .where((model) => identityIn(model, listName, ids))
-        .select('id')
-        .include(node.relation, (child) =>
-          declaredBranch(child, node.declaredFetch ?? [], node.declaredIncludes, ops),
-        )
-        .all(),
-    )
     const values = new Map<string, unknown>()
-    for (const owner of owners) values.set(String(owner['id']), owner[node.relation])
+    for (let start = 0; start < ids.length; start += UNSHAPED_READ_KEYS) {
+      const batch = ids.slice(start, start + UNSHAPED_READ_KEYS)
+      const owners = await engineRead(binding, () =>
+        collectionFor(binding.ormHandle, listName)
+          .where((model) => identityIn(model, listName, batch))
+          .select('id')
+          .include(node.relation, (child) =>
+            declaredBranch(child, node.declaredFetch ?? [], node.declaredIncludes, ops),
+          )
+          .all(),
+      )
+      for (const owner of owners) values.set(String(owner['id']), owner[node.relation])
+    }
     byRelation.set(node.relation, values)
   }
   return byRelation
@@ -332,7 +338,7 @@ async function visitRow(
       fieldName,
       value,
       ruleRow,
-      hookItem: hookItemFor(fieldName),
+      hookItem: () => hookItemFor(fieldName),
       listKey,
       args,
       binding,
@@ -599,7 +605,7 @@ function deriveResolveOutputContext(
  * granted, produce the output value by running any `resolveOutput` hook.
  *
  * `ruleRow` is the row used to evaluate field access: the fetched row under its
- * `RuleView`, which a rule reads through a guard (ADR-0082). `hookItem` is the object passed
+ * `RuleView`, which a rule reads through a guard (ADR-0082). `hookItem` builds the object passed
  * to the hook as `item`: exactly the field's own declared dependency set plus
  * the list's system fields, so a hook never sees another computed field's
  * resolved value and never sees what some other call site's projection
@@ -610,7 +616,7 @@ async function resolveReadableFieldValue(params: {
   fieldName: string
   value: unknown
   ruleRow: RuleRow
-  hookItem: Record<string, unknown>
+  hookItem: () => Record<string, unknown>
   listKey: string
   args: FieldVisibilityArgs
   binding: VisibilityBinding
@@ -659,7 +665,7 @@ async function resolveReadableFieldValue(params: {
         operation: 'query',
         fieldName,
         listKey,
-        item: hookItem,
+        item: hookItem(),
         context: deriveResolveOutputContext(binding, args.context, link),
       }),
     )
@@ -790,7 +796,12 @@ function ruleViewFor(
     const rows = values?.get(String(row['id']))
     if (isScopedAway(row, plan, rows ?? row[plan.relation])) scopedAway.add(plan.relation)
     if (rows !== undefined) declared[plan.relation] = rows
-    else if (plan.ruleView !== 'fetched') removed.add(plan.relation)
+    else if (plan.ruleView === 'declaredFetch') {
+      // The owner went between the two statements: a hook is owed an empty
+      // value, and a rule must not read it as no row.
+      declared[plan.relation] = plan.arity === 'many' ? [] : null
+      scopedAway.add(plan.relation)
+    } else if (plan.ruleView !== 'fetched') removed.add(plan.relation)
   }
   return { removed, declared, scopedAway }
 }

@@ -616,7 +616,7 @@ describe('Generate Command Integration', () => {
       fs.writeFileSync(
         path.join(tempDir, 'opensaas.config.ts'),
         `import { relationship, text, virtual } from ${JSON.stringify(fileURLToPath(fields))}
-const label = (needs: never) =>
+const label = (needs) =>
   virtual({ type: 'string', needs, hooks: { resolveOutput: () => '' } })
 export default {
   db: { provider: 'postgresql' },
@@ -626,11 +626,11 @@ export default {
       fields: {
         author: relationship({ ref: 'Author' }),
         comments: relationship({ ref: 'Comment.post', many: true }),
-        label: label(['author'] as never),
+        label: label(['author']),
       },
     },
     Comment: {
-      fields: { post: relationship({ ref: 'Post.comments' }), label: label(${needs} as never) },
+      fields: { post: relationship({ ref: 'Post.comments' }), label: label(${needs}) },
     },
   },
 }

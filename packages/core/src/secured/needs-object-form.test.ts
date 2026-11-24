@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
+import pg from 'pg'
 import type { Session } from '../access/types.js'
 import type { BaseFieldConfig, OpenSaasConfig, TypeInfo } from '../config/types.js'
 import { relationship, text, virtual } from '../fields/index.js'
@@ -129,6 +130,107 @@ function idOf(row: Record<string, unknown> | null): string {
 
 const connect = (id: string) => ({ connect: { id } })
 
+describe('a shaped include of a declared relation', () => {
+  const shapedConfig: OpenSaasConfig = {
+    db: { provider: 'postgresql' },
+    lists: {
+      Shelf: {
+        fields: {
+          name: text({
+            access: { read: ({ item }) => Array.isArray(item.books) && item.books.length === 0 },
+          }),
+          books: relationship({ ref: 'Book.shelf', many: true }),
+          titles: virtual({
+            type: 'number',
+            needs: { books: { shelf: true } },
+            hooks: {
+              resolveOutput: ({ item }) => {
+                if (!Array.isArray(item.books)) throw new TypeError('item.books is not an array')
+                return item.books.length
+              },
+            },
+          }),
+        },
+        access: { operation: open },
+      },
+      Book: {
+        fields: { title: text(), shelf: relationship({ ref: 'Shelf.books' }) },
+        access: { operation: open },
+      },
+    },
+  }
+
+  test(
+    'a row gone between the two statements is empty to the hook, and grants no rule',
+    async () => {
+      let armed = -1
+      const db = await createTestDatabase(shapedConfig, {
+        middleware: [
+          {
+            name: 'delete-between',
+            familyId: 'sql',
+            async beforeCompile() {
+              if (armed < 0 || armed-- !== 0) return undefined
+              await db
+                .context({})
+                .sudo()
+                .db.Shelf.delete({ where: { id: shelf } })
+              return undefined
+            },
+          },
+        ],
+      })
+      let shelf = ''
+      try {
+        shelf = idOf(
+          await db
+            .context({})
+            .sudo()
+            .db.Shelf.create({ data: { name: 'secret' } }),
+        )
+        armed = 1
+        const rows = await db
+          .context({})
+          .db.Shelf.include('books', (books) => books.limit(1))
+          .all()
+        expect(armed).toBe(-1)
+        expect(rows).toEqual([{ id: shelf, titles: 0, books: [] }])
+      } finally {
+        await db.close()
+      }
+    },
+    BOOT,
+  )
+
+  test(
+    'a page past the bind-parameter cap still reads',
+    async () => {
+      const db = await createTestDatabase(shapedConfig)
+      try {
+        const pool = new pg.Pool({ connectionString: db.url, max: 1 })
+        try {
+          await pool.query(
+            `INSERT INTO "Shelf" (id, name) SELECT gen_random_uuid(), 'n' FROM generate_series(1, 70000)`,
+          )
+        } finally {
+          await pool.end()
+        }
+        for (const shape of [false, true]) {
+          const rows = await db
+            .context({})
+            .db.Shelf.select('titles')
+            .include('books', (books) => (shape ? books.limit(1) : books))
+            .all()
+          expect(rows).toHaveLength(70_000)
+        }
+      } finally {
+        await db.close()
+      }
+    },
+    BOOT,
+  )
+})
+
 describe('the object form of needs', () => {
   const recorder = createPlanRecorder()
   let database: TestDatabase
@@ -230,7 +332,7 @@ describe('the object form of needs', () => {
   })
 
   test.each([
-    ['include', () => staff.db.Enrolment.include('attendances').all() as PromiseLike<unknown>],
+    ['include', () => staff.db.Enrolment.include('attendances').all()],
     [
       'a shaped include',
       () => staff.db.Enrolment.include('attendances', (rows) => rows.limit(5)).all(),
@@ -335,13 +437,39 @@ describe('the object form of needs', () => {
     ['a bare read', () => staff.db.Attendance.all()],
     ['an included to-many', () => staff.db.Enrolment.include('attendances').all()],
     ['the caller’s own include', () => staff.db.Attendance.include('enrolment').all()],
+    [
+      'a nested include beneath the relation',
+      () =>
+        staff.db.Enrolment.include('attendances', (rows) =>
+          rows.include('enrolment', (enrolment) => enrolment.include('classTerm')),
+        ).all(),
+    ],
+    [
+      'a shaped include',
+      () => staff.db.Attendance.include('enrolment', (rows) => rows.select('ref')).all(),
+    ],
   ])('%s costs the same number of queries at any row count', async (_lane, run) => {
     await run()
     const few = recorder.plans.length
-    for (let i = 0; i < 5; i++) await enrol()
+    for (const more of [5, 10]) {
+      for (let i = 0; i < more; i++) await enrol()
+      recorder.clear()
+      await run()
+      expect(recorder.plans.length).toBe(few)
+    }
+  })
+
+  test('a plain include costs no query the bare read does not', async () => {
+    await staff.db.Attendance.select('label').all()
+    const bare = recorder.plans.length
     recorder.clear()
-    await run()
-    expect(recorder.plans.length).toBe(few)
+    await staff.db.Attendance.select('label').include('enrolment').all()
+    expect(recorder.plans.length).toBe(bare)
+  })
+
+  test('a relation one level declared is not the next level’s to see', async () => {
+    await staff.db.Attendance.include('enrolment').all()
+    expect(seen.get('Enrolment.chained')).not.toHaveProperty('classTerm')
   })
 
   test('a scoped-away hop is null at any depth, and delivers nothing beneath it', async () => {
