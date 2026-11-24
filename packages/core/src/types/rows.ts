@@ -105,4 +105,54 @@ export type NeedsRow<
   [Rel in Extract<N, RelationKey<C, K>>]: RelationValue<C, R, K, Rel>
 }
 
+/** One level of an object-form `needs` (ADR-0085), as the generated types render it. */
+export interface NeedsBranch {
+  /** The stored columns named at this level, foreign keys included; `never` for none. */
+  columns: string
+  /** Each relation named at this level: `true` for its rows' stored columns, or what is named beneath it. */
+  relations: Record<string, true | NeedsBranch>
+}
+
+/**
+ * What an object-form `needs` hands a `resolveOutput` hook: at every level,
+ * exactly the columns and relations named there plus the list's system fields.
+ * A to-one is `| null` at every hop (ADR-0058).
+ */
+export type NeedsBranchRow<
+  C,
+  R extends RemainderBase,
+  K extends keyof R & string,
+  B extends NeedsBranch,
+> = Pick<StoredRow<C, R, K>, Extract<B['columns'] | SystemFieldKey, keyof StoredRow<C, R, K>>> & {
+  [Rel in Extract<keyof B['relations'], RelationKey<C, K>>]: NeedsBranchValue<
+    C,
+    R,
+    K,
+    Rel,
+    B['relations'][Rel]
+  >
+}
+
+type NeedsBranchValue<
+  C,
+  R extends RemainderBase,
+  K extends keyof R & string,
+  Rel,
+  B extends true | NeedsBranch,
+> =
+  RelationTarget<C, K, Rel> extends infer Target
+    ? Target extends keyof R & string
+      ? IsToOne<C, K, Rel> extends true
+        ? NeedsTarget<C, R, Target, B> | null
+        : NeedsTarget<C, R, Target, B>[]
+      : never
+    : never
+
+type NeedsTarget<
+  C,
+  R extends RemainderBase,
+  K extends keyof R & string,
+  B extends true | NeedsBranch,
+> = B extends NeedsBranch ? NeedsBranchRow<C, R, K, B> : StoredRow<C, R, K>
+
 export type { ListId }

@@ -2,7 +2,7 @@
 // for every read terminal and every write return (ADR-0027, ADR-0044, ADR-0051).
 
 import type { AccessContext, OrmRow } from '../access/types.js'
-import type { FieldConfig, ListConfig, TypeInfo } from '../config/types.js'
+import type { FieldConfig, ListConfig, OpenSaasConfig, TypeInfo } from '../config/types.js'
 import { isComputedField } from '../config/field-kind.js'
 import { checkRowRead } from '../access/field-access.js'
 import {
@@ -23,6 +23,8 @@ import {
   type ListMember,
   type ListMembers,
 } from '../members/list-members.js'
+import { relatedListOf, type FieldDependencySet } from '../contract/dependencies.js'
+import { declaredBranch } from './declared-branch.js'
 import { lowerWhere, whereCombinators } from './lower.js'
 import { resolveRelatedAccessPlan, type ResolveContext } from './vocabulary.js'
 import {
@@ -264,13 +266,9 @@ async function unshapedRowsAt(
       collectionFor(binding.ormHandle, listName)
         .where((model) => identityIn(model, listName, ids))
         .select('id')
-        .include(node.relation, (child) => {
-          let scoped = child
-          for (const predicate of node.declaredFetch ?? []) {
-            scoped = scoped.where((model) => lowerWhere(predicate, model, ops))
-          }
-          return scoped
-        })
+        .include(node.relation, (child) =>
+          declaredBranch(child, node.declaredFetch ?? [], node.declaredIncludes, ops),
+        )
         .all(),
     )
     const values = new Map<string, unknown>()
@@ -324,11 +322,7 @@ async function visitRow(
   const ruleRow = ruleRowOf(assembled, viewsOf(level, views), fieldConfigs, config, listKey)
   const hookItemFor = (fieldName: string): Record<string, unknown> => {
     const declared = declaredDependencies[fieldName] ?? { columns: [], relations: [] }
-    const hookItem: Record<string, unknown> = {}
-    for (const key of [...systemFields, ...declared.columns, ...declared.relations]) {
-      if (key in ruleRow.item) hookItem[key] = ruleRow.item[key]
-    }
-    return hookItem
+    return declaredItem(config, members, ruleRow.item, declared)
   }
   const selected = (fieldName: string): boolean =>
     selection === undefined || selection.has(fieldName)
@@ -372,14 +366,15 @@ async function visitRow(
       const reduction = reductionOf(node)
       const reached = relatedPairs(value, raw[fieldName], reduction)
       let kept = reached
+      if (node.declared) continue
       if (node.synthetic === undefined) {
         if (!(await checkRowRead(fieldConfigs[fieldName]?.access, args, ruleRow))) continue
-        if (node.declared) continue
-        if (reduction !== undefined && node.reducedDeclared) {
-          shown[fieldName] = reduction.shown(raw[fieldName], [])
-          continue
-        }
-      } else {
+      }
+      if (reduction !== undefined && node.reducedDeclared) {
+        shown[fieldName] = reduction.shown(raw[fieldName], [])
+        continue
+      }
+      if (node.synthetic !== undefined) {
         const gate = node.synthetic.gate
         const allowed = await Promise.all(
           reached.map(([relatedRow]) =>
@@ -730,6 +725,48 @@ function assembleColumnFields(
     const value = fieldConfig.assembleColumns(fieldName, assembled)
     for (const name of columnNames) delete assembled[name]
     assembled[fieldName] = value
+  }
+  return assembled
+}
+
+/** What a hook is handed of one row: what `declared` names on it and the list's system fields. */
+function declaredItem(
+  config: OpenSaasConfig,
+  members: ListMembers,
+  row: OrmRow,
+  declared: FieldDependencySet,
+): OrmRow {
+  const item: OrmRow = {}
+  for (const key of [...members.systemFields, ...declared.columns]) {
+    if (key in row) item[key] = row[key]
+  }
+  for (const relation of declared.relations) {
+    if (!(relation in row)) continue
+    const related = relatedListOf(members, relation)
+    item[relation] =
+      related === undefined
+        ? row[relation]
+        : declaredValue(config, related, row[relation], declared.nested?.[relation])
+  }
+  return item
+}
+
+function declaredValue(
+  config: OpenSaasConfig,
+  listName: string,
+  value: unknown,
+  declared: FieldDependencySet | undefined,
+): unknown {
+  if (Array.isArray(value)) {
+    return value.map((row) => declaredValue(config, listName, row, declared))
+  }
+  if (!isRow(value)) return value
+  const members = resolveListMembers(config, listName)
+  const assembled = assembleColumnFields(value, config.lists[listName].fields, members)
+  if (declared !== undefined) return declaredItem(config, members, assembled, declared)
+  for (const key of Object.keys(assembled)) {
+    const member = members.members.get(key)
+    if (member !== undefined && isRelationMember(member)) delete assembled[key]
   }
   return assembled
 }

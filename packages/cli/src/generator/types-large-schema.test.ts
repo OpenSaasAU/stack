@@ -40,6 +40,23 @@ function buildLargeSchemaConfig(): OpenSaasConfig {
         siteName: text({ defaultValue: 'Fixture' }),
       },
     },
+    Placement: {
+      fields: {
+        note: text(),
+        membership: relationship({ ref: 'Membership' }),
+        label: virtual({
+          type: 'string',
+          needs: {
+            membership: { role: true, tenant: ['name', 'from_Membership_tenant'] },
+            from_Seat_placement: true,
+          },
+          hooks: { resolveOutput: ({ item }) => `${item.id}` },
+        }),
+      },
+    },
+    Seat: {
+      fields: { row: text(), placement: relationship({ ref: 'Placement' }) },
+    },
     // A computed field over a RELATION: ADR-0051 widens the read to the
     // relation AND the foreign-key column this side owns, so the item type
     // has to carry both. It sits on a list of its own because `list()` cannot
@@ -90,7 +107,7 @@ function buildLargeSchemaConfig(): OpenSaasConfig {
   return { db: { provider: 'postgresql' }, lists }
 }
 
-describe('the generated bundle for a 23-list schema', () => {
+describe('the generated bundle for a 25-list schema', () => {
   let fixture: TypeFixture
 
   beforeAll(async () => {
@@ -132,7 +149,7 @@ assertType<Exact<Info['inputs']['create'], Model0CreateInput>>()
 assertType<Exact<Info['inputs']['update'], Model0UpdateInput>>()
 
 async function run() {
-  // The self-referential \`sudo()\` over a 23-list \`DB\` is what used to hit TS2589.
+  // The self-referential \`sudo()\` over a 25-list \`DB\` is what used to hit TS2589.
   const sudoed = context.sudo()
   const one = await sudoed.db.Model0.where({ id: '1' }).first()
   const many = await context.db.Model10.include('previous').include('next').all()
@@ -248,6 +265,78 @@ void undeclared
       expect(output).toBe('')
     },
   )
+
+  it('types an object-form needs at every level it spells out', { timeout: 300_000 }, () => {
+    const output = fixture.check(`${CONSUMER_PRELUDE}
+import type { Lists } from './.opensaas/lists.ts'
+import { list } from '@opensaas/stack-core'
+import { virtual } from '@opensaas/stack-core/fields'
+
+type Item = Lists.Placement.Needs['label']['item']
+assertType<Exact<keyof Item, 'id' | 'membershipId' | 'membership' | 'from_Seat_placement'>>()
+type Member = NonNullable<Item['membership']>
+assertType<Exact<keyof Member, 'id' | 'role' | 'tenantId' | 'tenant'>>()
+type Tenant = NonNullable<Member['tenant']>
+assertType<Exact<keyof Tenant, 'id' | 'name' | 'from_Membership_tenant'>>()
+assertType<null extends Item['membership'] ? true : false>()
+assertType<null extends Member['tenant'] ? true : false>()
+
+declare const item: Item
+const seat: string | null | undefined = item.from_Seat_placement[0]?.row
+const role: string | null | undefined = item.membership?.tenant?.from_Membership_tenant[0]?.role
+// @ts-expect-error a relation taken as \`true\` carries its rows' stored columns and no relation
+void item.from_Seat_placement[0]?.placement
+// @ts-expect-error a computed field never runs on a declared branch
+void item.membership?.tenant?.from_Membership_tenant[0]?.owner
+void seat
+void role
+
+const declared = list<Lists.Placement.TypeInfo>({
+  fields: {
+    label: virtual({
+      type: 'string',
+      needs: {
+        membership: { role: true, tenant: ['name', 'from_Membership_tenant'] },
+        from_Seat_placement: true,
+      },
+      hooks: { resolveOutput: ({ item }) => item.membership?.tenant?.name ?? '' },
+    }),
+  },
+})
+
+const undeclared = list<Lists.Placement.TypeInfo>({
+  fields: {
+    label: virtual({
+      type: 'string',
+      needs: { membership: { tenant: ['name'] } },
+      hooks: {
+        // @ts-expect-error \`code\` is not declared beneath \`membership\`
+        resolveOutput: ({ item }) => item.membership?.code ?? '',
+      },
+    }),
+  },
+})
+
+const unguarded = list<Lists.Placement.TypeInfo>({
+  fields: {
+    label: virtual({
+      type: 'string',
+      needs: { membership: { tenant: ['name'] } },
+      hooks: {
+        // @ts-expect-error every to-one hop is a null check (ADR-0058)
+        resolveOutput: ({ item }) => item.membership.role ?? '',
+      },
+    }),
+  },
+})
+
+void declared
+void undeclared
+void unguarded
+`)
+
+    expect(output).toBe('')
+  })
 
   it('carries the foreign-key column a declared relation implies', { timeout: 300_000 }, () => {
     const output = fixture.check(`${CONSUMER_PRELUDE}

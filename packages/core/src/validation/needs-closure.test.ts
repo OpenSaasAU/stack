@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { config, list } from '../config/index.js'
 import { text, integer, relationship, virtual } from '../fields/index.js'
 import { deriveDependencyTable } from '../contract/dependencies.js'
-import { validateNeedsDeclarations } from './needs-closure.js'
+import { findChainedNeeds, validateNeedsDeclarations } from './needs-closure.js'
 
 /**
  * `needs` as the generator sees it (ADR-0025, ADR-0051): what a declaration
@@ -263,5 +263,162 @@ describe('needs — generate-time validation (ADR-0025)', () => {
     expect(table.Order.fields.typo).toEqual({ columns: [], relations: [] })
     expect(table.Order.fields.usesNonRelation).toEqual({ columns: ['price'], relations: [] })
     expect(table.Empty.systemFields).toEqual(['id'])
+  })
+})
+
+describe('needs — the object form (ADR-0085)', () => {
+  const hooks = { resolveOutput: () => 'x' }
+
+  function schoolConfig(label: ReturnType<typeof virtual>) {
+    return config({
+      db: { provider: 'postgresql' },
+      lists: {
+        Attendance: list({
+          fields: { note: text(), enrolment: relationship({ ref: 'Enrolment' }), label },
+        }),
+        Enrolment: list({
+          fields: {
+            ref: text(),
+            student: relationship({ ref: 'Student' }),
+            display: virtual({ type: 'string', needs: ['student'], hooks }),
+          },
+        }),
+        Student: list({
+          fields: {
+            name: text(),
+            shout: virtual({ type: 'string', needs: ['name'], hooks }),
+          },
+        }),
+      },
+    })
+  }
+
+  async function messages(needs: unknown): Promise<string[]> {
+    const label = virtual({ type: 'string', hooks })
+    Object.assign(label, { needs })
+    return validateNeedsDeclarations(await schoolConfig(label)).map((error) => error.message)
+  }
+
+  it('accepts columns, relations and synthetic back-relations at any depth', async () => {
+    expect(
+      await messages({
+        note: true,
+        enrolment: {
+          ref: true,
+          student: ['name', 'from_Enrolment_student'],
+          from_Attendance_enrolment: { enrolment: { student: true } },
+        },
+      }),
+    ).toEqual([])
+    expect(await messages(['note', 'enrolment'])).toEqual([])
+    expect(await messages({})).toEqual([])
+  })
+
+  it('emits it as nested sets, with the foreign key of each owned relation', async () => {
+    const label = virtual({
+      type: 'string',
+      needs: { enrolment: { student: ['name'], from_Attendance_enrolment: true } },
+      hooks,
+    })
+    expect(deriveDependencyTable(await schoolConfig(label)).Attendance.fields.label).toEqual({
+      columns: ['enrolmentId'],
+      relations: ['enrolment'],
+      nested: {
+        enrolment: {
+          columns: ['studentId'],
+          relations: ['from_Attendance_enrolment', 'student'],
+          nested: { student: { columns: ['name'], relations: [] } },
+        },
+      },
+    })
+  })
+
+  it.each([
+    [{ gone: true }, 'has no field named "gone"', '{ gone: … }'],
+    [{ enrolment: ['gone'] }, '"Enrolment" has no field named "gone"', "{ enrolment: ['gone'] }"],
+    [
+      { enrolment: { student: ['shout'] } },
+      '"shout" is a computed field on "Student"',
+      "{ enrolment: { student: ['shout'] } }",
+    ],
+    [{ enrolment: { display: true } }, 'computed field on "Enrolment"', '{ display: … }'],
+    [{ note: ['x'] }, 'takes only `true`', '{ note: … }'],
+    [{ enrolment: { ref: {} } }, 'takes only `true`', '{ ref: … }'],
+    [{ enrolment: false }, 'must be true, an array', '{ enrolment: … }'],
+    [{ enrolment: null }, 'must be true, an array', '{ enrolment: … }'],
+    [{ enrolment: { constructor: true } }, 'no field named "constructor"', '{ constructor: … }'],
+    ['enrolment', 'neither an array', ''],
+    [[1], 'neither an array', ''],
+    [null, 'neither an array', ''],
+  ])('refuses %j by list, field and path', async (needs, why, path) => {
+    const found = await messages(needs)
+    expect(found).toHaveLength(1)
+    expect(found[0]).toContain('"Attendance.label"')
+    expect(found[0]).toContain(why)
+    expect(found[0]).toContain(path)
+  })
+
+  it('refuses a computed field named by its descriptor alone', async () => {
+    const label = virtual({ type: 'string', needs: ['derived'], hooks })
+    const base = await schoolConfig(label)
+    Object.assign(base.lists.Attendance.fields, {
+      derived: { type: 'derived', getContractField: () => ({ kind: 'computed' }) },
+    })
+    expect(validateNeedsDeclarations(base)[0].message).toContain('computed field on "Attendance"')
+  })
+
+  it('warns on an array form whose chain stops, naming both fields and an accepted remedy', async () => {
+    const chained = await schoolConfig(virtual({ type: 'string', needs: ['enrolment'], hooks }))
+    const warnings = findChainedNeeds(chained)
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toMatchObject({ target: 'Enrolment.display', relation: 'enrolment' })
+    expect(warnings[0].message).toContain('"Attendance.label"')
+    expect(warnings[0].message).toContain('"Enrolment.display"')
+    expect(warnings[0].message).toContain('needs: { enrolment: { student: true } }')
+
+    for (const needs of [warnings[0].replacement, { enrolment: true as const }]) {
+      const fixed = await schoolConfig(virtual({ type: 'string', needs, hooks }))
+      expect(validateNeedsDeclarations(fixed)).toEqual([])
+      expect(findChainedNeeds(fixed)).toEqual([])
+    }
+  })
+
+  it('warns on the issue repro, and bounds a mutual chain', async () => {
+    const virtualNeeding = (needs: string[]) => virtual({ type: 'string', needs, hooks })
+    const repro = await config({
+      db: { provider: 'postgresql' },
+      lists: {
+        Author: list({ fields: { name: text() } }),
+        Post: list({
+          fields: {
+            author: relationship({ ref: 'Author' }),
+            comments: relationship({ ref: 'Comment.post', many: true }),
+            label: virtualNeeding(['author']),
+          },
+        }),
+        Comment: list({
+          fields: {
+            post: relationship({ ref: 'Post.comments' }),
+            label: virtualNeeding(['post']),
+          },
+        }),
+        A: list({
+          fields: { b: relationship({ ref: 'B.a' }), label: virtualNeeding(['b']) },
+        }),
+        B: list({
+          fields: {
+            a: relationship({ ref: 'A.b', many: true }),
+            label: virtualNeeding(['a']),
+          },
+        }),
+      },
+    })
+    expect(
+      findChainedNeeds(repro).map(({ listKey, replacement }) => [listKey, replacement]),
+    ).toEqual([
+      ['Comment', { post: { author: true } }],
+      ['A', { b: { a: true } }],
+      ['B', { a: { b: true } }],
+    ])
   })
 })

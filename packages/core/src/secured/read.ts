@@ -55,6 +55,7 @@ import {
   type ReadBinding,
   type RefinableCollection,
 } from './binding.js'
+import { declaredBranch } from './declared-branch.js'
 import { visibleRows, type VisibleRow, type WrittenRowRead } from './field-visibility.js'
 import { aggregations, checkSpec, specKeys, zeroed, type AggregateBuild } from './aggregate.js'
 import { distanceToScore, requireVector, vectorDistance } from './vector.js'
@@ -570,7 +571,12 @@ function refine(
     // this one query, under keys the caller cannot reach (#1357) — Field
     // Visibility's `Reduction` splits the two apart again on the way out.
     const spec: Record<string, IncludeBranch> = {
-      [DECLARED_ROWS_BRANCH_KEY]: declaredRowsBranch(collection, plan, ops),
+      [DECLARED_ROWS_BRANCH_KEY]: declaredBranch(
+        collection,
+        plan.declaredRows,
+        plan.declaredIncludes,
+        ops,
+      ),
       ...(plan.reduce.kind === 'count'
         ? { [DECLARED_COUNT_BRANCH_KEY]: refined.count() }
         : combineSpec(refined, plan, plan.reduce.branches, ops)),
@@ -596,26 +602,6 @@ function combineSpec(
       branch.kind === 'count' ? branched.count() : shape(branched, plan, branch, ops)
   }
   return spec
-}
-
-/**
- * The internal, caller-invisible rows branch a reduced-and-declared relation
- * rides alongside its own reduction (`IncludePlan.declaredRows`). Built off
- * the UNFILTERED `collection` rather than `refined` — it is scoped by the
- * Access Filter alone, never by the caller's own `where()` on the reduce,
- * because it stands in for an ordinary declared branch (full stored width,
- * one hop), not for the caller's own view of the relation.
- */
-function declaredRowsBranch(
-  collection: RefinableCollection,
-  plan: IncludePlan,
-  ops: WhereCombinators,
-): RefinableCollection {
-  let branched = collection
-  for (const predicate of plan.declaredRows ?? []) {
-    branched = branched.where((model) => lowerWhere(predicate, model, ops))
-  }
-  return branched
 }
 
 /** What a relation's rows look like: its projection, its sort and its page. */
@@ -738,7 +724,7 @@ async function writtenRowQueryable(
 
 /** Whether a computed field on this list declares a relation a write's return must fetch. */
 export function writeReturnReadsRelations(binding: Omit<ReadBinding, 'lock'>): boolean {
-  return declaredRelations(binding).length > 0
+  return declaredRelations(binding).size > 0
 }
 
 /** Runs on the binding's own handle: the write's transaction, never a second connection. */

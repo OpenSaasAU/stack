@@ -46,6 +46,29 @@ describe('generateTables', () => {
     expect(rendered).toContain(`"excerpt": { columns: ["content"], relations: [] },`)
   })
 
+  it('emits what an object-form needs names beneath each relation', () => {
+    const config: OpenSaasConfig = {
+      db: { provider: 'postgresql' },
+      lists: {
+        Post: {
+          fields: {
+            author: relationship({ ref: 'User' }),
+            label: virtual({
+              type: 'string',
+              needs: { author: ['name', 'from_Post_author'] },
+              hooks: { resolveOutput: () => '' },
+            }),
+          },
+        },
+        User: { fields: { name: text() } },
+      },
+    }
+    expect(generateTables(deriveGeneratedTables(config, deriveContract(config)))).toContain(
+      '"label": { columns: ["authorId"], relations: ["author"], ' +
+        'nested: { "author": { columns: ["name"], relations: ["from_Post_author"] } } },',
+    )
+  })
+
   it('emits each list’s actual system fields', () => {
     expect(rendered).toContain(`systemFields: ["id", "createdAt", "updatedAt"],`)
     // `Tag` opts out of timestamps, so it has only `id`.

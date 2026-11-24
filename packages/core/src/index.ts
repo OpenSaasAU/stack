@@ -124,6 +124,8 @@ export type {
   ListId,
   Row,
   StoredRow,
+  NeedsBranch,
+  NeedsBranchRow,
   NeedsRow,
   RelationValue,
   SystemFieldKey,
@@ -290,8 +292,8 @@ export { validateFieldConfig, validateConfigFields } from './validation/field-co
 export type { FieldConfigValidationError } from './validation/field-config.js'
 
 // Declared-dependency validation (`needs`, ADR-0025, ADR-0051) — a config that fails it must not generate.
-export { validateNeedsDeclarations } from './validation/needs-closure.js'
-export type { NeedsClosureError } from './validation/needs-closure.js'
+export { findChainedNeeds, validateNeedsDeclarations } from './validation/needs-closure.js'
+export type { ChainedNeedsWarning, NeedsClosureError } from './validation/needs-closure.js'
 
 // Config-surface refusals (ADR-0040, ADR-0048, ADR-0049, ADR-0064) — the
 // declarations the Prisma 8 contract cannot carry, each refused naming the
