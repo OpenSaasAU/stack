@@ -74,7 +74,7 @@ export default defineConfig({
   webServer: [
     {
       command:
-        'cd examples/starter-auth && rm -rf .opensaas/dev-db && DISABLE_RATE_LIMITING=true pnpm build && DISABLE_RATE_LIMITING=true pnpm exec opensaas dev -- next start',
+        'cd examples/starter-auth && rm -rf .opensaas/dev-db && E2E_DISABLE_RATE_LIMITING=true pnpm build && E2E_DISABLE_RATE_LIMITING=true pnpm exec opensaas dev -- next start',
       url: 'http://localhost:3000',
       reuseExistingServer: !process.env.CI,
       timeout: 180000, // 3 minutes - Next.js can take time to build and start

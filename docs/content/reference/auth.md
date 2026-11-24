@@ -415,6 +415,27 @@ authPlugin({
 })
 ```
 
+#### Where the client IP comes from
+
+The limiter keys on the client IP, and nothing in the stack decides where that IP comes from. Two failure modes follow:
+
+- **A spoofable header rotates buckets.** If `X-Forwarded-For` is read from a request nobody sits in front of, a client sending a different value per request gets a fresh bucket every time and is never limited — sign-in guesses, sign-ups and password-reset mail all go through.
+- **No header means one shared bucket.** Without a client IP, better-auth logs "Rate limiting could not determine a client IP" and falls back to a single per-path bucket, so a few failed sign-ins from anyone lock sign-in for everyone.
+
+Name the header your deployment trusts via `betterAuthOptions.advanced.ipAddress`. It must match the deployment — a reverse proxy that overwrites `X-Forwarded-For`, a platform header such as Vercel's, or none:
+
+```typescript
+authPlugin({
+  betterAuthOptions: {
+    advanced: {
+      ipAddress: { ipAddressHeaders: ['x-forwarded-for'], ipv6Subnet: 64 },
+    },
+  },
+})
+```
+
+`DISABLE_RATE_LIMITING` is a development and E2E switch: the scaffolded config ignores it when `NODE_ENV` is `production`.
+
 `storage` mirrors better-auth's own `rateLimit.storage` option (`'memory' | 'database' | 'secondary-storage'`, default `'memory'`). Setting it to `'database'` is what generates the fifth `RateLimit` list (see [Auto-Generated Lists](#auto-generated-lists) below) — the persisted limiter needs a table, and this is the only way to get one:
 
 ```typescript
@@ -856,10 +877,10 @@ still succeeds and the cookie is still cleared while the row stays valid.
 // lib/actions/auth.ts
 'use server'
 
-import { headers } from 'next/headers'
+import { cookies, headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
-import { signOutAndConfirm } from '@opensaas/stack-auth/server'
+import { postAuthEndpoint, signOutAndConfirm } from '@opensaas/stack-auth/server'
 import type {
   AuthActionResult,
   SignInInput,
@@ -872,47 +893,35 @@ function errorMessage(err: unknown, fallback: string): string {
   return err instanceof Error && err.message ? err.message : fallback
 }
 
-export async function signInAction(input: SignInInput): Promise<AuthActionResult> {
-  try {
-    await auth.api.signInEmail({
-      body: { email: input.email, password: input.password },
-      headers: await headers(),
-    })
-    return { success: true }
-  } catch (err) {
-    return { success: false, error: errorMessage(err, 'Sign in failed') }
-  }
+async function postToAuth(path: string, body: Record<string, unknown>): Promise<AuthActionResult> {
+  const cookieStore = await cookies()
+  return postAuthEndpoint(auth, {
+    path,
+    body,
+    headers: await headers(),
+    setCookie: (name, value, options) => cookieStore.set(name, value, options),
+  })
 }
 
-export async function signOutAction(): Promise<void> {
-  const logoutUrl = await signOutAndConfirm(auth, await headers())
-  redirect(logoutUrl ?? '/sign-in')
+export async function signInAction(input: SignInInput): Promise<AuthActionResult> {
+  return postToAuth('/sign-in/email', { email: input.email, password: input.password })
 }
 
 export async function signUpAction(input: SignUpInput): Promise<AuthActionResult> {
-  try {
-    await auth.api.signUpEmail({
-      body: { name: input.name, email: input.email, password: input.password },
-      headers: await headers(),
-    })
-    return { success: true }
-  } catch (err) {
-    return { success: false, error: errorMessage(err, 'Sign up failed') }
-  }
+  return postToAuth('/sign-up/email', {
+    name: input.name,
+    email: input.email,
+    password: input.password,
+  })
 }
 
 export async function requestPasswordResetAction(
   input: RequestPasswordResetInput,
 ): Promise<AuthActionResult> {
-  try {
-    await auth.api.requestPasswordReset({
-      body: { email: input.email, redirectTo: '/reset-password' },
-      headers: await headers(),
-    })
-    return { success: true }
-  } catch (err) {
-    return { success: false, error: errorMessage(err, 'Failed to send reset email') }
-  }
+  return postToAuth('/request-password-reset', {
+    email: input.email,
+    redirectTo: '/reset-password',
+  })
 }
 
 export async function resetPasswordAction(input: ResetPasswordInput): Promise<AuthActionResult> {
@@ -925,6 +934,11 @@ export async function resetPasswordAction(input: ResetPasswordInput): Promise<Au
   } catch (err) {
     return { success: false, error: errorMessage(err, 'Failed to reset password') }
   }
+}
+
+export async function signOutAction(): Promise<void> {
+  const logoutUrl = await signOutAndConfirm(auth, await headers())
+  redirect(logoutUrl ?? '/sign-in')
 }
 
 export async function signInSocialAction(provider: string): Promise<void> {

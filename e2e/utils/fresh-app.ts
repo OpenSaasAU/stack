@@ -134,6 +134,7 @@ export async function startFreshApp(mode: FreshAppMode, port: number): Promise<F
     ...database.env,
     BETTER_AUTH_URL: baseURL,
     DISABLE_RATE_LIMITING: 'true',
+    E2E_DISABLE_RATE_LIMITING: 'true',
   }
   let child: ChildProcess | undefined
   try {
