@@ -238,7 +238,9 @@ import { integer } from '@opensaas/stack-core/fields'
 const rank = integer({ defaultValue: 100, db: { isNullable: false } })
 ```
 
-Or backfill in two steps: ship the column as nullable, fill it with your own data, then tighten it to `db: { isNullable: false }` in a second change.
+`updatedAt` from `db.timestamps` takes neither option, so after turning timestamps on, repair the epoch rows yourself (`UPDATE "Post" SET "updatedAt" = "createdAt" WHERE "updatedAt" < '1971-01-01'`) or reset the Dev database.
+
+Otherwise backfill in two steps: ship the column as nullable, fill it with your own data, then tighten it to `db: { isNullable: false }` in a second change.
 
 #### Adopting an existing many-to-many table
 
@@ -1287,9 +1289,7 @@ export default config({
     provider: 'postgresql',
     extensions: [{ name: 'pgvector', from: '@prisma/orm-extension-pgvector' }],
   },
-  lists: {
-    /* ... */
-  },
+  lists: {/* ... */},
 })
 ```
 
