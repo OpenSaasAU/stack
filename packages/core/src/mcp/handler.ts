@@ -19,8 +19,14 @@ import { listIdJsonSchema, parseListId } from '../contract/id-boundary.js'
 import { RELATION_QUANTIFIERS, SCALAR_OPERATORS } from '../secured/operators.js'
 import type { SecuredQuery } from '../secured/read.js'
 import { orderByArgument, whereArgument } from './arguments.js'
-import { assertOrderByReachable, assertWhereReachable } from './where-reachability.js'
-import { bindHeldScopes, holdsListScope, mcpListReachable, readableLists } from './reachability.js'
+import {
+  assertOrderByReachable,
+  assertWhereReachable,
+  orderByRelationTargets,
+  whereRelationTargets,
+} from './where-reachability.js'
+import { assertWhereWithinLimits } from '../secured/vocabulary.js'
+import { bindHeldScopes, holdsListScope, mcpListReachable, readableAmong } from './reachability.js'
 import { coerceWhereIds, foreignKeyVisibility, idBoundaryRefusal } from './where-id-boundary.js'
 import {
   McpProjectionRefusedError,
@@ -825,7 +831,17 @@ async function handleCrudTool(
         let projection: ResolvedFieldsProjection | undefined
         try {
           if (isPlainObject(args.where)) {
-            assertWhereReachable(args.where, config, listKey, await readableLists(config, context))
+            assertWhereWithinLimits(args.where)
+            assertWhereReachable(
+              args.where,
+              config,
+              listKey,
+              await readableAmong(
+                config,
+                context,
+                whereRelationTargets(args.where, config, listKey),
+              ),
+            )
             const coercedWhere = coerceWhereIds(
               args.where,
               config,
@@ -844,7 +860,11 @@ async function handleCrudTool(
               args.orderBy,
               config,
               listKey,
-              await readableLists(config, context),
+              await readableAmong(
+                config,
+                context,
+                orderByRelationTargets(args.orderBy, config, listKey),
+              ),
             )
             query = query.orderBy(orderByArgument(args.orderBy, listKey))
           }

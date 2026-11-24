@@ -126,13 +126,14 @@ function branches(path: string, raw: unknown): readonly Where[] {
  */
 export function whereArgument(raw: unknown, path: string): Where {
   if (!isPlainObject(raw)) throw malformed(path, 'takes a predicate object')
-  const where: Where = {}
-  for (const [key, value] of Object.entries(raw)) {
-    where[key] = LOGICAL_OPERATORS.has(key)
-      ? branches(`${path}.${key}`, value)
-      : condition(`${path}.${key}`, value)
-  }
-  return where
+  return Object.fromEntries(
+    Object.entries(raw).map(([key, value]) => [
+      key,
+      LOGICAL_OPERATORS.has(key)
+        ? branches(`${path}.${key}`, value)
+        : condition(`${path}.${key}`, value),
+    ]),
+  )
 }
 
 function isDirection(value: unknown): value is OrderDirection {
@@ -145,13 +146,13 @@ export function orderByArgument(raw: unknown, path: string): OrderBy[] {
   return list.map((entry, index) => {
     const at = Array.isArray(raw) ? `${path}[${index}]` : path
     if (!isPlainObject(entry)) throw malformed(at, 'takes a sort object or a list of them')
-    const order: OrderBy = {}
-    for (const [column, direction] of Object.entries(entry)) {
-      if (!isDirection(direction)) {
-        throw malformed(`${at}.${column}`, 'takes the direction "asc" or "desc"')
-      }
-      order[column] = direction
-    }
-    return order
+    return Object.fromEntries(
+      Object.entries(entry).map(([column, direction]) => {
+        if (!isDirection(direction)) {
+          throw malformed(`${at}.${column}`, 'takes the direction "asc" or "desc"')
+        }
+        return [column, direction]
+      }),
+    )
   })
 }

@@ -9,8 +9,14 @@ import type { SecuredQuery } from '../secured/read.js'
 import { RELATION_QUANTIFIERS, SCALAR_OPERATORS } from '../secured/operators.js'
 import { orderByArgument, whereArgument } from './arguments.js'
 import { MCP_NESTED_TAKE_DEFAULT, MCP_NESTED_TAKE_MAX } from './constants.js'
-import { assertOrderByReachable, assertWhereReachable } from './where-reachability.js'
-import { mcpReadableList, readableLists } from './reachability.js'
+import {
+  assertOrderByReachable,
+  assertWhereReachable,
+  orderByRelationTargets,
+  whereRelationTargets,
+} from './where-reachability.js'
+import { assertWhereWithinLimits } from '../secured/vocabulary.js'
+import { mcpReadableList, readableAmong } from './reachability.js'
 import { relationFieldOf, type McpRelation } from './relation-member.js'
 import { coerceWhereIds, foreignKeyVisibility, idBoundaryRefusal } from './where-id-boundary.js'
 
@@ -457,11 +463,17 @@ export async function resolveFieldsProjection(
     // too: it filters the RELATED list's own rows, so a malformed id here
     // refuses the whole request exactly as one at the root does.
     if (entry.where !== undefined) {
+      const nestedWhere = entry.where as Record<string, unknown>
+      assertWhereWithinLimits(nestedWhere)
       assertWhereReachable(
-        entry.where as Record<string, unknown>,
+        nestedWhere,
         config,
         related.listName,
-        await readableLists(config, context),
+        await readableAmong(
+          config,
+          context,
+          whereRelationTargets(nestedWhere, config, related.listName),
+        ),
       )
       const coercedWhere = coerceWhereIds(
         entry.where as Record<string, unknown>,
@@ -479,7 +491,11 @@ export async function resolveFieldsProjection(
         entry.orderBy,
         config,
         related.listName,
-        await readableLists(config, context),
+        await readableAmong(
+          config,
+          context,
+          orderByRelationTargets(entry.orderBy, config, related.listName),
+        ),
       )
     }
     if (

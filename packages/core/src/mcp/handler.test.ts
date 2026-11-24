@@ -1804,6 +1804,69 @@ describe('the MCP surface', () => {
     )
 
     test(
+      'a throwing query rule on a list the where never names does not fail the where',
+      async () => {
+        const base = schemaConfig()
+        const config: OpenSaasConfig = {
+          ...base,
+          lists: {
+            ...base.lists,
+            Comment: {
+              ...base.lists.Comment,
+              access: {
+                operation: {
+                  query: () => {
+                    throw new Error('boom')
+                  },
+                },
+              },
+            },
+          },
+        }
+        vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+        const { body } = await callTool(
+          'list_user_query',
+          { where: { name: { equals: 'x' } } },
+          config,
+        )
+        const result = body?.result as { isError?: boolean }
+        expect(result.isError).not.toBe(true)
+      },
+      BOOT,
+    )
+
+    test(
+      'a __proto__ key in where is refused as an unknown field',
+      async () => {
+        const { body } = await callTool(
+          'list_user_query',
+          { where: JSON.parse('{"__proto__":{"equals":1}}') },
+          schemaConfig(),
+        )
+        const result = body?.result as { isError?: boolean; content: Array<{ text: string }> }
+        expect(result.isError).toBe(true)
+        expect(result.content[0].text).toContain('__proto__')
+      },
+      BOOT,
+    )
+
+    test(
+      'an oversized in list is refused with the named cap',
+      async () => {
+        const ids = Array.from({ length: 10_001 }, (_, i) => `id${i}`)
+        const { body } = await callTool(
+          'list_user_query',
+          { where: { name: { in: ids } } },
+          schemaConfig(),
+        )
+        const result = body?.result as { isError?: boolean; content: Array<{ text: string }> }
+        expect(result.isError).toBe(true)
+        expect(result.content[0].text).toContain('in/notIn')
+      },
+      BOOT,
+    )
+
+    test(
       'an operation switched off is refused as an unknown tool',
       async () => {
         const config = withOverrides()

@@ -72,12 +72,14 @@ export function mcpReadableList(
   return mcpListReachable(config, listKey, context, { requireReadTool: true, requireScope: 'read' })
 }
 
-export async function readableLists(
+/** The named lists this session may read, filter or connect through over MCP. */
+export async function readableAmong(
   config: OpenSaasConfig,
   context: AccessContext,
+  listKeys: ReadonlySet<string>,
 ): Promise<ReadonlySet<string>> {
   const reachable = new Set<string>()
-  for (const listKey of Object.keys(config.lists)) {
+  for (const listKey of listKeys) {
     if (await mcpReadableList(config, listKey, context)) reachable.add(listKey)
   }
   return reachable
