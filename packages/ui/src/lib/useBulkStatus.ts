@@ -9,10 +9,12 @@ export interface BulkStatus {
   setStatus: (status: string, options?: { handoff?: boolean }) => void
   /** Dismiss the report. */
   clearStatus: () => void
+  /** Let the next change of the reset key pass without dismissing the report. */
+  keepThroughNextReset: () => void
 }
 
 const KEY_PREFIX = 'opensaas:bulk-status:'
-const HANDOFF_MAX_AGE_MS = 10_000
+const pending = new Set<string>()
 
 function storageKeyFor(listKey: string): string {
   return `${KEY_PREFIX}${listKey}`
@@ -22,7 +24,8 @@ function takeHandoff(storageKey: string): string | null {
   try {
     const raw = window.sessionStorage.getItem(storageKey)
     window.sessionStorage.removeItem(storageKey)
-    if (!raw) return null
+    const live = pending.delete(storageKey)
+    if (!raw || !live) return null
     const parsed: unknown = JSON.parse(raw)
     if (
       typeof parsed === 'object' &&
@@ -30,8 +33,7 @@ function takeHandoff(storageKey: string): string | null {
       'text' in parsed &&
       'at' in parsed &&
       typeof parsed.text === 'string' &&
-      typeof parsed.at === 'number' &&
-      Date.now() - parsed.at <= HANDOFF_MAX_AGE_MS
+      typeof parsed.at === 'number'
     ) {
       return parsed.text
     }
@@ -42,6 +44,7 @@ function takeHandoff(storageKey: string): string | null {
 }
 
 export function clearAllBulkStatuses(): void {
+  pending.clear()
   try {
     const keys: string[] = []
     for (let i = 0; i < window.sessionStorage.length; i++) {
@@ -54,21 +57,60 @@ export function clearAllBulkStatuses(): void {
   }
 }
 
-export function useBulkStatus(listKey: string): BulkStatus {
+export function useBulkStatus(listKey: string, resetKey?: string): BulkStatus {
   const storageKey = storageKeyFor(listKey)
   const [status, setLocal] = React.useState<string | null>(null)
 
+  const taken = React.useRef<{ key: string; text: string | null } | null>(null)
   React.useEffect(() => {
-    const handed = takeHandoff(storageKey)
+    if (taken.current?.key !== storageKey) {
+      taken.current = { key: storageKey, text: takeHandoff(storageKey) }
+    }
     // Reading sessionStorage must wait for the client to avoid a hydration mismatch.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (handed !== null) setLocal(handed)
+
+    setLocal(taken.current.text)
   }, [storageKey])
+
+  const skipNextReset = React.useRef(false)
+
+  const lastResetKey = React.useRef(resetKey)
+  React.useEffect(() => {
+    if (lastResetKey.current === resetKey) return
+    lastResetKey.current = resetKey
+    if (skipNextReset.current) {
+      skipNextReset.current = false
+      return
+    }
+
+    setLocal(null)
+    pending.delete(storageKey)
+    try {
+      window.sessionStorage.removeItem(storageKey)
+    } catch {
+      // Storage unavailable: nothing to remove.
+    }
+  }, [resetKey, storageKey])
+
+  React.useEffect(
+    () => () => {
+      // A remount takes the entry in the same commit, before this runs.
+      setTimeout(() => {
+        pending.delete(storageKey)
+        try {
+          window.sessionStorage.removeItem(storageKey)
+        } catch {
+          // Storage unavailable: nothing to remove.
+        }
+      }, 0)
+    },
+    [storageKey],
+  )
 
   const setStatus = React.useCallback(
     (value: string, options?: { handoff?: boolean }) => {
       setLocal(value)
       if (options?.handoff !== true) return
+      pending.add(storageKey)
       try {
         window.sessionStorage.setItem(storageKey, JSON.stringify({ text: value, at: Date.now() }))
       } catch {
@@ -80,6 +122,7 @@ export function useBulkStatus(listKey: string): BulkStatus {
 
   const clearStatus = React.useCallback(() => {
     setLocal(null)
+    pending.delete(storageKey)
     try {
       window.sessionStorage.removeItem(storageKey)
     } catch {
@@ -87,5 +130,9 @@ export function useBulkStatus(listKey: string): BulkStatus {
     }
   }, [storageKey])
 
-  return { status, setStatus, clearStatus }
+  const keepThroughNextReset = React.useCallback(() => {
+    skipNextReset.current = true
+  }, [])
+
+  return { status, setStatus, clearStatus, keepThroughNextReset }
 }
