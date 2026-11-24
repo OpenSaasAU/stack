@@ -139,6 +139,26 @@ function readRemoveOutcome(result: unknown): { ok: boolean; error?: string } {
   return { ok: false }
 }
 
+function ViewAllLink({ href, onNavigate }: { href: string; onNavigate: (href: string) => void }) {
+  return (
+    <>
+      {' · '}
+      <a
+        href={href}
+        data-slot="relationship-table-view-all"
+        className="underline"
+        onClick={(event) => {
+          if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return
+          event.preventDefault()
+          onNavigate(href)
+        }}
+      >
+        View all
+      </a>
+    </>
+  )
+}
+
 /**
  * Relationship table (issue #734) with row removal (issue #739) and inline cell
  * edit (issue #737), client half. Renders related rows as a table whose cells
@@ -452,18 +472,7 @@ export function RelationshipTableClient({
                 className="text-sm text-muted-foreground"
               >
                 <span>{countLabel}</span>
-                {viewAllHref && (
-                  <>
-                    {' · '}
-                    <a
-                      href={viewAllHref}
-                      data-slot="relationship-table-view-all"
-                      className="underline"
-                    >
-                      View all
-                    </a>
-                  </>
-                )}
+                {viewAllHref && <ViewAllLink href={viewAllHref} onNavigate={router.push} />}
               </TableCell>
             ) : (
               <>
@@ -476,16 +485,7 @@ export function RelationshipTableClient({
                         <span className="text-sm text-muted-foreground">
                           <span>{countLabel}</span>
                           {viewAllHref && (
-                            <>
-                              {' · '}
-                              <a
-                                href={viewAllHref}
-                                data-slot="relationship-table-view-all"
-                                className="underline"
-                              >
-                                View all
-                              </a>
-                            </>
+                            <ViewAllLink href={viewAllHref} onNavigate={router.push} />
                           )}
                         </span>
                       )}
@@ -497,7 +497,7 @@ export function RelationshipTableClient({
                             fieldName={column}
                             basePath={basePath}
                           />
-                          {isPartial && (
+                          {viewAllHref && (
                             <span className="ml-1 text-xs font-normal text-muted-foreground">
                               (visible rows)
                             </span>
