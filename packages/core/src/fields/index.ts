@@ -204,6 +204,17 @@ const INT32_MAX = 2147483647
 const INT64_MIN = -(2n ** 63n)
 const INT64_MAX = 2n ** 63n - 1n
 
+function integerFilterBounds(nativeType: string | undefined): { min: number; max: number } {
+  switch (nativeType?.toLowerCase()) {
+    case 'smallint':
+      return { min: -32768, max: 32767 }
+    case 'bigint':
+      return { min: Number.MIN_SAFE_INTEGER, max: Number.MAX_SAFE_INTEGER }
+    default:
+      return { min: INT32_MIN, max: INT32_MAX }
+  }
+}
+
 const hasNul = (root: unknown): boolean => {
   const seen = new Set<object>()
   const pending: unknown[] = [root]
@@ -485,7 +496,10 @@ export function integer<
       toCondition: (operator, value) => {
         const trimmed = value.trim()
         if (!WHOLE_NUMBER_MATCH.test(trimmed)) return null
-        return { [fieldName]: { [prismaComparisonKey(operator)]: Number(trimmed) } }
+        const parsed = Number(trimmed)
+        const bounds = integerFilterBounds(options?.db?.nativeType)
+        if (parsed < bounds.min || parsed > bounds.max) return null
+        return { [fieldName]: { [prismaComparisonKey(operator)]: parsed } }
       },
       empty: emptyWhenNullable(
         fieldName,
@@ -765,7 +779,9 @@ export function bigInt<
       toCondition: (operator, value) => {
         const trimmed = value.trim()
         if (!WHOLE_NUMBER_MATCH.test(trimmed)) return null
-        return { [fieldName]: { [prismaComparisonKey(operator)]: BigInt(trimmed) } }
+        const parsed = BigInt(trimmed)
+        if (parsed < INT64_MIN || parsed > INT64_MAX) return null
+        return { [fieldName]: { [prismaComparisonKey(operator)]: parsed } }
       },
       empty: emptyWhenNullable(
         fieldName,
