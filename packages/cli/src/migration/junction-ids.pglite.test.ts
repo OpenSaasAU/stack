@@ -105,7 +105,7 @@ describe('junction id backfill against Postgres', () => {
     })
   }
 
-  it('leaves a table with any other primary key alone', async () => {
+  it('refuses a table with any other primary key, naming it', async () => {
     const db = new PGlite()
     await db.exec(
       `CREATE TABLE "_Lesson_teachers" ("A" text, "B" text, "C" text, PRIMARY KEY ("A", "C"));`,
@@ -117,8 +117,9 @@ describe('junction id backfill against Postgres', () => {
         { column: 'B', references: { model: 'Teacher', column: 'id' as const } },
       ],
     }
-    const plan = planJunctionIds([model], await columns(db), 'public', await keys(db))
-    expect(plan).toEqual([])
+    const cols = await columns(db)
+    const pks = await keys(db)
+    expect(() => planJunctionIds([model], cols, 'public', pks)).toThrow(/_Lesson_teachers/)
     await db.close()
   })
 
@@ -197,13 +198,14 @@ describe('junction id backfill against Postgres', () => {
       await db.close()
     })
 
-    it('still skips a table whose key is not the two physical columns', async () => {
+    it('still refuses a table whose key is not the two physical columns', async () => {
       const db = new PGlite()
       await db.exec(
         `CREATE TABLE "_Lesson_teachers" ("A" text, "B" text, "C" text, PRIMARY KEY ("A", "C"));`,
       )
-      const plan = planJunctionIds([recipe()], await columns(db), 'public', await keys(db))
-      expect(plan).toEqual([])
+      const cols = await columns(db)
+      const pks = await keys(db)
+      expect(() => planJunctionIds([recipe()], cols, 'public', pks)).toThrow(/_Lesson_teachers/)
       await db.close()
     })
   })

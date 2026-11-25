@@ -420,7 +420,15 @@ export function ListViewClient({
   // they are not rendered.
   const canRunBulkActions = hasCustomBulkActions && !!serverAction
 
-  const { status: bulkStatus, setStatus: setBulkStatus, clearStatus } = useBulkStatus(listKey)
+  const {
+    status: bulkStatus,
+    setStatus: setBulkStatus,
+    clearStatus,
+    keepThroughNextReset,
+  } = useBulkStatus(
+    listKey,
+    JSON.stringify([initialSort ?? null, initialSearch ?? null, page, pageSize]),
+  )
 
   const pageIds = items.map((item) => String(item.id))
 
@@ -534,6 +542,7 @@ export function ListViewClient({
   // is not served stale), then the push lands on page 1 and fetches the
   // now-shorter list fresh.
   const refreshFromFirstPage = () => {
+    if (page !== 1) keepThroughNextReset()
     router.refresh()
     router.push(buildPaginationUrl(1))
   }

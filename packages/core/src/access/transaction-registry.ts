@@ -69,6 +69,7 @@ export class TransactionRegistry {
   private firstFailure: unknown
   private unsafeReached = false
   private wrote = false
+  private drainedWith: TransactionSettleOutcome | undefined
 
   /** The caller reached the Unsafe surface, whose failures the stack does not observe. */
   noteUnsafeReached(): void {
@@ -107,9 +108,17 @@ export class TransactionRegistry {
     this.queue.push(flush)
   }
 
+  get settledWith(): TransactionSettleOutcome | undefined {
+    return this.drainedWith
+  }
+
   async drain(settle: TransactionSettleOutcome, errors: AfterTransactionFailure[]): Promise<void> {
-    for (const flush of this.queue) {
-      await flush(settle, errors)
+    try {
+      for (const flush of this.queue) {
+        await flush(settle, errors)
+      }
+    } finally {
+      this.drainedWith = settle
     }
   }
 }

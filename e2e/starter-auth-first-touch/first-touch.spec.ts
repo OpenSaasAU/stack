@@ -89,11 +89,14 @@ async function adminWritesAndRowAction(
 
 for (const { mode, port } of modes) {
   test.describe(`first database touch under ${mode}`, () => {
-    test.describe.configure({ mode: 'serial', timeout: 300_000 })
+    test.describe.configure({ mode: 'default', timeout: 300_000 })
 
     for (const order of orders) {
       test(`${order}, then update, delete and a row action`, async ({ browser }) => {
-        test.skip(!canStartFreshApp(mode), 'next dev needs a Postgres named by DATABASE_URL')
+        test.skip(
+          !canStartFreshApp(mode),
+          'next dev needs a Postgres named by DATABASE_URL, e.g. DATABASE_URL=postgres://user:pass@localhost:5432/postgres pnpm test:e2e -g "under dev"',
+        )
         const app = await startFreshApp(mode, port)
         try {
           const user = generateTestUser()

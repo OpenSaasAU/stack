@@ -38,7 +38,15 @@ export async function junctionIdsCommand(options: JunctionIdsOptions = {}): Prom
   const { config } = await loadOpenSaasConfig(cwd, configPath)
   const { models } = deriveContract(config)
 
-  const client = new pg.Client({ connectionString: resolveDatabaseUrl().url })
+  let connectionString: string
+  try {
+    connectionString = resolveDatabaseUrl().url
+  } catch (error) {
+    console.error(chalk.red(errorMessage(error)))
+    process.exitCode = 1
+    return
+  }
+  const client = new pg.Client({ connectionString })
   try {
     await client.connect()
   } catch (error) {

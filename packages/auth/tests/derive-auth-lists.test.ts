@@ -625,9 +625,9 @@ describe('deriveAuthLists - credential fields ship read-denied (ADR-0036, issue 
 
     // Every other scalar/relationship field across the four base lists stays access-less.
     const nonCredentialFields = [
-      ...Object.entries(lists.Session.fields).filter(([k]) => k !== 'token'),
+      ...Object.entries(lists.Session.fields).filter(([k]) => k !== 'token' && k !== 'user'),
       ...Object.entries(lists.Account.fields).filter(
-        ([k]) => !['password', 'accessToken', 'refreshToken', 'idToken'].includes(k),
+        ([k]) => !['password', 'accessToken', 'refreshToken', 'idToken', 'user'].includes(k),
       ),
       ...Object.entries(lists.Verification.fields).filter(
         ([k]) => k !== 'identifier' && k !== 'value',
@@ -1058,7 +1058,7 @@ describe('deriveAuthLists - fieldAccess override (issue #1618)', () => {
     ).not.toThrow()
   })
 
-  it('throws, naming the model and field, when fieldAccess names an id-referencing relationship field', () => {
+  it('applies fieldAccess to an id-referencing relationship field', () => {
     const plugin = {
       id: 'test-field-access-fk',
       schema: {
@@ -1070,18 +1070,17 @@ describe('deriveAuthLists - fieldAccess override (issue #1618)', () => {
       },
     }
 
-    expect(() =>
-      deriveAuthLists(
-        defaultModels,
-        {},
-        {},
-        [plugin],
-        {},
-        {
-          widget: { ownerId: { update: () => true } },
-        },
-      ),
-    ).toThrow(/widget\.ownerId.*relationship field.*"user\.id"/)
+    const { lists } = deriveAuthLists(
+      defaultModels,
+      {},
+      {},
+      [plugin],
+      {},
+      {
+        widget: { ownerId: { update: () => true } },
+      },
+    )
+    expect(lists.Widget.fields.owner.access?.update).toBeTypeOf('function')
   })
 
   it('can reopen create as well as update, leaving unspecified operations at their seeded value', async () => {
@@ -1227,5 +1226,45 @@ describe('deriveAuthLists - hook-guarded identity fields ship update-denied (iss
       expect((error as APIError).statusCode, field).toBe(400)
     }
     await expect(auth.api.updateUser({ body: { name: 'Renamed' }, headers })).resolves.toBeDefined()
+  })
+})
+
+describe('deriveAuthLists - credential and identity columns ship write-denied (ADR-0073 amendment, issue #2153)', () => {
+  it('denies create and update on credential fields', () => {
+    const { lists } = deriveAuthLists(defaultModels)
+    for (const field of [
+      lists.Session.fields.token,
+      lists.Account.fields.password,
+      lists.Account.fields.accessToken,
+      lists.Verification.fields.identifier,
+      lists.Verification.fields.value,
+    ]) {
+      expect(field.access?.create).toBeTypeOf('function')
+      expect(field.access?.update).toBeTypeOf('function')
+      expect(field.access?.read).toBeTypeOf('function')
+    }
+  })
+
+  it('denies create and update on the session.user and account.user foreign keys', () => {
+    const { lists } = deriveAuthLists(defaultModels)
+    for (const field of [lists.Session.fields.user, lists.Account.fields.user]) {
+      expect(field.access?.create).toBeTypeOf('function')
+      expect(field.access?.update).toBeTypeOf('function')
+      expect(field.access?.read).toBeUndefined()
+    }
+  })
+
+  it('can be reopened through fieldAccess', () => {
+    const { lists } = deriveAuthLists(
+      defaultModels,
+      {},
+      {},
+      [],
+      {},
+      {
+        session: { userId: { update: () => true } },
+      },
+    )
+    expect(lists.Session.fields.user.access?.update?.({} as never)).toBe(true)
   })
 })

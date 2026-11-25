@@ -1000,7 +1000,7 @@ type BaseFieldConfig = {
   access?: FieldAccess
   defaultValue?: unknown
   hooks?: FieldHooks
-  needs?: string[]
+  needs?: readonly string[] | NeedsObject
   ui?: object
 }
 ```

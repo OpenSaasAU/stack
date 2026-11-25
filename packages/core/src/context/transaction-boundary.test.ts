@@ -89,6 +89,32 @@ describe('transaction-boundary hooks', () => {
   const rows = async (list: 'User' | 'Post' | 'Comment' | 'Audit'): Promise<unknown[]> =>
     harness.context.sudo().db[list].all()
 
+  describe('a write through a leaked transaction context', () => {
+    test(
+      'every beforeTransaction that fires is paired with an afterTransaction reporting the rollback',
+      async () => {
+        const before = vi.fn()
+        const after = vi.fn()
+        const context = contextAt(
+          withHooks({ User: { beforeTransaction: before, afterTransaction: after } }),
+        )
+
+        let leaked: StackContext<AccessControlledDB> | undefined
+        await context.transaction(async (tx) => {
+          leaked = tx
+        })
+
+        await expect(leaked?.db.User.create({ data: { name: 'late' } })).rejects.toThrow()
+
+        expect(before).toHaveBeenCalledTimes(1)
+        expect(after).toHaveBeenCalledTimes(1)
+        expect(after.mock.calls[0][0]).toMatchObject({ status: 'rolled-back' })
+        expect(await rows('User')).toEqual([])
+      },
+      BOOT,
+    )
+  })
+
   describe('a plain top-level write', () => {
     test(
       'commit: afterTransaction is handed committed and the persisted row',

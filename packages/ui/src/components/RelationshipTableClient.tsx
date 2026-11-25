@@ -60,6 +60,8 @@ export interface RelationshipTableClientProps {
    * count. Always ≥ `count`; 0 for a denied related list (never a leaked total).
    */
   total?: number
+  /** The related list can filter by the back-reference's record id, so the footer may link to the full list. */
+  canViewAll?: boolean
   /**
    * The read withheld this relation, so nothing here is known about it: not
    * that it is empty, and not how many rows it has.
@@ -87,6 +89,8 @@ export interface RelationshipTableClientProps {
    * entirely.
    */
   linkEdge?: LinkEdgeData
+  /** The far endpoint's list title when rows are junction edges; the delete dialog says that record is kept. */
+  junctionTargetTitle?: string
   /** Server action that runs removals through the secured context. */
   serverAction: (input: ServerActionInput) => Promise<unknown>
   /**
@@ -139,6 +143,26 @@ function readRemoveOutcome(result: unknown): { ok: boolean; error?: string } {
   return { ok: false }
 }
 
+function ViewAllLink({ href, onNavigate }: { href: string; onNavigate: (href: string) => void }) {
+  return (
+    <>
+      {' · '}
+      <a
+        href={href}
+        data-slot="relationship-table-view-all"
+        className="underline"
+        onClick={(event) => {
+          if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return
+          event.preventDefault()
+          onNavigate(href)
+        }}
+      >
+        View all
+      </a>
+    </>
+  )
+}
+
 /**
  * Relationship table (issue #734) with row removal (issue #739) and inline cell
  * edit (issue #737), client half. Renders related rows as a table whose cells
@@ -180,6 +204,7 @@ export function RelationshipTableClient({
   rows,
   count,
   total,
+  canViewAll = false,
   unavailable = false,
   sumColumns,
   sums,
@@ -190,6 +215,7 @@ export function RelationshipTableClient({
   parentListKey,
   fieldName,
   linkEdge,
+  junctionTargetTitle,
   serverAction,
   canCreate = false,
   createFields,
@@ -219,6 +245,11 @@ export function RelationshipTableClient({
 
   const columnFieldType = (column: string): string | undefined => fields[column]?.type
   const countLabel = unavailable ? '' : formatCountLabel(count, total)
+  const isPartial = !unavailable && total !== undefined && total > count
+  const viewAllHref =
+    isPartial && canViewAll && backReferenceField
+      ? `${basePath}/${relatedUrlKey}?search=${encodeURIComponent(`${backReferenceField}:#${parentId}`)}`
+      : null
   const showRemove = removeMode !== null
   const removeVerb = removeMode === 'delete' ? 'Delete' : 'Disconnect'
   const totalColumns = columns.length + (showRemove ? 1 : 0)
@@ -446,7 +477,8 @@ export function RelationshipTableClient({
                 colSpan={Math.max(totalColumns, 1)}
                 className="text-sm text-muted-foreground"
               >
-                {countLabel}
+                <span>{countLabel}</span>
+                {viewAllHref && <ViewAllLink href={viewAllHref} onNavigate={router.push} />}
               </TableCell>
             ) : (
               <>
@@ -456,7 +488,12 @@ export function RelationshipTableClient({
                   return (
                     <TableCell key={column} className={cn(numeric && 'text-right')}>
                       {index === 0 && (
-                        <span className="text-sm text-muted-foreground">{countLabel}</span>
+                        <span className="text-sm text-muted-foreground">
+                          <span>{countLabel}</span>
+                          {viewAllHref && (
+                            <ViewAllLink href={viewAllHref} onNavigate={router.push} />
+                          )}
+                        </span>
                       )}
                       {isSummed && !unavailable && (
                         <span className={cn('font-medium', index === 0 && 'ml-2')}>
@@ -466,6 +503,11 @@ export function RelationshipTableClient({
                             fieldName={column}
                             basePath={basePath}
                           />
+                          {isPartial && (
+                            <span className="ml-1 text-xs font-normal text-muted-foreground">
+                              (visible rows)
+                            </span>
+                          )}
                         </span>
                       )}
                     </TableCell>
@@ -481,7 +523,11 @@ export function RelationshipTableClient({
       <ConfirmDialog
         isOpen={confirmId !== null}
         title={`Delete ${title} row`}
-        message={`This permanently deletes the related ${title.toLowerCase()} record. This cannot be undone.`}
+        message={
+          junctionTargetTitle
+            ? `This removes the link only. The ${junctionTargetTitle.toLowerCase()} record itself is kept.`
+            : `This permanently deletes the related ${title.toLowerCase()} record. This cannot be undone.`
+        }
         confirmLabel="Delete"
         variant="danger"
         onConfirm={() => {

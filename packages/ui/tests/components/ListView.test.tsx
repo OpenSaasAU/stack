@@ -694,6 +694,34 @@ describe('ListView relationship lookup by id', () => {
   )
 })
 
+describe('ListView keeps a stable order (#2186)', () => {
+  it(
+    'lists rows by id when no sort is given',
+    async () => {
+      const props = await render(ada, { listKey: 'User' })
+      const ids = props.items.map((item) => String(item.id))
+      expect(ids).toEqual([...ids].sort())
+    },
+    BOOT,
+  )
+
+  it(
+    'breaks ties on a sorted column by id',
+    async () => {
+      const props = await render(ada, {
+        listKey: 'Post',
+        sort: { field: 'published', direction: 'desc' },
+      })
+      const tied = props.items
+        .filter((item) => item.published === true)
+        .map((item) => String(item.id))
+      expect(tied.length).toBeGreaterThan(1)
+      expect(tied).toEqual([...tied].sort())
+    },
+    BOOT,
+  )
+})
+
 describe('ListView excludes read-denied fields from filtering and sorting (#915)', () => {
   it(
     'drops a read-denied field from the collected filter suggestions',
@@ -1108,6 +1136,36 @@ describe('ListView when the read fails (#2180)', () => {
       expect(html).not.toContain('No items yet')
       expect(html).not.toContain('0 items')
       expect(html).not.toContain('Create')
+    },
+    BOOT,
+  )
+
+  it(
+    'offers Clear filters when the failed read carried a search',
+    async () => {
+      await create('Fragile', { name: 'Breaks on read' })
+      readsFail = true
+      const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      let html: string
+      try {
+        html = renderToStaticMarkup(
+          await ListView({
+            context: contextAt(ada),
+            config,
+            basePath: '/admin',
+            listKey: 'Fragile',
+            search: 'name:Breaks',
+          }),
+        )
+      } finally {
+        readsFail = false
+        log.mockRestore()
+      }
+      expect(html).toContain('This list could not be loaded')
+      expect(html).toContain('Clear filters')
+      expect(html).toContain('Reload list')
+      expect(html).toContain('href="/admin/fragile?search=name%3ABreaks"')
+      expect(html).toContain('href="/admin/fragile"')
     },
     BOOT,
   )

@@ -20,7 +20,7 @@ There is no auth provider in this starter. `lib/demo-session.ts` acts as the fir
 ### 1. Install Dependencies
 
 ```bash
-pnpm install
+pnpm install   # or npm install / yarn — the scripts do not require pnpm
 ```
 
 ### 2. Generate

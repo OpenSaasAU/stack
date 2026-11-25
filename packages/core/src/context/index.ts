@@ -1,7 +1,7 @@
 import type { OpenSaasConfig, ListConfig } from '../config/types.js'
 import type { Session, AccessContext, AccessControlledDB, StorageUtils } from '../access/index.js'
 import { checkAccess } from '../access/index.js'
-import { ValidationError, DatabaseError } from '../hooks/index.js'
+import { ValidationError, DatabaseError, isPlainObject } from '../hooks/index.js'
 import { databaseErrorMessage, normalizeDatabaseError } from '../lib/prisma-errors.js'
 import { isClientSafeError } from '../lib/client-safe-error.js'
 import { nullPrototypeRegistry } from '../lib/null-prototype-registry.js'
@@ -17,6 +17,7 @@ import {
   createLivenessProbe,
   createRowLockLane,
   RowLockUnavailableError,
+  RowLockLaneUnavailableError,
   unusableRowLockLane,
   type RowLockLane,
 } from '../secured/lock.js'
@@ -1613,7 +1614,7 @@ export function populateDbDelegate(
 
     if (listMembers.get(listName)?.singleton === true) {
       operations.get = resolvingConstraints(
-        createGet(listName, listConfig, read, context, createOp),
+        createGet(listName, listConfig, read, context, createOp, lock),
         config,
       )
     } else {
@@ -1678,6 +1679,12 @@ function assertWriteArgs(
   if (args === null || typeof args !== 'object') {
     throw new ValidationError(
       [`${operation}() on "${listName}" takes an argument object with ${allowed.join(', ')}.`],
+      {},
+    )
+  }
+  if (operation !== 'delete' && !isPlainObject(Reflect.get(args, 'data'))) {
+    throw new ValidationError(
+      [`${operation}() on "${listName}" takes \`data\` as an object of field values.`],
       {},
     )
   }
@@ -1820,6 +1827,16 @@ function assertBooleanInclude(
  * so the create is refused and `get()` answers `null` — the same `null` a
  * denied or an absent row answers with.
  */
+async function tookSingletonLock(lock: RowLockLane, listName: string): Promise<boolean> {
+  try {
+    await lock.advisory(`opensaas:singleton-create:${listName}`)
+    return true
+  } catch (error) {
+    if (error instanceof RowLockLaneUnavailableError) return false
+    throw error
+  }
+}
+
 function createGet(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
@@ -1827,6 +1844,7 @@ function createGet(
   read: SecuredQuery,
   context: AccessContext,
   createFn: (args: { data: Record<string, unknown> }) => Promise<OrmRow | null>,
+  lock?: RowLockLane,
 ) {
   return async (args?: {
     include?: Record<string, unknown>
@@ -1859,6 +1877,11 @@ function createGet(
         context,
       })
       if (readable !== true) return null
+    }
+
+    if (lock !== undefined && (await tookSingletonLock(lock, listName))) {
+      const settled = await scoped.first()
+      if (settled) return settled
     }
 
     try {

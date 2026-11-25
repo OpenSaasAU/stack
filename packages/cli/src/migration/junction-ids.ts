@@ -28,6 +28,16 @@ const quote = (identifier: string) => `"${identifier.replaceAll('"', '""')}"`
 const sameColumns = (a: string[], b: string[]) =>
   a.length === b.length && a.every((c) => b.includes(c))
 
+export class CompositeKeyError extends Error {
+  constructor(table: string, columns: string[]) {
+    super(
+      `${table} has a primary key on (${columns.join(', ')}) that is not the pair of its foreign keys; ` +
+        `refusing to add an id column. Reconcile the key by hand, then re-run.`,
+    )
+    this.name = 'CompositeKeyError'
+  }
+}
+
 export function planJunctionIds(
   models: ContractModel[],
   live: LiveSchema,
@@ -55,7 +65,13 @@ export function planJunctionIds(
     }
     const physical = (name: string) => model.columns.find((c) => c.name === name)?.map ?? name
     const pair = model.foreignKeys.map((fk) => physical(fk.column))
-    if (pair.length !== 2 || !sameColumns(key.columns, pair)) continue
+    if (pair.length === 2 && sameColumns(key.columns, pair)) {
+      // fall through to the replacement below
+    } else if (key.columns.length > 1) {
+      throw new CompositeKeyError(table, key.columns)
+    } else {
+      continue
+    }
     const declared = model.indexes.find(
       (i) =>
         i.unique &&

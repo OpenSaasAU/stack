@@ -1,9 +1,11 @@
 import type {
   ContractFieldDescriptor,
   DependencyTable,
+  FieldDependencySet,
   FieldConfig,
   OpenSaasConfig,
 } from '@opensaas/stack-core'
+import { deriveRelatedLists, nestedSetOf } from '@opensaas/stack-core'
 import type { TypeDescriptor } from '@opensaas/stack-core/extend'
 import { isComputedField, typeDescriptorToTypeString } from '@opensaas/stack-core/extend'
 import * as fs from 'fs'
@@ -166,9 +168,37 @@ export function needsEntries(
     })
     .map((fieldName): [string, string] => {
       const { columns, relations } = rows[fieldName]
-      const keys = [...columns, ...relations]
-      return [fieldName, keys.length === 0 ? 'never' : keys.map((k) => quote(k)).join(' | ')]
+      return [fieldName, union([...columns, ...relations])]
     })
+}
+
+function isObjectNeeds(config: OpenSaasConfig, listName: string, fieldName: string): boolean {
+  const needs = config.lists[listName]?.fields[fieldName]?.needs
+  return needs !== undefined && !Array.isArray(needs)
+}
+
+function union(keys: readonly string[]): string {
+  return keys.length === 0 ? 'never' : keys.map((key) => quote(key)).join(' | ')
+}
+
+/** One level of an object-form `needs`, as the `NeedsBranch` core resolves against the contract. */
+function renderNeedsBranch(
+  set: FieldDependencySet,
+  listName: string,
+  dependencies: DependencyTable,
+  relatedOf: ReturnType<typeof deriveRelatedLists>,
+): string {
+  const columns = new Set([...dependencies[listName].systemFields, ...set.columns])
+  const relations = set.relations.map((relation) => {
+    const nested = nestedSetOf(set, relation)
+    const related = relatedOf(listName, relation)
+    const beneath =
+      nested === undefined || related === undefined
+        ? 'true'
+        : renderNeedsBranch(nested, related, dependencies, relatedOf)
+    return `${relation}: ${beneath}`
+  })
+  return `{ columns: ${union([...columns])}; relations: ${relations.length === 0 ? EMPTY : `{ ${relations.join('; ')} }`} }`
 }
 
 /**
@@ -343,7 +373,11 @@ export function generateTypes(
   if (listNames.length > 0) {
     coreImports.push('CreateInput', 'Row', 'SecuredList', 'StoredRow', 'UpdateInput')
   }
-  if (needsFields.length > 0) coreImports.push('NeedsRow')
+  const objectNeeds = needsFields.filter(([listName, fieldName]) =>
+    isObjectNeeds(config, listName, fieldName),
+  )
+  if (objectNeeds.length > 0) coreImports.push('NeedsBranchRow')
+  if (objectNeeds.length < needsFields.length) coreImports.push('NeedsRow')
   // Named unconditionally: Context/BaseContext/TransactionContext key the
   // Unsafe surface to it (PostgresClient<Contract>) whether or not the config
   // declares any list.
@@ -395,11 +429,14 @@ export function generateTypes(
 
   // The declared-dependency item types `lists.ts` hands each hook. Named here
   // rather than inlined so `lists.ts` stays a namespace of references.
-  const needsInterfaces = needsFields.map(
-    ([listName, fieldName]) =>
-      `export interface ${listName}${capitalize(fieldName)}NeedsItem` +
-      ` extends ${imported('NeedsRow')}<${imported('Contract')}, Remainder, '${listName}', Remainder['${listName}']['needs']['${fieldName}']> {}`,
-  )
+  const relatedOf = deriveRelatedLists(config)
+  const needsInterfaces = needsFields.map(([listName, fieldName]) => {
+    const name = `${listName}${capitalize(fieldName)}NeedsItem`
+    const key = `${imported('Contract')}, Remainder, '${listName}'`
+    return isObjectNeeds(config, listName, fieldName)
+      ? `export interface ${name} extends ${imported('NeedsBranchRow')}<${key}, ${renderNeedsBranch(dependencies[listName].fields[fieldName], listName, dependencies, relatedOf)}> {}`
+      : `export interface ${name} extends ${imported('NeedsRow')}<${key}, Remainder['${listName}']['needs']['${fieldName}']> {}`
+  })
   if (needsInterfaces.length > 0) {
     lines.push('/**')
     lines.push(' * What each computed field’s `resolveOutput` hook is handed: its declared')

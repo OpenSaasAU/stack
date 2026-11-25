@@ -37,6 +37,7 @@ export { isComputedField, readContractDescriptorKind } from './config/field-kind
 // Third-party field authoring (implement BaseFieldConfig; see custom-field docs)
 export type {
   BaseFieldConfig,
+  NeedsObject,
   FieldKeys,
   TypeInfo,
   TypeDescriptor,

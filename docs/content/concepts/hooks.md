@@ -100,7 +100,7 @@ Everything below sits **inside** the write's transaction except step 0 and the
 9. **List-level `beforeOperation`** — side effects at list level
 10. **Database operation**
 11. **List-level `afterOperation`** — side effects at list level
-12. **Field-level `afterOperation`** — side effects for individual fields
+12. **Field-level `afterOperation`** — side effects for individual fields, run on create and update only for fields in the write
 
 A `delete` skips steps 1–2 and 5–7: there is no input to shape, so it runs
 `validate` (list, then field), then the `beforeOperation`/`afterOperation`
@@ -394,7 +394,7 @@ list's system fields** — never what the caller selected. That is what keeps a
 computed field's value the same from every call site, and
 [Queries & projections](/docs/concepts/queries) explains the mechanism.
 
-### The cost: undeclared reads, dead branches, and the second hop
+### The cost: undeclared reads, dead branches, and spelled-out hops
 
 Three prices come with that guarantee, and they are worth naming outright.
 
@@ -413,11 +413,10 @@ fields' dependency sets were never fetched — a hook reading one there would
 dereference `undefined` and fail the whole read. So a declared relation gives
 you data, not a fully resolved row.
 
-**Two hops cost a privileged read.** `needs` is one hop and non-transitive: it
-names stored columns and immediate relations on the same list, nothing further.
-A value two relations away is not something you can declare — the hook has to go
-and read it, through a context that can see it, and pay for that read on every
-row it runs on.
+**Every hop past the first is spelled out.** The array form of `needs` reaches
+one hop and is non-transitive. A value two relations away takes the object form,
+`needs: { post: ['author'] }`, which delivers exactly what it names at each
+level. See [Reaching past one hop](/docs/reference/fields-api#reaching-past-one-hop).
 
 See [ADR-0051](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0051-declared-dependencies-are-an-emitted-one-hop-set.md)
 and [ADR-0052](https://github.com/OpenSaasAU/stack/blob/main/docs/adr/0052-the-generated-types-declare-the-contract-remainder-and-instantiate-core-generics.md).

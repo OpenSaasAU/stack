@@ -11,13 +11,13 @@
 //   can be enumerated by a caller who can already read the list. Relation
 //   names are configuration rather than data, and closing it would mean either
 //   fetching every denied relation or varying the refusal by session — see
-//   {@link isOmittedBeforeQuery}.
+//   {@link isDeniedBeforeQuery}.
 
 import type { FieldConfig, ListConfig, TypeInfo } from '../config/types.js'
 import { classifyRowIndependentRead } from '../access/field-access.js'
-import { resolveDeclaredDependencies } from '../access/declared-dependencies.js'
+import { resolveDeclaredDependencies, type RelationTree } from '../access/declared-dependencies.js'
+import { relatedListOf } from '../contract/dependencies.js'
 import {
-  resolveListMember,
   resolveListMembers,
   unhandledMember,
   type DeclaredFieldMember,
@@ -372,9 +372,12 @@ export interface IncludePlan extends PlanLevel {
    * Whether only the widening asked for this branch. A declared branch
    * delivers stored columns to the hooks that named it and is stripped from
    * the caller's result; nothing on it computes, so nothing on it declares
-   * (ADR-0051).
+   * (ADR-0051). Its {@link includes} are what the object form spelled out
+   * beneath it (ADR-0085).
    */
   readonly declared: boolean
+  /** What {@link declaredFetch} and {@link declaredRows} carry beneath their rows. */
+  readonly declaredIncludes: readonly IncludePlan[]
   /**
    * Present when the relation reads as a count rather than as rows. Its
    * branches carry the Access Filter, and so does {@link predicates} — the
@@ -388,7 +391,7 @@ export interface IncludePlan extends PlanLevel {
    * the caller composed a reduction over it (#1357). The
    * Access Filter predicates for an extra, caller-invisible rows fetch riding
    * inside the same `combine()` under {@link DECLARED_ROWS_BRANCH_KEY} — full
-   * stored width, one hop, exactly what an ordinary declared branch fetches,
+   * stored width, exactly what an ordinary declared branch fetches,
    * because that is what this stands in for. See `Reduction` in
    * `field-visibility.ts`.
    */
@@ -464,7 +467,6 @@ export function planLevel(
 }
 
 function ruleViewOf(plan: {
-  declared: boolean
   callerShaped: boolean
   reduce?: ReducePlan
   declaredRows?: readonly WherePlan[]
@@ -475,7 +477,7 @@ function ruleViewOf(plan: {
   if (plan.reduce !== undefined && plan.declaredRows !== undefined && rowsBranch) {
     return 'declaredRowsBranch'
   }
-  const narrowed = !plan.declared && plan.callerShaped && (plan.reduce === undefined || rowsBranch)
+  const narrowed = plan.callerShaped && (plan.reduce === undefined || rowsBranch)
   const rowless = plan.reduce !== undefined && !rowsBranch && plan.declaredRows === undefined
   return narrowed || rowless ? 'withheld' : 'fetched'
 }
@@ -682,36 +684,26 @@ function resolveIncludeTarget(name: string, ctx: ResolveContext): IncludeTarget 
 }
 
 /**
- * Whether this relation is left out of the include before the query runs
- * (ADR-0044). Only a **row-independent** denial omits: a rule that reaches
- * into `item` cannot be answered without one, so the relation is fetched and
- * Field Visibility decides. A relation in a live declared dependency set is
- * exempt — the declaring field's hook is entitled to it, and Field Visibility
- * strips it from the caller's result afterwards (ADR-0051).
+ * Whether this session is denied this relation whatever the row, so the
+ * caller's own view of it is left out of the query (ADR-0044). Only a
+ * **row-independent** denial answers: a rule that reaches into `item` cannot
+ * be answered without one, so the relation is fetched and Field Visibility
+ * decides. Never asked of a declared branch, which a denial does not reach
+ * (ADR-0051).
  *
- * This is an optimisation that can only narrow. Field Visibility re-checks
- * every relation it is handed regardless, so a missed omission is a wasted
- * join and never a leak.
- *
- * It is, however, observable — see the `Known limits` note at the top of this
- * module. ADR-0031's indistinguishable refusal covers the KEY resolution
- * above, which answers identically for a readable and a read-denied relation;
- * it does not extend to the omission, whose whole purpose is to leave the
- * relation out.
+ * It is observable — see the `Known limits` note at the top of this module.
+ * ADR-0031's indistinguishable refusal covers the KEY resolution above, which
+ * answers identically for a readable and a read-denied relation; it does not
+ * extend to the omission, whose whole purpose is to leave the relation out.
  */
-async function isOmittedBeforeQuery(
-  name: string,
-  target: IncludeTarget,
-  ctx: ResolveContext,
-): Promise<boolean> {
+async function isDeniedBeforeQuery(target: IncludeTarget, ctx: ResolveContext): Promise<boolean> {
   if (!ctx.checkFieldRead) return false
   if (target.readGate.access === undefined) return false
   const answer = await classifyRowIndependentRead(target.readGate.access, {
     session: ctx.session,
     context: ctx.context,
   })
-  if (answer !== 'deny') return false
-  return !resolveDeclaredDependencies(ctx.config, ctx.listName).relations.has(name)
+  return answer === 'deny'
 }
 
 async function resolveProjectionForTarget(
@@ -734,9 +726,9 @@ async function resolveInclude(
   request: IncludeRequest,
   ctx: ResolveContext,
   depth: number,
-  declared: boolean,
-  liveDeclaredDependency: boolean = false,
+  declaredTree: RelationTree | undefined,
 ): Promise<IncludePlan | null> {
+  const liveDeclaredDependency = declaredTree !== undefined
   const target = resolveIncludeTarget(request.name, ctx)
   const related: ResolveContext = {
     ...ctx,
@@ -754,19 +746,18 @@ async function resolveInclude(
     predicates.push(await resolveWhere(predicate, related))
   }
   const orders = await resolveOrderBy(request.orders, related)
-  // A declared branch returns to nobody, so nothing on it computes and
-  // nothing on it declares (ADR-0051) — the widening stops here rather than
-  // recursing, and the branch is read at its full stored width because that
-  // is what the declaring hook was promised.
   const shape = rowsBranchOf(request) ?? request
-  const projection = declared
-    ? UNPROJECTED
-    : await resolveProjectionForTarget(shape, target, related, ctx)
-  const includes = declared
-    ? []
-    : await resolveIncludes(shape.includes, related, depth + 1, projection.caller)
+  const projection = await resolveProjectionForTarget(shape, target, related, ctx)
+  const callerIncludes = await resolveIncludes(
+    shape.includes,
+    related,
+    depth + 1,
+    projection.caller,
+  )
 
-  if (await isOmittedBeforeQuery(request.name, target, ctx)) return null
+  if (await isDeniedBeforeQuery(target, ctx)) {
+    return declaredTree === undefined ? null : resolveDeclared(request.name, ctx, declaredTree)
+  }
 
   const access = await resolveRelatedAccessPlan(
     { listName: target.relatedListName, listConfig: target.relatedListConfig },
@@ -792,7 +783,7 @@ async function resolveInclude(
   // the caller, and real rows for the declaring hook's `needs` (#1357). A
   // `combine` rows branch is the caller's own view, so it never stands in.
   const declaredRows =
-    !declared && liveDeclaredDependency && reduce !== undefined
+    liveDeclaredDependency && reduce !== undefined
       ? access.kind !== 'true'
         ? [access]
         : []
@@ -800,11 +791,19 @@ async function resolveInclude(
 
   const callerShaped = composesShape(request) || composesShape(shape)
   const declaredFetch =
-    !declared && liveDeclaredDependency && callerShaped && reduce === undefined
+    liveDeclaredDependency && reduce === undefined && callerShaped
       ? access.kind !== 'true'
         ? [access]
         : []
       : undefined
+  const declaredIncludes =
+    declaredTree !== undefined && (declaredRows ?? declaredFetch) !== undefined
+      ? await resolveDeclaredBeneath(related, declaredTree)
+      : []
+  const includes =
+    declaredTree !== undefined && reduce === undefined && !callerShaped
+      ? await withDeclaredBeneath(callerIncludes, related, declaredTree)
+      : callerIncludes
 
   return {
     ...planLevel(related, projection.caller, includes),
@@ -820,14 +819,95 @@ async function resolveInclude(
     limit: request.limit,
     offset: request.offset,
     projection,
-    declared,
+    declared: false,
+    declaredIncludes,
     ...(reduce ? { reduce } : {}),
     ...(declaredRows ? { declaredRows } : {}),
     reducedDeclared:
       declaredRows !== undefined && (reduce === undefined || rowsBranchKeyOf(reduce) === undefined),
     ...(target.fieldConfig === undefined ? { synthetic: { gate: target.readGate } } : {}),
-    ruleView: ruleViewOf({ declared, callerShaped, reduce, declaredRows, declaredFetch }),
+    ruleView: ruleViewOf({ callerShaped, reduce, declaredRows, declaredFetch }),
   }
+}
+
+/**
+ * A branch only the widening asked for: the related list's `query` access and
+ * its full stored width, and nothing but what the declaration spelled out
+ * beneath it.
+ */
+async function resolveDeclared(
+  name: string,
+  ctx: ResolveContext,
+  tree: RelationTree,
+): Promise<IncludePlan> {
+  const target = resolveIncludeTarget(name, ctx)
+  const related: ResolveContext = {
+    ...ctx,
+    listName: target.relatedListName,
+    listConfig: target.relatedListConfig,
+  }
+  const access = await resolveRelatedAccessPlan(
+    { listName: target.relatedListName, listConfig: target.relatedListConfig },
+    ctx,
+  )
+  return {
+    ...planLevel(related, undefined, await resolveDeclaredBeneath(related, tree)),
+    relation: name,
+    arity: target.arity,
+    ...(target.foreignKey ? { foreignKey: target.foreignKey } : {}),
+    predicates: access.kind !== 'true' ? [access] : [],
+    accessScoped: access.kind !== 'true',
+    callerRefined: false,
+    callerShaped: false,
+    orders: [],
+    limit: undefined,
+    offset: undefined,
+    projection: UNPROJECTED,
+    declared: true,
+    declaredIncludes: [],
+    reducedDeclared: false,
+    ...(target.fieldConfig === undefined ? { synthetic: { gate: target.readGate } } : {}),
+    ruleView: 'fetched',
+  }
+}
+
+/**
+ * An unshaped caller include, carrying what the level above declared beneath
+ * it. What only the level above declared is withheld from this level's own
+ * rules and hooks: it is not theirs (ADR-0085).
+ */
+async function withDeclaredBeneath(
+  own: readonly IncludePlan[],
+  ctx: ResolveContext,
+  tree: RelationTree,
+): Promise<IncludePlan[]> {
+  const ownTree = declaredRelations(ctx)
+  const plans = own.filter((plan) => !tree.has(plan.relation))
+  for (const [name, beneath] of tree) {
+    const ownBeneath = ownTree.get(name)
+    const merged = ownBeneath === undefined ? beneath : mergedTree(ownBeneath, beneath)
+    const plan = await resolveDeclared(name, ctx, merged)
+    plans.push(ownBeneath === undefined ? { ...plan, ruleView: 'withheld' } : plan)
+  }
+  return plans
+}
+
+function mergedTree(a: RelationTree, b: RelationTree): RelationTree {
+  const merged = new Map(a)
+  for (const [name, beneath] of b) {
+    const existing = merged.get(name)
+    merged.set(name, existing === undefined ? beneath : mergedTree(existing, beneath))
+  }
+  return merged
+}
+
+async function resolveDeclaredBeneath(
+  ctx: ResolveContext,
+  tree: RelationTree,
+): Promise<IncludePlan[]> {
+  const plans: IncludePlan[] = []
+  for (const [name, beneath] of tree) plans.push(await resolveDeclared(name, ctx, beneath))
+  return plans
 }
 
 /**
@@ -979,45 +1059,47 @@ export async function resolveIncludes(
 ): Promise<IncludePlan[]> {
   const plans: IncludePlan[] = []
   const named = new Set<string>()
-  const declaredNames = new Set(declaredRelations(ctx, selected))
+  const declared = declaredRelations(ctx, selected)
   for (const request of requests) {
     if (named.has(request.name)) throw new DuplicateIncludeError(ctx.listName, request.name)
     named.add(request.name)
     if (depth >= READ_INCLUDE_MAX_DEPTH) {
       throw new AccessScopeDepthExceededError(ctx.listName, request.name, depth)
     }
-    const plan = await resolveInclude(request, ctx, depth, false, declaredNames.has(request.name))
+    const plan = await resolveInclude(request, ctx, depth, declared.get(request.name))
     if (plan !== null) plans.push(plan)
   }
-  for (const name of declaredNames) {
-    if (named.has(name)) continue
-    named.add(name)
-    const plan = await resolveInclude(
-      { name, predicates: [], orders: [], includes: [] },
-      ctx,
-      depth,
-      true,
-    )
-    if (plan !== null) plans.push(plan)
+  for (const [name, tree] of declared) {
+    if (!named.has(name)) plans.push(await resolveDeclared(name, ctx, tree))
   }
   return plans
 }
 
 /**
  * The relations the computed fields this level returns declared (ADR-0025,
- * ADR-0051), minus anything that is not a relationship field of this list —
- * a `needs` entry naming a stored column is already on the row, and one
- * naming nothing is `validateNeedsDeclarations`' refusal rather than an
- * include this engine invents.
+ * ADR-0051), each with what was declared beneath it. An emitted table can be
+ * older than the config, so a key that is no longer a relation of its list is
+ * dropped at every depth rather than refused.
  */
 export function declaredRelations(
-  ctx: Pick<ResolveContext, 'config' | 'listName' | 'listConfig'>,
+  ctx: Pick<ResolveContext, 'config' | 'listName'>,
   selected?: ReadonlySet<string>,
-): string[] {
-  return [...resolveDeclaredDependencies(ctx.config, ctx.listName, selected).relations].filter(
-    (name) => {
-      const member = resolveListMember(ctx.config, ctx.listName, name)
-      return member?.kind === 'field' && member.storage.kind === 'relation'
-    },
-  )
+): RelationTree {
+  const { tree } = resolveDeclaredDependencies(ctx.config, ctx.listName, selected)
+  return relationsOf(ctx.config, ctx.listName, tree)
+}
+
+function relationsOf(
+  config: ResolveContext['config'],
+  listName: string,
+  tree: RelationTree,
+): RelationTree {
+  if (tree.size === 0) return tree
+  const members = resolveListMembers(config, listName)
+  const kept = new Map<string, RelationTree>()
+  for (const [name, beneath] of tree) {
+    const related = relatedListOf(members, name)
+    if (related !== undefined) kept.set(name, relationsOf(config, related, beneath))
+  }
+  return kept
 }

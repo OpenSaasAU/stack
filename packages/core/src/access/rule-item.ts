@@ -15,8 +15,9 @@ export interface RuleView {
   readonly removed: ReadonlySet<string>
   readonly declared: Readonly<Record<string, unknown>>
   /**
-   * To-ones whose `null` stands for a row the session cannot see rather than no
-   * row at all. A hook is still owed that `null` (ADR-0058); a rule is not.
+   * Relations whose empty value stands for a row the session cannot see, or
+   * one that went mid-read, rather than no row at all. A hook is still owed
+   * that value (ADR-0058); a rule is not.
    */
   readonly scopedAway: ReadonlySet<string>
 }
@@ -153,15 +154,15 @@ function scopeUnder(scope: RowScope, key: string | symbol): RowScope {
 /**
  * The membrane's traps, for a row or for an array of rows, where `scope`
  * describes its elements. Rows below the one a rule was handed need no view of
- * their own: a relation carrying a nested include is shaped, so it never reached
- * the rule.
+ * their own: they withhold every relation, because one that is there was put
+ * there by a declaration the rule does not own (ADR-0085).
  *
- * A key is withheld only while the value under it is `undefined`. Every way of
+ * On the row itself a key is withheld only while the value under it is `undefined`. Every way of
  * asking about a key has a trap here, and on the row a rule was handed
  * enumeration answers for all of them at once: a spread copy would otherwise
  * carry the row's absence out from under the membrane, so a `root` withholding
- * anything trips on `ownKeys`. A `related` row does not: it never carries its
- * own relations, whatever the caller asked, so its absence has nothing to say.
+ * anything trips on `ownKeys`. A `related` row enumerates without its relations
+ * instead: it never offers them, so their absence has nothing to say.
  */
 class Guard<T extends object> implements ProxyHandler<T> {
   constructor(
@@ -175,7 +176,7 @@ class Guard<T extends object> implements ProxyHandler<T> {
       this.kind !== 'array' &&
       typeof key === 'string' &&
       this.scope.relations.has(key) &&
-      Reflect.get(target, key) === undefined
+      (this.kind === 'related' || Reflect.get(target, key) === undefined)
     )
   }
 
@@ -209,7 +210,8 @@ class Guard<T extends object> implements ProxyHandler<T> {
         if (Reflect.get(target, key) === undefined) this.evaluation.tripped = true
       }
     }
-    return Reflect.ownKeys(target)
+    const keys = Reflect.ownKeys(target)
+    return this.kind === 'related' ? keys.filter((key) => !this.isWithheld(target, key)) : keys
   }
 
   getOwnPropertyDescriptor(target: T, key: string | symbol): PropertyDescriptor | undefined {

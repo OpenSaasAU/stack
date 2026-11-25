@@ -48,7 +48,18 @@ export async function executeResolveInput<
   }
 
   const result = await hooks.resolveInput(args)
+  if (!isPlainObject(result)) {
+    throw new ValidationError([
+      `resolveInput on "${args.listKey}" must return the resolved data object, got ${result === null ? 'null' : typeof result}.`,
+    ])
+  }
   return result
+}
+
+export function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== 'object' || value === null) return false
+  const proto: unknown = Object.getPrototypeOf(value)
+  return proto === Object.prototype || proto === null
 }
 
 /** Supports both `validate` and the deprecated `validateInput` alias for backwards compatibility. */
@@ -637,6 +648,14 @@ export async function executeFieldValidateHooks(
   }
 }
 
+function fieldIsInWrite(
+  fieldKey: string,
+  operation: 'create' | 'update' | 'delete',
+  resolvedData: Record<string, unknown> | undefined,
+): boolean {
+  return operation === 'delete' || (resolvedData !== undefined && fieldKey in resolvedData)
+}
+
 export async function executeFieldBeforeOperationHooks(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   inputData: Record<string, any>,
@@ -651,7 +670,7 @@ export async function executeFieldBeforeOperationHooks(
 ): Promise<void> {
   for (const [fieldKey, fieldConfig] of Object.entries(fields)) {
     if (!fieldConfig.hooks?.beforeOperation) continue
-    if (operation !== 'delete' && !(fieldKey in resolvedData)) continue
+    if (!fieldIsInWrite(fieldKey, operation, resolvedData)) continue
 
     if (operation === 'delete') {
       await fieldConfig.hooks.beforeOperation({
@@ -698,6 +717,7 @@ export async function executeFieldAfterOperationHooks(
 ): Promise<void> {
   for (const [fieldKey, fieldConfig] of Object.entries(fields)) {
     if (!fieldConfig.hooks?.afterOperation) continue
+    if (!fieldIsInWrite(fieldKey, operation, resolvedData)) continue
 
     if (operation === 'delete') {
       await fieldConfig.hooks.afterOperation({
@@ -737,14 +757,19 @@ export function validateFieldRules(
   fieldConfigs: Record<string, FieldConfig>,
   operation: 'create' | 'update' = 'create',
   defaults?: ValidationDefaults,
-): { errors: string[]; fieldErrors: Record<string, string> } {
+): { errors: string[]; fieldErrors: Record<string, string>; coerced: Record<string, bigint> } {
   const result = validateWithZod(data, fieldConfigs, operation, defaults)
 
   if (result.success) {
-    return { errors: [], fieldErrors: {} }
+    const coerced: Record<string, bigint> = {}
+    for (const [key, value] of Object.entries(result.data)) {
+      if (typeof value === 'bigint' && key in data && typeof data[key] !== 'bigint')
+        coerced[key] = value
+    }
+    return { errors: [], fieldErrors: {}, coerced }
   }
 
   const errors = Object.entries(result.errors).map(([_field, message]) => message)
 
-  return { errors, fieldErrors: result.errors }
+  return { errors, fieldErrors: result.errors, coerced: {} }
 }

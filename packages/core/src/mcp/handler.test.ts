@@ -473,6 +473,19 @@ describe('the MCP surface', () => {
     )
 
     test(
+      'list_settings_query refuses a where argument',
+      async () => {
+        const { body } = await callTool('list_settings_query', {
+          where: { siteName: { equals: 'x' } },
+        })
+        const result = body?.result as { isError?: boolean; content: { text: string }[] }
+        expect(result.isError).toBe(true)
+        expect(result.content[0]?.text).toContain('takes no "where"')
+      },
+      BOOT,
+    )
+
+    test(
       'a session denied query gets the empty value',
       async () => {
         const { body } = await rpc(
@@ -1791,6 +1804,69 @@ describe('the MCP surface', () => {
     )
 
     test(
+      'a throwing query rule on a list the where never names does not fail the where',
+      async () => {
+        const base = schemaConfig()
+        const config: OpenSaasConfig = {
+          ...base,
+          lists: {
+            ...base.lists,
+            Comment: {
+              ...base.lists.Comment,
+              access: {
+                operation: {
+                  query: () => {
+                    throw new Error('boom')
+                  },
+                },
+              },
+            },
+          },
+        }
+        vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+        const { body } = await callTool(
+          'list_user_query',
+          { where: { name: { equals: 'x' } } },
+          config,
+        )
+        const result = body?.result as { isError?: boolean }
+        expect(result.isError).not.toBe(true)
+      },
+      BOOT,
+    )
+
+    test(
+      'a __proto__ key in where is refused as an unknown field',
+      async () => {
+        const { body } = await callTool(
+          'list_user_query',
+          { where: JSON.parse('{"__proto__":{"equals":1}}') },
+          schemaConfig(),
+        )
+        const result = body?.result as { isError?: boolean; content: Array<{ text: string }> }
+        expect(result.isError).toBe(true)
+        expect(result.content[0].text).toContain('__proto__')
+      },
+      BOOT,
+    )
+
+    test(
+      'an oversized in list is refused with the named cap',
+      async () => {
+        const ids = Array.from({ length: 10_001 }, (_, i) => `id${i}`)
+        const { body } = await callTool(
+          'list_user_query',
+          { where: { name: { in: ids } } },
+          schemaConfig(),
+        )
+        const result = body?.result as { isError?: boolean; content: Array<{ text: string }> }
+        expect(result.isError).toBe(true)
+        expect(result.content[0].text).toContain('in/notIn')
+      },
+      BOOT,
+    )
+
+    test(
       'an operation switched off is refused as an unknown tool',
       async () => {
         const config = withOverrides()
@@ -1908,6 +1984,113 @@ describe('the MCP surface', () => {
       },
       BOOT,
     )
+
+    test(
+      'a write returns only the id to a token without the list read scope',
+      async () => {
+        const config = scoped({ read: 'mcp:read', write: 'mcp:write' })
+        const call = async (scopes: string[]) => {
+          const { body } = await rpc(
+            'tools/call',
+            { name: 'list_user_create', arguments: { data: {} } },
+            config,
+            async () => ({ userId: 'user-123', scopes }),
+          )
+          return JSON.parse(resultText(body)) as Record<string, unknown>
+        }
+        const writeOnly = await call(['mcp:write'])
+        expect(writeOnly).toHaveProperty('id')
+        expect(writeOnly).not.toHaveProperty('item')
+        const both = await call(['mcp:write', 'mcp:read'])
+        expect(both).toHaveProperty('item')
+      },
+      BOOT,
+    )
+
+    describe('across a relation', () => {
+      const base = schemaConfig()
+      const config: OpenSaasConfig = {
+        ...base,
+        mcp: { ...base.mcp, enabled: true, scopes: { read: 'r:base', write: 'w:base' } },
+        lists: {
+          ...base.lists,
+          User: { ...base.lists.User, mcp: { scopes: { read: 'u:read', write: 'u:write' } } },
+        },
+      }
+      const holding =
+        (...scopes: string[]): McpSessionProvider =>
+        async () => ({ userId: 'user-123', scopes: ['r:base', 'w:base', ...scopes] })
+      type Schema = { properties?: Record<string, unknown> }
+      const schemas = async (provider: McpSessionProvider, tool: string) => {
+        const { body } = await rpc('tools/list', undefined, config, provider)
+        const found = (
+          body?.result as { tools: { name: string; inputSchema: Schema }[] }
+        ).tools.find((t) => t.name === tool)
+        return found?.inputSchema.properties ?? {}
+      }
+      const isError = (body: Record<string, unknown> | null) =>
+        (body?.result as { isError?: boolean }).isError === true
+      const query = (args: Record<string, unknown>, provider: McpSessionProvider) =>
+        rpc('tools/call', { name: 'list_post_query', arguments: args }, config, provider)
+
+      test(
+        'a relation to a list whose read scope is missing is not advertised, and is refused by name',
+        async () => {
+          const without = holding()
+          const fieldsWithout = (await schemas(without, 'list_post_query')).fields as Schema
+          expect(fieldsWithout.properties).not.toHaveProperty('author')
+          expect(
+            isError(
+              (await query({ fields: { author: { fields: { name: true } } } }, without)).body,
+            ),
+          ).toBe(true)
+
+          const withRead = holding('u:read')
+          const fieldsWith = (await schemas(withRead, 'list_post_query')).fields as Schema
+          expect(fieldsWith.properties).toHaveProperty('author')
+          expect(
+            isError(
+              (await query({ fields: { author: { fields: { name: true } } } }, withRead)).body,
+            ),
+          ).toBe(false)
+        },
+        BOOT,
+      )
+
+      test(
+        'where and orderBy through a relation need the target read scope',
+        async () => {
+          const where = { author: { some: { name: { equals: 'x' } } } }
+          expect(isError((await query({ where }, holding())).body)).toBe(true)
+          expect(isError((await query({ where }, holding('u:read'))).body)).toBe(false)
+          expect(isError((await query({ where }, holding('u:write'))).body)).toBe(true)
+        },
+        BOOT,
+      )
+
+      test(
+        'connect needs the target write scope, independently of its read scope',
+        async () => {
+          const create = (provider: McpSessionProvider) =>
+            schemas(provider, 'list_post_create').then((data) => data.data as Schema)
+          expect((await create(holding())).properties).not.toHaveProperty('author')
+          expect((await create(holding('u:read'))).properties).not.toHaveProperty('author')
+          expect((await create(holding('u:write'))).properties).toHaveProperty('author')
+
+          const refused = await rpc(
+            'tools/call',
+            {
+              name: 'list_post_create',
+              arguments: { data: { title: 't', author: { connect: { id: 'x' } } } },
+            },
+            config,
+            holding('u:read'),
+          )
+          expect(isError(refused.body)).toBe(true)
+        },
+        BOOT,
+      )
+    })
 
     test(
       'a list override takes precedence over the config-level scope',

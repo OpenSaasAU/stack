@@ -21,6 +21,10 @@ const config: OpenSaasConfig = {
       fields: { name: text() },
       access: { operation: { query: () => true, create: () => true } },
     },
+    Audit: {
+      fields: { note: text() },
+      access: { operation: { query: () => true, create: () => true } },
+    },
   },
 }
 
@@ -85,6 +89,27 @@ describe.skipIf(escape.kind !== 'postgres')(
         expect(a).not.toBeNull()
         expect(b).not.toBeNull()
         expect(a?.id).toBe(b?.id)
+      },
+      BOOT,
+    )
+
+    test(
+      'two transactions racing the first get() both commit with their prior writes intact',
+      async () => {
+        const results = await Promise.all(
+          racers.map((each, index) =>
+            each.context.transaction(async (tx) => {
+              await tx.db.Audit?.create({ data: { note: `racer-${index}` } })
+              const get = tx.db.Settings?.get
+              if (!get) throw new Error('Settings is not a singleton')
+              return await get()
+            }),
+          ),
+        )
+        expect(results[0]).not.toBeNull()
+        expect(results[0]?.id).toBe(results[1]?.id)
+        const audits = await racers[0]?.context.db.Audit?.all()
+        expect(audits?.map((audit) => audit.note).sort()).toEqual(['racer-0', 'racer-1'])
       },
       BOOT,
     )

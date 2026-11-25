@@ -54,6 +54,52 @@ describe('RelationshipTableClient', () => {
     expect(screen.getByText('Second')).toBeInTheDocument()
   })
 
+  it('links to the filtered list and labels sums as partial when rows are bounded', () => {
+    render(<RelationshipTableClient {...baseProps()} total={42} canViewAll />)
+
+    const link = screen.getByRole('link', { name: 'View all' })
+    expect(link).toHaveAttribute('href', '/admin/post?search=author%3A%23u1')
+    expect(screen.getByText('(visible rows)')).toBeInTheDocument()
+  })
+
+  it('omits the link but still labels partial sums when the list cannot be filtered by id', () => {
+    render(<RelationshipTableClient {...baseProps()} total={42} />)
+
+    expect(screen.queryByRole('link', { name: 'View all' })).toBeNull()
+    expect(screen.getByText('(visible rows)')).toBeInTheDocument()
+  })
+
+  it('omits the link without a back-reference field even when filtering is allowed', () => {
+    render(
+      <RelationshipTableClient
+        {...baseProps()}
+        total={42}
+        canViewAll
+        backReferenceField={undefined}
+      />,
+    )
+
+    expect(screen.queryByRole('link', { name: 'View all' })).toBeNull()
+    expect(screen.getByText('(visible rows)')).toBeInTheDocument()
+  })
+
+  it('encodes a uuid-shaped parent id and navigates through the router', async () => {
+    const id = '0192f3a4-7b1c-7d2e-9f00-1a2b3c4d5e6f'
+    render(<RelationshipTableClient {...baseProps()} total={42} canViewAll parentId={id} />)
+
+    const link = screen.getByRole('link', { name: 'View all' })
+    expect(link).toHaveAttribute('href', `/admin/post?search=author%3A%23${id}`)
+    await userEvent.click(link)
+    expect(mockPush).toHaveBeenCalledWith(`/admin/post?search=author%3A%23${id}`)
+  })
+
+  it('shows no View all link or partial label when every row is loaded', () => {
+    render(<RelationshipTableClient {...baseProps()} total={2} />)
+
+    expect(screen.queryByRole('link', { name: 'View all' })).toBeNull()
+    expect(screen.queryByText('(visible rows)')).toBeNull()
+  })
+
   it('always shows the row count and sums configured numeric columns via the Cell', () => {
     render(<RelationshipTableClient {...baseProps()} />)
 

@@ -31,3 +31,6 @@ export const WHERE_RELATION_MAX_DEPTH = READ_INCLUDE_MAX_DEPTH
 
 /** Maximum number of predicate entries in one caller `where`. */
 export const WHERE_MAX_NODES = 256
+
+/** Maximum number of elements across the `in`/`notIn` lists of one caller `where`. */
+export const WHERE_MAX_LIST_ELEMENTS = 10_000

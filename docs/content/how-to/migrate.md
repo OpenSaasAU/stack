@@ -226,6 +226,22 @@ The plan id is the one the loop printed with the plan; if the plan has changed s
 
 Production is a different command: deploys run `prisma db migrate` from the committed `migrations/` directory. There is no `opensaas db migrate` — `opensaas db` carries only `update`, and `opensaas migrate` is the project-analysis assistant this page is about, not a schema command.
 
+#### Adding a required column to a populated table
+
+Prisma's planner classes a new required column as additive, so it applies without a prompt and fills every existing row with a placeholder (`''`, `0`, `{}` or the epoch). Turning on `db.timestamps` on a populated table sets every existing `updatedAt` to `1970-01-01`. The plan output does not name the backfilled column, so the loop cannot warn you.
+
+Give the column a real default:
+
+```typescript
+import { integer } from '@opensaas/stack-core/fields'
+
+const rank = integer({ defaultValue: 100, db: { isNullable: false } })
+```
+
+`updatedAt` from `db.timestamps` takes neither option, so after turning timestamps on, repair the epoch rows yourself (`UPDATE "Post" SET "updatedAt" = "createdAt" WHERE "updatedAt" < '1971-01-01'`) or reset the Dev database.
+
+Otherwise backfill in two steps: ship the column as nullable, fill it with your own data, then tighten it to `db: { isNullable: false }` in a second change.
+
 #### Adopting an existing many-to-many table
 
 Prisma's implicit many-to-many tables (`_Lesson_teachers(A, B)`) have no `id`. Declare a junction list mapped onto the table:
@@ -1042,6 +1058,20 @@ const titles = await publishedPosts.select('title').all()
 ```
 
 Every operation runs through the secured terminals, so access control is enforced automatically and a denied read comes back as `[]` or `null` rather than throwing. For the dedicated reference see [Queries & projections](/docs/concepts/queries); for the complete Keystone-specific recipes, see the canonical [Migrating from KeystoneJS](/docs/how-to/migrate-from-keystone) guide.
+
+## Chained `needs` from 0.43
+
+In 0.43 an array-form `needs` also fetched what the related list's own computed fields needed. It now reaches one hop, so a hook reading past it finds nothing there. `pnpm generate` warns on each such field and prints its replacement.
+
+```typescript
+// 0.43: Post.label declares needs: ['author'], so Comment.label received post.author too
+label: virtual({ type: 'string', needs: ['post'] /* … */ })
+
+// Now: spell the chain out, with each column the hook reads off a spelled-out row
+label: virtual({ type: 'string', needs: { post: { title: true, author: true } } /* … */ })
+```
+
+See [Reaching past one hop](/docs/reference/fields-api#reaching-past-one-hop).
 
 ## Best Practices
 

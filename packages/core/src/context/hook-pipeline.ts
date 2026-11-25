@@ -128,6 +128,7 @@ async function runHookPipeline(args: HookPipelineArgs): Promise<HookPipelineResu
   if (validation.errors.length > 0) {
     throw new ValidationError(validation.errors, validation.fieldErrors)
   }
+  Object.assign(resolvedData, validation.coerced)
 
   // Runs only once the logical value has passed validation above (#789) — a
   // multi-column field validated after splitting could see an unrecognised

@@ -34,8 +34,8 @@ function delivered(): Record<string, unknown> {
     openedAt: new Date(0),
     assignee: null,
     notes: [
-      { id: 'n2', body: 'two', ticket: null },
-      { id: 'n1', body: 'one', ticket: null },
+      { id: 'n2', body: 'two' },
+      { id: 'n1', body: 'one' },
     ],
   }
 }
@@ -130,6 +130,20 @@ describe('a rule item on a row carrying every relation', () => {
     })
     const [note] = item.notes as Record<string, unknown>[]
     expect(note.body).toBe('one')
+    expect(tripped()).toBe(false)
+    expect(note.ticket).toBeUndefined()
+    expect(tripped()).toBe(true)
+  })
+
+  test('a relation a related row does carry is withheld all the same', () => {
+    const { item, tripped } = guarded({
+      id: 't1',
+      assignee: null,
+      notes: [{ id: 'n1', body: 'one', ticket: null }],
+    })
+    const [note] = item.notes as Record<string, unknown>[]
+
+    expect({ ...note }).toEqual({ id: 'n1', body: 'one' })
     expect(tripped()).toBe(false)
     expect(note.ticket).toBeUndefined()
     expect(tripped()).toBe(true)

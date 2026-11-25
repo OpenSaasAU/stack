@@ -30,13 +30,19 @@ export function validateWithZod(
   fieldConfigs: Record<string, FieldConfig>,
   operation: 'create' | 'update' = 'create',
   defaults?: ValidationDefaults,
-): { success: true } | { success: false; errors: Record<string, string> } {
+):
+  | { success: true; data: Record<string, unknown> }
+  | { success: false; errors: Record<string, string> } {
   const schema = generateZodSchema(fieldConfigs, operation, defaults)
 
-  const result = schema.safeParse(data)
+  const result = schema.safeParse(
+    typeof data === 'object' && data !== null && !Array.isArray(data)
+      ? Object.assign(Object.create(null), data)
+      : data,
+  )
 
   if (result.success) {
-    return { success: true }
+    return { success: true, data: { ...result.data } }
   }
 
   const errors: Record<string, string> = {}

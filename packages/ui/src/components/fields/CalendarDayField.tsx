@@ -1,6 +1,6 @@
 'use client'
 
-import { format } from 'date-fns'
+import { formatDate } from '../../lib/dateFormat.js'
 import { DatePicker } from '../../primitives/date-picker.js'
 import { parseCalendarDay, toCalendarDay } from '../../lib/calendarDay.js'
 import {
@@ -52,7 +52,7 @@ export function CalendarDayField({
     return (
       <FieldRoot mode="read">
         <FieldLabel muted>{label}</FieldLabel>
-        <FieldReadValue>{dateValue ? format(dateValue, 'PP') : '-'}</FieldReadValue>
+        <FieldReadValue>{dateValue ? formatDate(dateValue) : '-'}</FieldReadValue>
       </FieldRoot>
     )
   }

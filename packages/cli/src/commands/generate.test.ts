@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { spawnSync } from 'child_process'
 import * as fs from 'fs'
 import * as path from 'path'
+import { fileURLToPath } from 'node:url'
 import * as os from 'os'
 import type { OpenSaasConfig, FieldConfig } from '@opensaas/stack-core'
 import {
@@ -604,6 +605,64 @@ describe('Generate Command Integration', () => {
       await expect(generateCommand()).rejects.toBeInstanceOf(GenerationFailedError)
       await expect(generateCommand()).rejects.toThrow('opensaas.config.ts not found')
       expect(exitSpy).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('generateCommand warns on a chained array-form needs (ADR-0085)', () => {
+    const fields = import.meta.resolve('@opensaas/stack-core/fields')
+
+    async function warningsFor(needs: string): Promise<string> {
+      const originalCwd = process.cwd()
+      fs.writeFileSync(
+        path.join(tempDir, 'opensaas.config.ts'),
+        `import { relationship, text, virtual } from ${JSON.stringify(fileURLToPath(fields))}
+const label = (needs) =>
+  virtual({ type: 'string', needs, hooks: { resolveOutput: () => '' } })
+export default {
+  db: { provider: 'postgresql' },
+  lists: {
+    Author: { fields: { name: text() } },
+    Post: {
+      fields: {
+        author: relationship({ ref: 'Author' }),
+        comments: relationship({ ref: 'Comment.post', many: true }),
+        label: label(['author']),
+      },
+    },
+    Comment: {
+      fields: { post: relationship({ ref: 'Post.comments' }), label: label(${needs}) },
+    },
+  },
+}
+`,
+      )
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      process.chdir(tempDir)
+      try {
+        await expect(
+          generateCommand({
+            stagingDir: path.join(tempDir, 'staged'),
+            checkConfig: () => {
+              throw new Error('reached checkConfig')
+            },
+          }),
+        ).rejects.toThrow('reached checkConfig')
+        return warn.mock.calls.flat().join(' ')
+      } finally {
+        process.chdir(originalCwd)
+        warn.mockRestore()
+      }
+    }
+
+    it('names both fields and the object form, without failing', async () => {
+      const warned = await warningsFor("['post']")
+      expect(warned).toContain('"Comment.label"')
+      expect(warned).toContain('"Post.label"')
+      expect(warned).toContain('needs: { post: { author: true } }')
+    })
+
+    it('accepts the remedy it names, silently', async () => {
+      expect(await warningsFor('{ post: { author: true } }')).toBe('')
     })
   })
 

@@ -19,8 +19,14 @@ import { listIdJsonSchema, parseListId } from '../contract/id-boundary.js'
 import { RELATION_QUANTIFIERS, SCALAR_OPERATORS } from '../secured/operators.js'
 import type { SecuredQuery } from '../secured/read.js'
 import { orderByArgument, whereArgument } from './arguments.js'
-import { assertOrderByReachable, assertWhereReachable } from './where-reachability.js'
-import { mcpListReachable, readableLists } from './reachability.js'
+import {
+  assertOrderByReachable,
+  assertWhereReachable,
+  orderByRelationTargets,
+  whereRelationTargets,
+} from './where-reachability.js'
+import { assertWhereWithinLimits } from '../secured/vocabulary.js'
+import { bindHeldScopes, holdsListScope, mcpListReachable, readableAmong } from './reachability.js'
 import { coerceWhereIds, foreignKeyVisibility, idBoundaryRefusal } from './where-id-boundary.js'
 import {
   McpProjectionRefusedError,
@@ -252,6 +258,7 @@ export function createMcpHandlers(options: {
 
       if (body.method === 'tools/list') {
         const context = await getContext(toContextSession(session))
+        bindHeldScopes(context, session.scopes ?? [])
         return await handleToolsList(config, context, session, body.id)
       }
 
@@ -761,6 +768,7 @@ async function handleCrudTool(
   id?: number | string,
 ): Promise<Response> {
   const context = await getContext(toContextSession(session))
+  bindHeldScopes(context, session.scopes ?? [])
 
   const listEntry = Object.entries(config.lists).find(
     ([candidate]) => pascalToCamel(candidate) === toolKey,
@@ -786,6 +794,10 @@ async function handleCrudTool(
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Result type varies by Prisma operation
     let result: any
+    const mayReadBack =
+      enabledToolsFor(config, listConfig).query && holdsListScope(config, listKey, context, 'read')
+    const writeResult = (row: { id: unknown }) =>
+      mayReadBack ? { success: true, item: row } : { success: true, id: row.id }
 
     switch (operation) {
       case 'query': {
@@ -806,6 +818,12 @@ async function handleCrudTool(
         }
 
         if (resolveListMembers(config, listKey).singleton) {
+          if (isPlainObject(args.where) && Object.keys(args.where).length > 0) {
+            return createErrorResultResponse(
+              `"${listKey}" is a singleton; it takes no "where".`,
+              id,
+            )
+          }
           return await querySingleton(listKey, listConfig, args, config, context, id)
         }
 
@@ -813,7 +831,17 @@ async function handleCrudTool(
         let projection: ResolvedFieldsProjection | undefined
         try {
           if (isPlainObject(args.where)) {
-            assertWhereReachable(args.where, config, listKey, await readableLists(config, context))
+            assertWhereWithinLimits(args.where)
+            assertWhereReachable(
+              args.where,
+              config,
+              listKey,
+              await readableAmong(
+                config,
+                context,
+                whereRelationTargets(args.where, config, listKey),
+              ),
+            )
             const coercedWhere = coerceWhereIds(
               args.where,
               config,
@@ -832,7 +860,11 @@ async function handleCrudTool(
               args.orderBy,
               config,
               listKey,
-              await readableLists(config, context),
+              await readableAmong(
+                config,
+                context,
+                orderByRelationTargets(args.orderBy, config, listKey),
+              ),
             )
             query = query.orderBy(orderByArgument(args.orderBy, listKey))
           }
@@ -887,7 +919,7 @@ async function handleCrudTool(
             id,
           )
         }
-        return createSuccessResponse({ success: true, item: result }, id)
+        return createSuccessResponse(writeResult(result), id)
       }
 
       case 'update': {
@@ -913,7 +945,7 @@ async function handleCrudTool(
         if (!result) {
           return createErrorResultResponse(idBoundaryRefusal('update record'), id)
         }
-        return createSuccessResponse({ success: true, item: result }, id)
+        return createSuccessResponse(writeResult(result), id)
       }
 
       case 'delete': {
@@ -952,6 +984,7 @@ async function handleCustomTool(
 ): Promise<Response> {
   // Find the tool: list-level custom tools first, then plugin-registered tools
   const context = await getContext(toContextSession(session))
+  bindHeldScopes(context, session.scopes ?? [])
 
   let customTool: McpCustomTool | undefined
   let owningList: ListConfig<any> | undefined // eslint-disable-line @typescript-eslint/no-explicit-any -- List config generics vary per list

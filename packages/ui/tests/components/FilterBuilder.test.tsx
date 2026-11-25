@@ -1420,7 +1420,7 @@ describe('FilterBuilder', () => {
 
     it('shows a plain day already in the URL as written, and leaves the URL alone', () => {
       const { onApply } = setupDates('publishedAt:2026-01-01..2026-01-31')
-      expect(chipNames()).toEqual(['Published At between 2026-01-01 and 2026-01-31'])
+      expect(chipNames()).toEqual(['Published At between 2026-01-01 (UTC) and 2026-01-31 (UTC)'])
       expect(onApply).not.toHaveBeenCalled()
     })
 
