@@ -133,7 +133,7 @@ export async function signOut(page: Page) {
     const session = await replay.get('/api/auth/get-session')
     expect(await session.json()).toBeNull()
     const admin = await replay.get('/admin')
-    expect(await admin.text()).toContain('Access Denied')
+    expect(new URL(admin.url()).pathname).toBe('/sign-in')
   } finally {
     await replay.dispose()
   }
