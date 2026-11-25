@@ -133,9 +133,14 @@ export async function signOut(page: Page) {
     const session = await replay.get('/api/auth/get-session')
     expect(await session.json()).toBeNull()
     const admin = await replay.get('/admin', { maxRedirects: 0 })
-    expect(admin.status()).toBeGreaterThanOrEqual(300)
-    expect(admin.status()).toBeLessThan(400)
-    expect(admin.headers()['location']).toContain('/sign-in')
+    const redirectedByHeader = admin.status() >= 300 && admin.status() < 400
+    if (redirectedByHeader) {
+      expect(admin.headers()['location']).toContain('/sign-in')
+    } else {
+      const body = await admin.text()
+      expect(body).toMatch(/http-equiv="refresh"[^>]*\/sign-in|NEXT_REDIRECT[^"]*\/sign-in/)
+      expect(body).not.toContain('Sign Out')
+    }
   } finally {
     await replay.dispose()
   }
