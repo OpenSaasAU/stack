@@ -1,3 +1,4 @@
+import { ValidationError, isPlainObject } from '../hooks/index.js'
 import type {
   OpenSaasConfig,
   Plugin,
@@ -95,6 +96,11 @@ function mergeHooks(existing: Hooks | undefined, extension: Hooks | undefined): 
     if (existing.resolveInput && extension.resolveInput) {
       merged.resolveInput = async (args) => {
         const result1 = await existing.resolveInput!(args)
+        if (!isPlainObject(result1)) {
+          throw new ValidationError([
+            `resolveInput on "${args.listKey}" must return the resolved data object, got ${result1 === null ? 'null' : typeof result1}.`,
+          ])
+        }
         const result2 = await extension.resolveInput!({ ...args, resolvedData: result1 })
         return result2
       }

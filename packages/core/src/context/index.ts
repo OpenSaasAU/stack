@@ -1,7 +1,7 @@
 import type { OpenSaasConfig, ListConfig } from '../config/types.js'
 import type { Session, AccessContext, AccessControlledDB, StorageUtils } from '../access/index.js'
 import { checkAccess } from '../access/index.js'
-import { ValidationError, DatabaseError } from '../hooks/index.js'
+import { ValidationError, DatabaseError, isPlainObject } from '../hooks/index.js'
 import { databaseErrorMessage, normalizeDatabaseError } from '../lib/prisma-errors.js'
 import { isClientSafeError } from '../lib/client-safe-error.js'
 import { nullPrototypeRegistry } from '../lib/null-prototype-registry.js'
@@ -1678,6 +1678,12 @@ function assertWriteArgs(
   if (args === null || typeof args !== 'object') {
     throw new ValidationError(
       [`${operation}() on "${listName}" takes an argument object with ${allowed.join(', ')}.`],
+      {},
+    )
+  }
+  if (operation !== 'delete' && !isPlainObject(Reflect.get(args, 'data'))) {
+    throw new ValidationError(
+      [`${operation}() on "${listName}" takes \`data\` as an object of field values.`],
       {},
     )
   }
