@@ -132,8 +132,10 @@ export async function signOut(page: Page) {
   try {
     const session = await replay.get('/api/auth/get-session')
     expect(await session.json()).toBeNull()
-    const admin = await replay.get('/admin')
-    expect(new URL(admin.url()).pathname).toBe('/sign-in')
+    const admin = await replay.get('/admin', { maxRedirects: 0 })
+    expect(admin.status()).toBeGreaterThanOrEqual(300)
+    expect(admin.status()).toBeLessThan(400)
+    expect(admin.headers()['location']).toContain('/sign-in')
   } finally {
     await replay.dispose()
   }
