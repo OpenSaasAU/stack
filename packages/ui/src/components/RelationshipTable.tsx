@@ -475,6 +475,9 @@ export async function RelationshipTable({
       serverAction={serverAction}
       fieldName={section.fieldName}
       linkEdge={linkEdge ?? undefined}
+      junctionTargetTitle={
+        section.junctionTargetListKey ? formatListName(section.junctionTargetListKey) : undefined
+      }
       canCreate={createForm !== null}
       createFields={createForm?.fields}
       createRelationshipData={createForm?.relationshipData}

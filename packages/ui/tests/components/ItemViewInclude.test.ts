@@ -38,10 +38,15 @@ function makeConfig(): OpenSaasConfig {
           status: text(),
           author: relationship({ ref: 'User.posts' }),
           category: relationship({ ref: 'Category' }),
+          comments: relationship({ ref: 'Comment.post', many: true }),
         },
         access: {
           operation: { query: () => ({ status: { equals: 'published' } }), create: () => true },
         },
+      },
+      Comment: {
+        fields: { body: text(), post: relationship({ ref: 'Post.comments' }) },
+        access: { operation: { query: () => true, create: () => true } },
       },
       Category: {
         fields: { name: text() },
@@ -76,6 +81,10 @@ describe('the item view read', () => {
           category: { connect: { id: category?.id } },
         },
       })
+    }
+    const first = await sudo.db.Post.where({ title: { equals: 'published 0' } }).first()
+    for (const body of ['one', 'two']) {
+      await sudo.db.Comment.create({ data: { body, post: { connect: { id: first?.id } } } })
     }
     await sudo.db.Post.create({
       data: { title: 'draft', status: 'draft', author: { connect: { id: user?.id } } },
@@ -123,6 +132,18 @@ describe('the item view read', () => {
       const row = await readUser()
 
       expect(sectionRows(row.posts)[0]?.category).toMatchObject({ name: 'notes' })
+    },
+    BOOT,
+  )
+
+  it(
+    'reduces a to-many relationship column to a count instead of loading its rows',
+    async () => {
+      const row = await readUser()
+      const counts = sectionRows(row.posts).map((post) => post.comments)
+
+      expect(counts).toContain(2)
+      expect(counts.every((count) => typeof count === 'number')).toBe(true)
     },
     BOOT,
   )

@@ -66,9 +66,12 @@ export function composeItemViewRead(
     (query, section) =>
       query.include(section.fieldName, (rows) =>
         rows.combine({
-          [SECTION_ROWS]: (section.relationshipColumns ?? []).reduce(
-            (page, column) => page.include(column),
-            rows.limit(section.take),
+          [SECTION_ROWS]: (section.countedColumns ?? []).reduce(
+            (page, column) => page.include(column, (related) => related.count()),
+            (section.relationshipColumns ?? []).reduce(
+              (page, column) => page.include(column),
+              rows.limit(section.take),
+            ),
           ),
           [SECTION_TOTAL]: rows.count(),
         }),

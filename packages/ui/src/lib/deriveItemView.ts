@@ -43,8 +43,12 @@ export interface RelationshipTableSection {
   backReferenceField?: string
   /** The related-list columns to show, in order (curation minus back-reference). */
   columns: string[]
-  /** The subset of {@link columns} that are relationship fields on the related list, which the item-view read nests an include for. */
+  /** The to-one relationship fields among {@link columns}, which the item-view read nests an include for. */
   relationshipColumns?: string[]
+  /** The to-many relationship fields among {@link columns}, which the item-view read reduces to a count. */
+  countedColumns?: string[]
+  /** The far endpoint's list when this section is an edge across a junction list. */
+  junctionTargetListKey?: string
   /**
    * The maximum number of related rows to fetch and render for this table
    * (issue #752): the field's `ui.itemView.take` when it is a positive integer,
@@ -247,11 +251,19 @@ export function deriveItemViewLayout(config: OpenSaasConfig, listKey: string): I
       continue
     }
 
-    const isJunctionEdge = junctionEdgeForRender(config, listKey, fieldName) !== null
-    const overrides = readRelationshipItemView(field, isJunctionEdge)
+    const junctionEdge = junctionEdgeForRender(config, listKey, fieldName)
+    const overrides = readRelationshipItemView(field, junctionEdge !== null)
     const ref = typeof field.ref === 'string' ? field.ref : ''
     const [relatedListKey, backReferenceField] = ref.split('.')
     const relatedListConfig = config.lists[relatedListKey]
+    const uniqueColumns = (names: string[], accepts: (field: FieldConfig) => boolean): string[] => [
+      ...new Set(
+        names.filter((name) => {
+          const related = relatedListConfig?.fields[name]
+          return related?.type === 'relationship' && accepts(related)
+        }),
+      ),
+    ]
     const columns =
       overrides.columns ?? defaultColumnsFor(relatedListConfig, backReferenceField, config.db)
     sections.push({
@@ -260,11 +272,9 @@ export function deriveItemViewLayout(config: OpenSaasConfig, listKey: string): I
       relatedListKey,
       backReferenceField,
       columns,
-      relationshipColumns: [
-        ...new Set(
-          columns.filter((column) => relatedListConfig?.fields[column]?.type === 'relationship'),
-        ),
-      ],
+      relationshipColumns: uniqueColumns(columns, (field) => !isToManyRelationship(field)),
+      countedColumns: uniqueColumns(columns, isToManyRelationship),
+      junctionTargetListKey: junctionEdge?.targetListKey,
       take: overrides.take,
       sumColumns: overrides.sum ?? [],
       removeAction: overrides.removeAction,
