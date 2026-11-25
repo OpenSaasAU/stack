@@ -430,5 +430,28 @@ describe('Field-level hook helpers', () => {
       expect(titleHook).not.toHaveBeenCalled()
       expect(bodyHook).toHaveBeenCalledTimes(2)
     })
+
+    it('should run every field hook on delete', async () => {
+      const titleHook = vi.fn()
+      const bodyHook = vi.fn()
+      const fields = {
+        title: text({ hooks: { afterOperation: titleHook } }),
+        body: text({ hooks: { afterOperation: bodyHook } }),
+      }
+
+      await executeFieldAfterOperationHooks(
+        { id: '1' },
+        undefined,
+        undefined,
+        fields,
+        'delete',
+        mockContext,
+        'Post',
+        { id: '1' },
+      )
+
+      expect(titleHook).toHaveBeenCalledTimes(1)
+      expect(bodyHook).toHaveBeenCalledTimes(1)
+    })
   })
 })

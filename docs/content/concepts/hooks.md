@@ -100,7 +100,7 @@ Everything below sits **inside** the write's transaction except step 0 and the
 9. **List-level `beforeOperation`** — side effects at list level
 10. **Database operation**
 11. **List-level `afterOperation`** — side effects at list level
-12. **Field-level `afterOperation`** — side effects for individual fields
+12. **Field-level `afterOperation`** — side effects for individual fields, run on create and update only for fields in the write
 
 A `delete` skips steps 1–2 and 5–7: there is no input to shape, so it runs
 `validate` (list, then field), then the `beforeOperation`/`afterOperation`

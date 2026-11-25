@@ -1911,7 +1911,7 @@ status: select({
 
 Side effects after the database operation. Does NOT modify data.
 
-**When called:** After `create`, `update` or `delete`, inside the write's transaction
+**When called:** After `create`, `update` or `delete`, inside the write's transaction. On `create` and `update` it runs only when the field is in the write, like `beforeOperation`; on `delete` it always runs
 
 **Use cases:** Cache invalidation, webhooks, cleanup
 
