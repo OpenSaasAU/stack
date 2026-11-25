@@ -1,6 +1,7 @@
 import * as z from 'zod'
 import type { ListConfig, OpenSaasConfig, McpCustomTool } from '../config/types.js'
 import { getPluginData } from '../config/plugin-engine.js'
+import { assertNoDefaultWriteTools } from '../config/mcp-default-tools.js'
 import type { AccessContext } from '../access/types.js'
 import { engineContextOf, type AnyStackContext } from '../context/engine-context.js'
 import { checkAccess } from '../access/engine.js'
@@ -203,6 +204,7 @@ export function createMcpHandlers(options: {
     return { GET: notEnabledHandler, POST: notEnabledHandler, DELETE: notEnabledHandler }
   }
 
+  assertNoDefaultWriteTools(config)
   assertListMembersResolve(config)
 
   const basePath = config.mcp.basePath || '/api/mcp'
@@ -375,17 +377,12 @@ function whereDescription(listKey: string): string {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- List config generics vary per list
 function enabledToolsFor(config: OpenSaasConfig, listConfig: ListConfig<any>) {
-  const defaultTools = config.mcp?.defaultTools || {
-    read: true,
-    create: true,
-    update: true,
-    delete: true,
-  }
+  const tools = listConfig.mcp?.tools
   return {
-    query: listConfig.mcp?.tools?.read ?? defaultTools.read ?? true,
-    create: listConfig.mcp?.tools?.create ?? defaultTools.create ?? true,
-    update: listConfig.mcp?.tools?.update ?? defaultTools.update ?? true,
-    delete: listConfig.mcp?.tools?.delete ?? defaultTools.delete ?? true,
+    query: tools?.read ?? config.mcp?.defaultTools?.read ?? true,
+    create: tools?.create === true,
+    update: tools?.update === true,
+    delete: tools?.delete === true,
   }
 }
 

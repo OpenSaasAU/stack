@@ -1389,7 +1389,7 @@ mcp: {
   enabled?: boolean,
   basePath?: string,
   auth?: McpAuthConfig,
-  defaultTools?: McpToolsConfig,
+  defaultTools?: McpDefaultToolsConfig,
   resource?: string,
 }
 ```
@@ -1418,9 +1418,9 @@ Authentication metadata (optional, currently informational). The MCP runtime aut
 
 ##### `defaultTools`
 
-Default CRUD tool configuration for all lists.
+App-wide default for the generated query tool, overridable per list. It takes `read` only: write tools are enabled per list with [`tools`](#mcptoolsconfig), and a write key here is refused.
 
-**Type:** [`McpToolsConfig`](#mcptoolsconfig)
+**Type:** [`McpDefaultToolsConfig`](#mcpdefaulttoolsconfig)
 
 ##### `resource`
 
@@ -1502,7 +1502,7 @@ Enable MCP tools for this list.
 
 ##### `tools`
 
-Configure which CRUD tools to enable.
+Which generated CRUD tools this list exposes. Create, update and delete are off unless enabled here.
 
 **Type:** [`McpToolsConfig`](#mcptoolsconfig)
 
@@ -1516,16 +1516,18 @@ Custom MCP tools specific to this list.
 
 ### `McpToolsConfig`
 
-Configuration for which CRUD tools to enable.
+Which generated CRUD tools a list exposes. The query tool follows `mcp.defaultTools.read` unless the list sets `read` itself. The create, update and delete tools are off unless the list enables each one: enabling MCP never exposes a write on its own.
 
 ```typescript
 tools: {
-  read?: boolean,    // Default: true
-  create?: boolean,  // Default: true
-  update?: boolean,  // Default: true
-  delete?: boolean,  // Default: true
+  read?: boolean,    // Default: mcp.defaultTools.read, else true
+  create?: boolean,  // Default: false
+  update?: boolean,  // Default: false
+  delete?: boolean,  // Default: false
 }
 ```
+
+A write tool that is off is neither listed nor callable. One that is on still runs the list's access control, hooks and scopes.
 
 **Example:**
 
@@ -1533,14 +1535,25 @@ tools: {
 Post: list({
   mcp: {
     tools: {
-      read: true,
       create: true,
       update: true,
-      delete: false, // Disable delete tool for safety
+      // delete stays off
     },
   },
 })
 ```
+
+### `McpDefaultToolsConfig`
+
+The app-wide default for the query tool.
+
+```typescript
+defaultTools: {
+  read?: boolean,    // Default: true
+}
+```
+
+There is no app-wide write default. A config setting `create`, `update` or `delete` under `mcp.defaultTools`, even to `false`, is refused by `config()` and by `createMcpHandlers` with an error naming the per-list key, `lists.<List>.mcp.tools.<operation>`.
 
 ---
 

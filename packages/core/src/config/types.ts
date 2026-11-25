@@ -3476,29 +3476,55 @@ export type UIConfig = {
  */
 
 /**
- * Configuration for which CRUD tools to enable for a list
+ * Which generated CRUD tools a list exposes over MCP.
+ *
+ * The query tool is on unless switched off here or by `mcp.defaultTools.read`.
+ * The create, update and delete tools are off unless this list turns each one
+ * on: enabling MCP never exposes a write on its own.
+ *
+ * @example
+ * ```typescript
+ * Post: list({
+ *   fields: { title: text() },
+ *   mcp: { tools: { create: true, update: true } },
+ * })
+ * ```
  */
 export type McpToolsConfig = {
   /**
-   * Enable read/query tool
-   * @default true
+   * Enable the `list_<list>_query` tool
+   * @default mcp.defaultTools.read, else true
    */
   read?: boolean
   /**
-   * Enable create tool
-   * @default true
+   * Enable the `list_<list>_create` tool
+   * @default false
    */
   create?: boolean
   /**
-   * Enable update tool
-   * @default true
+   * Enable the `list_<list>_update` tool
+   * @default false
    */
   update?: boolean
   /**
-   * Enable delete tool
-   * @default true
+   * Enable the `list_<list>_delete` tool
+   * @default false
    */
   delete?: boolean
+}
+
+/**
+ * The app-wide default for the generated query tool. There is no app-wide
+ * write default: a list enables `create`, `update` and `delete` itself with
+ * `mcp.tools`, and a config setting one here is refused.
+ */
+export type McpDefaultToolsConfig = {
+  /**
+   * Enable the `list_<list>_query` tool on every list that does not set
+   * `mcp.tools.read` itself
+   * @default true
+   */
+  read?: boolean
 }
 
 /**
@@ -3562,7 +3588,8 @@ export type ListMcpConfig = {
    */
   scopes?: McpScopesConfig
   /**
-   * Configure which CRUD tools to enable
+   * Which generated CRUD tools this list exposes. Create, update and delete
+   * are off unless enabled here.
    */
   tools?: McpToolsConfig
   /**
@@ -3649,10 +3676,11 @@ export type McpConfig = {
    */
   auth?: McpAuthConfig
   /**
-   * Default tool configuration for all lists
-   * Can be overridden per-list
+   * App-wide default for the generated query tool, overridable per list.
+   * Write tools have no app-wide default: enable them per list with
+   * `mcp.tools.create`, `mcp.tools.update` and `mcp.tools.delete`.
    */
-  defaultTools?: McpToolsConfig
+  defaultTools?: McpDefaultToolsConfig
   /**
    * OAuth scopes the session's token must carry for CRUD tools. Not enforced
    * unless configured. Overridable per list with `list.mcp.scopes`.
