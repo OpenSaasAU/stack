@@ -715,6 +715,14 @@ export function FilterBuilder({
           <span className="truncate">{description.value}</span>
         </button>
       )}
+      {description.note !== undefined && (
+        <span
+          data-slot="filter-builder-chip-note"
+          className="truncate px-1.5 italic text-muted-foreground"
+        >
+          {description.note}
+        </span>
+      )}
       <button
         type="button"
         data-slot="filter-builder-chip-remove"

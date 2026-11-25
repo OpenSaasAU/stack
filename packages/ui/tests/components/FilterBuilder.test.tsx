@@ -281,7 +281,7 @@ describe('FilterBuilder', () => {
       setup({ defaultValue: 'status:published nosuch:value "status:draft" views:>2 beta' })
       expect(chipNames()).toEqual([
         'Status is Published',
-        'Text contains value',
+        'Text contains value (no field called nosuch)',
         'Text contains status:draft',
         'Views greater than 2',
         'Text contains beta',
@@ -1774,7 +1774,9 @@ describe('FilterBuilder', () => {
 
     it('keeps an unreadable member in its group as text', () => {
       setup({ defaultValue: '(status:draft OR nosuch:value)' })
-      expect(groupNames()).toEqual(['Any of: Status is Draft or Text contains value'])
+      expect(groupNames()).toEqual([
+        'Any of: Status is Draft or Text contains value (no field called nosuch)',
+      ])
     })
 
     it('pastes a group as a group', async () => {

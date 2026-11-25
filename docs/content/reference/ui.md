@@ -565,7 +565,10 @@ field whose Filter spec says what empty means; on any other field it degrades to
 free text. A token that cannot map in any part is searched as one free-text
 word, and its chip shows exactly that word. A positive token searches its
 values with the field name dropped: `nosuchfield:Findable` searches `Findable`,
-and `status:draft,bogus` searches `draft,bogus` rather than for drafts. A
+and `status:draft,bogus` searches `draft,bogus` rather than for drafts. When
+the field is one this session does not have, the chip says so: "Text contains
+Findable", noted "no field called nosuchfield", so a mistyped field never reads
+as a working filter. A
 negated token searches its whole literal and is never negated: `-secret:x`, on
 a field the session cannot read or the list does not have, searches for
 `-secret:x`, so negation never turns an unreadable field into a filter. A comma
@@ -807,7 +810,7 @@ records the `field:#id` tokens in `defaultValue` point at. Its
 slots are `filter-builder` (root),
 `filter-builder-bar`, `filter-builder-chip` (with `data-armed` and
 `data-editing`), `filter-builder-chip-field`, `filter-builder-chip-condition`,
-`filter-builder-chip-value`, `filter-builder-chip-remove`,
+`filter-builder-chip-value`, `filter-builder-chip-note` (the "no field called" note), `filter-builder-chip-remove`,
 `filter-builder-group` (an OR group, with `data-alternative` while one is being
 added to it), `filter-builder-connector` (the **and** or **or** button between
 chips, with `data-joined` on an **or**), `filter-builder-alternative` (the

@@ -110,6 +110,7 @@ export interface TokenDescription {
   condition: string
   value: string
   sentence: string
+  note?: string
 }
 
 const COMPARISON_LABELS: Record<Exclude<FilterOperator, 'eq'>, string> = {
@@ -643,7 +644,12 @@ export function describeToken(
     }
   }
   const value = filterTokenFreeTextWord(token)
-  return { field: 'Text', condition: 'contains', value, sentence: `Text contains ${value}` }
+  const sentence = `Text contains ${value}`
+  const missingField =
+    token.field !== null && !token.negated && token.operator !== 'empty' && !fields.has(token.field)
+  if (!missingField) return { field: 'Text', condition: 'contains', value, sentence }
+  const note = `no field called ${token.field}`
+  return { field: 'Text', condition: 'contains', value, sentence: `${sentence} (${note})`, note }
 }
 
 function pairedRange(
