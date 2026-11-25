@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import { parseCalendarDay } from '../../lib/calendarDay.js'
+import { formatDate } from '../../lib/dateFormat.js'
 import type { CellComponentProps } from './registry.js'
 
 /**
@@ -19,5 +20,5 @@ export function CalendarDayCell({ value }: CellComponentProps) {
       </span>
     )
   }
-  return <span data-slot="cell-calendar-day">{date.toLocaleDateString()}</span>
+  return <span data-slot="cell-calendar-day">{formatDate(date)}</span>
 }
