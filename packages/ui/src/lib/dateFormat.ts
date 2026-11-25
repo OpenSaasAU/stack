@@ -12,15 +12,26 @@ export function formatDateTime(date: Date): string {
   return format(date, DATE_TIME_PATTERN)
 }
 
-function toUtcWallClock(date: Date): Date {
-  return new Date(
-    date.getUTCFullYear(),
-    date.getUTCMonth(),
-    date.getUTCDate(),
-    date.getUTCHours(),
-    date.getUTCMinutes(),
-    date.getUTCSeconds(),
-  )
+function pad(n: number): string {
+  return String(n).padStart(2, '0')
+}
+
+export function formatDateTimeUtc(date: Date): string {
+  const hours = date.getUTCHours()
+  const hour12 = hours % 12 === 0 ? 12 : hours % 12
+  return `${pad(date.getUTCDate())}/${pad(date.getUTCMonth() + 1)}/${date.getUTCFullYear()}, ${hour12}:${pad(date.getUTCMinutes())} ${hours < 12 ? 'AM' : 'PM'}`
+}
+
+const ZONELESS_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T[\d:.]+$/
+
+export function parseTimestamp(value: unknown): Date | null {
+  let date: Date
+  if (value instanceof Date) date = value
+  else if (typeof value === 'number') date = new Date(value)
+  else if (typeof value === 'string') {
+    date = new Date(ZONELESS_TIMESTAMP.test(value) ? `${value}Z` : value)
+  } else return null
+  return Number.isNaN(date.getTime()) ? null : date
 }
 
 function subscribeNever(): () => void {
@@ -34,5 +45,5 @@ export function useFormattedDateTime(date: Date | null): string | null {
     () => false,
   )
   if (date === null) return null
-  return formatDateTime(mounted ? date : toUtcWallClock(date))
+  return mounted ? formatDateTime(date) : formatDateTimeUtc(date)
 }
