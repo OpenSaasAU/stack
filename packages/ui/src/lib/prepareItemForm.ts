@@ -5,6 +5,7 @@ import {
   OpenSaasConfig,
 } from '@opensaas/stack-core'
 import type { ListConfig } from '@opensaas/stack-core'
+import type { SessionVocabulary } from '@opensaas/stack-core/internal'
 import type { SerializableFieldConfig } from './serializeFieldConfig.js'
 import {
   formValuesForSession,
@@ -81,12 +82,11 @@ export async function prepareItemForm(
   itemData: Record<string, unknown>,
   operation: 'create' | 'update',
   itemId?: string | number,
+  resolvedVocabulary?: SessionVocabulary,
 ): Promise<PreparedItemForm> {
-  const vocabularyPromise = readSessionVocabulary(
-    context,
-    listKey,
-    operation === 'update' ? itemId : undefined,
-  )
+  const vocabularyPromise = resolvedVocabulary
+    ? Promise.resolve(resolvedVocabulary)
+    : readSessionVocabulary(context, listKey, operation === 'update' ? itemId : undefined)
   // Bounded/projected fetch — see getRelationshipOptions.
   const relationshipData: Record<string, Array<{ id: string; label: string }>> = {}
   const relationshipFields = Object.entries(listConfig.fields).filter(

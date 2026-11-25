@@ -17,7 +17,7 @@ import {
   OpenSaasConfig,
 } from '@opensaas/stack-core'
 import { resolveListUi } from '../lib/resolveListUi.js'
-import { itemOperationAvailable, operationAvailable } from '../lib/operationAvailable.js'
+import { itemOperationsOf, operationAvailable } from '../lib/operationAvailable.js'
 import { UnavailableState } from './UnavailableState.js'
 import { buildRelationshipInclude, prepareItemForm } from '../lib/prepareItemForm.js'
 import { deriveItemViewLayout, type ItemViewLayout } from '../lib/deriveItemView.js'
@@ -156,10 +156,11 @@ async function ItemViewLayoutView({
   const urlKey = getUrlKey(listKey)
   const resolvedUi = await resolveListUi(listConfig, context)
   const { hideDelete } = resolvedUi
-  const [canUpdate, canDeleteRow] = await Promise.all([
-    itemOperationAvailable(context, listKey, itemId, 'update'),
-    itemOperationAvailable(context, listKey, itemId, 'delete'),
-  ])
+  const {
+    canUpdate,
+    canDelete: canDeleteRow,
+    vocabulary: itemVocabulary,
+  } = await itemOperationsOf(context, listKey, itemId)
   const canDelete = !hideDelete && canDeleteRow
   const fieldMode = canUpdate ? resolvedUi.fieldMode : 'read'
 
@@ -221,6 +222,7 @@ async function ItemViewLayoutView({
     detailsItemData,
     'update',
     itemId,
+    itemVocabulary,
   )
 
   const detailsCard = (
@@ -387,13 +389,13 @@ export async function ItemForm({
   const resolvedUi = await resolveListUi(listConfig, context)
   const { hideDelete } = resolvedUi
   const editingId = mode === 'edit' ? itemId : undefined
-  const [canUpdate, canDeleteRow] =
-    editingId === undefined
-      ? [true, false]
-      : await Promise.all([
-          itemOperationAvailable(appContext, listKey, editingId, 'update'),
-          itemOperationAvailable(appContext, listKey, editingId, 'delete'),
-        ])
+  const {
+    canUpdate,
+    canDelete: canDeleteRow,
+    vocabulary: itemVocabulary,
+  } = editingId === undefined
+    ? { canUpdate: true, canDelete: false, vocabulary: undefined }
+    : await itemOperationsOf(appContext, listKey, editingId)
   const canDelete = !hideDelete && canDeleteRow
   const fieldMode = canUpdate ? resolvedUi.fieldMode : 'read'
 
@@ -406,6 +408,7 @@ export async function ItemForm({
     itemData,
     mode === 'create' ? 'create' : 'update',
     mode === 'create' ? undefined : itemId,
+    itemVocabulary,
   )
 
   return (
