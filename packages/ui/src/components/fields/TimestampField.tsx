@@ -1,7 +1,7 @@
 'use client'
 
 import { DateTimePicker } from '../../primitives/datetime-picker.js'
-import { formatDateTime } from '../../lib/dateFormat.js'
+import { useFormattedDateTime } from '../../lib/dateFormat.js'
 import {
   FieldRoot,
   FieldLabel,
@@ -41,12 +41,13 @@ export function TimestampField({
   helpText,
 }: TimestampFieldProps) {
   const dateValue = value ? new Date(value) : null
+  const valueText = useFormattedDateTime(dateValue)
 
   if (mode === 'read') {
     return (
       <FieldRoot mode="read">
         <FieldLabel muted>{label}</FieldLabel>
-        <FieldReadValue>{dateValue ? formatDateTime(dateValue) : '-'}</FieldReadValue>
+        <FieldReadValue>{valueText ?? '-'}</FieldReadValue>
       </FieldRoot>
     )
   }

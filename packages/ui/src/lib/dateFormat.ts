@@ -23,10 +23,6 @@ function toUtcWallClock(date: Date): Date {
   )
 }
 
-/**
- * Formats an instant for SSR'd client components: UTC on the first render so
- * server and browser agree, then the viewer's local time once mounted.
- */
 export function useFormattedDateTime(date: Date | null): string | null {
   const [mounted, setMounted] = React.useState(false)
   React.useEffect(() => setMounted(true), [])
