@@ -101,7 +101,7 @@ export function ItemFormClient({
     errorFallback: 'Access denied or operation failed',
     onEdgeWrites: (changes) => applyEdgeWrites({ changes, parentId: itemId ?? '', serverAction }),
     onUnchanged: () => {
-      guard.release()
+      queueSaveNotice('Saved.')
       router.push(`${basePath}/${urlKey}`)
       router.refresh()
     },
@@ -113,7 +113,6 @@ export function ItemFormClient({
 
       const normalized = toSubmitResult(result, 'Access denied or operation failed')
       if (normalized.success) {
-        guard.release()
         queueSaveNotice(action === 'create' ? 'Created.' : 'Saved.')
         router.push(`${basePath}/${urlKey}`)
         router.refresh()
@@ -134,7 +133,6 @@ export function ItemFormClient({
       const result = await serverAction({ listKey, action: 'delete', id: itemId })
       const normalized = toSubmitResult(result, 'Access denied or failed to delete item')
       if (normalized.success) {
-        guard.release()
         router.push(`${basePath}/${urlKey}`)
         router.refresh()
       } else {

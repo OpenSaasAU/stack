@@ -7,8 +7,6 @@ type Destination = { kind: 'href'; href: string } | { kind: 'back' }
 export interface UnsavedChangesGuard {
   /** Leave for `href` now when clean, or ask first when dirty. */
   requestLeave: (href: string) => void
-  /** Stop guarding; call just before navigating away after a successful save. */
-  release: () => void
   prompt: { isOpen: boolean; onConfirm: () => void; onCancel: () => void }
 }
 
@@ -97,22 +95,17 @@ export function useUnsavedChangesGuard(
     [guarding],
   )
 
-  const release = useCallback(() => {
-    releasedRef.current = true
-    setReleased(true)
-  }, [])
-
   const onConfirm = () => {
     const destination = pending
     setPending(null)
-    release()
+    releasedRef.current = true
+    setReleased(true)
     if (destination?.kind === 'href') navigateRef.current(destination.href)
     else if (destination?.kind === 'back') window.history.go(-2)
   }
 
   return {
     requestLeave,
-    release,
     prompt: { isOpen: pending !== null, onConfirm, onCancel: () => setPending(null) },
   }
 }

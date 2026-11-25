@@ -5,12 +5,15 @@ import { usePathname } from 'next/navigation.js'
 
 export const SAVE_NOTICE_KEY = 'opensaas-save-notice'
 
+const SAVE_NOTICE_EVENT = 'opensaas-save-notice'
+
 export function queueSaveNotice(message: string): void {
   try {
     window.sessionStorage.setItem(SAVE_NOTICE_KEY, message)
   } catch {
     return
   }
+  window.dispatchEvent(new Event(SAVE_NOTICE_EVENT))
 }
 
 export function SaveNotice() {
@@ -18,15 +21,19 @@ export function SaveNotice() {
   const [message, setMessage] = useState<string | null>(null)
 
   useEffect(() => {
-    try {
-      const queued = window.sessionStorage.getItem(SAVE_NOTICE_KEY)
-      if (!queued) return
-      window.sessionStorage.removeItem(SAVE_NOTICE_KEY)
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- sessionStorage is external state only readable after mount
-      setMessage(queued)
-    } catch {
-      return
+    const show = () => {
+      try {
+        const queued = window.sessionStorage.getItem(SAVE_NOTICE_KEY)
+        if (!queued) return
+        window.sessionStorage.removeItem(SAVE_NOTICE_KEY)
+        setMessage(queued)
+      } catch {
+        return
+      }
     }
+    show()
+    window.addEventListener(SAVE_NOTICE_EVENT, show)
+    return () => window.removeEventListener(SAVE_NOTICE_EVENT, show)
   }, [pathname])
 
   useEffect(() => {
