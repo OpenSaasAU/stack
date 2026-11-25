@@ -331,7 +331,7 @@ describe('ListViewClient', () => {
 
     it('should reset to page 1 when a new filter is committed', async () => {
       const user = userEvent.setup()
-      render(<ListViewClient {...defaultProps} page={3} />)
+      render(<ListViewClient {...defaultProps} page={3} total={150} />)
 
       await user.type(filterBar(), 'test{Enter}')
 

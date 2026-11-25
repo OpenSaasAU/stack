@@ -844,6 +844,19 @@ describe('ListView ?columns= resolution', () => {
   )
 
   it(
+    'never shows the value of a column the session cannot read',
+    async () => {
+      const props = await render(ada, {
+        listKey: 'User',
+        visibleColumns: ['name', 'billingAddress'],
+      })
+      expect(props.columns).toContain('name')
+      expect(JSON.stringify(props.items)).not.toContain('Analytical')
+    },
+    BOOT,
+  )
+
+  it(
     'ignores names the list does not display, falling back to the defaults when none remain',
     async () => {
       const some = await render(ada, { listKey: 'User', visibleColumns: ['nope', 'name', 'name'] })

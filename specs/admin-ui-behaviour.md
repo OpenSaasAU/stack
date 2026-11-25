@@ -44,3 +44,53 @@ Agreed 2026-11-25.
 | ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
 | 1.16 | `navItems` adds links after the built-in groups; `navigation` replaces the sidebar and wins over `navItems` with a dev-only warning; `navigation={false}` removes it. | `AdminUINavigationSlot.test.tsx` |
 | 1.17 | Sign Out appears only when `onSignOut` is passed.                                                                                                                     | `UserMenu.test.tsx`              |
+
+## Area 2: List view (columns, sorting, paging, presets)
+
+Agreed 2026-11-25. Filtering has its own area.
+
+### Columns
+
+| #   | Expectation                                                                                                                                                | Covered by                                                                   |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| 2.1 | With no `?columns=`, the list shows `ui.listView.initialColumns`, else the default set.                                                                    | `AdminUIListView.test.tsx`, `ListView.test.tsx`                              |
+| 2.2 | The Columns menu writes `?columns=` (visible columns and order); Reset columns drops it, and so does a pick equal to the default set.                      | `ListViewTableControls.test.tsx`                                             |
+| 2.3 | Column names the list doesn't display are ignored; with none left it falls back to the default set.                                                        | `ListView.test.tsx`                                                          |
+| 2.4 | A field the applied filter uses is always shown, appended, ticked and locked, and never written to `?columns=`.                                            | `ListViewFilterFromTable.test.tsx`, `ListViewFilterFromTableServer.test.tsx` |
+| 2.5 | A column the session can't read never shows its values. Open: the docs say the column itself still shows, the code drops a never-readable column entirely. | `ListView.test.tsx`                                                          |
+
+### Sorting
+
+| #   | Expectation                                                                                                     | Covered by                                               |
+| --- | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| 2.6 | One sort at a time, from a header or the toolbar's Sort menu.                                                   | `ListViewTableControls.test.tsx`                         |
+| 2.7 | Only columns the session's read can order by offer a sort, never a relationship; any other `?sort=` is ignored. | `ListView.test.tsx`, `ListViewTableControls.test.tsx`    |
+| 2.8 | `?sort=` wins over `initialSort`; rows tie-break by id.                                                         | `ListView.test.tsx`, `ListViewPresetResolution.test.tsx` |
+
+### Paging and size
+
+| #    | Expectation                                                                                                                                                  | Covered by                                        |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------- |
+| 2.9  | 50 rows by default; a 25/50/100 control past 25 rows; `?pageSize=` up to 200, anything invalid falls back.                                                   | `ListViewTableControls.test.tsx`                  |
+| 2.10 | "Showing x to y of z" and Previous/Next appear only with more than one page. The total is the access-scoped count of the filtered set.                       | `ListView.test.tsx`, `ListViewPageRange.test.tsx` |
+| 2.11 | A page past the end goes to the last page (page 1 when empty), keeping the rest of the query, and never shows "No items yet" or a nonsense range on the way. | `ListViewPageRange.test.tsx`                      |
+| 2.12 | Density is remembered per browser; the server renders comfortable.                                                                                           | `ListViewTableControls.test.tsx`                  |
+| 2.13 | Below the tablet breakpoint each row is a labelled card with the row menu in its corner.                                                                     | `ListViewClient.test.tsx`                         |
+
+### Rows and empty states
+
+| #    | Expectation                                                                                                                                                 | Covered by                                                                   |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| 2.14 | The title column links to the item; it is the label field, else the first non-relationship column; a cell with its own links gets an "Open" link beside it. | `ListViewClient.test.tsx`, `ListViewFilterFromTable.test.tsx`                |
+| 2.15 | An empty list says "No items yet", offering Create only when the session may create.                                                                        | `ListView.test.tsx`, `ListUiOptions.test.tsx`                                |
+| 2.16 | No matches offers removing the single filter that returns the most rows, and Clear filters.                                                                 | `ListViewFilterFromTable.test.tsx`, `ListViewFilterFromTableServer.test.tsx` |
+| 2.17 | A failed read shows "This list could not be loaded" with Reload; the error is logged, never shown.                                                          | `ListView.test.tsx`                                                          |
+
+### Preset views
+
+| #    | Expectation                                                                                                    | Covered by                                                      |
+| ---- | -------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| 2.18 | Presets show as tabs after All, without counts; `hasAccess` hides a tab.                                       | `ListViewPresets.test.tsx`, `ListViewPresetResolution.test.tsx` |
+| 2.19 | `?preset=` resolves the preset's search for whoever opens the link.                                            | `ListViewPresetResolution.test.tsx`                             |
+| 2.20 | The first edit turns the preset into a plain `?search=` and drops `?preset=`, with nothing on screen changing. | `ListViewPresets.test.tsx`                                      |
+| 2.21 | An unknown, denied or throwing preset opens the plain list; while one is open, `?search=` is ignored.          | `ListViewPresetResolution.test.tsx`                             |

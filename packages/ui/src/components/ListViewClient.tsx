@@ -512,6 +512,13 @@ export function ListViewClient({
 
   const buildPaginationUrl = (newPage: number) => buildUrl({ page: newPage })
 
+  const lastPage = Math.max(1, totalPages)
+  const pastTheEnd = page > lastPage
+  const lastPageUrl = pastTheEnd ? buildPaginationUrl(lastPage) : null
+  React.useEffect(() => {
+    if (lastPageUrl !== null) router.replace(lastPageUrl)
+  }, [lastPageUrl, router])
+
   const confirmedColumns = chosenColumns.join(',')
   const [pendingColumns, setPendingColumns] = React.useState<{
     over: string
@@ -1007,7 +1014,11 @@ export function ListViewClient({
                   colSpan={displayColumns.length + 1 + (selectionEnabled ? 1 : 0)}
                   className="p-0 max-md:block"
                 >
-                  {initialSearch ? (
+                  {pastTheEnd ? (
+                    <p role="status" className="p-6 text-center text-sm text-muted-foreground">
+                      Going to the last page…
+                    </p>
+                  ) : initialSearch ? (
                     <EmptyState
                       className="border-0"
                       icon={<SearchX className="h-6 w-6" />}
@@ -1156,7 +1167,7 @@ export function ListViewClient({
         </Table>
       </div>
 
-      {total > 0 && (
+      {total > 0 && !pastTheEnd && (
         <div
           data-slot="list-view-pagination"
           className="flex flex-wrap items-center justify-between gap-2"
