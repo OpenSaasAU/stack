@@ -48,7 +48,16 @@ export async function executeResolveInput<
   }
 
   const result = await hooks.resolveInput(args)
+  if (!isPlainObject(result)) {
+    throw new ValidationError([
+      `resolveInput on "${args.listKey}" must return the resolved data object, got ${result === null ? 'null' : typeof result}.`,
+    ])
+  }
   return result
+}
+
+export function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 /** Supports both `validate` and the deprecated `validateInput` alias for backwards compatibility. */
