@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'vitest'
-import { bigInt, integer, text } from '../fields/index.js'
+import { bigInt, integer, relationship, text } from '../fields/index.js'
 import { createTestContext, type TestContext } from '../testing/context.js'
 import type { OpenSaasConfig } from '../config/types.js'
 import { buildListFilterWhere } from './collect.js'
@@ -19,7 +19,13 @@ const config: OpenSaasConfig = {
         d: text(),
         stock: integer(),
         big: bigInt(),
+        small: integer({ db: { nativeType: 'SmallInt' } }),
+        owner: relationship({ ref: 'Owner.items' }),
       },
+      access: { operation: { query: () => true, create: () => true } },
+    },
+    Owner: {
+      fields: { name: text(), items: relationship({ ref: 'Item.owner', many: true }) },
       access: { operation: { query: () => true, create: () => true } },
     },
   },
@@ -55,6 +61,23 @@ describe('filter values the database refuses', () => {
   )
 
   test(
+    'an integer outside its native type range matches nothing',
+    async () => {
+      expect(await read('small:70000')).toEqual([])
+    },
+    BOOT,
+  )
+
+  test(
+    'a long list of relationship values is refused by name',
+    async () => {
+      const values = Array.from({ length: 90 }, (_, index) => `v${index}`).join(',')
+      await expect(read(`owner:${values}`)).rejects.toBeInstanceOf(FilterTooLongError)
+    },
+    BOOT,
+  )
+
+  test(
     'a bigInt outside int8 matches nothing instead of reaching the database',
     async () => {
       expect(await read('big:99999999999999999999')).toEqual([])
@@ -65,7 +88,8 @@ describe('filter values the database refuses', () => {
   test(
     'a NUL byte in a text value matches nothing instead of failing the read',
     async () => {
-      expect(await read('name:%00')).toBeDefined()
+      expect(await read('name:%00')).toEqual([])
+      expect(await read('name:a..b\u0000')).toEqual([])
       expect(await read('name:a\u0000b')).toEqual([])
       expect(await read('a\u0000b')).toEqual([])
     },

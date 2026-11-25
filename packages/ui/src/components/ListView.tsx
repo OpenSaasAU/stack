@@ -306,11 +306,13 @@ async function resolveCountLinks(
 function ListLoadFailure({
   title,
   href,
+  reloadHref = href,
   filtered = false,
   tooLong = false,
 }: {
   title: string
   href: string
+  reloadHref?: string
   filtered?: boolean
   tooLong?: boolean
 }) {
@@ -327,15 +329,18 @@ function ListLoadFailure({
               : 'Something went wrong while reading it, so its records are not shown here. Nothing has been changed.'
           }
           actions={
-            filtered ? (
-              <Button asChild size="sm" variant="outline">
-                <Link href={href}>Clear filters</Link>
-              </Button>
-            ) : (
-              <Button asChild size="sm" variant="outline">
-                <Link href={href}>Reload list</Link>
-              </Button>
-            )
+            <>
+              {!tooLong && (
+                <Button asChild size="sm" variant="outline">
+                  <Link href={reloadHref}>Reload list</Link>
+                </Button>
+              )}
+              {filtered && (
+                <Button asChild size="sm" variant="outline">
+                  <Link href={href}>Clear filters</Link>
+                </Button>
+              )}
+            </>
           }
         />
       </div>
@@ -628,6 +633,9 @@ export async function ListView({
       <ListLoadFailure
         title={title}
         href={listHref}
+        reloadHref={
+          activeSearch ? `${listHref}?search=${encodeURIComponent(activeSearch)}` : listHref
+        }
         filtered={searchEntries.length > 0}
         tooLong={tooLong}
       />

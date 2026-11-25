@@ -1135,6 +1135,8 @@ describe('ListView when the read fails (#2180)', () => {
       }
       expect(html).toContain('This list could not be loaded')
       expect(html).toContain('Clear filters')
+      expect(html).toContain('Reload list')
+      expect(html).toContain('href="/admin/fragile?search=name%3ABreaks"')
       expect(html).toContain('href="/admin/fragile"')
     },
     BOOT,

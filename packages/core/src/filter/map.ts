@@ -123,14 +123,24 @@ export class FilterTooLongError extends Error {
   }
 }
 
+const QUANTIFIERS = new Set(['some', 'every', 'none'])
+
 function countEntries(condition: unknown): number {
   if (Array.isArray(condition)) return condition.reduce((sum, item) => sum + countEntries(item), 0)
   if (typeof condition !== 'object' || condition === null) return 0
-  return Object.entries(condition).reduce(
-    (sum, [key, value]) =>
-      sum + 1 + (key === 'AND' || key === 'OR' || key === 'NOT' ? countEntries(value) : 0),
-    0,
-  )
+  return Object.entries(condition).reduce((sum, [key, value]) => {
+    if (key === 'AND' || key === 'OR' || key === 'NOT') return sum + 1 + countEntries(value)
+    if (typeof value !== 'object' || value === null) return sum + 1
+    return (
+      sum +
+      1 +
+      Object.entries(value).reduce(
+        (inner, [quantifier, nested]) =>
+          QUANTIFIERS.has(quantifier) ? inner + 1 + countEntries(nested) : inner,
+        0,
+      )
+    )
+  }, 0)
 }
 
 function hasNul(text: string): boolean {
