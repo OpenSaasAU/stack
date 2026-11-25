@@ -260,9 +260,11 @@ export function deriveItemViewLayout(config: OpenSaasConfig, listKey: string): I
       relatedListKey,
       backReferenceField,
       columns,
-      relationshipColumns: columns.filter(
-        (column) => relatedListConfig?.fields[column]?.type === 'relationship',
-      ),
+      relationshipColumns: [
+        ...new Set(
+          columns.filter((column) => relatedListConfig?.fields[column]?.type === 'relationship'),
+        ),
+      ],
       take: overrides.take,
       sumColumns: overrides.sum ?? [],
       removeAction: overrides.removeAction,
