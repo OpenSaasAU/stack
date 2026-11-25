@@ -844,13 +844,15 @@ describe('ListView ?columns= resolution', () => {
   )
 
   it(
-    'never shows the value of a column the session cannot read',
+    'does not offer a column the session can never read, even when the URL names it',
     async () => {
       const props = await render(ada, {
         listKey: 'User',
         visibleColumns: ['name', 'billingAddress'],
+        urlControls: true,
       })
-      expect(props.columns).toContain('name')
+      expect(props.columns).toEqual(['name'])
+      expect(props.availableColumns).not.toContain('billingAddress')
       expect(JSON.stringify(props.items)).not.toContain('Analytical')
     },
     BOOT,
@@ -889,6 +891,7 @@ describe('ListView ?columns= resolution', () => {
       const props = await render(ada, {
         listKey: 'User',
         visibleColumns: ['name', 'billingAddress'],
+        urlControls: true,
       })
       expect(props.columns).toEqual(['name'])
       for (const item of props.items) expect(item.billingAddress ?? null).toBeNull()

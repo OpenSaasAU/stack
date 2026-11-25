@@ -51,13 +51,13 @@ Agreed 2026-11-25. Filtering has its own area.
 
 ### Columns
 
-| #   | Expectation                                                                                                                                                | Covered by                                                                   |
-| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| 2.1 | With no `?columns=`, the list shows `ui.listView.initialColumns`, else the default set.                                                                    | `AdminUIListView.test.tsx`, `ListView.test.tsx`                              |
-| 2.2 | The Columns menu writes `?columns=` (visible columns and order); Reset columns drops it, and so does a pick equal to the default set.                      | `ListViewTableControls.test.tsx`                                             |
-| 2.3 | Column names the list doesn't display are ignored; with none left it falls back to the default set.                                                        | `ListView.test.tsx`                                                          |
-| 2.4 | A field the applied filter uses is always shown, appended, ticked and locked, and never written to `?columns=`.                                            | `ListViewFilterFromTable.test.tsx`, `ListViewFilterFromTableServer.test.tsx` |
-| 2.5 | A column the session can't read never shows its values. Open: the docs say the column itself still shows, the code drops a never-readable column entirely. | `ListView.test.tsx`                                                          |
+| #   | Expectation                                                                                                                                                                           | Covered by                                                                   |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| 2.1 | With no `?columns=`, the list shows `ui.listView.initialColumns`, else the default set.                                                                                               | `AdminUIListView.test.tsx`, `ListView.test.tsx`                              |
+| 2.2 | The Columns menu writes `?columns=` (visible columns and order); Reset columns drops it, and so does a pick equal to the default set.                                                 | `ListViewTableControls.test.tsx`                                             |
+| 2.3 | Column names the list doesn't display are ignored; with none left it falls back to the default set.                                                                                   | `ListView.test.tsx`                                                          |
+| 2.4 | A field the applied filter uses is always shown, appended, ticked and locked, and never written to `?columns=`.                                                                       | `ListViewFilterFromTable.test.tsx`, `ListViewFilterFromTableServer.test.tsx` |
+| 2.5 | A field the session can never read is not offered as a column and a `?columns=` naming it is ignored; a row-dependent read rule shows the column with no value on the rows it denies. | `ListView.test.tsx`                                                          |
 
 ### Sorting
 

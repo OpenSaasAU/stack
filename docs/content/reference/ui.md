@@ -314,8 +314,10 @@ resolves it on the server against the list's displayable fields:
 - A to-many relationship is counted only for a column that is shown, so the
   server resolves the set before it reads. A count in a column you add is
   therefore the same access-scoped count a default column shows.
-- Field Visibility still applies. Adding a column the session may not read
-  shows the column, never the value.
+- Field Visibility still applies. A field the session can never read (its
+  `read` rule denies regardless of the row) is not offered as a column, and a
+  `?columns=` naming it is ignored. A field whose `read` rule depends on the
+  row shows its column, with no value on the rows it denies.
 
 A pick that lands back on the default set drops `?columns=`, so the default
 set never appears in the URL.
