@@ -1,6 +1,7 @@
 'use client'
 
 import * as React from 'react'
+import { useFormattedDateTime } from '../../lib/dateFormat.js'
 import type { CellComponentProps } from './registry.js'
 
 /**
@@ -19,12 +20,13 @@ function toDate(value: unknown): Date | null {
 
 export function TimestampCell({ value }: CellComponentProps) {
   const date = toDate(value)
-  if (date === null) {
+  const text = useFormattedDateTime(date)
+  if (text === null) {
     return (
       <span data-slot="cell-timestamp" className="text-muted-foreground">
         -
       </span>
     )
   }
-  return <span data-slot="cell-timestamp">{date.toLocaleString()}</span>
+  return <span data-slot="cell-timestamp">{text}</span>
 }

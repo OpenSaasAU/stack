@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { format } from 'date-fns'
+import { formatDateTime } from '../lib/dateFormat.js'
 import { cn } from '../lib/utils.js'
 import { Button } from './button.js'
 import { Popover, PopoverContent, PopoverTrigger } from './popover.js'
@@ -99,9 +99,7 @@ export function DateTimePicker({
               d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
             />
           </svg>
-          <span id={id && `${id}-value`}>
-            {value ? format(value, 'dd/MM/yyyy, h:mm a') : placeholder}
-          </span>
+          <span id={id && `${id}-value`}>{value ? formatDateTime(value) : placeholder}</span>
         </Button>
       </PopoverTrigger>
       <PopoverContent
