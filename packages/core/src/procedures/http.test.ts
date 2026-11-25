@@ -5,7 +5,7 @@ import type { OpenSaasConfig } from '../config/types.js'
 import { EngineContextUnavailableError, engineContextOf } from '../context/engine-context.js'
 import { relationship, text } from '../fields/index.js'
 import { ValidationError } from '../hooks/index.js'
-import { DatabaseError } from '../lib/database-errors.js'
+import { classifyDriverError, DatabaseError } from '../lib/database-errors.js'
 import { MalformedRelationInputError } from '../context/relationship-input.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
 import type { StackContext } from '../types/context.js'
@@ -222,6 +222,21 @@ const omitRequiredColumn = procedure({
   },
 })
 
+const loseRace = procedure({
+  description: 'Lose a race the database rolled back',
+  input: z.object({}),
+  output: z.object({}),
+  access: () => true,
+  expose: ['web'],
+  run: () => {
+    const driverError = Object.assign(new Error('could not serialize access'), {
+      kind: 'sql_query',
+      sqlState: '40001',
+    })
+    throw classifyDriverError(driverError) ?? driverError
+  },
+})
+
 const linkBadly = procedure({
   description: 'Write a relation payload the engine refuses',
   input: z.object({}),
@@ -245,6 +260,7 @@ const noInput = procedure({
 
 const registry: ProcedureRegistry<Ctx> = {
   omitRequiredColumn,
+  loseRace,
   linkBadly,
   noInput,
   claimSlug,
@@ -485,30 +501,66 @@ describe('createProcedureHandler', () => {
     expect(await titles()).toEqual(['Claimed'])
   })
 
-  test('a getSession resolving undefined is anonymous to the access rule as well as to run', async () => {
-    const lax = createProcedureHandler<Ctx>({
-      procedures: registry,
-      getContext: async (session) => database.context(session),
-      getSession: async () => undefined,
-      allowedOrigins: [ORIGIN],
-      onUnexpectedError,
+  describe('what getSession resolves decides the identity, and only an object is a session', () => {
+    function lax(resolved: unknown) {
+      const resolveSession = vi.fn()
+      resolveSession.mockResolvedValue(resolved)
+      const serve = createProcedureHandler<Ctx>({
+        procedures: registry,
+        getContext: async (session) => database.context(session),
+        getSession: resolveSession,
+        allowedOrigins: [ORIGIN],
+        onUnexpectedError,
+      })
+      return (name: string, body: unknown) =>
+        serve(
+          new Request(`${ORIGIN}/api/procedures/${name}`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', cookie: 'session=ada', origin: ORIGIN },
+            body: JSON.stringify(body),
+          }),
+        )
+    }
+
+    test.each([
+      ['undefined', undefined],
+      ['null', null],
+    ])('%s is anonymous to the access rule as well as to run', async (_label, resolved) => {
+      const post = lax(resolved)
+
+      const refused = await post('createPost', { title: 'Hello' })
+      expect(refused.status).toBe(401)
+      expect((await bodyOf(refused)).error?.code).toBe('UNAUTHENTICATED')
+      expect(seenAccessArgs.sort()).toEqual(['context', 'session'])
+      expect(await titles()).toEqual([])
+      expect(onUnexpectedError).not.toHaveBeenCalled()
+
+      const open = await post('ping', {})
+      expect(await bodyOf(open)).toEqual({ success: true, data: { signedIn: false } })
     })
-    const post = (name: string, body: unknown) =>
-      lax(
-        new Request(`${ORIGIN}/api/procedures/${name}`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', cookie: 'session=ada', origin: ORIGIN },
-          body: JSON.stringify(body),
-        }),
-      )
 
-    const refused = await post('createPost', { title: 'Hello' })
-    expect(refused.status).toBe(401)
-    expect((await bodyOf(refused)).error?.code).toBe('UNAUTHENTICATED')
-    expect(await titles()).toEqual([])
+    test.each([
+      ['false', false, 'boolean'],
+      ['0', 0, 'number'],
+      ['an empty string', '', 'string'],
+      ['a string', 'user-ada-secret', 'string'],
+    ])('%s fails closed as INTERNAL and is reported', async (_label, resolved, type) => {
+      const response = await lax(resolved)('createPost', { title: 'Hello' })
 
-    const open = await post('ping', {})
-    expect(await bodyOf(open)).toEqual({ success: true, data: { signedIn: false } })
+      expect(response.status).toBe(500)
+      expect(await bodyOf(response)).toEqual({
+        success: false,
+        error: { code: 'INTERNAL', message: 'Internal error' },
+      })
+      expect(seenAccessArgs).toEqual([])
+      expect(seenContext).toBeUndefined()
+      expect(await titles()).toEqual([])
+      expect(onUnexpectedError).toHaveBeenCalledOnce()
+      const [error, name] = onUnexpectedError.mock.calls[0]
+      expect(name).toBe('createPost')
+      expect(String(error)).toContain(`getSession resolved a ${type}`)
+      expect(String(error)).not.toContain('user-ada-secret')
+    })
   })
 
   test('a trailing slash on the path reaches the same procedure and discloses no other name', async () => {
@@ -548,6 +600,19 @@ describe('createProcedureHandler', () => {
     expect(name).toBe('omitRequiredColumn')
     expect(error).toBeInstanceOf(DatabaseError)
     expect(error instanceof Error ? error.cause : undefined).toBeDefined()
+  })
+
+  test('a serialization failure is RETRY and is not reported', async () => {
+    const response = await call('loseRace', {})
+    expect(response.status).toBe(409)
+    expect(await bodyOf(response)).toEqual({
+      success: false,
+      error: {
+        code: 'RETRY',
+        message: 'The operation conflicted with a concurrent change and was rolled back',
+      },
+    })
+    expect(onUnexpectedError).not.toHaveBeenCalled()
   })
 
   test('a unique violation is not reported as unexpected', async () => {
@@ -610,6 +675,45 @@ describe('createProcedureHandler', () => {
       )
       expect(logged.some((line) => line.includes('session store down'))).toBe(true)
     } finally {
+      consoleError.mockRestore()
+    }
+  })
+
+  test('an async reporter that rejects falls back to console.error with no unhandled rejection', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const unhandled = vi.fn()
+    process.on('unhandledRejection', unhandled)
+    try {
+      const fragile = createProcedureHandler<Ctx>({
+        procedures: registry,
+        getContext: async (session) => database.context(session),
+        getSession,
+        allowedOrigins: [ORIGIN],
+        onUnexpectedError: async () => {
+          throw new Error('async logger down')
+        },
+      })
+      const response = await fragile(
+        new Request(`${ORIGIN}/api/procedures/explode`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: '{}',
+        }),
+      )
+      expect(response.status).toBe(500)
+      expect(await bodyOf(response)).toEqual({
+        success: false,
+        error: { code: 'INTERNAL', message: 'Internal error' },
+      })
+
+      await new Promise((resolve) => setImmediate(resolve))
+      expect(unhandled).not.toHaveBeenCalled()
+      const logged = consoleError.mock.calls.map((args) => args.map(String).join(' '))
+      expect(
+        logged.some((line) => line.includes('async logger down') && line.includes('hunter2')),
+      ).toBe(true)
+    } finally {
+      process.off('unhandledRejection', unhandled)
       consoleError.mockRestore()
     }
   })

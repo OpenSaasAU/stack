@@ -92,11 +92,10 @@ export function failureFromError(
     return failure('VALIDATION', { message: error.message, fieldErrors: error.fieldErrors })
   }
   if (error instanceof DatabaseError) {
+    if (isSerializationFailure(error)) return failure('RETRY')
     const { message, fieldErrors } = error
     if (!isUniqueConstraintViolation(error)) report(error)
-    return isSerializationFailure(error)
-      ? failure('RETRY')
-      : failure('CONFLICT', { message, fieldErrors })
+    return failure('CONFLICT', { message, fieldErrors })
   }
   if (isClientSafeError(error)) {
     if (isEngineRefusal(error)) report(error)

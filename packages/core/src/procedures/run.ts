@@ -25,19 +25,32 @@ export interface ProcedureCall<C extends ProcedureHostContext> {
 
 export type UnexpectedErrorReporter = (error: unknown, procedureName: string) => void
 
-/** A reporter that cannot throw: a failing one falls back to `console.error`. */
+/** A reporter that cannot throw or leave a rejection unhandled: a failing one falls back to `console.error`. */
 export function guardReporter(report: UnexpectedErrorReporter): UnexpectedErrorReporter {
   return (error, procedureName) => {
-    try {
-      report(error, procedureName)
-    } catch (reporterError) {
+    const fallback = (reporterError: unknown): void => {
       console.error(
         `onUnexpectedError threw while reporting procedure "${procedureName}":`,
         reporterError,
         error,
       )
     }
+    try {
+      const returned: unknown = report(error, procedureName)
+      if (isThenable(returned)) void Promise.resolve(returned).catch(fallback)
+    } catch (reporterError) {
+      fallback(reporterError)
+    }
   }
+}
+
+function isThenable(value: unknown): value is PromiseLike<unknown> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'then' in value &&
+    typeof value.then === 'function'
+  )
 }
 
 function fieldErrorsOf(error: z.ZodError): Record<string, string> {

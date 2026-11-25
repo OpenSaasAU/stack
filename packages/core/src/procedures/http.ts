@@ -21,7 +21,8 @@ export interface ProcedureHandlerOptions<C extends ProcedureHostContext> {
    * carries a `Cookie` header from an allowed origin, with a body-less `GET`
    * copy of the request carrying its URL and headers; a request with no
    * credential is anonymous without asking. Resolving `null` or `undefined`
-   * means no session.
+   * means no session; resolving anything else that is not an object fails
+   * the call with `INTERNAL` and is reported to `onUnexpectedError`.
    */
   getSession: (request: Request) => Promise<SessionOf<C> | null | undefined>
   /**
@@ -40,10 +41,11 @@ export interface ProcedureHandlerOptions<C extends ProcedureHostContext> {
   /**
    * Told of every failure the operator should see, with the procedure's name:
    * every error whose message is withheld from the caller, every database
-   * failure other than a unique-constraint violation (the driver's detail is
-   * on `error.cause`), and every engine refusal of a payload the procedure
-   * itself wrote. Default `console.error`, which is also the fallback when
-   * this function throws.
+   * failure other than a unique-constraint violation or a serialization
+   * failure (the driver's detail is on `error.cause`), and every engine
+   * refusal of a payload the procedure itself wrote. Default `console.error`,
+   * which is also the fallback when this function throws or returns a promise
+   * that rejects.
    */
   onUnexpectedError?: (error: unknown, procedureName: string) => void
 }
@@ -264,7 +266,16 @@ export function createProcedureHandler<C extends ProcedureHostContext>(
         return resultResponse(failure('DENIED'))
       }
       try {
-        session = (await getSession(new Request(request.url, { headers: request.headers }))) ?? null
+        const resolved = await getSession(new Request(request.url, { headers: request.headers }))
+        if (resolved === null || resolved === undefined) {
+          session = null
+        } else if (typeof resolved === 'object') {
+          session = resolved
+        } else {
+          throw new ProcedureHostError(
+            `getSession resolved a ${typeof resolved}; it must resolve a session object, null or undefined.`,
+          )
+        }
       } catch (error) {
         onUnexpectedError(error, name)
         return resultResponse(failure('INTERNAL'))
