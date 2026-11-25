@@ -5,7 +5,7 @@ import {
   type ProcedureRegistry,
 } from './procedure.js'
 import { FAILURE_STATUS, failure, type ProcedureResult } from './result.js'
-import { runProcedure, type RawInput } from './run.js'
+import { guardReporter, runProcedure, type RawInput } from './run.js'
 
 /** The session type an application context carries, without its `null`. */
 export type SessionOf<C extends ProcedureHostContext> = Exclude<C['session'], null>
@@ -20,9 +20,10 @@ export interface ProcedureHandlerOptions<C extends ProcedureHostContext> {
    * Resolve the cookie session for a request. Called only when the request
    * carries a `Cookie` header from an allowed origin, with a body-less `GET`
    * copy of the request carrying its URL and headers; a request with no
-   * credential is anonymous without asking.
+   * credential is anonymous without asking. Resolving `null` or `undefined`
+   * means no session.
    */
-  getSession: (request: Request) => Promise<SessionOf<C> | null>
+  getSession: (request: Request) => Promise<SessionOf<C> | null | undefined>
   /**
    * The origins a cookie-authenticated request may come from, as absolute
    * URLs (`https://app.example.com`). A request carrying a cookie from any
@@ -37,8 +38,12 @@ export interface ProcedureHandlerOptions<C extends ProcedureHostContext> {
    */
   maxBodyBytes?: number
   /**
-   * Told of every error whose message is withheld from the caller, with the
-   * procedure's name. Default `console.error`.
+   * Told of every failure the operator should see, with the procedure's name:
+   * every error whose message is withheld from the caller, every database
+   * failure other than a unique-constraint violation (the driver's detail is
+   * on `error.cause`), and every engine refusal of a payload the procedure
+   * itself wrote. Default `console.error`, which is also the fallback when
+   * this function throws.
    */
   onUnexpectedError?: (error: unknown, procedureName: string) => void
 }
@@ -164,6 +169,7 @@ async function readBodyWithin(request: Request, limit: number): Promise<string |
 }
 
 function parseJson(text: string): RawInput {
+  if (text === '') return { ok: true, value: undefined }
   try {
     const value: unknown = JSON.parse(text)
     return { ok: true, value }
@@ -188,7 +194,8 @@ function parseJson(text: string): RawInput {
  * fieldErrors? } }` with `UNAUTHENTICATED` 401, `DENIED` 403,
  * `INVALID_INPUT`/`VALIDATION` 400, `RETRY`/`CONFLICT` 409 and `INTERNAL` 500.
  * An unexpected error's message is passed to `onUnexpectedError` and never to
- * the client.
+ * the client. An empty or missing body is `undefined` input, which the input
+ * schema accepts or refuses; a body that is not JSON is `INVALID_INPUT`.
  *
  * A transport failure does not use the envelope. It answers
  * `{ error: "<message>" }`, where `error` is a string: 404 for an unknown name
@@ -222,7 +229,7 @@ export function createProcedureHandler<C extends ProcedureHostContext>(
   const basePath = normaliseBasePath(options.basePath ?? DEFAULT_BASE_PATH)
   const allowedOrigins = normaliseOrigins(options.allowedOrigins)
   const maxBodyBytes = options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES
-  const onUnexpectedError = options.onUnexpectedError ?? defaultUnexpectedError
+  const onUnexpectedError = guardReporter(options.onUnexpectedError ?? defaultUnexpectedError)
   if (!Number.isSafeInteger(maxBodyBytes) || maxBodyBytes <= 0) {
     throw new ProcedureHostError('createProcedureHandler: maxBodyBytes must be a positive integer.')
   }
@@ -232,7 +239,7 @@ export function createProcedureHandler<C extends ProcedureHostContext>(
     const prefix = `${basePath}/`
     const { pathname } = new URL(request.url)
     if (!pathname.startsWith(prefix)) return notFound()
-    const name = pathname.slice(prefix.length)
+    const name = pathname.slice(prefix.length, pathname.endsWith('/') ? -1 : undefined)
     const procedure = lookup(procedures, name)
     if (procedure === undefined) return notFound()
 
@@ -257,7 +264,7 @@ export function createProcedureHandler<C extends ProcedureHostContext>(
         return resultResponse(failure('DENIED'))
       }
       try {
-        session = await getSession(new Request(request.url, { headers: request.headers }))
+        session = (await getSession(new Request(request.url, { headers: request.headers }))) ?? null
       } catch (error) {
         onUnexpectedError(error, name)
         return resultResponse(failure('INTERNAL'))
@@ -268,7 +275,6 @@ export function createProcedureHandler<C extends ProcedureHostContext>(
     const result = await runProcedure<C>({
       name,
       procedure,
-      session,
       context: () => (session === null ? getContext() : getContext(session)),
       readInput: async () => {
         const body = await readBodyWithin(request, maxBodyBytes)

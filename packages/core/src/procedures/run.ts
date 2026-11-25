@@ -17,11 +17,27 @@ export type InputReader = () => RawInput | Promise<RawInput>
 export interface ProcedureCall<C extends ProcedureHostContext> {
   name: string
   procedure: Procedure<C>
-  session: C['session']
+  /** The context the call runs in. Its `session` is the caller's identity. */
   context: () => Promise<C>
   readInput: InputReader
-  /** Told of every error whose message does not reach the caller. */
-  onUnexpectedError: (error: unknown, procedureName: string) => void
+  onUnexpectedError: UnexpectedErrorReporter
+}
+
+export type UnexpectedErrorReporter = (error: unknown, procedureName: string) => void
+
+/** A reporter that cannot throw: a failing one falls back to `console.error`. */
+export function guardReporter(report: UnexpectedErrorReporter): UnexpectedErrorReporter {
+  return (error, procedureName) => {
+    try {
+      report(error, procedureName)
+    } catch (reporterError) {
+      console.error(
+        `onUnexpectedError threw while reporting procedure "${procedureName}":`,
+        reporterError,
+        error,
+      )
+    }
+  }
 }
 
 function fieldErrorsOf(error: z.ZodError): Record<string, string> {
@@ -33,23 +49,20 @@ function fieldErrorsOf(error: z.ZodError): Record<string, string> {
   return Object.fromEntries(fieldErrors)
 }
 
-/**
- * Run one procedure for an already-resolved session: access, then input
- * parsing, then `run`, then output parsing. Access runs before the input is
- * read and never sees it, so a decision to list a procedure and a decision to
- * call it can be the same one.
- */
+/** The pipeline every host shares. See ADR-0086. */
 export async function runProcedure<C extends ProcedureHostContext>(
   call: ProcedureCall<C>,
 ): Promise<ProcedureResult<unknown>> {
-  const { name, procedure, session } = call
+  const { name, procedure } = call
   const internal = (error: unknown): void => call.onUnexpectedError(error, name)
 
   try {
     const context = procedureContextOf(await call.context())
 
-    const admitted = await procedure.access({ session, context })
-    if (admitted !== true) return failure(session === null ? 'UNAUTHENTICATED' : 'DENIED')
+    const admitted = await procedure.access({ session: context.session, context })
+    if (admitted !== true) {
+      return failure(context.session === null ? 'UNAUTHENTICATED' : 'DENIED')
+    }
 
     const raw = await call.readInput()
     if (!raw.ok) return failure('INVALID_INPUT')

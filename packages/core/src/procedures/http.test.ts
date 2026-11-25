@@ -3,8 +3,10 @@ import * as z from 'zod'
 import type { AccessControlledDB, Session } from '../access/types.js'
 import type { OpenSaasConfig } from '../config/types.js'
 import { EngineContextUnavailableError, engineContextOf } from '../context/engine-context.js'
-import { text } from '../fields/index.js'
+import { relationship, text } from '../fields/index.js'
 import { ValidationError } from '../hooks/index.js'
+import { DatabaseError } from '../lib/database-errors.js'
+import { MalformedRelationInputError } from '../context/relationship-input.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
 import type { StackContext } from '../types/context.js'
 import { createProcedureHandler, ProcedureHostError } from './http.js'
@@ -22,6 +24,8 @@ type Ctx = StackContext<AccessControlledDB>
 
 const owned = ({ session }: { session: Session | null }) =>
   session === null ? false : { authorId: { equals: String(session.userId) } }
+
+const open = { query: () => true, create: () => true, update: () => true, delete: () => true }
 
 function schemaConfig(): OpenSaasConfig {
   return {
@@ -44,6 +48,14 @@ function schemaConfig(): OpenSaasConfig {
             }
           },
         },
+      },
+      Note: {
+        fields: { body: text(), post: relationship({ ref: 'Post' }) },
+        access: { operation: open },
+      },
+      Strict: {
+        fields: { label: text(), code: text({ db: { isNullable: false } }) },
+        access: { operation: open },
       },
     },
   }
@@ -198,7 +210,43 @@ const asyncSchemas = procedure({
   run: ({ input }) => ({ title: input.title }),
 })
 
+const omitRequiredColumn = procedure({
+  description: 'Write a value the database refuses',
+  input: z.object({}),
+  output: z.object({}),
+  access: () => true,
+  expose: ['web'],
+  run: async ({ context }) => {
+    await context.db.Strict.create({ data: { label: 'no code' } })
+    return {}
+  },
+})
+
+const linkBadly = procedure({
+  description: 'Write a relation payload the engine refuses',
+  input: z.object({}),
+  output: z.object({}),
+  access: () => true,
+  expose: ['web'],
+  run: async ({ context }) => {
+    await context.db.Note.create({ data: { body: 'note', post: {} } })
+    return {}
+  },
+})
+
+const noInput = procedure({
+  description: 'Take no input at all',
+  input: z.undefined(),
+  output: z.object({ ran: z.boolean() }),
+  access: () => true,
+  expose: ['web'],
+  run: () => ({ ran: true }),
+})
+
 const registry: ProcedureRegistry<Ctx> = {
+  omitRequiredColumn,
+  linkBadly,
+  noInput,
   claimSlug,
   oddlyNamed,
   asyncSchemas,
@@ -435,6 +483,163 @@ describe('createProcedureHandler', () => {
     expect(body.error?.code).toBe('CONFLICT')
     expect(Object.keys(body.error?.fieldErrors ?? {})).toEqual(['slug'])
     expect(await titles()).toEqual(['Claimed'])
+  })
+
+  test('a getSession resolving undefined is anonymous to the access rule as well as to run', async () => {
+    const lax = createProcedureHandler<Ctx>({
+      procedures: registry,
+      getContext: async (session) => database.context(session),
+      getSession: async () => undefined,
+      allowedOrigins: [ORIGIN],
+      onUnexpectedError,
+    })
+    const post = (name: string, body: unknown) =>
+      lax(
+        new Request(`${ORIGIN}/api/procedures/${name}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', cookie: 'session=ada', origin: ORIGIN },
+          body: JSON.stringify(body),
+        }),
+      )
+
+    const refused = await post('createPost', { title: 'Hello' })
+    expect(refused.status).toBe(401)
+    expect((await bodyOf(refused)).error?.code).toBe('UNAUTHENTICATED')
+    expect(await titles()).toEqual([])
+
+    const open = await post('ping', {})
+    expect(await bodyOf(open)).toEqual({ success: true, data: { signedIn: false } })
+  })
+
+  test('a trailing slash on the path reaches the same procedure and discloses no other name', async () => {
+    const post = (path: string) =>
+      handler()(
+        new Request(`${ORIGIN}/api/procedures/${path}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: '{}',
+        }),
+      )
+    const slashed = await post('ping/')
+    expect(slashed.status).toBe(200)
+    expect(await bodyOf(slashed)).toEqual({ success: true, data: { signedIn: false } })
+
+    const responses = [
+      await post('doesNotExist'),
+      await post('doesNotExist/'),
+      await post('agentOnly/'),
+      await post('ping//'),
+      await post(''),
+    ]
+    const bodies = await Promise.all(responses.map((response) => response.text()))
+    expect(responses.map((response) => response.status)).toEqual([404, 404, 404, 404, 404])
+    expect(new Set(bodies).size).toBe(1)
+  })
+
+  test('a database failure that is not a unique violation is CONFLICT and reported with the name', async () => {
+    const response = await call('omitRequiredColumn', {})
+    expect(response.status).toBe(409)
+    expect(await bodyOf(response)).toEqual({
+      success: false,
+      error: { code: 'CONFLICT', message: 'The database refused this operation' },
+    })
+    expect(onUnexpectedError).toHaveBeenCalledOnce()
+    const [error, name] = onUnexpectedError.mock.calls[0]
+    expect(name).toBe('omitRequiredColumn')
+    expect(error).toBeInstanceOf(DatabaseError)
+    expect(error instanceof Error ? error.cause : undefined).toBeDefined()
+  })
+
+  test('a unique violation is not reported as unexpected', async () => {
+    await call('claimSlug', { slug: 'hello' }, { cookie: 'session=ada' })
+    const second = await call('claimSlug', { slug: 'hello' }, { cookie: 'session=bob' })
+    expect(second.status).toBe(409)
+    expect(onUnexpectedError).not.toHaveBeenCalled()
+  })
+
+  test("an engine refusal of the procedure's own payload is INVALID_INPUT and reported with the name", async () => {
+    const response = await call('linkBadly', {})
+    expect(response.status).toBe(400)
+    expect((await bodyOf(response)).error?.code).toBe('INVALID_INPUT')
+    expect(onUnexpectedError).toHaveBeenCalledOnce()
+    const [error, name] = onUnexpectedError.mock.calls[0]
+    expect(name).toBe('linkBadly')
+    expect(error).toBeInstanceOf(MalformedRelationInputError)
+
+    onUnexpectedError.mockClear()
+    const schemaFailure = await call('createPost', { title: '' }, { cookie: 'session=ada' })
+    expect(schemaFailure.status).toBe(400)
+    expect(onUnexpectedError).not.toHaveBeenCalled()
+  })
+
+  test('a reporter that throws falls back to console.error and the caller still gets INTERNAL', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const fragile = createProcedureHandler<Ctx>({
+        procedures: registry,
+        getContext: async (session) => database.context(session),
+        getSession: async () => {
+          throw new Error('session store down')
+        },
+        allowedOrigins: [ORIGIN],
+        onUnexpectedError: () => {
+          throw new Error('logger down')
+        },
+      })
+      const post = (name: string, headers: Record<string, string> = {}) =>
+        fragile(
+          new Request(`${ORIGIN}/api/procedures/${name}`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', ...headers },
+            body: '{}',
+          }),
+        )
+      const internal = { success: false, error: { code: 'INTERNAL', message: 'Internal error' } }
+
+      const fromRun = await post('explode')
+      expect(fromRun.status).toBe(500)
+      expect(await bodyOf(fromRun)).toEqual(internal)
+
+      const fromSession = await post('ping', { cookie: 'session=ada', origin: ORIGIN })
+      expect(fromSession.status).toBe(500)
+      expect(await bodyOf(fromSession)).toEqual(internal)
+
+      const logged = consoleError.mock.calls.map((args) => args.map(String).join(' '))
+      expect(logged.some((line) => line.includes('logger down') && line.includes('hunter2'))).toBe(
+        true,
+      )
+      expect(logged.some((line) => line.includes('session store down'))).toBe(true)
+    } finally {
+      consoleError.mockRestore()
+    }
+  })
+
+  test('an empty body is undefined input and the input schema decides', async () => {
+    const post = (name: string, body?: string) =>
+      handler()(
+        new Request(`${ORIGIN}/api/procedures/${name}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          ...(body === undefined ? {} : { body }),
+        }),
+      )
+    const none = await post('noInput')
+    expect(none.status).toBe(200)
+    expect(await bodyOf(none)).toEqual({ success: true, data: { ran: true } })
+    expect((await post('noInput', '')).status).toBe(200)
+
+    const required = await post('ping')
+    expect(required.status).toBe(400)
+    const body = await bodyOf(required)
+    expect(body.error?.code).toBe('INVALID_INPUT')
+    expect(Object.keys(body.error?.fieldErrors ?? {})).toEqual(['(root)'])
+
+    const malformed = await post('ping', '{not json')
+    expect(malformed.status).toBe(400)
+    expect(await bodyOf(malformed)).toEqual({
+      success: false,
+      error: { code: 'INVALID_INPUT', message: 'Invalid input' },
+    })
   })
 
   test('a field named after an Object.prototype member keeps its error', async () => {
