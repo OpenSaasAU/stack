@@ -118,6 +118,16 @@ describe('the item view read', () => {
   )
 
   it(
+    'nests the include for a relationship column on the rows',
+    async () => {
+      const row = await readUser()
+
+      expect(sectionRows(row.posts)[0]?.category).toMatchObject({ name: 'notes' })
+    },
+    BOOT,
+  )
+
+  it(
     'counts 0, not the true size, for a relation the session may not read',
     async () => {
       const row = await readUser()

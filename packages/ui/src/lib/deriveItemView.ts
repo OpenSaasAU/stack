@@ -43,6 +43,8 @@ export interface RelationshipTableSection {
   backReferenceField?: string
   /** The related-list columns to show, in order (curation minus back-reference). */
   columns: string[]
+  /** The subset of {@link columns} that are relationship fields on the related list, which the item-view read nests an include for. */
+  relationshipColumns: string[]
   /**
    * The maximum number of related rows to fetch and render for this table
    * (issue #752): the field's `ui.itemView.take` when it is a positive integer,
@@ -250,13 +252,17 @@ export function deriveItemViewLayout(config: OpenSaasConfig, listKey: string): I
     const ref = typeof field.ref === 'string' ? field.ref : ''
     const [relatedListKey, backReferenceField] = ref.split('.')
     const relatedListConfig = config.lists[relatedListKey]
+    const columns =
+      overrides.columns ?? defaultColumnsFor(relatedListConfig, backReferenceField, config.db)
     sections.push({
       fieldName,
       ref,
       relatedListKey,
       backReferenceField,
-      columns:
-        overrides.columns ?? defaultColumnsFor(relatedListConfig, backReferenceField, config.db),
+      columns,
+      relationshipColumns: columns.filter(
+        (column) => relatedListConfig?.fields[column]?.type === 'relationship',
+      ),
       take: overrides.take,
       sumColumns: overrides.sum ?? [],
       removeAction: overrides.removeAction,

@@ -520,7 +520,11 @@ export function RelationshipTableClient({
       <ConfirmDialog
         isOpen={confirmId !== null}
         title={`Delete ${title} row`}
-        message={`This permanently deletes the related ${title.toLowerCase()} record. This cannot be undone.`}
+        message={
+          linkEdge?.mode === 'junction'
+            ? `This removes the link only. The ${(relatedListTitle ?? title).toLowerCase()} record on the other side is kept.`
+            : `This permanently deletes the related ${title.toLowerCase()} record. This cannot be undone.`
+        }
         confirmLabel="Delete"
         variant="danger"
         onConfirm={() => {
