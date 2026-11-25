@@ -23,9 +23,16 @@ function toUtcWallClock(date: Date): Date {
   )
 }
 
+function subscribeNever(): () => void {
+  return () => {}
+}
+
 export function useFormattedDateTime(date: Date | null): string | null {
-  const [mounted, setMounted] = React.useState(false)
-  React.useEffect(() => setMounted(true), [])
+  const mounted = React.useSyncExternalStore(
+    subscribeNever,
+    () => true,
+    () => false,
+  )
   if (date === null) return null
   return formatDateTime(mounted ? date : toUtcWallClock(date))
 }
