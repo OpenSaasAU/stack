@@ -255,7 +255,7 @@ export const GET = createOAuthProtectedResourceHandler(auth)
 
 ## How Tools Are Built
 
-MCP tools are derived from your config **at request time** by `createMcpHandlers` — nothing MCP-specific is generated to disk. Every list gets CRUD tools automatically (unless disabled via `mcp.enabled: false` on the list), plus any custom tools you define and any tools registered by plugins.
+MCP tools are derived from your config **at request time** by `createMcpHandlers` — nothing MCP-specific is generated to disk. Every list gets a query tool (unless disabled via `mcp.enabled: false` on the list), write tools only on the lists that enable them in `mcp.tools`, plus any custom tools you define and any tools registered by plugins.
 
 You only need to run `pnpm generate` when your schema or lists change, to keep the Prisma schema and generated context in sync.
 
@@ -301,7 +301,7 @@ When Claude Desktop connects to your MCP server:
 
 ## Generated Tools
 
-The MCP handler creates CRUD tools for each list. `{dbKey}` is the camelCase form of the list key (`Post` → `list_post_query`, `BlogPost` → `list_blogPost_query`):
+The MCP handler creates a query tool for each list, and a create, update or delete tool only on a list that enables it in `mcp.tools`. `{dbKey}` is the camelCase form of the list key (`Post` → `list_post_query`, `BlogPost` → `list_blogPost_query`):
 
 ### Query Tool
 

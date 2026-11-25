@@ -14,7 +14,7 @@ Post: list({
 })
 ```
 
-`mcp.defaultTools` now takes `read` only. A config setting `create`, `update` or `delete` there, even to `false`, is refused by `config()` and `createMcpHandlers` with an error naming `lists.<List>.mcp.tools.<operation>`.
+`mcp.defaultTools` now takes `read` only. A config setting `create`, `update` or `delete` there, even to `false`, is refused by `config()` and `createMcpHandlers` with an error naming `lists.<List>.mcp.tools.<operation>`. `config()` refuses it even when `mcp.enabled` is not `true`, so an app with MCP switched off and the old `defaultTools` shape must remove those keys too.
 
 To keep a list's write tools, move them onto the list:
 

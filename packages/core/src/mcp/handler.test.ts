@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
 import * as z from 'zod'
 import type { AccessContext, Session } from '../access/types.js'
-import type { McpCustomTool, OpenSaasConfig } from '../config/types.js'
+import type { McpCustomTool, McpDefaultToolsConfig, OpenSaasConfig } from '../config/types.js'
 import { checkbox, password, relationship, text, virtual } from '../fields/index.js'
 import { createTestDatabase, ormClientFor, type TestDatabase } from '../testing/context.js'
 import { getContext } from '../context/index.js'
@@ -1906,11 +1906,25 @@ describe('the MCP surface', () => {
     test.each(['create', 'update', 'delete'] as const)(
       'mcp.defaultTools.%s is refused, even set to false, naming the per-list key',
       (key) => {
+        const refused: Record<typeof key, McpDefaultToolsConfig> = {
+          create: {
+            read: true,
+            // @ts-expect-error -- a removed key
+            create: false,
+          },
+          update: {
+            read: true,
+            // @ts-expect-error -- a removed key
+            update: false,
+          },
+          delete: {
+            read: true,
+            // @ts-expect-error -- a removed key
+            delete: false,
+          },
+        }
         const config = schemaConfig()
-        const mcp: OpenSaasConfig['mcp'] = JSON.parse(
-          `{"enabled":true,"defaultTools":{"read":true,"${key}":false}}`,
-        )
-        config.mcp = mcp
+        config.mcp = { enabled: true, defaultTools: refused[key] }
         expect(() =>
           createMcpHandlers({ config, getSession: session, getContext: contextFor(config) }),
         ).toThrow(`mcp.tools.${key}: true`)

@@ -5,7 +5,7 @@ This example demonstrates how to integrate the Model Context Protocol (MCP) with
 ## Features
 
 - 🔐 **Stack Auth Integration** - Uses `@opensaas/stack-auth` with MCP plugin
-- 🛠️ **Automatic CRUD Tools** - Read, create, update, delete operations for all lists
+- 🛠️ **Generated Tools** - A query tool for every list; create, update and delete tools only on lists that enable them
 - 🎯 **Custom Tools** - Publish/unpublish post operations
 - 🔒 **Access Control** - All tools respect access control rules
 - 📊 **Per-List Configuration** - Enable/disable tools per list

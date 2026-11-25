@@ -4,7 +4,7 @@ const REMOVED_WRITE_KEYS = ['create', 'update', 'delete'] as const
 
 export function assertNoDefaultWriteTools(config: OpenSaasConfig): OpenSaasConfig {
   const defaultTools = config.mcp?.defaultTools
-  if (defaultTools === undefined) return config
+  if (defaultTools == null) return config
   for (const key of REMOVED_WRITE_KEYS) {
     if (key in defaultTools) {
       throw new Error(
