@@ -22,6 +22,7 @@ export function SaveNotice() {
       const queued = window.sessionStorage.getItem(SAVE_NOTICE_KEY)
       if (!queued) return
       window.sessionStorage.removeItem(SAVE_NOTICE_KEY)
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- sessionStorage is external state only readable after mount
       setMessage(queued)
     } catch {
       return
