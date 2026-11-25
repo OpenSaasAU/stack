@@ -648,6 +648,14 @@ export async function executeFieldValidateHooks(
   }
 }
 
+function fieldIsInWrite(
+  fieldKey: string,
+  operation: 'create' | 'update' | 'delete',
+  resolvedData: Record<string, unknown> | undefined,
+): boolean {
+  return operation === 'delete' || (resolvedData !== undefined && fieldKey in resolvedData)
+}
+
 export async function executeFieldBeforeOperationHooks(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   inputData: Record<string, any>,
@@ -662,7 +670,7 @@ export async function executeFieldBeforeOperationHooks(
 ): Promise<void> {
   for (const [fieldKey, fieldConfig] of Object.entries(fields)) {
     if (!fieldConfig.hooks?.beforeOperation) continue
-    if (operation !== 'delete' && !(fieldKey in resolvedData)) continue
+    if (!fieldIsInWrite(fieldKey, operation, resolvedData)) continue
 
     if (operation === 'delete') {
       await fieldConfig.hooks.beforeOperation({
@@ -709,6 +717,7 @@ export async function executeFieldAfterOperationHooks(
 ): Promise<void> {
   for (const [fieldKey, fieldConfig] of Object.entries(fields)) {
     if (!fieldConfig.hooks?.afterOperation) continue
+    if (!fieldIsInWrite(fieldKey, operation, resolvedData)) continue
 
     if (operation === 'delete') {
       await fieldConfig.hooks.afterOperation({
