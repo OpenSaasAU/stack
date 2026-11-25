@@ -5,7 +5,7 @@ import {
   type ProcedureRegistry,
 } from './procedure.js'
 import { FAILURE_STATUS, failure, type ProcedureResult } from './result.js'
-import { runProcedure } from './run.js'
+import { runProcedure, type RawInput } from './run.js'
 
 /** The session type an application context carries, without its `null`. */
 export type SessionOf<C extends ProcedureHostContext> = Exclude<C['session'], null>
@@ -31,7 +31,10 @@ export interface ProcedureHandlerOptions<C extends ProcedureHostContext> {
   allowedOrigins: readonly string[]
   /** The path the routes are mounted under; each procedure is `POST <basePath>/<name>`. Default `/api/procedures`. */
   basePath?: string
-  /** The largest request body accepted, in bytes. Default 1 MiB. */
+  /**
+   * The largest request body accepted, in bytes. Default 1 MiB. The body is
+   * read only once the access rule has admitted the call.
+   */
   maxBodyBytes?: number
   /**
    * Told of every error whose message is withheld from the caller, with the
@@ -160,7 +163,7 @@ async function readBodyWithin(request: Request, limit: number): Promise<string |
   return new TextDecoder().decode(bytes)
 }
 
-function parseJson(text: string): { ok: true; value: unknown } | { ok: false } {
+function parseJson(text: string): RawInput {
   try {
     const value: unknown = JSON.parse(text)
     return { ok: true, value }
@@ -180,11 +183,19 @@ function parseJson(text: string): { ok: true; value: unknown } | { ok: false } {
  * carrying an `Authorization` header is refused, with or without a cookie.
  * Nothing in the body can supply a session.
  *
- * Unknown names and procedures not exposed to `'web'` are both answered 404.
- * A failure is `{ success: false, error: { code, message } }` with
- * `UNAUTHENTICATED` 401, `DENIED` 403, `INVALID_INPUT`/`VALIDATION` 400,
- * `RETRY`/`CONFLICT` 409 and `INTERNAL` 500; an unexpected error's message is
- * passed to `onUnexpectedError` and never to the client.
+ * A call that reaches the pipeline answers with the result envelope:
+ * `{ success: true, data }`, or `{ success: false, error: { code, message,
+ * fieldErrors? } }` with `UNAUTHENTICATED` 401, `DENIED` 403,
+ * `INVALID_INPUT`/`VALIDATION` 400, `RETRY`/`CONFLICT` 409 and `INTERNAL` 500.
+ * An unexpected error's message is passed to `onUnexpectedError` and never to
+ * the client.
+ *
+ * A transport failure does not use the envelope. It answers
+ * `{ error: "<message>" }`, where `error` is a string: 404 for an unknown name
+ * or a procedure not exposed to `'web'` (the two are indistinguishable), 405
+ * for a method other than `POST`, 415 for a content type other than
+ * `application/json`, and 413 for a body over `maxBodyBytes`. A client should
+ * branch on the status before reading `success`.
  *
  * @throws {ProcedureHostError} for an invalid option, name or registry entry.
  *
@@ -253,17 +264,23 @@ export function createProcedureHandler<C extends ProcedureHostContext>(
       }
     }
 
-    const body = await readBodyWithin(request, maxBodyBytes)
-    if (body === null) return json(413, { error: 'Request body too large' })
-
+    const transport: { bodyTooLarge?: true } = {}
     const result = await runProcedure<C>({
       name,
       procedure,
       session,
       context: () => (session === null ? getContext() : getContext(session)),
-      readInput: () => parseJson(body),
+      readInput: async () => {
+        const body = await readBodyWithin(request, maxBodyBytes)
+        if (body === null) {
+          transport.bodyTooLarge = true
+          return { ok: false }
+        }
+        return parseJson(body)
+      },
       onUnexpectedError,
     })
+    if (transport.bodyTooLarge === true) return json(413, { error: 'Request body too large' })
 
     try {
       return resultResponse(result)

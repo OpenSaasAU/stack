@@ -32,6 +32,7 @@ function schemaConfig(): OpenSaasConfig {
           title: text({ validation: { isRequired: true } }),
           authorId: text(),
           secret: text(),
+          slug: text({ isIndexed: 'unique' }),
         },
         access: {
           operation: { query: owned, create: () => true, update: owned, delete: owned },
@@ -159,7 +160,48 @@ const validateExplicitly = procedure({
   },
 })
 
+const claimSlug = procedure({
+  description: 'Create a post under a unique slug',
+  input: z.object({ slug: z.string() }),
+  output: postOutput,
+  access: ({ session }) => session !== null,
+  expose: ['web'],
+  run: async ({ input, context }) => {
+    const authorId = context.session === null ? '' : String(context.session.userId)
+    const row = await context.db.Post.create({
+      data: { title: 'Claimed', authorId, slug: input.slug },
+    })
+    if (row === null) throw new Error('create denied')
+    return rowOf(row)
+  },
+})
+
+const oddlyNamed = procedure({
+  description: 'Take fields named after Object.prototype members',
+  input: z.object({ constructor: z.string(), toString: z.string(), valueOf: z.string() }),
+  output: z.object({}),
+  access: () => true,
+  expose: ['web'],
+  run: () => ({}),
+})
+
+const asyncSchemas = procedure({
+  description: 'Check input and output with async refinements',
+  input: z.object({
+    title: z.string().refine(async (title) => title !== 'taken', 'Title is taken'),
+  }),
+  output: z.object({
+    title: z.string().refine(async (title) => title.length > 0),
+  }),
+  access: () => true,
+  expose: ['web'],
+  run: ({ input }) => ({ title: input.title }),
+})
+
 const registry: ProcedureRegistry<Ctx> = {
+  claimSlug,
+  oddlyNamed,
+  asyncSchemas,
   createPost,
   ping,
   renamePost,
@@ -307,7 +349,7 @@ describe('createProcedureHandler', () => {
   })
 
   test('a cookie request from another origin, or with no origin, is refused before the session is resolved', async () => {
-    for (const origin of ['http://evil.test', null, 'null']) {
+    for (const origin of ['http://evil.test', 'http://app.test:8080', null, 'null']) {
       const response = await call(
         'createPost',
         { title: 'Forged' },
@@ -381,6 +423,94 @@ describe('createProcedureHandler', () => {
     const [error, name] = onUnexpectedError.mock.calls[0]
     expect(name).toBe('explode')
     expect(String(error)).toContain('hunter2')
+  })
+
+  test('a unique violation is CONFLICT and names the field that collided', async () => {
+    const first = await call('claimSlug', { slug: 'hello' }, { cookie: 'session=ada' })
+    expect(first.status).toBe(200)
+
+    const second = await call('claimSlug', { slug: 'hello' }, { cookie: 'session=bob' })
+    expect(second.status).toBe(409)
+    const body = await bodyOf(second)
+    expect(body.error?.code).toBe('CONFLICT')
+    expect(Object.keys(body.error?.fieldErrors ?? {})).toEqual(['slug'])
+    expect(await titles()).toEqual(['Claimed'])
+  })
+
+  test('a field named after an Object.prototype member keeps its error', async () => {
+    const response = await call('oddlyNamed', { constructor: 1, toString: 2, valueOf: 3 })
+    expect(response.status).toBe(400)
+    const body = await bodyOf(response)
+    expect(body.error?.code).toBe('INVALID_INPUT')
+    expect(Object.keys(body.error?.fieldErrors ?? {}).sort()).toEqual([
+      'constructor',
+      'toString',
+      'valueOf',
+    ])
+  })
+
+  test('input and output schemas with async refinements are awaited', async () => {
+    const admitted = await call('asyncSchemas', { title: 'free' })
+    expect(admitted.status).toBe(200)
+    expect(await bodyOf(admitted)).toEqual({ success: true, data: { title: 'free' } })
+
+    const refused = await call('asyncSchemas', { title: 'taken' })
+    expect(refused.status).toBe(400)
+    expect((await bodyOf(refused)).error).toEqual({
+      code: 'INVALID_INPUT',
+      message: 'Invalid input',
+      fieldErrors: { title: 'Title is taken' },
+    })
+    expect(onUnexpectedError).not.toHaveBeenCalled()
+  })
+
+  test('a body stream that errors is INTERNAL and reported with the name', async () => {
+    const response = await handler()(
+      new Request(`${ORIGIN}/api/procedures/ping`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: new ReadableStream<Uint8Array>({
+          pull(controller) {
+            controller.error(new Error('client went away'))
+          },
+        }),
+        duplex: 'half',
+      }),
+    )
+    expect(response.status).toBe(500)
+    const text = await response.text()
+    expect(text).not.toContain('client went away')
+    expect(JSON.parse(text)).toEqual({
+      success: false,
+      error: { code: 'INTERNAL', message: 'Internal error' },
+    })
+    expect(onUnexpectedError).toHaveBeenCalledOnce()
+    const [error, name] = onUnexpectedError.mock.calls[0]
+    expect(name).toBe('ping')
+    expect(String(error)).toContain('client went away')
+  })
+
+  test('a refused call never consumes the body', async () => {
+    const request = new Request(`${ORIGIN}/api/procedures/createPost`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title: 'x'.repeat(2048) }),
+    })
+    const response = await handler()(request)
+    expect(response.status).toBe(401)
+    expect(request.bodyUsed).toBe(false)
+    expect(await titles()).toEqual([])
+  })
+
+  test('a Content-Length that understates the body does not get it past the limit', async () => {
+    const understated = { 'content-length': '2' }
+    const admitted = await call('ping', { padding: 'x'.repeat(2048) }, { headers: understated })
+    expect(admitted.status).toBe(413)
+    expect(await admitted.json()).toEqual({ error: 'Request body too large' })
+
+    const refused = await call('createPost', { title: 'x'.repeat(2048) }, { headers: understated })
+    expect(refused.status).toBe(401)
+    expect(await titles()).toEqual([])
   })
 
   test('output that fails its own schema is INTERNAL', async () => {
@@ -480,8 +610,12 @@ describe('createProcedureHandler', () => {
       Reflect.apply(procedure, undefined, [{ ...complete, expose: ['web', 'web'] }]),
     ).toThrow(ProcedureDefinitionError)
     for (const member of ['input', 'output', 'access', 'run', 'description', 'expose']) {
-      const { [member]: _omitted, ...rest } = complete as Record<string, unknown>
-      expect(() => Reflect.apply(procedure, undefined, [rest])).toThrow(ProcedureDefinitionError)
+      const incomplete = Object.fromEntries(
+        Object.entries(complete).filter(([key]) => key !== member),
+      )
+      expect(() => Reflect.apply(procedure, undefined, [incomplete])).toThrow(
+        ProcedureDefinitionError,
+      )
     }
   })
 })

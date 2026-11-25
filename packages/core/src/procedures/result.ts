@@ -15,7 +15,11 @@ export const RESERVED_FAILURE_CODES = [
 
 export type ReservedFailureCode = (typeof RESERVED_FAILURE_CODES)[number]
 
-/** A failed call. `fieldErrors` is present on `INVALID_INPUT` and `VALIDATION`. */
+/**
+ * A failed call. `fieldErrors` is present when the failure names fields: on
+ * `INVALID_INPUT` and `VALIDATION`, and on a `CONFLICT` raised by a unique
+ * constraint the generator emitted, where it names the fields that collided.
+ */
 export interface ProcedureFailure {
   code: ReservedFailureCode
   message: string
@@ -70,7 +74,9 @@ export function failureFromError(
     return failure('VALIDATION', { message: error.message, fieldErrors: error.fieldErrors })
   }
   if (isSerializationFailure(error)) return failure('RETRY')
-  if (error instanceof DatabaseError) return failure('CONFLICT', { message: error.message })
+  if (error instanceof DatabaseError) {
+    return failure('CONFLICT', { message: error.message, fieldErrors: error.fieldErrors })
+  }
   if (isClientSafeError(error)) return failure('INVALID_INPUT', { message: error.message })
   internal(error)
   return failure('INTERNAL')

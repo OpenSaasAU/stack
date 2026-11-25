@@ -3,8 +3,15 @@ import { procedureContextOf } from './context-face.js'
 import type { Procedure, ProcedureHostContext } from './procedure.js'
 import { failure, failureFromError, type ProcedureResult } from './result.js'
 
-/** Reads the caller's raw input. Called only once access has admitted the call. */
-export type InputReader = () => { ok: true; value: unknown } | { ok: false }
+/** The caller's raw input, or `ok: false` when it could not be decoded. */
+export type RawInput = { ok: true; value: unknown } | { ok: false }
+
+/**
+ * Reads the caller's raw input. Called only once access has admitted the
+ * call, so a host that reads lazily consumes nothing for a refused one. A
+ * rejection is reported as `INTERNAL`.
+ */
+export type InputReader = () => RawInput | Promise<RawInput>
 
 /** Everything one call needs once a host has resolved the name and the identity. */
 export interface ProcedureCall<C extends ProcedureHostContext> {
@@ -18,12 +25,12 @@ export interface ProcedureCall<C extends ProcedureHostContext> {
 }
 
 function fieldErrorsOf(error: z.ZodError): Record<string, string> {
-  const fieldErrors: Record<string, string> = {}
+  const fieldErrors = new Map<string, string>()
   for (const issue of error.issues) {
     const key = issue.path.map(String).join('.') || '(root)'
-    if (!(key in fieldErrors)) fieldErrors[key] = issue.message
+    if (!fieldErrors.has(key)) fieldErrors.set(key, issue.message)
   }
-  return fieldErrors
+  return Object.fromEntries(fieldErrors)
 }
 
 /**
@@ -44,16 +51,16 @@ export async function runProcedure<C extends ProcedureHostContext>(
     const admitted = await procedure.access({ session, context })
     if (admitted !== true) return failure(session === null ? 'UNAUTHENTICATED' : 'DENIED')
 
-    const raw = call.readInput()
+    const raw = await call.readInput()
     if (!raw.ok) return failure('INVALID_INPUT')
-    const input = procedure.input.safeParse(raw.value)
+    const input = await procedure.input.safeParseAsync(raw.value)
     if (!input.success) {
       return failure('INVALID_INPUT', { fieldErrors: fieldErrorsOf(input.error) })
     }
 
     const returned = await procedure.run({ input: input.data, context })
 
-    const output = procedure.output.safeParse(returned)
+    const output = await procedure.output.safeParseAsync(returned)
     if (!output.success) {
       internal(
         new Error(`Procedure "${name}" returned output that does not match its output schema`, {
