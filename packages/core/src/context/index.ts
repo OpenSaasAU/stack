@@ -17,6 +17,7 @@ import {
   createLivenessProbe,
   createRowLockLane,
   RowLockUnavailableError,
+  RowLockLaneUnavailableError,
   unusableRowLockLane,
   type RowLockLane,
 } from '../secured/lock.js'
@@ -1820,6 +1821,16 @@ function assertBooleanInclude(
  * so the create is refused and `get()` answers `null` — the same `null` a
  * denied or an absent row answers with.
  */
+async function tookSingletonLock(lock: RowLockLane, listName: string): Promise<boolean> {
+  try {
+    await lock.advisory(`opensaas:singleton-create:${listName}`)
+    return true
+  } catch (error) {
+    if (error instanceof RowLockLaneUnavailableError) return false
+    throw error
+  }
+}
+
 function createGet(
   listName: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig must accept any TypeInfo
@@ -1862,8 +1873,7 @@ function createGet(
       if (readable !== true) return null
     }
 
-    if (lock !== undefined) {
-      await lock.advisory(`singleton:${listName}`)
+    if (lock !== undefined && (await tookSingletonLock(lock, listName))) {
       const settled = await scoped.first()
       if (settled) return settled
     }
