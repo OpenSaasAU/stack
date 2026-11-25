@@ -62,7 +62,7 @@ export async function Dashboard({ context, config, basePath = '/admin' }: Dashbo
         return { listKey, count: reduced.total }
       } catch (error) {
         console.error(`Failed to get count for ${listKey}:`, error)
-        return { listKey, count: 0 }
+        return { listKey, count: null }
       }
     }),
   )
@@ -98,7 +98,9 @@ export async function Dashboard({ context, config, basePath = '/admin' }: Dashbo
                           {formatListName(listKey)}
                         </CardTitle>
                         <p className="mt-1 text-sm font-medium tabular-nums text-muted-foreground">
-                          {count} {count === 1 ? 'item' : 'items'}
+                          {count === null
+                            ? 'Count unavailable'
+                            : `${count} ${count === 1 ? 'item' : 'items'}`}
                         </p>
                       </div>
                       <div className="text-muted-foreground opacity-60 transition-opacity group-hover:opacity-100 group-hover:text-primary">

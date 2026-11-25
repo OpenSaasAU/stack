@@ -153,21 +153,17 @@ describe('AdminUI list routing', () => {
     expect(content.type).toBe(Dashboard)
   })
 
-  it('falls through to the list-not-found state for a URL matching no list, instead of throwing', async () => {
+  it('404s a URL matching no list', async () => {
     const config = acronymListConfig()
 
-    const tree = await AdminUI({
-      context,
-      config,
-      params: ['does-not-exist'],
-      basePath: '/admin',
-      serverAction: noopServerAction,
-    })
-
-    // Not the dashboard fallback — the route still resolves to a list screen,
-    // which renders its own "List not found" state for the unresolved key.
-    const content = routedContent(tree)
-    expect(content.type).toBe(ListView)
-    expect(content.props.listKey).toBe('does-not-exist')
+    await expect(
+      AdminUI({
+        context,
+        config,
+        params: ['does-not-exist'],
+        basePath: '/admin',
+        serverAction: noopServerAction,
+      }),
+    ).rejects.toThrow('notFound')
   })
 })
