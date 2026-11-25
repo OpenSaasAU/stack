@@ -3,6 +3,7 @@ import { resolveListUi } from '../lib/resolveListUi.js'
 import {
   getItemLabel,
   getUrlKey,
+  isFieldFilterableById,
   resolveJunctionEdge,
   engineContextOf,
   type AccessContext,
@@ -404,6 +405,16 @@ export async function RelationshipTable({
       columnRelatedList.set(column, queryable ? target : null)
     }),
   ])
+  const canViewAll =
+    section.backReferenceField !== undefined &&
+    total > rows.length &&
+    (await isFieldFilterableById(
+      relatedListConfig,
+      section.relatedListKey,
+      section.backReferenceField,
+      config,
+      { context },
+    ))
   const editableColumns = readOnly
     ? []
     : resolveEditableColumns(section, relatedListConfig, relatedVocabulary)
@@ -452,6 +463,7 @@ export async function RelationshipTable({
       rows={serializedRows}
       count={rows.length}
       total={total}
+      canViewAll={canViewAll}
       unavailable={unavailable}
       sumColumns={shownSumColumns}
       sums={sums}

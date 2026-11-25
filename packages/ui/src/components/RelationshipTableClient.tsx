@@ -60,6 +60,8 @@ export interface RelationshipTableClientProps {
    * count. Always ≥ `count`; 0 for a denied related list (never a leaked total).
    */
   total?: number
+  /** The related list can filter by the back-reference's record id, so the footer may link to the full list. */
+  canViewAll?: boolean
   /**
    * The read withheld this relation, so nothing here is known about it: not
    * that it is empty, and not how many rows it has.
@@ -200,6 +202,7 @@ export function RelationshipTableClient({
   rows,
   count,
   total,
+  canViewAll = false,
   unavailable = false,
   sumColumns,
   sums,
@@ -241,7 +244,7 @@ export function RelationshipTableClient({
   const countLabel = unavailable ? '' : formatCountLabel(count, total)
   const isPartial = !unavailable && total !== undefined && total > count
   const viewAllHref =
-    isPartial && backReferenceField
+    isPartial && canViewAll && backReferenceField
       ? `${basePath}/${relatedUrlKey}?search=${encodeURIComponent(`${backReferenceField}:#${parentId}`)}`
       : null
   const showRemove = removeMode !== null
@@ -497,7 +500,7 @@ export function RelationshipTableClient({
                             fieldName={column}
                             basePath={basePath}
                           />
-                          {viewAllHref && (
+                          {isPartial && (
                             <span className="ml-1 text-xs font-normal text-muted-foreground">
                               (visible rows)
                             </span>
