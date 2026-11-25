@@ -509,7 +509,10 @@ describe('the session vocabulary', () => {
       ['Open', everyOperation('allow')],
       ['Closed', everyOperation('deny')],
       ['Nullish', everyOperation('deny')],
-      ['Filtered', { query: 'allow', create: 'deny', update: 'allow', delete: 'allow' }],
+      [
+        'Filtered',
+        { query: 'allow', create: 'deny', update: 'row-dependent', delete: 'row-dependent' },
+      ],
       [
         'RowReading',
         {

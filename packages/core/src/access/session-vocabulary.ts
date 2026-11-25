@@ -103,9 +103,21 @@ function hasFilterSpec(field: FieldConfig): boolean {
   return typeof field.getFilterSpec === 'function' && field.isFilterable !== false
 }
 
-function potentiallyAllowed(rule: AccessControl | undefined): AccessControl | undefined {
-  if (rule === undefined) return undefined
-  return async (args) => (await checkAccess(rule, args)) !== false
+async function classifyWriteOperation(
+  rule: AccessControl | undefined,
+  args: { session: AccessContext['session']; context: AccessContext },
+): Promise<AccessAnswer> {
+  let returnedFilter = false
+  const observed: AccessControl | undefined =
+    rule === undefined
+      ? undefined
+      : async (ruleArgs) => {
+          const result = await checkAccess(rule, ruleArgs)
+          returnedFilter = typeof result === 'object'
+          return result !== false
+        }
+  const answer = await classifyRowIndependentCreateAccess(observed, args)
+  return answer === 'allow' && returnedFilter ? 'row-dependent' : answer
 }
 
 function once<T>(resolve: () => Promise<T>): () => Promise<T> {
@@ -155,14 +167,14 @@ function operationQuestions(
     ),
     update: once(() =>
       answerOrDeny(context, config, `${listKey}.update`, () =>
-        classifyRowIndependentCreateAccess(potentiallyAllowed(operations?.update), args),
+        classifyWriteOperation(operations?.update, args),
       ),
     ),
     delete: singleton
       ? denied
       : once(() =>
           answerOrDeny(context, config, `${listKey}.delete`, () =>
-            classifyRowIndependentCreateAccess(potentiallyAllowed(operations?.delete), args),
+            classifyWriteOperation(operations?.delete, args),
           ),
         ),
   }
