@@ -17,6 +17,7 @@ function membersConfig(): OpenSaasConfig {
     mcp: { enabled: true, basePath: '/api/mcp' },
     lists: {
       Citizen: {
+        mcp: { tools: { create: true, update: true } },
         fields: {
           name: text(),
           passport: relationship({ ref: 'Passport.citizen' }),
@@ -25,6 +26,7 @@ function membersConfig(): OpenSaasConfig {
         access: { operation: open },
       },
       Passport: {
+        mcp: { tools: { create: true } },
         fields: {
           code: text(),
           citizen: relationship({ ref: 'Citizen.passport', db: { foreignKey: true } }),

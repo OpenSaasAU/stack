@@ -53,6 +53,7 @@ const config: OpenSaasConfig = {
   mcp: { enabled: true, basePath: '/api/mcp' },
   lists: {
     Card: {
+      mcp: { tools: { create: true } },
       fields: {
         title: text(),
         avatar: rawParts(adminOnly),

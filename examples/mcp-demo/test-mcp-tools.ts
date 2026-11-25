@@ -166,6 +166,13 @@ async function main(): Promise<void> {
       assert(names.includes(expected), `${expected} missing from ${names.join(', ')}`)
     }
   })
+  await check('no list that did not opt in advertises a write tool', () => {
+    const writes = names.filter((name) => /^list_[a-zA-Z0-9]+_(create|update|delete)$/.test(name))
+    assert(
+      writes.every((name) => name.startsWith('list_post_')),
+      `unexpected write tools: ${writes.join(', ')}`,
+    )
+  })
   await check('the two custom tools are advertised beside them', () => {
     assert(names.includes('publishPost'))
     assert(names.includes('unpublishPost'))

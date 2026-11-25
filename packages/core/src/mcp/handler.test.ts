@@ -369,6 +369,29 @@ function schemaConfig(): OpenSaasConfig {
   }
 }
 
+/**
+ * Turns on every list's generated write tools unless the list sets one itself.
+ * The suites below exercise what an enabled write tool does; the opt-in itself
+ * is covered by "generated write tools are opt-in per list".
+ */
+function withEveryWriteTool(config: OpenSaasConfig): OpenSaasConfig {
+  return {
+    ...config,
+    lists: Object.fromEntries(
+      Object.entries(config.lists).map(([listKey, listConfig]) => [
+        listKey,
+        {
+          ...listConfig,
+          mcp: {
+            ...listConfig.mcp,
+            tools: { create: true, update: true, delete: true, ...listConfig.mcp?.tools },
+          },
+        },
+      ]),
+    ),
+  }
+}
+
 type ToolList = Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>
 
 describe('the MCP surface', () => {
@@ -414,7 +437,12 @@ describe('the MCP surface', () => {
     getSession: McpSessionProvider = session,
     extra: { resourceMetadataUrl?: string } = {},
   ) {
-    return createMcpHandlers({ config, getSession, getContext: contextFor(config), ...extra })
+    return createMcpHandlers({
+      config: withEveryWriteTool(config),
+      getSession,
+      getContext: contextFor(config),
+      ...extra,
+    })
   }
 
   async function rpc(
@@ -794,7 +822,7 @@ describe('the MCP surface', () => {
       async () => {
         const config = schemaConfig()
         const handlers = createMcpHandlers({
-          config,
+          config: withEveryWriteTool(config),
           getSession: session,
           getContext: appFacingContextFor(config),
         })
@@ -1702,6 +1730,191 @@ describe('the MCP surface', () => {
         expect(third.adminOnly).toBeUndefined()
       },
       BOOT,
+    )
+  })
+
+  describe('generated write tools are opt-in per list', () => {
+    const WRITE_TOOL = /^list_[a-zA-Z0-9]+_(create|update|delete)$/
+
+    async function rawRpc(
+      config: OpenSaasConfig,
+      method: string,
+      params?: unknown,
+      getSession: McpSessionProvider = session,
+    ): Promise<Record<string, unknown>> {
+      const handlers = createMcpHandlers({ config, getSession, getContext: contextFor(config) })
+      const response = await handlers.POST(
+        new Request('http://localhost/api/mcp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+        }),
+      )
+      return JSON.parse(await response.text())
+    }
+
+    async function toolNames(config: OpenSaasConfig, getSession?: McpSessionProvider) {
+      const body = await rawRpc(config, 'tools/list', undefined, getSession)
+      return (body.result as { tools: ToolList }).tools.map((tool) => tool.name)
+    }
+
+    const call = (config: OpenSaasConfig, name: string, args: Record<string, unknown>) =>
+      rawRpc(config, 'tools/call', { name, arguments: args })
+
+    test(
+      'with no list opting in, no write tool is listed and the query tools still are',
+      async () => {
+        const names = await toolNames(schemaConfig())
+
+        expect(names.filter((name) => WRITE_TOOL.test(name))).toEqual([])
+        expect(names).toEqual(
+          expect.arrayContaining(['list_post_query', 'list_user_query', 'list_comment_query']),
+        )
+      },
+      BOOT,
+    )
+
+    test(
+      'with no list opting in, every write tool answers as an unknown tool and writes nothing',
+      async () => {
+        const config = schemaConfig()
+        const context = await contextFor(config)()
+        const seeded = await context.db.Post.create({ data: { title: 'seed' } })
+        if (seeded === null) throw new Error('seed denied')
+        const id = String(seeded.id)
+
+        const attempts: Array<[string, Record<string, unknown>]> = [
+          ['list_post_create', { data: { title: 'agent' } }],
+          ['list_post_update', { where: { id }, data: { title: 'agent' } }],
+          ['list_post_delete', { where: { id } }],
+        ]
+        for (const [name, args] of attempts) {
+          const body = await call(config, name, args)
+          expect(body.result).toBeUndefined()
+          expect((body.error as { message: string }).message).toBe(`Unknown tool: ${name}`)
+        }
+
+        expect(await context.db.Post.all()).toMatchObject([{ id: seeded.id, title: 'seed' }])
+      },
+      BOOT,
+    )
+
+    test(
+      'opting in to one operation on one list enables that tool alone',
+      async () => {
+        const config = schemaConfig()
+        config.lists.Post.mcp = { tools: { update: true } }
+
+        const names = await toolNames(config)
+        expect(names.filter((name) => WRITE_TOOL.test(name))).toEqual(['list_post_update'])
+
+        const context = await contextFor(config)()
+        const seeded = await context.db.Post.create({ data: { title: 'seed' } })
+        if (seeded === null) throw new Error('seed denied')
+
+        const updated = await call(config, 'list_post_update', {
+          where: { id: seeded.id },
+          data: { title: 'renamed' },
+        })
+        expect((updated.result as { isError?: boolean }).isError).toBeUndefined()
+        expect(await context.db.Post.all()).toMatchObject([{ title: 'renamed' }])
+
+        for (const name of ['list_post_create', 'list_post_delete', 'list_user_update']) {
+          const body = await call(config, name, { where: { id: seeded.id }, data: {} })
+          expect((body.error as { message: string }).message).toBe(`Unknown tool: ${name}`)
+        }
+      },
+      BOOT,
+    )
+
+    test(
+      "an enabled write tool still runs the list's access and hooks",
+      async () => {
+        const config = schemaConfig()
+        config.lists.Post.mcp = { tools: { create: true, delete: true } }
+        config.lists.Post.access = {
+          operation: { query: () => true, create: () => true, delete: () => false },
+        }
+        config.lists.Post.hooks = {
+          resolveInput: async ({ resolvedData }) => ({ ...resolvedData, content: 'from the hook' }),
+        }
+
+        const created = await call(config, 'list_post_create', { data: { title: 'agent' } })
+        expect((created.result as { isError?: boolean }).isError).toBeUndefined()
+        const context = await contextFor(config)()
+        const rows = await context.db.Post.all()
+        expect(rows).toMatchObject([{ title: 'agent', content: 'from the hook' }])
+
+        const deleted = await call(config, 'list_post_delete', { where: { id: rows[0].id } })
+        expect((deleted.result as { isError?: boolean }).isError).toBe(true)
+        expect(await context.db.Post.all()).toHaveLength(1)
+      },
+      BOOT,
+    )
+
+    test(
+      'an enabled write tool still needs the write scope',
+      async () => {
+        const config = schemaConfig()
+        config.mcp = { enabled: true, scopes: { read: 'read', write: 'write' } }
+        config.lists.Post.mcp = { tools: { create: true } }
+        const readOnly: McpSessionProvider = async () => ({ userId: 'user-123', scopes: ['read'] })
+
+        expect(await toolNames(config)).toContain('list_post_create')
+        expect(await toolNames(config, readOnly)).not.toContain('list_post_create')
+      },
+      BOOT,
+    )
+
+    test(
+      'the app-wide read default still governs the query tools',
+      async () => {
+        const config = schemaConfig()
+        config.mcp = { enabled: true, defaultTools: { read: false } }
+        config.lists.Post.mcp = { tools: { read: true } }
+
+        const names = await toolNames(config)
+        expect(names).toContain('list_post_query')
+        expect(names).not.toContain('list_user_query')
+      },
+      BOOT,
+    )
+
+    test(
+      'a custom tool on a list with no write opt-in is listed and runs',
+      async () => {
+        const config = schemaConfig()
+        config.lists.Post.mcp = {
+          customTools: [
+            {
+              name: 'echo',
+              description: 'Echo',
+              inputSchema: z.object({ word: z.string() }),
+              handler: async ({ input }: { input: { word: string } }) => ({ echoed: input.word }),
+            },
+          ],
+        }
+
+        expect(await toolNames(config)).toContain('echo')
+        const body = await call(config, 'echo', { word: 'hi' })
+        const text = (body.result as { content: Array<{ text: string }> }).content[0].text
+        expect(JSON.parse(text)).toEqual({ echoed: 'hi' })
+      },
+      BOOT,
+    )
+
+    test.each(['create', 'update', 'delete'] as const)(
+      'mcp.defaultTools.%s is refused, even set to false, naming the per-list key',
+      (key) => {
+        const config = schemaConfig()
+        const mcp: OpenSaasConfig['mcp'] = JSON.parse(
+          `{"enabled":true,"defaultTools":{"read":true,"${key}":false}}`,
+        )
+        config.mcp = mcp
+        expect(() =>
+          createMcpHandlers({ config, getSession: session, getContext: contextFor(config) }),
+        ).toThrow(`mcp.tools.${key}: true`)
+      },
     )
   })
 

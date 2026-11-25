@@ -572,6 +572,7 @@ A `where` naming a column the list does not have, a `select` naming a relation, 
 
 - Core provides an auth-agnostic MCP runtime via `@opensaas/stack-core/mcp` (`createMcpHandlers`)
 - The handler reads config to derive tools at request time (CRUD per list, list `mcp.customTools`, plugin-registered tools)
+- Generated write tools are opt-in per list: `create`, `update` and `delete` are listed and callable only where that list's `mcp.tools` sets them `true`. `mcp.defaultTools` keeps only `read`; `assertNoDefaultWriteTools` (`src/config/mcp-default-tools.ts`) refuses a write key there from both `config()` and `createMcpHandlers`
 - Every tool goes through `context.db`, so access control, validation and hooks apply with no parallel path
 - Custom tools may declare a Zod `inputSchema` — validated on `tools/call`, converted to JSON Schema for `tools/list` — or a plain JSON Schema object
 - Auth adapters (like `@opensaas/stack-auth/mcp`) provide session integration; custom session fields pass through to access control

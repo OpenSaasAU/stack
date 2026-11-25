@@ -575,8 +575,8 @@ The stack provides Model Context Protocol server integration through `@opensaas/
 
 **How it works:**
 
-1. Enable MCP in config with `mcp: { enabled: true }` (the runtime reads `enabled`/`basePath`/`defaultTools`)
-2. Core runtime derives CRUD tools for each list (query, create, update, delete) at request time
+1. Enable MCP in config with `mcp: { enabled: true }` (the runtime reads `enabled`/`basePath`/`defaultTools`/`scopes`)
+2. Core runtime derives a query tool for each list at request time. Generated `create`/`update`/`delete` tools are **off** until a list enables each one with `mcp: { tools: { create: true } }`; `mcp.defaultTools` takes `read` only, and a config setting a write key there, even to `false`, is refused naming the per-list key
 3. OAuth with AI assistants is wired through Better-auth's `mcp` plugin (`authPlugin({ betterAuthPlugins: [jwt(), mcp({ loginPage: '/sign-in', consentPage: '/consent', resource: '<canonical MCP URL>' })] })`, imported from `@opensaas/stack-auth/plugins` — the plugin itself comes from the optional `@better-auth/mcp` peer since better-auth 1.7 split it out of `better-auth/plugins`, and requires `jwt()` from `better-auth/plugins` registered alongside it) and the `createBetterAuthMcpAdapter({ resource, baseURL })` session provider, which verifies the bearer JWT against the JWKS
 4. All tools respect existing access control rules, and the advertised vocabulary **omits** what a row-independent field rule denies this session — on reads and on writes alike, so a field a session can never see is not offered and asking for it anyway is refused exactly as an unknown name is (ADR-0053)
 5. A `where` argument is the Where vocabulary, the same grammar `context.db` takes

@@ -6,7 +6,7 @@ Learn how to integrate the Model Context Protocol (MCP) with Stack to enable AI 
 
 The MCP integration in Stack provides:
 
-- **Automatic CRUD Tools** - Read, create, update, delete operations for all lists
+- **Automatic CRUD Tools** - A query tool for every list, and create, update and delete tools on the lists that enable them
 - **Custom Tools** - Add specialized operations for your business logic
 - **Better Auth OAuth** - Secure authentication flow with AI assistants
 - **Access Control** - All tools respect your existing access control rules
@@ -101,22 +101,23 @@ export default config({
     },
     // Enforce OAuth scopes per tool (see "Scopes" below)
     scopes: { read: 'mcp:read', write: 'mcp:write' },
-    // Global defaults for all lists
-    defaultTools: {
-      read: true,
-      create: true,
-      update: true,
-      delete: true,
-    },
+    // App-wide default for the query tool; a list can override it
+    defaultTools: { read: true },
   },
 
   // ... lists
 })
 ```
 
-### 3. Configure List-Level Tools
+`defaultTools` takes `read` only. There is no app-wide write default, and a
+config that sets `create`, `update` or `delete` there, even to `false`, is
+refused at startup with an error naming the per-list key to use instead.
 
-Control which tools are available per list:
+### 3. Enable Write Tools Per List
+
+Enabling MCP gives every reachable list a `list_<list>_query` tool and nothing
+else. A list exposes `create`, `update` or `delete` to agents only when it turns
+each one on:
 
 ```typescript
 lists: {
@@ -125,18 +126,22 @@ lists: {
       // ... your fields
     },
 
-    // MCP configuration for this list
+    // Agents may create and update posts, but not delete them
     mcp: {
       tools: {
-        read: true,
         create: true,
         update: true,
-        delete: true,
       },
     },
   }),
 }
 ```
+
+A write tool a list has not enabled is neither listed nor callable: calling it
+answers `Unknown tool`, exactly like a name that never existed. An enabled tool
+still runs the list's access control, hooks and scopes, so opening one decides
+only whether agents can reach it, not what they may write. Custom and plugin
+tools are unaffected by these switches.
 
 ### 4. Add Custom Tools (Optional)
 
@@ -162,7 +167,7 @@ lists: {
     },
 
     mcp: {
-      tools: { read: true, create: true, update: true, delete: true },
+      tools: { update: true },
 
       // Add custom tools
       customTools: [
@@ -366,7 +371,7 @@ The schema is generated **per session**: a relation whose related list denies th
 
 **Tool Name:** `list_{dbKey}_create`
 
-**Description:** Create a new record
+**Description:** Create a new record. Listed only when the list sets `mcp.tools.create: true`
 
 **Input Schema:**
 
@@ -396,7 +401,7 @@ the list's own schema rather than accepting anything:
 
 **Tool Name:** `list_{dbKey}_update`
 
-**Description:** Update an existing record
+**Description:** Update an existing record. Listed only when the list sets `mcp.tools.update: true`
 
 **Input Schema:**
 
@@ -423,7 +428,7 @@ refused before the access gate runs.
 
 **Tool Name:** `list_{dbKey}_delete`
 
-**Description:** Delete a record
+**Description:** Delete a record. Listed only when the list sets `mcp.tools.delete: true`
 
 **Input Schema:**
 
@@ -449,7 +454,7 @@ All MCP tools respect your existing access control rules defined in `opensaas.co
 
 ### Tool Listing Is Per-Session
 
-`tools/list` is evaluated per session. A list whose operation-level `query` access denies the session outright (`=== false`) doesn't appear in the listing at all — none of its four CRUD tools, and no relation entry elsewhere pointing at it (including in another list's `fields` projection schema, above). A list with `mcp.enabled: false` is omitted the same way, as a relation target as well as a tool owner. A list whose read tool is off (`tools.read: false`) is likewise not a relation target: the relation is absent from other lists' `fields`, `where` and `orderBy`, and from the create and update schemas, so `connect` into it is refused.
+`tools/list` is evaluated per session. A list whose operation-level `query` access denies the session outright (`=== false`) doesn't appear in the listing at all — none of its CRUD tools, and no relation entry elsewhere pointing at it (including in another list's `fields` projection schema, above). A list with `mcp.enabled: false` is omitted the same way, as a relation target as well as a tool owner. A list whose read tool is off (`tools.read: false`) is likewise not a relation target: the relation is absent from other lists' `fields`, `where` and `orderBy`, and from the create and update schemas, so `connect` into it is refused.
 
 ### Scopes
 

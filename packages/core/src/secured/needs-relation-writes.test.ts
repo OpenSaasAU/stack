@@ -51,6 +51,7 @@ const config: OpenSaasConfig = {
       access: { operation: open },
     },
     Order: {
+      mcp: { tools: { create: true, update: true, delete: true } },
       fields: {
         ref: text(),
         customer: relationship({ ref: 'Customer.orders' }),

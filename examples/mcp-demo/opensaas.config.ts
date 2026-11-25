@@ -123,13 +123,9 @@ export default config({
     // Tokens need mcp:read to query and mcp:write to create/update/delete.
     // Omit `scopes` and no scope is enforced.
     scopes: { read: 'mcp:read', write: 'mcp:write' },
-    // Global defaults for all lists
-    defaultTools: {
-      read: true,
-      create: true,
-      update: true,
-      delete: true,
-    },
+    // Query tools are on for every list by default. Generated create, update
+    // and delete tools stay off until a list enables each one (see Post below).
+    defaultTools: { read: true },
   },
 
   lists: {
@@ -212,10 +208,9 @@ export default config({
           return data
         },
       },
-      // MCP configuration for Post list with custom tools
+      // Post opts in to each generated write tool; no other list exposes one.
       mcp: {
         tools: {
-          read: true,
           create: true,
           update: true,
           delete: true,
