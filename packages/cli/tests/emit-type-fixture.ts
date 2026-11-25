@@ -9,6 +9,7 @@ import { writeContractModule } from '../src/generator/contract-module.js'
 import { writeLists } from '../src/generator/lists.js'
 import { writePluginTypes } from '../src/generator/plugin-types.js'
 import { writePrismaConfig } from '../src/generator/prisma-config.js'
+import { writeProcedures } from '../src/generator/procedures.js'
 import { writeTypes } from '../src/generator/types.js'
 
 /**
@@ -78,6 +79,7 @@ export async function emitTypeFixture(name: string, config: OpenSaasConfig): Pro
   writeTypes(config, path.join(opensaasDir, 'types.ts'), dependencies)
   writeLists(config, path.join(opensaasDir, 'lists.ts'), dependencies)
   writePluginTypes(config, path.join(opensaasDir, 'plugin-types.ts'))
+  writeProcedures(path.join(opensaasDir, 'procedures.ts'))
 
   fs.writeFileSync(
     path.join(projectDir, 'tsconfig.json'),

@@ -1,0 +1,49 @@
+# A procedure is a named action its surfaces expose by opt-in
+
+Status: accepted
+
+An application wrote each domain action as a `'use server'` function that resolved the session, chose a context, read `null` as denial and invented a result shape. Those functions run only inside Next.js, so an agent needed the same action again as a custom MCP tool with an untyped input, and enabling MCP also handed an agent generated create, update and delete tools on every list it could reach (#2531).
+
+We decided an action is a **Procedure**: a named value with a description, an input schema, an output schema, an access rule, an explicit exposure and a `run` function, defined once and called through hosts that share one pipeline.
+
+## Identity
+
+- **The name is the identity.** A procedure is registered under its name in an application-owned registry, and every surface addresses it by that name: one HTTP route per name, one MCP tool per name. Procedure names share one namespace with MCP tools, the generated tool names included, and a collision is refused when a host is created.
+- **The registry is not the config.** Procedures import SDKs and application code; the config is loaded by tooling that must never do either. The generated bundle carries a builder typed to the app's own `Context` (`.opensaas/procedures.ts`), which imports only core's builder and the bundle's types, and the application hands its registry to each host at runtime. Generation therefore never loads a procedure.
+- **Lookup is by own property only**, so nothing inherited from a prototype answers to a name.
+- **Who is calling is the host's to say.** A host resolves the session from its own credential and nothing in a call can supply one. The HTTP host reads a cookie session only from an allowed origin and refuses any `Authorization` header, with or without a cookie; no credential means anonymous, and the access rule decides. Every session a host builds will carry an **Actor**, human or agent-on-behalf-of-a-human, set after claims are copied and stripped from anything incoming; an absent actor is never read as human.
+
+## Exposure
+
+- **Exposure is required and never empty.** A procedure names `'web'`, `'mcp'` or both. There is no default, so a procedure reaches an agent only because its author said so.
+- **An unexposed procedure is an unknown one.** A surface answers a name it does not expose exactly as it answers a name that does not exist, so names are not disclosed.
+- **Access runs before the input is read and never sees it.** Listing a procedure and calling it can then make the same decision. Only `true` admits; a procedure open to anonymous callers says so by returning `true` for a `null` session.
+- **The context `run` receives is narrowed at runtime.** It is a new object carrying the secured surface, the session, storage and plugin services. `sudo`, the Unsafe surface, session switching, the admin's action and the engine face are absent from the value, not only from its type. List access, Field Visibility and hooks still run on every `context.db` operation, so a procedure can never loosen them.
+- **Output is parsed by its own schema**, so a key the schema does not declare is removed before a result leaves any host.
+- **Failures have reserved codes.** `UNAUTHENTICATED`, `DENIED`, `INVALID_INPUT`, `VALIDATION`, `RETRY`, `CONFLICT` and `INTERNAL` are the stack's; over HTTP they are 401, 403, 400, 400, 409, 409 and 500. Only what the existing client-safe rule admits keeps its message; anything else is `INTERNAL`, logged with the procedure's name, and its message reaches no client.
+
+## The MCP write default
+
+Generated MCP create, update and delete tools default to **off**, and a list enables each one with its own setting. The app-wide MCP default keeps only its read key; a config that sets a removed app-wide write key, even to `false`, is refused with the per-list key named rather than silently ignored. Read tools, custom tools and plugin tools are unchanged. List access, hooks and scopes still apply to every enabled tool.
+
+The reason is the same as exposure's: an agent should be able to do what the application opened to it, and a generic write tool beside a carefully written procedure for the same data reopens what the procedure closed. This is a breaking change; the project has no outside consumers, so no compatibility mode is planned.
+
+## Considered Options
+
+**Procedures in the config.** Rejected. Generation would load their SDKs and the application's runtime code, which the config is kept free of.
+
+**A query/mutation label.** Rejected. Nothing would enforce it, and a mislabelled write would run on a read-scoped token.
+
+**Exposure defaulting to both surfaces.** Rejected. Agent access would follow from forgetting to say anything.
+
+**Answering an unexposed name with 403.** Rejected. It discloses that the name exists.
+
+**Narrowing the context in types only.** Rejected. A cast, a plain-JavaScript caller or `engineContextOf` would reach `sudo` again.
+
+**Accepting a bearer token on the HTTP host and preferring it to a cookie.** Rejected for this version. Mixing credentials lets an MCP token present itself as a web user; bearer authentication for mobile is later work that changes no procedure.
+
+## Consequences
+
+- A rule written only in a procedure is not an invariant: the admin UI and any enabled MCP write tool can change the same list. A rule that must always hold belongs in list access or a validate hook.
+- `run` opens no transaction of its own; one it needs is explicit, so external work can sit outside it (ADR-0028).
+- The first slice (#2533) ships the builder, the registry and the HTTP host. Transactions and declared failures, startup refusals for unrepresentable schemas and name collisions, the Actor, MCP exposure and the write default, the in-process caller and the browser client follow in their own changes against this record.

@@ -1,0 +1,275 @@
+import {
+  isProcedure,
+  type Procedure,
+  type ProcedureHostContext,
+  type ProcedureRegistry,
+} from './procedure.js'
+import { FAILURE_STATUS, failure, type ProcedureResult } from './result.js'
+import { runProcedure } from './run.js'
+
+/** The session type an application context carries, without its `null`. */
+export type SessionOf<C extends ProcedureHostContext> = Exclude<C['session'], null>
+
+/** Options for {@link createProcedureHandler}. */
+export interface ProcedureHandlerOptions<C extends ProcedureHostContext> {
+  /** The application's procedure registry. Only procedures exposing `'web'` are reachable. */
+  procedures: ProcedureRegistry<C>
+  /** The generated `getContext`: called with the resolved session, or with nothing when anonymous. */
+  getContext: (session?: SessionOf<C>) => Promise<C>
+  /**
+   * Resolve the cookie session for a request. Called only when the request
+   * carries a `Cookie` header from an allowed origin, with a body-less `GET`
+   * copy of the request carrying its URL and headers; a request with no
+   * credential is anonymous without asking.
+   */
+  getSession: (request: Request) => Promise<SessionOf<C> | null>
+  /**
+   * The origins a cookie-authenticated request may come from, as absolute
+   * URLs (`https://app.example.com`). A request carrying a cookie from any
+   * other origin, or from none, is refused.
+   */
+  allowedOrigins: readonly string[]
+  /** The path the routes are mounted under; each procedure is `POST <basePath>/<name>`. Default `/api/procedures`. */
+  basePath?: string
+  /** The largest request body accepted, in bytes. Default 1 MiB. */
+  maxBodyBytes?: number
+  /**
+   * Told of every error whose message is withheld from the caller, with the
+   * procedure's name. Default `console.error`.
+   */
+  onUnexpectedError?: (error: unknown, procedureName: string) => void
+}
+
+/** Thrown by {@link createProcedureHandler} for options or a registry it cannot serve. */
+export class ProcedureHostError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ProcedureHostError'
+  }
+}
+
+const DEFAULT_BASE_PATH = '/api/procedures'
+const DEFAULT_MAX_BODY_BYTES = 1024 * 1024
+const PROCEDURE_NAME = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/
+
+const RESPONSE_HEADERS = {
+  'content-type': 'application/json; charset=utf-8',
+  'cache-control': 'no-store',
+  'x-content-type-options': 'nosniff',
+}
+
+function json(status: number, body: object, headers: Record<string, string> = {}): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...RESPONSE_HEADERS, ...headers },
+  })
+}
+
+const notFound = (): Response => json(404, { error: 'Not found' })
+
+function resultResponse(result: ProcedureResult<unknown>): Response {
+  return json(result.success ? 200 : FAILURE_STATUS[result.error.code], result)
+}
+
+function defaultUnexpectedError(error: unknown, procedureName: string): void {
+  console.error(`Procedure "${procedureName}" failed:`, error)
+}
+
+function normaliseBasePath(basePath: string): string {
+  if (!basePath.startsWith('/')) {
+    throw new ProcedureHostError(
+      `createProcedureHandler: basePath "${basePath}" must start with "/".`,
+    )
+  }
+  return basePath.replace(/\/+$/, '')
+}
+
+function normaliseOrigins(origins: readonly string[]): ReadonlySet<string> {
+  const normalised = new Set<string>()
+  for (const origin of origins) {
+    let parsed: URL
+    try {
+      parsed = new URL(origin)
+    } catch {
+      throw new ProcedureHostError(
+        `createProcedureHandler: allowed origin "${origin}" is not an absolute URL.`,
+      )
+    }
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      throw new ProcedureHostError(
+        `createProcedureHandler: allowed origin "${origin}" must be an http(s) origin.`,
+      )
+    }
+    normalised.add(parsed.origin)
+  }
+  return normalised
+}
+
+function assertRegistry<C extends ProcedureHostContext>(procedures: ProcedureRegistry<C>): void {
+  for (const name of Object.keys(procedures)) {
+    if (!PROCEDURE_NAME.test(name)) {
+      throw new ProcedureHostError(
+        `createProcedureHandler: procedure name "${name}" must start with a letter and contain only letters, digits, "_" and "-" (at most 64 characters).`,
+      )
+    }
+    if (!isProcedure(procedures[name])) {
+      throw new ProcedureHostError(
+        `createProcedureHandler: registry entry "${name}" is not a procedure. Define it with the generated \`procedure\` builder.`,
+      )
+    }
+  }
+}
+
+function lookup<C extends ProcedureHostContext>(
+  procedures: ProcedureRegistry<C>,
+  name: string,
+): Procedure<C> | undefined {
+  if (!Object.hasOwn(procedures, name)) return undefined
+  const found = procedures[name]
+  if (!isProcedure<C>(found) || !found.expose.includes('web')) return undefined
+  return found
+}
+
+function isJsonContentType(header: string | null): boolean {
+  if (header === null) return false
+  const mediaType = header.split(';', 1)[0]?.trim().toLowerCase()
+  return mediaType === 'application/json'
+}
+
+async function readBodyWithin(request: Request, limit: number): Promise<string | null> {
+  if (request.body === null) return ''
+  const reader = request.body.getReader()
+  const chunks: Uint8Array[] = []
+  let received = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    received += value.byteLength
+    if (received > limit) {
+      void reader.cancel().catch(() => {})
+      return null
+    }
+    chunks.push(value)
+  }
+  const bytes = new Uint8Array(received)
+  let offset = 0
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return new TextDecoder().decode(bytes)
+}
+
+function parseJson(text: string): { ok: true; value: unknown } | { ok: false } {
+  try {
+    const value: unknown = JSON.parse(text)
+    return { ok: true, value }
+  } catch {
+    return { ok: false }
+  }
+}
+
+/**
+ * A web-standard `Request` → `Response` handler that serves an application's
+ * procedures over HTTP: `POST <basePath>/<name>`, JSON in and JSON out. It
+ * runs under any framework that speaks the Fetch API.
+ *
+ * Identity comes from the host alone. A request with no credential is
+ * anonymous and the procedure's access rule decides; a request with a cookie
+ * must come from an allowed origin and is resolved by `getSession`; a request
+ * carrying an `Authorization` header is refused, with or without a cookie.
+ * Nothing in the body can supply a session.
+ *
+ * Unknown names and procedures not exposed to `'web'` are both answered 404.
+ * A failure is `{ success: false, error: { code, message } }` with
+ * `UNAUTHENTICATED` 401, `DENIED` 403, `INVALID_INPUT`/`VALIDATION` 400,
+ * `RETRY`/`CONFLICT` 409 and `INTERNAL` 500; an unexpected error's message is
+ * passed to `onUnexpectedError` and never to the client.
+ *
+ * @throws {ProcedureHostError} for an invalid option, name or registry entry.
+ *
+ * @example
+ * ```typescript
+ * // app/api/procedures/[name]/route.ts
+ * import { createProcedureHandler } from '@opensaas/stack-core/procedures'
+ * import { getContext } from '@/.opensaas/context'
+ * import { procedures } from '@/lib/procedures'
+ * import { getSession } from '@/lib/auth'
+ *
+ * export const POST = createProcedureHandler({
+ *   procedures,
+ *   getContext,
+ *   getSession: (request) => getSession(request.headers),
+ *   allowedOrigins: [process.env.APP_ORIGIN ?? 'http://localhost:3000'],
+ * })
+ * ```
+ */
+export function createProcedureHandler<C extends ProcedureHostContext>(
+  options: ProcedureHandlerOptions<C>,
+): (request: Request) => Promise<Response> {
+  const { procedures, getContext, getSession } = options
+  const basePath = normaliseBasePath(options.basePath ?? DEFAULT_BASE_PATH)
+  const allowedOrigins = normaliseOrigins(options.allowedOrigins)
+  const maxBodyBytes = options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES
+  const onUnexpectedError = options.onUnexpectedError ?? defaultUnexpectedError
+  if (!Number.isSafeInteger(maxBodyBytes) || maxBodyBytes <= 0) {
+    throw new ProcedureHostError('createProcedureHandler: maxBodyBytes must be a positive integer.')
+  }
+  assertRegistry(procedures)
+
+  return async (request: Request): Promise<Response> => {
+    const prefix = `${basePath}/`
+    const { pathname } = new URL(request.url)
+    if (!pathname.startsWith(prefix)) return notFound()
+    const name = pathname.slice(prefix.length)
+    const procedure = lookup(procedures, name)
+    if (procedure === undefined) return notFound()
+
+    if (request.method !== 'POST')
+      return json(405, { error: 'Method not allowed' }, { allow: 'POST' })
+
+    if (request.headers.has('authorization')) return resultResponse(failure('UNAUTHENTICATED'))
+
+    if (!isJsonContentType(request.headers.get('content-type'))) {
+      return json(415, { error: 'Content-Type must be application/json' })
+    }
+
+    const declaredLength = Number(request.headers.get('content-length') ?? '0')
+    if (Number.isFinite(declaredLength) && declaredLength > maxBodyBytes) {
+      return json(413, { error: 'Request body too large' })
+    }
+
+    let session: SessionOf<C> | null = null
+    if (request.headers.has('cookie')) {
+      const origin = request.headers.get('origin')
+      if (origin === null || !allowedOrigins.has(origin)) {
+        return resultResponse(failure('DENIED'))
+      }
+      try {
+        session = await getSession(new Request(request.url, { headers: request.headers }))
+      } catch (error) {
+        onUnexpectedError(error, name)
+        return resultResponse(failure('INTERNAL'))
+      }
+    }
+
+    const body = await readBodyWithin(request, maxBodyBytes)
+    if (body === null) return json(413, { error: 'Request body too large' })
+
+    const result = await runProcedure<C>({
+      name,
+      procedure,
+      session,
+      context: () => (session === null ? getContext() : getContext(session)),
+      readInput: () => parseJson(body),
+      onUnexpectedError,
+    })
+
+    try {
+      return resultResponse(result)
+    } catch (error) {
+      onUnexpectedError(error, name)
+      return resultResponse(failure('INTERNAL'))
+    }
+  }
+}

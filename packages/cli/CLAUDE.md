@@ -32,6 +32,7 @@ Entry point exposing the `opensaas` CLI command
 - `context.ts` - Renders `.opensaas/context.ts`, the context factory
 - `tables.ts` - Renders `.opensaas/tables.ts`, the dependency-set table and constraint map
 - `plugin-types.ts` - Renders `.opensaas/plugin-types.ts`
+- `procedures.ts` - Renders `.opensaas/procedures.ts`, the procedure builder bound to the app's `Context`. It imports only core's builder and `./types.ts`, so generation never loads a procedure (ADR-0086)
 - Supporting modules: `output-paths.ts`, `config-load.ts`, `extension.ts`, `prisma-cli.ts`
 
 **No schema language is produced at any point.** Core derives the contract (`deriveContract` in `@opensaas/stack-core/contract`); this package renders it as TypeScript and hands it to Prisma's own emitter (ADR-0040).

@@ -17,6 +17,7 @@ export { generateContext, projectDependsOnNext, writeContext } from './context.j
 export type { ContextReferences } from './context.js'
 export { generatePluginTypes, writePluginTypes } from './plugin-types.js'
 export { generateTables, writeTables } from './tables.js'
+export { generateProcedures, writeProcedures } from './procedures.js'
 export {
   resolveOutputPaths,
   stageWritePaths,
