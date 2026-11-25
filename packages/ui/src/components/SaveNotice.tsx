@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { usePathname } from 'next/navigation.js'
 
 export const SAVE_NOTICE_KEY = 'opensaas-save-notice'
 
@@ -13,6 +14,7 @@ export function queueSaveNotice(message: string): void {
 }
 
 export function SaveNotice() {
+  const pathname = usePathname()
   const [message, setMessage] = useState<string | null>(null)
 
   useEffect(() => {
@@ -24,9 +26,13 @@ export function SaveNotice() {
     } catch {
       return
     }
+  }, [pathname])
+
+  useEffect(() => {
+    if (!message) return
     const timer = window.setTimeout(() => setMessage(null), 5000)
     return () => window.clearTimeout(timer)
-  }, [])
+  }, [message])
 
   if (!message) return null
   return (

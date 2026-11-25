@@ -20,7 +20,12 @@ function internalHref(event: MouseEvent): string | null {
   if (!anchor || (anchor.target && anchor.target !== '_self') || anchor.hasAttribute('download')) {
     return null
   }
-  const url = new URL(anchor.href, window.location.href)
+  let url: URL
+  try {
+    url = new URL(anchor.href, window.location.href)
+  } catch {
+    return null
+  }
   if (url.origin !== window.location.origin) return null
   if (url.pathname === window.location.pathname && url.search === window.location.search) {
     return null
@@ -40,6 +45,7 @@ export function useUnsavedChangesGuard(
   const [pending, setPending] = useState<Destination | null>(null)
   const [released, setReleased] = useState(false)
   const releasedRef = useRef(false)
+  const sentinelPushed = useRef(false)
   const navigateRef = useRef(navigate)
   useEffect(() => {
     navigateRef.current = navigate
@@ -69,7 +75,10 @@ export function useUnsavedChangesGuard(
       setPending({ kind: 'back' })
     }
 
-    window.history.pushState(window.history.state, '', window.location.href)
+    if (!sentinelPushed.current) {
+      sentinelPushed.current = true
+      window.history.pushState(window.history.state, '', window.location.href)
+    }
     window.addEventListener('beforeunload', onBeforeUnload)
     window.addEventListener('popstate', onPopState)
     document.addEventListener('click', onClick, true)
