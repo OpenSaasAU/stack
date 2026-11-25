@@ -1613,7 +1613,7 @@ export function populateDbDelegate(
 
     if (listMembers.get(listName)?.singleton === true) {
       operations.get = resolvingConstraints(
-        createGet(listName, listConfig, read, context, createOp),
+        createGet(listName, listConfig, read, context, createOp, lock),
         config,
       )
     } else {
@@ -1827,6 +1827,7 @@ function createGet(
   read: SecuredQuery,
   context: AccessContext,
   createFn: (args: { data: Record<string, unknown> }) => Promise<OrmRow | null>,
+  lock?: RowLockLane,
 ) {
   return async (args?: {
     include?: Record<string, unknown>
@@ -1859,6 +1860,12 @@ function createGet(
         context,
       })
       if (readable !== true) return null
+    }
+
+    if (lock !== undefined) {
+      await lock.advisory(`singleton:${listName}`)
+      const settled = await scoped.first()
+      if (settled) return settled
     }
 
     try {
