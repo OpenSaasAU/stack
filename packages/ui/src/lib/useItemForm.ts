@@ -419,6 +419,7 @@ export interface UseItemFormResult {
   errors: Record<string, string>
   generalError: string | null
   isPending: boolean
+  isDirty: boolean
   editableFields: Array<[string, SerializableFieldConfig]>
   handleFieldChange: (fieldName: string, value: unknown) => void
   handleSubmit: (e: ItemFormSubmitEvent) => void
@@ -639,6 +640,7 @@ export function useItemForm({
     errors,
     generalError: [bannerError, unshownErrors].filter(Boolean).join(' ') || null,
     isPending,
+    isDirty: !isEqualValue(formData, initialData),
     editableFields: getEditableFields(fields, mode),
     handleFieldChange,
     handleSubmit,

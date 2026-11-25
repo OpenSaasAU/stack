@@ -11,6 +11,8 @@ import type { ServerActionInput } from '../server/types.js'
 import type { SerializableFieldConfig } from '../lib/serializeFieldConfig.js'
 import { FieldValidityContext } from '../lib/fieldValidity.js'
 import { useItemForm, type ItemFormSubmitResult } from '../lib/useItemForm.js'
+import { useUnsavedChangesGuard } from '../lib/useUnsavedChangesGuard.js'
+import { queueSaveNotice } from './SaveNotice.js'
 import { applyEdgeWrites } from '../lib/applyEdgeWrites.js'
 
 export interface ItemFormClientProps {
@@ -84,6 +86,7 @@ export function ItemFormClient({
     errors,
     generalError,
     isPending,
+    isDirty,
     editableFields,
     handleFieldChange,
     handleSubmit,
@@ -98,6 +101,7 @@ export function ItemFormClient({
     errorFallback: 'Access denied or operation failed',
     onEdgeWrites: (changes) => applyEdgeWrites({ changes, parentId: itemId ?? '', serverAction }),
     onUnchanged: () => {
+      guard.release()
       router.push(`${basePath}/${urlKey}`)
       router.refresh()
     },
@@ -109,12 +113,17 @@ export function ItemFormClient({
 
       const normalized = toSubmitResult(result, 'Access denied or operation failed')
       if (normalized.success) {
+        guard.release()
+        queueSaveNotice(action === 'create' ? 'Created.' : 'Saved.')
         router.push(`${basePath}/${urlKey}`)
         router.refresh()
       }
       return normalized
     },
   })
+
+  const readOnlyForm = mode === 'edit' && fieldMode === 'read'
+  const guard = useUnsavedChangesGuard(isDirty && !readOnlyForm, (href) => router.push(href))
 
   const handleDelete = () => {
     if (!itemId) return
@@ -125,6 +134,7 @@ export function ItemFormClient({
       const result = await serverAction({ listKey, action: 'delete', id: itemId })
       const normalized = toSubmitResult(result, 'Access denied or failed to delete item')
       if (normalized.success) {
+        guard.release()
         router.push(`${basePath}/${urlKey}`)
         router.refresh()
       } else {
@@ -197,7 +207,7 @@ export function ItemFormClient({
             <Button
               type="button"
               variant="secondary"
-              onClick={() => router.push(`${basePath}/${urlKey}`)}
+              onClick={() => guard.requestLeave(`${basePath}/${urlKey}`)}
               disabled={busy}
             >
               Cancel
@@ -216,6 +226,17 @@ export function ItemFormClient({
           </Button>
         )}
       </div>
+
+      <ConfirmDialog
+        isOpen={guard.prompt.isOpen}
+        title="Discard unsaved changes?"
+        message="You have unsaved changes. If you leave this page they will be lost."
+        confirmLabel="Discard changes"
+        cancelLabel="Keep editing"
+        variant="warning"
+        onConfirm={guard.prompt.onConfirm}
+        onCancel={guard.prompt.onCancel}
+      />
 
       <ConfirmDialog
         isOpen={showDeleteConfirm}
