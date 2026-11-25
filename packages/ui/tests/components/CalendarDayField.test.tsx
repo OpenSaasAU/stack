@@ -114,7 +114,7 @@ describe('CalendarDayField', () => {
       />,
     )
 
-    expect(screen.getByText('Sep 11, 2026')).toBeInTheDocument()
+    expect(screen.getByText('11/09/2026')).toBeInTheDocument()
   })
 })
 
@@ -122,7 +122,7 @@ describe('CalendarDayCell', () => {
   it('renders the stored day', () => {
     render(<CalendarDayCell value="2026-09-11" field={calendarDayField} fieldName="publishDate" />)
 
-    const cell = screen.getByText(new Date(2026, 8, 11).toLocaleDateString())
+    const cell = screen.getByText('11/09/2026')
     expect(cell).toHaveAttribute('data-slot', 'cell-calendar-day')
   })
 
