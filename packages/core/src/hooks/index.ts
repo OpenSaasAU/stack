@@ -57,7 +57,9 @@ export async function executeResolveInput<
 }
 
 export function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
+  if (typeof value !== 'object' || value === null) return false
+  const proto: unknown = Object.getPrototypeOf(value)
+  return proto === Object.prototype || proto === null
 }
 
 /** Supports both `validate` and the deprecated `validateInput` alias for backwards compatibility. */
