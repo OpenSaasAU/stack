@@ -48,12 +48,8 @@ type AnyListConfig = ListConfig<any>
  * both, so the total can never count a row the rows branch may not show, and
  * neither is a rule this component re-derives.
  *
- * **Known limit.** A relationship column ON a table's rows is not reached:
- * this composition does not nest a further `.include()` for a Relationship
- * table section's own relationship columns, so those Cells render from the
- * row without the related record. The engine itself no longer blocks the
- * nesting (issue #1236 removed the alias collision that used to refuse it);
- * wiring it here is a follow-up, not a core limitation.
+ * A relationship column on a table's rows is nested as a further include on the
+ * rows branch, so its Cell renders the related record rather than a bare key.
  */
 export function composeItemViewRead(
   read: SecuredQuery,
@@ -70,7 +66,13 @@ export function composeItemViewRead(
     (query, section) =>
       query.include(section.fieldName, (rows) =>
         rows.combine({
-          [SECTION_ROWS]: rows.limit(section.take),
+          [SECTION_ROWS]: (section.countedColumns ?? []).reduce(
+            (page, column) => page.include(column, (related) => related.count()),
+            (section.relationshipColumns ?? []).reduce(
+              (page, column) => page.include(column),
+              rows.limit(section.take),
+            ),
+          ),
           [SECTION_TOTAL]: rows.count(),
         }),
       ),

@@ -89,6 +89,8 @@ export interface RelationshipTableClientProps {
    * entirely.
    */
   linkEdge?: LinkEdgeData
+  /** The far endpoint's list title when rows are junction edges; the delete dialog says that record is kept. */
+  junctionTargetTitle?: string
   /** Server action that runs removals through the secured context. */
   serverAction: (input: ServerActionInput) => Promise<unknown>
   /**
@@ -213,6 +215,7 @@ export function RelationshipTableClient({
   parentListKey,
   fieldName,
   linkEdge,
+  junctionTargetTitle,
   serverAction,
   canCreate = false,
   createFields,
@@ -520,7 +523,11 @@ export function RelationshipTableClient({
       <ConfirmDialog
         isOpen={confirmId !== null}
         title={`Delete ${title} row`}
-        message={`This permanently deletes the related ${title.toLowerCase()} record. This cannot be undone.`}
+        message={
+          junctionTargetTitle
+            ? `This removes the link only. The ${junctionTargetTitle.toLowerCase()} record itself is kept.`
+            : `This permanently deletes the related ${title.toLowerCase()} record. This cannot be undone.`
+        }
         confirmLabel="Delete"
         variant="danger"
         onConfirm={() => {
