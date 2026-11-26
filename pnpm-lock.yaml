@@ -4545,9 +4545,6 @@ packages:
   bowser@2.15.1:
     resolution: {integrity: sha512-ma47ABeUiTsmG4McKDtGCgQSiTCatM97Mlbn13K42N1kPSFE14oN3WFMjtyL4KubhGvQTqYheKl4Qx2bJtMXLQ==}
 
-  bowser@2.15.1:
-    resolution: {integrity: sha512-ma47ABeUiTsmG4McKDtGCgQSiTCatM97Mlbn13K42N1kPSFE14oN3WFMjtyL4KubhGvQTqYheKl4Qx2bJtMXLQ==}
-
   brace-expansion@1.1.21:
     resolution: {integrity: sha512-9zeA+KLZNNzglF2TPKRQEDyx6Yby7daAkuy8MiPzpXPsYDWi/DRM8jmwUDxokQjYqBpv5DgPiwD4h4ZZSy1Ujw==}
 
@@ -10490,9 +10487,6 @@ snapshots:
       - supports-color
 
   bowser@2.15.1: {}
-
-  bowser@2.15.1:
-    optional: true
 
   brace-expansion@1.1.21:
     dependencies:
