@@ -1,4 +1,5 @@
 import { humanActor, isActorId } from '../access/actor.js'
+import type { OpenSaasConfig } from '../config/types.js'
 import {
   isProcedure,
   type Procedure,
@@ -7,6 +8,7 @@ import {
 } from './procedure.js'
 import { FAILURE_STATUS, failure, type ProcedureResult } from './result.js'
 import { guardReporter, runProcedure, type RawInput } from './run.js'
+import { assertProcedureRegistry, ProcedureHostError } from './validate.js'
 
 /** The session type an application context carries, without its `null`. */
 export type SessionOf<C extends ProcedureHostContext> = Exclude<C['session'], null>
@@ -15,6 +17,14 @@ export type SessionOf<C extends ProcedureHostContext> = Exclude<C['session'], nu
 export interface ProcedureHandlerOptions<C extends ProcedureHostContext> {
   /** The application's procedure registry. Only procedures exposing `'web'` are reachable. */
   procedures: ProcedureRegistry<C>
+  /**
+   * The resolved config. Procedure names share one namespace with MCP tools,
+   * and with the config the host refuses a procedure named like one of its
+   * list custom tools or plugin-registered tools. A config with plugins is a
+   * promise, so pass `await config`. Without it only the reserved
+   * `list_<list>_<operation>` pattern is refused.
+   */
+  config?: OpenSaasConfig
   /** The generated `getContext`: called with the resolved session, or with nothing when anonymous. */
   getContext: (session?: SessionOf<C>) => Promise<C>
   /**
@@ -55,18 +65,8 @@ export interface ProcedureHandlerOptions<C extends ProcedureHostContext> {
   onUnexpectedError?: (error: unknown, procedureName: string) => void
 }
 
-/** Thrown by {@link createProcedureHandler} for options or a registry it cannot serve. */
-export class ProcedureHostError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = 'ProcedureHostError'
-  }
-}
-
 const DEFAULT_BASE_PATH = '/api/procedures'
 const DEFAULT_MAX_BODY_BYTES = 1024 * 1024
-const PROCEDURE_NAME = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/
-
 const RESPONSE_HEADERS = {
   'content-type': 'application/json; charset=utf-8',
   'cache-control': 'no-store',
@@ -118,21 +118,6 @@ function normaliseOrigins(origins: readonly string[]): ReadonlySet<string> {
     normalised.add(parsed.origin)
   }
   return normalised
-}
-
-function assertRegistry<C extends ProcedureHostContext>(procedures: ProcedureRegistry<C>): void {
-  for (const name of Object.keys(procedures)) {
-    if (!PROCEDURE_NAME.test(name)) {
-      throw new ProcedureHostError(
-        `createProcedureHandler: procedure name "${name}" must start with a letter and contain only letters, digits, "_" and "-" (at most 64 characters).`,
-      )
-    }
-    if (!isProcedure(procedures[name])) {
-      throw new ProcedureHostError(
-        `createProcedureHandler: registry entry "${name}" is not a procedure. Define it with the generated \`procedure\` builder.`,
-      )
-    }
-  }
 }
 
 function lookup<C extends ProcedureHostContext>(
@@ -212,7 +197,11 @@ function parseJson(text: string): RawInput {
  * `application/json`, and 413 for a body over `maxBodyBytes`. A client should
  * branch on the status before reading `success`.
  *
- * @throws {ProcedureHostError} for an invalid option, name or registry entry.
+ * The host refuses, when it is created, a registry it cannot serve safely: a
+ * schema that cannot be carried on the wire or accepts open-ended values, and
+ * a name that clashes with an MCP tool. See {@link assertProcedureRegistry}.
+ *
+ * @throws {ProcedureHostError} for an invalid option, name, schema or registry entry.
  *
  * @example
  * ```typescript
@@ -241,7 +230,7 @@ export function createProcedureHandler<C extends ProcedureHostContext>(
   if (!Number.isSafeInteger(maxBodyBytes) || maxBodyBytes <= 0) {
     throw new ProcedureHostError('createProcedureHandler: maxBodyBytes must be a positive integer.')
   }
-  assertRegistry(procedures)
+  assertProcedureRegistry(procedures, { config: options.config })
 
   return async (request: Request): Promise<Response> => {
     const prefix = `${basePath}/`
