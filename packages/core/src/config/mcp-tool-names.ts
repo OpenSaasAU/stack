@@ -3,7 +3,6 @@ import { getPluginData } from './plugin-engine.js'
 
 const CRUD_TOOL_NAME = /^list_([a-z][a-zA-Z0-9]*)_(query|create|update|delete)$/
 
-/** Whether `name` matches the pattern reserved for generated list tools. */
 export function isReservedMcpToolName(name: string): boolean {
   return CRUD_TOOL_NAME.test(name)
 }
@@ -21,7 +20,6 @@ function declaredTools(config: OpenSaasConfig): { name: string; owner: string }[
   return declared
 }
 
-/** Who declares the custom or plugin MCP tool called `name`, if anyone does. */
 export function findMcpToolOwner(config: OpenSaasConfig, name: string): string | undefined {
   return declaredTools(config).find((tool) => tool.name === name)?.owner
 }

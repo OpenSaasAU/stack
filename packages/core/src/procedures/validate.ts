@@ -66,6 +66,24 @@ function isOpenEnded(schema: z.core.$ZodType): boolean {
   return type === 'any' || type === 'unknown'
 }
 
+const JSON_VALUE_OPTIONS = 'array,boolean,null,number,record,string'
+
+function isJsonValue(schema: z.core.$ZodType): boolean {
+  if (!(schema instanceof z.core.$ZodLazy)) return false
+  const union = schema._zod.innerType
+  if (!(union instanceof z.core.$ZodUnion)) return false
+  const { options } = union._zod.def
+  const kinds = options.map((option) => option._zod.def.type).sort()
+  return (
+    kinds.join(',') === JSON_VALUE_OPTIONS &&
+    options.every((option) => {
+      if (option instanceof z.core.$ZodArray) return option._zod.def.element === schema
+      if (option instanceof z.core.$ZodRecord) return option._zod.def.valueType === schema
+      return true
+    })
+  )
+}
+
 function openEndedFinding(
   schema: z.core.$ZodTypes,
   side: ProcedureSchemaSide,
@@ -77,6 +95,20 @@ function openEndedFinding(
       path,
       problem: `is \`z.${def.type}()\`, which accepts any value`,
       fix: 'Declare the shape it carries, for example `z.string()` or `z.object({ … })`.',
+    }
+  }
+  if (isJsonValue(schema)) {
+    return {
+      path,
+      problem: 'is `z.json()` or its equivalent, which accepts any JSON value',
+      fix: 'Declare the shape it carries, for example `z.string()` or `z.object({ … })`.',
+    }
+  }
+  if (def.type === 'file') {
+    return {
+      path,
+      problem: 'is `z.file()`, which a JSON body cannot carry',
+      fix: 'Carry the bytes as a base64 string with `z.base64()`, or upload the file to storage and pass its reference.',
     }
   }
   if (def.type === 'object' && def.catchall !== undefined) {
@@ -94,6 +126,14 @@ function openEndedFinding(
         problem: 'has a `.catchall()`, which returns keys the schema does not declare',
         fix: 'Use `z.object({ … })` or `z.strictObject({ … })`, or a `z.record` with a declared value type when the value is a map.',
       }
+    }
+  }
+  if (def.type === 'record' && def.mode === 'loose') {
+    return {
+      path,
+      problem:
+        'is a `z.looseRecord`, which lets keys its key schema does not match through with any value',
+      fix: 'Use `z.record`, which refuses a key its key schema does not match.',
     }
   }
   if (def.type === 'record' && isOpenEnded(def.valueType)) {
@@ -126,32 +166,22 @@ const UNREPRESENTABLE_FIXES: Readonly<Record<string, string>> = {
 
 const GENERIC_FIX = 'Use a schema whose values JSON can carry.'
 
-function unrepresentableKind(schema: z.core.$ZodTypes): string | undefined {
-  const { def } = schema._zod
-  if (def.type === 'literal') {
-    return def.values.some((value) => typeof value === 'bigint') ? 'bigint' : undefined
-  }
-  return Object.hasOwn(UNREPRESENTABLE_FIXES, def.type) ? def.type : undefined
+const LITERAL_UNDEFINED_FIX =
+  'Use `z.null()` for an empty value, or make the key optional with `.optional()`.'
+
+interface Unrepresentable {
+  path: SchemaPath
+  schema: z.core.$ZodTypes
+  message: string
 }
 
-function locateUnrepresentable(
-  schema: z.ZodType,
-  side: ProcedureSchemaSide,
-): { path: SchemaPath; kind: string } | undefined {
-  const located: { path: SchemaPath; kind: string }[] = []
-  try {
-    z.toJSONSchema(schema, {
-      io: side,
-      unrepresentable: 'any',
-      override: ({ zodSchema, path }) => {
-        const kind = unrepresentableKind(zodSchema)
-        if (kind !== undefined) located.push({ path, kind })
-      },
-    })
-  } catch {
-    return undefined
-  }
-  return located.sort(byPath)[0]
+function unrepresentableFix(schema: z.core.$ZodTypes): string {
+  const { def } = schema._zod
+  if (def.type !== 'literal') return UNREPRESENTABLE_FIXES[def.type] ?? GENERIC_FIX
+  const first = def.values.find((value) => value === undefined || typeof value === 'bigint')
+  return typeof first === 'bigint'
+    ? (UNREPRESENTABLE_FIXES.bigint ?? GENERIC_FIX)
+    : LITERAL_UNDEFINED_FIX
 }
 
 function byPath(left: { path: SchemaPath }, right: { path: SchemaPath }): number {
@@ -168,22 +198,29 @@ function isCatchallOf(candidate: SchemaPath, parent: SchemaPath): boolean {
 
 function assertSchemaSide(name: string, side: ProcedureSchemaSide, schema: z.ZodType): void {
   const findings: Finding[] = []
+  const unrepresentable: Unrepresentable[] = []
   try {
     z.toJSONSchema(schema, {
       io: side,
-      unrepresentable: 'throw',
+      unrepresentable: ({ zodSchema, path, message }) => {
+        unrepresentable.push({ path, schema: zodSchema, message })
+        return 'throw'
+      },
       override: ({ zodSchema, path }) => {
         const finding = openEndedFinding(zodSchema, side, path)
         if (finding !== undefined) findings.push(finding)
       },
     })
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error)
-    const located = locateUnrepresentable(schema, side)
-    const part = describePath(side, located?.path ?? [])
-    const fix = located === undefined ? GENERIC_FIX : UNREPRESENTABLE_FIXES[located.kind]
+    const located = unrepresentable[0]
+    if (located === undefined) {
+      const reason = error instanceof Error ? error.message : String(error)
+      throw new ProcedureHostError(
+        `Procedure "${name}": the ${side} schema cannot be converted to JSON Schema, and Zod does not say which part of it is at fault (${reason}). Change the schema until \`z.toJSONSchema(schema, { io: '${side}' })\` succeeds.`,
+      )
+    }
     throw new ProcedureHostError(
-      `Procedure "${name}": \`${part}\` cannot be converted to JSON Schema on its ${side} side (${reason}). ${fix ?? GENERIC_FIX}`,
+      `Procedure "${name}": \`${describePath(side, located.path)}\` cannot be converted to JSON Schema on its ${side} side (${located.message}). ${unrepresentableFix(located.schema)}`,
     )
   }
 
@@ -201,9 +238,13 @@ function assertSchemaSide(name: string, side: ProcedureSchemaSide, schema: z.Zod
  * Refuses a procedure whose schemas cannot be carried on the wire: `input`
  * must convert to JSON Schema on its input side and `output` on its output
  * side, which rules out dates, bigints and output transforms, and neither may
- * hold `z.any()`, `z.unknown()`, a loose object or a `z.record` of open-ended
- * values at any depth. An output object with a `.catchall()` is refused too,
- * because it returns keys the schema does not declare.
+ * hold `z.file()` or one of the open-ended shapes Zod provides, at any depth:
+ * `z.any()`, `z.unknown()`, `z.json()`, a loose object, a `z.looseRecord` or a
+ * `z.record` of `any`/`unknown`. An output object with a `.catchall()` is
+ * refused too, because it returns keys the schema does not declare.
+ *
+ * A hand-written schema that accepts as much as those do, such as a recursive
+ * union of every JSON type under another shape, is not recognised.
  *
  * Every host calls this when it is created.
  *
@@ -212,6 +253,12 @@ function assertSchemaSide(name: string, side: ProcedureSchemaSide, schema: z.Zod
 export function assertProcedureSchemas(name: string, procedure: ProcedureSchemas): void {
   assertSchemaSide(name, 'input', procedure.input)
   assertSchemaSide(name, 'output', procedure.output)
+}
+
+function isResolvedConfig(config: unknown): boolean {
+  if (typeof config !== 'object' || config === null) return false
+  const lists: unknown = Reflect.get(config, 'lists')
+  return typeof lists === 'object' && lists !== null
 }
 
 /**
@@ -227,6 +274,11 @@ export function assertProcedureNamesAvailable(
   names: Iterable<string>,
   config?: OpenSaasConfig,
 ): void {
+  if (config !== undefined && !isResolvedConfig(config)) {
+    throw new ProcedureHostError(
+      'The `config` a procedure host is given is not a resolved config. A config with plugins is a promise; pass the resolved one, `config: await config`.',
+    )
+  }
   for (const name of names) {
     if (isReservedMcpToolName(name)) {
       throw new ProcedureHostError(

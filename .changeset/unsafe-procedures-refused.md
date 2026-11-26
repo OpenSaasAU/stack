@@ -8,7 +8,9 @@ Refuse unsafe procedure definitions when the host is created.
 `createProcedureHandler` now throws `ProcedureHostError`, naming the procedure, the offending part and the fix, for:
 
 - an `input` or `output` schema that does not convert to JSON Schema on its own side (dates, bigints, output transforms, `z.undefined()`, `z.void()`)
-- `z.any()`, `z.unknown()`, a loose object or a `z.record` of open-ended values at any depth, and an output object with a `.catchall()`
+- the open-ended shapes Zod provides, at any depth: `z.any()`, `z.unknown()`, `z.json()`, a loose object, a `z.looseRecord` or a `z.record` of `any`/`unknown`; and an output object with a `.catchall()`. A hand-written schema that accepts as much is not recognised
+- `z.file()`, which a JSON body cannot carry
+- a `config` option that is not a resolved config, such as an un-awaited promise
 - a name matching the reserved `list_<list>_<operation>` pattern of generated MCP tools
 - a name a list custom tool or a plugin-registered MCP tool already carries, when the host is given the config
 
