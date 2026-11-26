@@ -144,8 +144,10 @@ export type ProcedureFailures<TCode extends string> = Readonly<Record<TCode, str
  * @typeParam TIn - the Zod schema the input is parsed with.
  * @typeParam TOut - the Zod schema the output is parsed with. A default
  *   `z.object` removes keys it does not declare before the result leaves the
- *   host, and a strict one refuses them; a schema that does neither
- *   (`z.looseObject`, `z.record`, `z.unknown`) returns whatever `run` returned.
+ *   host, and a strict one refuses them. The shapes Zod provides that do
+ *   neither (`z.looseObject`, `.catchall()`, `z.unknown`, `z.json()`,
+ *   `z.looseRecord`, a `z.record` of `any`/`unknown`) are refused when a host
+ *   is created. A hand-written schema that accepts as much is not recognised.
  * @typeParam TCode - the failure codes the procedure declares.
  */
 export interface ProcedureDefinition<

@@ -10,7 +10,7 @@ import { processGlobal } from '../lib/process-global.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
 import type { StackContext } from '../types/context.js'
 import type { ProcedureFail } from './failures.js'
-import { createProcedureHandler, ProcedureHostError } from './http.js'
+import { createProcedureHandler } from './http.js'
 import {
   createProcedureBuilder,
   ProcedureDefinitionError,
@@ -19,6 +19,7 @@ import {
   type ProcedureTransactionContext,
   type TransactionContextOf,
 } from './procedure.js'
+import { ProcedureHostError } from './validate.js'
 
 const BOOT = 120_000
 const ORIGIN = 'http://app.test'
@@ -240,7 +241,7 @@ const returnInNestedTransaction = procedure({
 const returnFromRun = procedure({
   description: 'Write outside any transaction, then return a failure from run',
   input: bookingInput,
-  output: z.unknown(),
+  output: z.object({ code: z.string() }),
   failures: { TOO_LATE: 'Bookings have closed' },
   access: () => true,
   expose: ['web'],

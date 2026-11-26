@@ -9,7 +9,8 @@ import { classifyDriverError, DatabaseError } from '../lib/database-errors.js'
 import { MalformedRelationInputError } from '../context/relationship-input.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
 import type { StackContext } from '../types/context.js'
-import { createProcedureHandler, ProcedureHostError } from './http.js'
+import { createProcedureHandler } from './http.js'
+import { ProcedureHostError } from './validate.js'
 import {
   createProcedureBuilder,
   ProcedureDefinitionError,
@@ -251,7 +252,7 @@ const linkBadly = procedure({
 
 const noInput = procedure({
   description: 'Take no input at all',
-  input: z.undefined(),
+  input: z.object({}).optional(),
   output: z.object({ ran: z.boolean() }),
   access: () => true,
   expose: ['web'],

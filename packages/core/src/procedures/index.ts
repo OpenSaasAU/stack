@@ -24,12 +24,16 @@ export {
   type TransactionContextOf,
 } from './procedure.js'
 export { ProcedureFailureError, type ProcedureFail } from './failures.js'
+export { createProcedureHandler, type ProcedureHandlerOptions, type SessionOf } from './http.js'
 export {
-  createProcedureHandler,
+  assertProcedureNamesAvailable,
+  assertProcedureRegistry,
+  assertProcedureSchemas,
   ProcedureHostError,
-  type ProcedureHandlerOptions,
-  type SessionOf,
-} from './http.js'
+  type ProcedureRegistryChecks,
+  type ProcedureSchemaSide,
+  type ProcedureSchemas,
+} from './validate.js'
 export {
   RESERVED_FAILURE_CODES,
   type ProcedureFailure,
