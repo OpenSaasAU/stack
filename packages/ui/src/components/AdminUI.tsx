@@ -4,6 +4,7 @@ import { notFound, redirect } from 'next/navigation.js'
 import { operationAvailable } from '../lib/operationAvailable.js'
 import { ADMIN_WORDMARK, Navigation, NavLink } from './Navigation.js'
 import { AdminShell } from './AdminShell.js'
+import { ViewerTimeZone } from './ViewerTimeZone.js'
 import { Dashboard } from './Dashboard.js'
 import { ListView } from './ListView.js'
 import { ItemForm } from './ItemForm.js'
@@ -269,6 +270,7 @@ export async function AdminUI({
   return (
     <>
       {themeStyles && <style dangerouslySetInnerHTML={{ __html: themeStyles }} />}
+      <ViewerTimeZone />
       <AdminShell
         sidebar={sidebar}
         brand={

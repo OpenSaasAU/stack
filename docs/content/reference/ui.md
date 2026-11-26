@@ -523,6 +523,15 @@ sort, column or page-size change — writes the preset's resolved query out as
 and the admin carries on refining from there. The All tab returns to the plain
 list.
 
+A plain `YYYY-MM-DD` on a timestamp field in a preset's `search` means that day
+in the viewer's time zone, not the UTC day a plain date in a URL means. The
+admin records the browser's IANA zone in an `opensaas-tz` cookie, and the
+server rewrites those days as offset instants before the read, so "Published
+today" is today wherever the admin is, and the `?search=` a first edit writes
+out keeps the same rows. Until that cookie exists (the very first request) the
+day is the UTC day. `ListView` takes `timeZone` to set the zone itself
+(ADR-0086).
+
 A key the list does not declare, one whose `hasAccess` denies the session, or
 one whose `search` throws opens the plain list, exactly as a link with no
 `?preset=` would. While a preset is open, `?search=` is ignored.
@@ -675,10 +684,12 @@ the builder (`04/08/2026`, `4.8.2026`) is read in the day/month order of the
 viewer's locale, the order the list cells use, so it is 4 August under en-AU and
 8 April under en-US; one that is not a real date in that order is explained, not
 searched as text. The builder's chip is the browser-local day. A date-only
-`YYYY-MM-DD` in a URL or a preset chip is the **UTC** day: "is `2026-08-04`"
+`YYYY-MM-DD` in a URL is the **UTC** day, and its chip says "(UTC)": "is `2026-08-04`"
 covers that whole UTC day, and the end of a range such as
 `releasedAt:2026-08-03..2026-08-04` includes the whole of its last day. Only an
-exact `YYYY-MM-DD` has this meaning; `2026-08` is not a day.
+exact `YYYY-MM-DD` has this meaning; `2026-08` is not a day. A Preset view is
+the exception: its plain days on a timestamp field mean the viewer's local day
+(see [Preset views](#preset-views)).
 
 On a field with date inputs, Tab moves from the bar into them and on to
 **Apply dates**, and Shift+Tab from the first date input returns to the bar.

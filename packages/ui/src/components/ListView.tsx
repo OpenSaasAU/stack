@@ -15,6 +15,8 @@ import { readSessionVocabulary, withheldFieldNames } from '../lib/sessionFieldCo
 import { fieldReadable, vocabularyQuestionsOf } from '../lib/vocabularyQuestions.js'
 import { EmptyState } from './EmptyState.js'
 import { UnavailableState } from './UnavailableState.js'
+import { localiseTimestampDays } from '../lib/zonedDays.js'
+import { readViewerTimeZone } from '../lib/readViewerTimeZone.js'
 import { PageHeader } from './PageHeader.js'
 import { Button } from '../primitives/button.js'
 import type { ServerActionInput } from '../server/types.js'
@@ -449,6 +451,22 @@ export interface ListViewProps {
    * omitted, no bulk delete is offered.
    */
   serverAction?: (input: ServerActionInput) => Promise<unknown>
+  /**
+   * The viewer's IANA time zone. An open Preset view's plain `YYYY-MM-DD`
+   * days on timestamp fields mean that day in this zone. Defaults to the
+   * zone the admin's browser recorded in the `opensaas-tz` cookie, else UTC.
+   */
+  timeZone?: string
+}
+
+async function localisePresetDays(
+  query: string,
+  fields: FilterFields,
+  timeZone: string | undefined,
+): Promise<string> {
+  if (localiseTimestampDays(query, fields, 'UTC') === query) return query
+  const zone = timeZone ?? (await readViewerTimeZone())
+  return zone === undefined ? query : localiseTimestampDays(query, fields, zone)
 }
 
 export async function ListView({
@@ -466,6 +484,7 @@ export async function ListView({
   sort,
   preset,
   serverAction,
+  timeZone,
 }: ListViewProps) {
   const context = engineContextOf(appContext)
   const key = listKey
@@ -541,12 +560,12 @@ export async function ListView({
   )
   const presetViews = resolvePresetViews(listConfig, listKey, context, preset)
   const activePreset = await presetViews.active
-  const activeSearch = activePreset
+  const presetSearch = activePreset
     ? withholdFilterFields(
         activePreset.search,
         notFilterableFieldsOf(vocabulary, Object.keys(listFields)),
       )
-    : search
+    : undefined
   const sortCandidates = [sort, activePreset?.sort, initialSort]
 
   const filterSpecs = await collectFilterSpecs(listConfig, listKey, config, { context })
@@ -554,6 +573,10 @@ export async function ListView({
   const filterFields: FilterFields = new Map(
     filterSuggestions.map((suggestion) => [suggestion.field, suggestion]),
   )
+  const activeSearch =
+    presetSearch === undefined
+      ? search
+      : await localisePresetDays(presetSearch, filterFields, timeZone)
   const searchEntries = activeSearch ? hydrateEntries(activeSearch) : []
   const searchTokens = searchEntries.map((entry) => entry.token)
   const autoColumns = filteredFields(searchTokens, filterFields).filter(
