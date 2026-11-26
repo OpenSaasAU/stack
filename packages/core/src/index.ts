@@ -52,6 +52,8 @@ export type {
   PresetView,
 } from './config/index.js'
 
+export type { Actor, AgentActor, HumanActor } from './access/actor.js'
+
 // Access control — the types a consumer writes against
 export type {
   AccessControl,

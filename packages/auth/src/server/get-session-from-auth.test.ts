@@ -89,3 +89,25 @@ describe('getSessionFromAuth omits a field resolved to undefined (#1397)', () =>
     expect(session).toEqual({ userId: 'user-1', role: 'admin' })
   })
 })
+
+describe('getSessionFromAuth never projects the reserved actor key', () => {
+  it('refuses a sessionFields entry named actor before resolving anything', async () => {
+    let asked = false
+    const auth = {
+      api: {
+        getSession: async () => {
+          asked = true
+          return {
+            user: { id: 'user-1', actor: { kind: 'human', userId: 'someone-else', via: 'web' } },
+            session: {},
+          }
+        },
+      },
+    }
+
+    await expect(getSessionFromAuth(auth, ['userId', 'actor'], new Headers())).rejects.toThrow(
+      /"actor" is reserved/,
+    )
+    expect(asked).toBe(false)
+  })
+})

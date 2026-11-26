@@ -36,18 +36,29 @@ const REGISTERED_CLAIMS = ['iss', 'aud', 'nbf', 'iat', 'jti', 'azp', 'client_id'
 
 const UNSAFE_CLAIMS = ['__proto__', 'constructor', 'prototype'] as const
 
+const HOST_OWNED_KEYS = [
+  'scopes',
+  'accessToken',
+  'expiresAt',
+  'userId',
+  'clientId',
+  'actor',
+] as const
+
 function claimsToSession(
   claims: { sub?: string; scope?: unknown; exp?: number; [claim: string]: unknown },
   req: Request,
 ): McpSession | null {
   if (typeof claims.sub !== 'string' || claims.sub === '') return null
   if (claims.sub === claims.client_id || claims.sub === claims.azp) return null
+  const clientId = claims.azp
+  if (typeof clientId !== 'string' || clientId === '') return null
   const { sub, scope: _scope, exp: _exp, ...customClaims } = claims
   for (const claim of REGISTERED_CLAIMS) delete customClaims[claim]
-  for (const claim of ['scopes', 'accessToken', 'expiresAt', 'userId', ...UNSAFE_CLAIMS]) {
+  for (const claim of [...HOST_OWNED_KEYS, ...UNSAFE_CLAIMS]) {
     delete customClaims[claim]
   }
-  const session: McpSession = { ...customClaims, userId: sub }
+  const session: McpSession = { ...customClaims, userId: sub, clientId }
   if (typeof claims.scope === 'string') {
     session.scopes = claims.scope.split(' ').filter((scope) => scope !== '')
   }
@@ -83,6 +94,10 @@ async function verifyMcpRequest(
  * Create the MCP session provider for a Better Auth `mcp()` authorization server.
  * The bearer token is verified against the JWKS for issuer, audience, expiry and
  * signature; revocation takes effect at token expiry.
+ *
+ * The session carries the token's verified `azp` as `clientId`, which the MCP
+ * handler turns into the session's agent actor. A token with no `azp` is refused,
+ * and claims named `clientId` or `actor` are dropped.
  *
  * @example
  * ```typescript

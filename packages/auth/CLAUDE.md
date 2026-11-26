@@ -776,6 +776,8 @@ constructs a real instance and does not have this gap.
 - Auth provides Better Auth MCP adapter via `@opensaas/stack-auth/mcp`
 - MCP plugin enables OAuth for AI assistants
 - `createBetterAuthMcpAdapter({ resource, baseURL })` verifies the bearer JWT (signature, issuer, audience, expiry) against Better Auth's JWKS and returns a session provider; revocation takes effect at token expiry
+- The session carries the verified token's `azp` as `clientId`, which core's MCP handler turns into the agent Actor. better-auth's OAuth provider writes `azp` and `client_id` after the app's custom access-token claims (`createJwtAccessToken` in `@better-auth/oauth-provider`), so a claims callback cannot choose them. The verifier mirrors `azp` onto `client_id` (`@better-auth/core/oauth2`), so `azp` is the one value read. A token with no `azp` is refused, and claims named `clientId` or `actor` are dropped
+- `getSessionFromAuth` throws when `sessionFields` names `actor`: the key is reserved for the hosts
 - Works with core MCP runtime from `@opensaas/stack-core/mcp`
 - Requires `rawOpensaasContext` from `.opensaas/context.ts`:
 

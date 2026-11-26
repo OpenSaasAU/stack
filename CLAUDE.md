@@ -589,7 +589,8 @@ The stack provides Model Context Protocol server integration through `@opensaas/
 3. OAuth with AI assistants is wired through Better-auth's `mcp` plugin (`authPlugin({ betterAuthPlugins: [jwt(), mcp({ loginPage: '/sign-in', consentPage: '/consent', resource: '<canonical MCP URL>' })] })`, imported from `@opensaas/stack-auth/plugins` — the plugin itself comes from the optional `@better-auth/mcp` peer since better-auth 1.7 split it out of `better-auth/plugins`, and requires `jwt()` from `better-auth/plugins` registered alongside it) and the `createBetterAuthMcpAdapter({ resource, baseURL })` session provider, which verifies the bearer JWT against the JWKS
 4. All tools respect existing access control rules, and the advertised vocabulary **omits** what a row-independent field rule denies this session — on reads and on writes alike, so a field a session can never see is not offered and asking for it anyway is refused exactly as an unknown name is (ADR-0053)
 5. A `where` argument is the Where vocabulary, the same grammar `context.db` takes
-6. Custom tools can be added per-list via `mcp.customTools` (Zod or JSON Schema inputSchema); plugins can register global tools via `registerMcpTool`
+6. Every session the handler builds carries an agent **Actor** (`session.actor`) built from the `clientId` the session provider verified; a provider that returns none is answered `401`, and a provider's or token's own `actor` is discarded
+7. Custom tools can be added per-list via `mcp.customTools` (Zod or JSON Schema inputSchema); plugins can register global tools via `registerMcpTool`
 
 **See:** `packages/core/CLAUDE.md` and `packages/auth/CLAUDE.md` for detailed patterns, and `examples/mcp-demo` for usage.
 
@@ -1199,6 +1200,8 @@ This project uses ESM (`"type": "module"` in package.json):
 ### Access Control Session Object
 
 The `session` object passed to access control functions is user-defined. The stack only requires that it exists and does not enforce a structure. The common pattern is an object carrying a user id, or `null` for anonymous. Augment the `Session` interface to type it — see `packages/core/CLAUDE.md`.
+
+One key is reserved: `session.actor`, the **Actor**. A host sets it on the session it builds, last, overwriting anything incoming — `{ kind: 'human', userId, via: 'web' }` from the procedure HTTP host, `{ kind: 'agent', clientId, onBehalfOf, via: 'mcp' }` from the MCP handler, whose session keeps the user's `userId`. A session no host built (`getContext(session)` from a server component, `withSession`, a test context) has none, and **an absent actor is never human**: write `session?.actor?.kind === 'human'`, never `!== 'agent'`. There is no system actor. See ADR-0086.
 
 ### Contract-Driven Type Safety
 

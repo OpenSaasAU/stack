@@ -10,6 +10,7 @@ import { pascalToCamel } from '../lib/case-utils.js'
 import { isClientSafeError } from '../lib/client-safe-error.js'
 import { McpToolError } from './tool-error.js'
 import type { McpSession, McpSessionProvider } from './types.js'
+import { agentActor, isActorId } from '../access/actor.js'
 import { controlFlowPredicateOf, decideAdvertisement } from '../access/decide-advertisement.js'
 import { mcpAdvertisement } from './advertise.js'
 import { McpWriteRefusedError, assertWritableData, generateFieldSchemas } from './field-schema.js'
@@ -49,14 +50,15 @@ const UNSAFE_SESSION_KEYS: ReadonlySet<string> = new Set(['__proto__', 'construc
  * Strips transport-level fields; userId and any custom session fields flow
  * through to access control. A custom field resolved to `undefined` is
  * dropped rather than passed through — `getContext` refuses a session
- * holding `undefined` for one of its own keys (#1397), and `userId` itself
- * is required and left untouched for that refusal to catch.
+ * holding `undefined` for one of its own keys (#1397). The actor is assigned
+ * after every incoming key, so a provider's own `actor` never survives.
  */
 function toContextSession(session: McpSession): ContextSession {
   const {
     accessToken: _accessToken,
     expiresAt: _expiresAt,
     scopes: _scopes,
+    clientId,
     userId,
     ...rest
   } = session
@@ -65,7 +67,12 @@ function toContextSession(session: McpSession): ContextSession {
     if (value === undefined || UNSAFE_SESSION_KEYS.has(key)) continue
     cleaned[key] = value
   }
+  cleaned.actor = agentActor(clientId, userId)
   return cleaned
+}
+
+function hasVerifiedAgent(session: McpSession): boolean {
+  return isActorId(session.clientId) && isActorId(session.userId)
 }
 
 /**
@@ -218,7 +225,12 @@ export function createMcpHandlers(options: {
 
   const handler = async (req: Request): Promise<Response> => {
     const session = await getSession(req.clone())
-    if (!session) {
+    if (session && !hasVerifiedAgent(session)) {
+      console.error(
+        'MCP session provider returned a session without a verified `clientId` and `userId`; the request was refused. A provider must return the OAuth client id it verified as `clientId`.',
+      )
+    }
+    if (!session || !hasVerifiedAgent(session)) {
       return new Response(null, {
         status: 401,
         headers: { 'WWW-Authenticate': challenge },

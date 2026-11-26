@@ -131,6 +131,18 @@ context.session?.email // ✅ Typed as string
 
 **For Better Auth users:** See `@opensaas/stack-auth` documentation for examples of extracting Better Auth session types.
 
+### The Actor (`src/access/actor.ts`, ADR-0086)
+
+`Session` declares one key itself: `actor?: Actor`. It is reserved, so an augmentation must not redeclare it.
+
+- `createProcedureHandler` sets `{ kind: 'human', userId, via: 'web' }` from the resolved session's `userId`, and fails the call with `INTERNAL` when that is not a non-empty string.
+- `createMcpHandlers` sets `{ kind: 'agent', clientId, onBehalfOf, via: 'mcp' }` from `McpSession.clientId` and `userId`, and answers `401` when either is missing or empty. `clientId` is a transport field like `scopes`: it is stripped from the context session and lives on the actor only.
+- Both assign the actor after every incoming key, so an `actor` from `getSession`, a session provider or a token claim is overwritten. The object is frozen and is the same one in access rules, hooks and `context.transaction()`, because it rides on the session.
+- A session no host built has no actor. **Absent is never human**: a rule checks `session?.actor?.kind === 'human'` or `=== 'agent'`, never the negation.
+- The constructors (`humanActor`, `agentActor`) are not exported from any entry point. Only the types (`Actor`, `HumanActor`, `AgentActor`) are, from the root. There is no system actor.
+
+Because `Session` now has a declared property, TypeScript's weak-type check applies to it: a rule annotated with an inline all-optional session type (`{ session: { role?: string } | null }`) no longer accepts `Session`. Annotate with `Session` or `AccessControl` instead.
+
 ### Hooks (`src/hooks/`)
 
 - `index.ts` - Hook execution logic
@@ -577,6 +589,7 @@ A `where` naming a column the list does not have, a `select` naming a relation, 
 - Every tool goes through `context.db`, so access control, validation and hooks apply with no parallel path
 - Custom tools may declare a Zod `inputSchema` — validated on `tools/call`, converted to JSON Schema for `tools/list` — or a plain JSON Schema object
 - Auth adapters (like `@opensaas/stack-auth/mcp`) provide session integration; custom session fields pass through to access control
+- A session provider must return the verified OAuth client id as `McpSession.clientId`; the handler builds the session's agent Actor from it and answers `401` without one (see "The Actor" above)
 - A `where` argument is the Where vocabulary, the same grammar `context.db` takes
 
 ### The MCP vocabulary omits what a row-independent rule denies (ADR-0053, ADR-0037)

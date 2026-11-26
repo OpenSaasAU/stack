@@ -54,7 +54,11 @@ type Tool = { name: string; inputSchema: { properties: Record<string, { properti
 describe('MCP over the List member resolver', () => {
   let database: TestDatabase
   const config = membersConfig()
-  const session: McpSessionProvider = async () => ({ userId: 'u1', scopes: ['read', 'write'] })
+  const session: McpSessionProvider = async () => ({
+    userId: 'u1',
+    clientId: 'client-1',
+    scopes: ['read', 'write'],
+  })
 
   beforeAll(async () => {
     database = await createTestDatabase(config)

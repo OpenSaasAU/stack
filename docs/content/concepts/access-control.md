@@ -321,6 +321,34 @@ const visibleToSession: AccessControl = ({ session }) => {
 }
 ```
 
+## Who Is Acting: the Actor
+
+A session a host builds carries an `actor`, which says whether a person or an agent is calling:
+
+- The procedure HTTP host sets `{ kind: 'human', userId, via: 'web' }`.
+- The MCP handler sets `{ kind: 'agent', clientId, onBehalfOf, via: 'mcp' }`. `clientId` is the OAuth client id the session provider verified, and `onBehalfOf` is the user the agent acts for.
+
+An agent's session keeps that user's `userId`, so a rule that scopes by `session.userId` already limits an agent to what its user can do. Read the actor when a rule or a hook should treat the two differently:
+
+```typescript
+import type { AccessControl } from '@opensaas/stack-core'
+
+const humansOnly: AccessControl = ({ session }) => session?.actor?.kind === 'human'
+
+const ownedByCaller: AccessControl = ({ session }) => {
+  const userId = session?.userId
+  if (typeof userId !== 'string') return false
+  return { authorId: { equals: userId } }
+}
+
+const agentsMayNotDelete: AccessControl = (args) =>
+  args.session?.actor?.kind === 'human' ? ownedByCaller(args) : false
+```
+
+**Check positively for the kind you want.** The actor is absent on a session no host built: one passed to `getContext(session)` from a server component, a job runner's `withSession()`, a test's `createTestContext(config, session)`. Absent is never human, so `session?.actor?.kind === 'human'` denies those, and `session?.actor?.kind !== 'agent'` would admit them. Write the first form.
+
+The `actor` key is reserved. A host assigns it last and overwrites whatever is already there, so a token claim, a session provider or a `getSession` result named `actor` has no effect. It is the same frozen object in access rules, in hooks and inside `context.transaction()`. An anonymous caller is still a `null` session, with no actor to read.
+
 ## Silent Failures
 
 Stack returns `null` (for single records) or `[]` (for multiple records) when access is denied, rather than throwing errors. This prevents information leakage about whether records exist. There is no `AccessDeniedError` to catch: a denial is not an exception, it is an empty answer.

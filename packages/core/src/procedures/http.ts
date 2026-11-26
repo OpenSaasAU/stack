@@ -1,3 +1,4 @@
+import { humanActor, isActorId } from '../access/actor.js'
 import {
   isProcedure,
   type Procedure,
@@ -23,6 +24,10 @@ export interface ProcedureHandlerOptions<C extends ProcedureHostContext> {
    * credential is anonymous without asking. Resolving `null` or `undefined`
    * means no session; resolving anything else that is not an object fails
    * the call with `INTERNAL` and is reported to `onUnexpectedError`.
+   *
+   * The host sets `session.actor` to a human actor carrying the session's
+   * `userId`, overwriting any `actor` the resolved session holds. A session
+   * whose `userId` is not a non-empty string fails the call with `INTERNAL`.
    */
   getSession: (request: Request) => Promise<SessionOf<C> | null | undefined>
   /**
@@ -189,7 +194,8 @@ function parseJson(text: string): RawInput {
  * anonymous and the procedure's access rule decides; a request with a cookie
  * must come from an allowed origin and is resolved by `getSession`; a request
  * carrying an `Authorization` header is refused, with or without a cookie.
- * Nothing in the body can supply a session.
+ * Nothing in the body can supply a session. A resolved session carries a human
+ * `actor`, which the host sets itself.
  *
  * A call that reaches the pipeline answers with the result envelope:
  * `{ success: true, data }`, or `{ success: false, error: { code, message,
@@ -270,7 +276,13 @@ export function createProcedureHandler<C extends ProcedureHostContext>(
         if (resolved === null || resolved === undefined) {
           session = null
         } else if (typeof resolved === 'object') {
-          session = resolved
+          const userId: unknown = 'userId' in resolved ? resolved.userId : undefined
+          if (!isActorId(userId)) {
+            throw new ProcedureHostError(
+              'getSession resolved a session whose userId is not a non-empty string; the host cannot say who is acting.',
+            )
+          }
+          session = { ...resolved, actor: humanActor(userId) }
         } else {
           throw new ProcedureHostError(
             `getSession resolved a ${typeof resolved}; it must resolve a session object, null or undefined.`,

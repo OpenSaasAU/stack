@@ -231,7 +231,7 @@ A named application action with a description, input and output schemas, an acce
 _Avoid_: server action (that is Next's mechanism a procedure can be called from), endpoint, RPC, command
 
 **Actor**:
-Who a session says is acting: a human, or an agent acting on behalf of a human. The host sets it on the session it builds and strips it from anything incoming; an absent actor is never read as human (ADR-0086).
+Who a session says is acting, under the reserved `actor` key: a human (`{ kind: 'human', userId, via: 'web' }`), set by the procedure HTTP host, or an agent acting on behalf of a human (`{ kind: 'agent', clientId, onBehalfOf, via: 'mcp' }`), set by the MCP handler from the OAuth client id its session provider verified. An agent's session keeps the user's `userId`, so existing rules scope it as that user. The host assigns the actor after every incoming key, so no caller, token claim or session provider can choose it, and the MCP handler refuses a session with no verified client id. A session no host built has none, and an absent actor is never read as human: a rule checks positively for the kind it wants. There is no system actor (ADR-0086).
 _Avoid_: principal, caller, user (a user is who an agent acts for, not the actor itself)
 
 ### Storage

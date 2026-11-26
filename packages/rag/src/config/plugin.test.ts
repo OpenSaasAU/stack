@@ -1,7 +1,13 @@
 import { afterEach, describe, it, expect, vi } from 'vitest'
 import { ragPlugin } from './plugin.js'
 import type { RAGConfig } from './types.js'
-import type { AccessContext, FieldConfig, OpenSaasConfig, StackContext } from '@opensaas/stack-core'
+import type {
+  AccessContext,
+  FieldConfig,
+  OpenSaasConfig,
+  Session,
+  StackContext,
+} from '@opensaas/stack-core'
 import type { ContractColumnDescriptor, Plugin, PluginContext } from '@opensaas/stack-core/extend'
 import {
   HandlelessPluginFieldReadError,
@@ -335,8 +341,7 @@ describe('ragPlugin', () => {
       }
 
       it('ANDs the source field’s read rule onto a searchable()-injected embedding', async () => {
-        const isAdmin = ({ session }: { session: { admin?: boolean } | null }) =>
-          session?.admin === true
+        const isAdmin = ({ session }: { session: Session | null }) => session?.admin === true
         const searchableField = {
           ...text(),
           access: { read: isAdmin },

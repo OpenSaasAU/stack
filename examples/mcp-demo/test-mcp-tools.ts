@@ -128,6 +128,7 @@ async function main(): Promise<void> {
 
   let session: McpSession | null = {
     userId,
+    clientId: 'test-mcp-tools',
     scopes: ['openid', 'profile', 'email', 'mcp:read', 'mcp:write'],
   }
   const { POST } = createMcpHandlers({
@@ -251,7 +252,11 @@ async function main(): Promise<void> {
     )
     assert.equal(refused.status, 401)
     assert.match(refused.headers.get('WWW-Authenticate') ?? '', /^Bearer realm="\/api\/mcp"/)
-    session = { userId, scopes: ['openid', 'profile', 'email', 'mcp:read', 'mcp:write'] }
+    session = {
+      userId,
+      clientId: 'test-mcp-tools',
+      scopes: ['openid', 'profile', 'email', 'mcp:read', 'mcp:write'],
+    }
   })
 
   console.log('\nDeletes')
