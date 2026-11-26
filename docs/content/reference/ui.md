@@ -530,7 +530,7 @@ server rewrites those days as offset instants before the read, so "Published
 today" is today wherever the admin is, and the `?search=` a first edit writes
 out keeps the same rows. Until that cookie exists (the very first request) the
 day is the UTC day. `ListView` takes `timeZone` to set the zone itself
-(ADR-0086).
+(ADR-0087).
 
 A key the list does not declare, one whose `hasAccess` denies the session, or
 one whose `search` throws opens the plain list, exactly as a link with no
