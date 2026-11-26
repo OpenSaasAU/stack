@@ -6,6 +6,7 @@ import { EngineContextUnavailableError, engineContextOf } from '../context/engin
 import { integer, text } from '../fields/index.js'
 import { ValidationError } from '../hooks/index.js'
 import { classifyDriverError } from '../lib/database-errors.js'
+import { processGlobal } from '../lib/process-global.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
 import type { StackContext } from '../types/context.js'
 import type { ProcedureFail } from './failures.js'
@@ -56,6 +57,10 @@ const config: OpenSaasConfig = {
 }
 
 const procedure = createProcedureBuilder<Ctx>()
+
+function isWeakSet(value: unknown): value is WeakSet<object> {
+  return value instanceof WeakSet
+}
 
 const bookingInput = z.object({ slotId: z.string(), holder: z.string() })
 const booked = z.object({ booked: z.literal(true) })
@@ -198,6 +203,53 @@ const nestedThenFail = procedure({
   },
 })
 
+const returnInTransaction = procedure({
+  description: 'Write in a transaction, then return a failure instead of throwing it',
+  input: bookingInput,
+  output: booked,
+  failures: { TOO_LATE: 'Bookings have closed' },
+  access: () => true,
+  expose: ['web'],
+  run: async ({ input, context, fail }) => {
+    await context.transaction(async (tx) => {
+      await tx.db.Booking.create({ data: input })
+      return fail('TOO_LATE')
+    })
+    return { booked: true as const }
+  },
+})
+
+const returnInNestedTransaction = procedure({
+  description: 'Write in a nested transaction, then return a failure from it',
+  input: bookingInput,
+  output: booked,
+  failures: { TOO_LATE: 'Bookings have closed' },
+  access: () => true,
+  expose: ['web'],
+  run: async ({ input, context, fail }) => {
+    await context.transaction(async (tx) => {
+      await tx.transaction(async (inner) => {
+        await inner.db.Booking.create({ data: input })
+        return fail('TOO_LATE')
+      })
+    })
+    return { booked: true as const }
+  },
+})
+
+const returnFromRun = procedure({
+  description: 'Write outside any transaction, then return a failure from run',
+  input: bookingInput,
+  output: z.unknown(),
+  failures: { TOO_LATE: 'Bookings have closed' },
+  access: () => true,
+  expose: ['web'],
+  run: async ({ input, context, fail }) => {
+    await context.db.Booking.create({ data: input })
+    return fail('TOO_LATE')
+  },
+})
+
 let lentFail: ProcedureFail<'LENDER_ONLY'> | undefined
 
 const lender = procedure({
@@ -222,6 +274,33 @@ const borrower = procedure({
   run: () => {
     if (lentFail === undefined) return {}
     throw lentFail('LENDER_ONLY')
+  },
+})
+
+let lentNope: ProcedureFail<'NOPE'> | undefined
+
+const nopeLender = procedure({
+  description: 'Declare NOPE and throw it',
+  input: z.object({}),
+  output: z.object({}),
+  failures: { NOPE: 'Lender nope' },
+  access: () => true,
+  expose: ['web'],
+  run: ({ fail }) => {
+    lentNope = fail
+    throw fail('NOPE')
+  },
+})
+
+const nopeBorrower = procedure({
+  description: 'Declare NOPE too, and throw the failure the lender constructed',
+  input: z.object({}),
+  output: z.object({}),
+  failures: { NOPE: 'Borrower nope' },
+  access: () => true,
+  expose: ['web'],
+  run: ({ fail }) => {
+    throw lentNope === undefined ? fail('NOPE') : lentNope('NOPE')
   },
 })
 
@@ -287,8 +366,13 @@ const registry: ProcedureRegistry<Ctx> = {
   collideAfterWrite,
   loseRaceAfterWrite,
   nestedThenFail,
+  returnInTransaction,
+  returnInNestedTransaction,
+  returnFromRun,
   lender,
   borrower,
+  nopeLender,
+  nopeBorrower,
   undeclaredAtRuntime,
   inspect,
   takeOver,
@@ -398,6 +482,36 @@ describe('procedure transactions and declared failures', () => {
     expect(await holders()).toEqual([])
   })
 
+  test('a declared failure returned from a transaction callback rolls back and answers its code', async () => {
+    const response = await call('returnInTransaction', { slotId: 's', holder: 'ada' })
+    expect(response).toEqual({
+      status: 200,
+      body: { success: false, error: { code: 'TOO_LATE', message: 'Bookings have closed' } },
+    })
+    expect(await holders()).toEqual([])
+    expect(onUnexpectedError).not.toHaveBeenCalled()
+  })
+
+  test('a declared failure returned from a nested transaction callback rolls back and answers its code', async () => {
+    const response = await call('returnInNestedTransaction', { slotId: 's', holder: 'ada' })
+    expect(response).toEqual({
+      status: 200,
+      body: { success: false, error: { code: 'TOO_LATE', message: 'Bookings have closed' } },
+    })
+    expect(await holders()).toEqual([])
+    expect(onUnexpectedError).not.toHaveBeenCalled()
+  })
+
+  test('a declared failure returned from run answers its code, and a write outside a transaction stays', async () => {
+    const response = await call('returnFromRun', { slotId: 's', holder: 'ada' })
+    expect(response).toEqual({
+      status: 200,
+      body: { success: false, error: { code: 'TOO_LATE', message: 'Bookings have closed' } },
+    })
+    expect(await holders()).toEqual(['ada'])
+    expect(onUnexpectedError).not.toHaveBeenCalled()
+  })
+
   test('output failing its schema is INTERNAL and does not undo the committed transaction', async () => {
     const response = await call('commitThenMisreport', { slotId: 's', holder: 'ada' })
     expect(response.status).toBe(500)
@@ -449,6 +563,19 @@ describe('procedure transactions and declared failures', () => {
     expect(onUnexpectedError.mock.calls[0]?.[1]).toBe('borrower')
   })
 
+  test('a failure another procedure constructed is INTERNAL even when both declare its code', async () => {
+    const lent = await call('nopeLender', {})
+    expect(lent.body.error).toEqual({ code: 'NOPE', message: 'Lender nope' })
+    expect(onUnexpectedError).not.toHaveBeenCalled()
+
+    const borrowed = await call('nopeBorrower', {})
+    expect(borrowed.status).toBe(500)
+    expect(borrowed.body.error).toEqual({ code: 'INTERNAL', message: 'Internal error' })
+    expect(JSON.stringify(borrowed.body)).not.toContain('Lender nope')
+    expect(JSON.stringify(borrowed.body)).not.toContain('Borrower nope')
+    expect(onUnexpectedError.mock.calls[0]?.[1]).toBe('nopeBorrower')
+  })
+
   test('a code the procedure never declared cannot be constructed at runtime', async () => {
     const response = await call('undeclaredAtRuntime', {})
     expect(response.status).toBe(500)
@@ -496,19 +623,35 @@ describe('procedure transactions and declared failures', () => {
     expect(allowed.body).toEqual({ success: true, data: { changed: true } })
   })
 
-  test('a procedure declaring a reserved code is refused when the host is created', () => {
+  test('a reserved code behind a widened declaration is refused when the procedure is defined', () => {
+    const widened: Record<string, string> = { INTERNAL: 'Mine now' }
+    const define = () =>
+      procedure({
+        description: 'Declare a code the stack owns',
+        input: z.object({}),
+        output: z.object({}),
+        failures: widened,
+        access: () => true,
+        expose: ['web'],
+        run: () => ({}),
+      })
+    expect(define).toThrow(ProcedureDefinitionError)
+    expect(define).toThrow(/"Declare a code the stack owns".*"INTERNAL".*reserves.*Declare a code/)
+  })
+
+  test('a registry entry declaring a reserved code is refused when the host is created', () => {
     const reserved = procedure({
-      description: 'Declare a code the stack owns',
+      description: 'Declare nothing',
       input: z.object({}),
       output: z.object({}),
-      // @ts-expect-error a reserved code cannot be declared
-      failures: { INTERNAL: 'Mine now' },
       access: () => true,
       expose: ['web'],
       run: () => ({}),
     })
-    expect(() => handler({ reserved })).toThrow(ProcedureHostError)
-    expect(() => handler({ reserved })).toThrow(/"reserved".*"INTERNAL".*reserved/)
+    const forged = { ...reserved, failures: { INTERNAL: 'Mine now' } }
+    processGlobal('procedures', isWeakSet, () => new WeakSet<object>()).add(forged)
+    expect(() => handler({ reserved: forged })).toThrow(ProcedureHostError)
+    expect(() => handler({ reserved: forged })).toThrow(/"reserved".*"INTERNAL".*reserved/)
   })
 
   test('malformed failure declarations are refused when the procedure is defined', () => {

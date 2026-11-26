@@ -1,5 +1,5 @@
 import type * as z from 'zod'
-import { declaredFailureOf } from './failures.js'
+import { declaredFailureOf, throwReturnedFailure } from './failures.js'
 import type { Procedure, ProcedureHostContext } from './procedure.js'
 import { failure, failureFromError, type ProcedureResult } from './result.js'
 
@@ -87,11 +87,10 @@ export async function runProcedure<C extends ProcedureHostContext>(
     let returned: unknown
     try {
       returned = await procedure.run({ input: input.data, context })
+      throwReturnedFailure(returned)
     } catch (error) {
-      const declared = declaredFailureOf(error)
-      if (declared !== undefined && Object.hasOwn(procedure.failures, declared.code)) {
-        return { success: false, error: declared }
-      }
+      const declared = declaredFailureOf(error, procedure.failures)
+      if (declared !== undefined) return { success: false, error: declared }
       throw error
     }
 

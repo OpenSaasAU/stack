@@ -1,3 +1,4 @@
+import { throwReturnedFailure } from './failures.js'
 import type {
   ProcedureContext,
   ProcedureHostContext,
@@ -15,7 +16,11 @@ function transactionContextOf<Tx extends ProcedureHostTransactionContext>(
     plugins: transaction.plugins,
     advisoryLock: (key: string) => transaction.advisoryLock(key),
     transaction: <T>(fn: (txContext: ProcedureTransactionContext<Tx>) => Promise<T>) =>
-      transaction.transaction(() => fn(face)),
+      transaction.transaction(async () => {
+        const result = await fn(face)
+        throwReturnedFailure(result)
+        return result
+      }),
   })
   return face
 }
@@ -31,6 +36,10 @@ export function procedureContextOf<
     storage: context.storage,
     plugins: context.plugins,
     transaction: <T>(fn: (txContext: ProcedureTransactionContext<Tx>) => Promise<T>) =>
-      context.transaction((transaction) => fn(transactionContextOf(transaction))),
+      context.transaction(async (transaction) => {
+        const result = await fn(transactionContextOf(transaction))
+        throwReturnedFailure(result)
+        return result
+      }),
   })
 }

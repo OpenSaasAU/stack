@@ -42,8 +42,8 @@ export const bookSlot = procedure({
 
 Things to know:
 
-- Always `throw` a failure. One returned from a transaction callback would commit the writes before it.
-- A code is upper-case letters, digits and `_`. Declaring a reserved code (`UNAUTHENTICATED`, `DENIED`, `INVALID_INPUT`, `VALIDATION`, `RETRY`, `CONFLICT`, `INTERNAL`) is a compile error, and `createProcedureHandler` refuses the registry.
+- `throw` a failure. One returned from `run` or from a transaction callback is treated as thrown, so it still rolls the transaction back and answers its code.
+- A code is upper-case letters, digits and `_`. Declaring a reserved code (`UNAUTHENTICATED`, `DENIED`, `INVALID_INPUT`, `VALIDATION`, `RETRY`, `CONFLICT`, `INTERNAL`) is a compile error and is refused when the procedure is defined.
 - Output is parsed after `run` returns, so output that fails its schema is `INTERNAL` and does not undo a transaction that already committed.
 - A defined procedure's `access` and `run` now take the application context (`{ context }` and `{ input, context }`) and narrow it themselves. This only matters to code that called them directly instead of going through a host.
 

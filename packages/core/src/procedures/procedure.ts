@@ -2,7 +2,7 @@ import type * as z from 'zod'
 import { processGlobal } from '../lib/process-global.js'
 import { procedureContextOf } from './context-face.js'
 import { failWith, type ProcedureFail } from './failures.js'
-import type { ProcedureResult, ReservedFailureCode } from './result.js'
+import { isReservedFailureCode, type ProcedureResult, type ReservedFailureCode } from './result.js'
 
 /** A surface a procedure can be reached through. */
 export type ProcedureSurface = 'web' | 'mcp'
@@ -90,7 +90,8 @@ export interface ProcedureContext<
   readonly plugins: C['plugins']
   /**
    * Run `fn` inside one transaction; a throw anywhere in it, a declared
-   * failure included, rolls every write in it back. `run` opens no
+   * failure included, rolls every write in it back, and a declared failure
+   * `fn` returns is treated as thrown. `run` opens no
    * transaction of its own, so work that must not hold row locks (an SMS, a
    * model call) sits outside this callback. The transaction runs at Read
    * Committed and takes no options; a concurrency-sensitive rule takes a row
@@ -121,8 +122,9 @@ export interface ProcedureRunArgs<
   context: ProcedureContext<C, Tx>
   /**
    * Constructs one of the procedure's declared failures. **Throw** what it
-   * returns: `throw fail('SLOT_FULL')`. A code the procedure does not declare
-   * is a compile error.
+   * returns: `throw fail('SLOT_FULL')`. One returned from `run` or from a
+   * `context.transaction` callback is treated as thrown. A code the procedure
+   * does not declare is a compile error.
    */
   fail: ProcedureFail<TCode>
 }
@@ -160,8 +162,8 @@ export interface ProcedureDefinition<
   /**
    * The named failures `run` may throw, as code and message. A caller
    * receives one as `{ success: false, error: { code, message } }`, which the
-   * HTTP host answers with status 200. A host refuses a procedure declaring a
-   * reserved code.
+   * HTTP host answers with status 200. Declaring a reserved code is refused
+   * when the procedure is defined.
    */
   failures?: ProcedureFailures<TCode>
   /**
@@ -281,7 +283,7 @@ function assertExposure(expose: unknown): asserts expose is ProcedureExposure {
 
 const FAILURE_CODE = /^[A-Z][A-Z0-9_]{0,63}$/
 
-function assertFailures(failures: unknown): void {
+function assertFailures(description: string, failures: unknown): void {
   if (failures === undefined) return
   if (typeof failures !== 'object' || failures === null || Array.isArray(failures)) {
     throw new ProcedureDefinitionError(
@@ -292,6 +294,11 @@ function assertFailures(failures: unknown): void {
     if (!FAILURE_CODE.test(code)) {
       throw new ProcedureDefinitionError(
         `Failure code ${JSON.stringify(code)} must start with an upper-case letter and contain only upper-case letters, digits and "_" (at most 64 characters).`,
+      )
+    }
+    if (isReservedFailureCode(code)) {
+      throw new ProcedureDefinitionError(
+        `Procedure ${JSON.stringify(description)} declares the failure code "${code}", which the stack reserves for its own failures. Declare a code of the procedure's own instead.`,
       )
     }
     if (typeof message !== 'string' || message.trim() === '') {
@@ -325,7 +332,7 @@ function assertDefinition(definition: {
   if (!isZodSchema(definition.output)) {
     throw new ProcedureDefinitionError('A procedure needs an `output` Zod schema.')
   }
-  assertFailures(definition.failures)
+  assertFailures(definition.description, definition.failures)
   if (typeof definition.access !== 'function') {
     throw new ProcedureDefinitionError(
       'A procedure needs an `access` rule. One open to anonymous callers returns `true` for a `null` session.',
@@ -343,7 +350,7 @@ function assertDefinition(definition: {
  * application imports `procedure` from there rather than calling it itself.
  *
  * @throws {ProcedureDefinitionError} for a definition missing a required
- *   member, or declaring a malformed failure code.
+ *   member, or declaring a malformed or reserved failure code.
  */
 export function createProcedureBuilder<
   C extends ProcedureHostContext<Tx>,

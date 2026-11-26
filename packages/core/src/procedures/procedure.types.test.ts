@@ -1,10 +1,11 @@
-import { describe, expectTypeOf, test } from 'vitest'
+import { describe, expect, expectTypeOf, test } from 'vitest'
 import * as z from 'zod'
 import type { AccessControlledDB } from '../access/types.js'
 import type { StackContext, StackTransactionContext } from '../types/context.js'
 import type { ProcedureFailureError } from './failures.js'
 import {
   createProcedureBuilder,
+  ProcedureDefinitionError,
   type ProcedureRegistry,
   type ProcedureResultOf,
   type TransactionContextOf,
@@ -79,18 +80,22 @@ const ping = procedure({
   },
 })
 
-procedure({
-  description: 'Declare a reserved code',
-  input: z.object({}),
-  output: z.object({}),
-  // @ts-expect-error a reserved code cannot be declared
-  failures: { RETRY: 'Mine now' },
-  access: () => true,
-  expose: ['web'],
-  run: () => ({}),
-})
-
 describe('procedure types', () => {
+  test('a reserved code is a compile error and refused at definition', () => {
+    expect(() =>
+      procedure({
+        description: 'Declare a reserved code',
+        input: z.object({}),
+        output: z.object({}),
+        // @ts-expect-error a reserved code cannot be declared
+        failures: { RETRY: 'Mine now' },
+        access: () => true,
+        expose: ['web'],
+        run: () => ({}),
+      }),
+    ).toThrow(ProcedureDefinitionError)
+  })
+
   test('the transaction context is read from the application context', () => {
     expectTypeOf<TransactionContextOf<Ctx>>().toEqualTypeOf<
       StackTransactionContext<AccessControlledDB>
