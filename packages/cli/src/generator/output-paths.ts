@@ -19,6 +19,7 @@ export const OPENSAAS_FILES = {
   context: 'context.ts',
   pluginTypes: 'plugin-types.ts',
   tables: 'tables.ts',
+  procedures: 'procedures.ts',
 } as const
 
 /**
@@ -64,6 +65,8 @@ export interface ResolvedWritePaths {
   pluginTypes: string
   /** Absolute path to `<opensaasDir>/tables.ts` — the dependency-set table and constraint map. */
   tables: string
+  /** Absolute path to `<opensaasDir>/procedures.ts` — the procedure builder bound to the app's `Context`. */
+  procedures: string
 }
 
 /**
@@ -157,6 +160,7 @@ export function resolveOutputPaths(
     context: path.join(opensaasDirAbs, OPENSAAS_FILES.context),
     pluginTypes: path.join(opensaasDirAbs, OPENSAAS_FILES.pluginTypes),
     tables: path.join(opensaasDirAbs, OPENSAAS_FILES.tables),
+    procedures: path.join(opensaasDirAbs, OPENSAAS_FILES.procedures),
   }
 
   const crossReferences: ResolvedCrossReferences = {
@@ -202,6 +206,7 @@ export function stageWritePaths(paths: ResolvedWritePaths, stagingDir: string): 
     context: path.join(bundleDir, OPENSAAS_FILES.context),
     pluginTypes: path.join(bundleDir, OPENSAAS_FILES.pluginTypes),
     tables: path.join(bundleDir, OPENSAAS_FILES.tables),
+    procedures: path.join(bundleDir, OPENSAAS_FILES.procedures),
   }
 }
 

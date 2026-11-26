@@ -142,6 +142,8 @@ Every query the ORM executes comes through exactly one of two surfaces, and a qu
 - **`context.db`** — the secured surface. Access control, Field Visibility, hooks, stack-owned errors. This is where application code belongs.
 - **`context.unsafe`** — the **Unsafe surface**, under a name that states the bypass. It carries Prisma's typed SQL builder (`unsafe.sql`), its raw tag (`unsafe.raw`) and its collections (`unsafe.orm`) untouched, and executes plans through `unsafe.query(plan)` and `unsafe.execute(plan)`. No access filter, no Field Visibility, no `resolveOutput`, no hooks, and raw driver errors. It is the address for application-authored SQL and for a read that must be consumed incrementally; every use should say why. See ADR-0056.
 
+An application action callable over HTTP (and, in later work, MCP) is a **Procedure**: defined with the generated `procedure` builder from `.opensaas/procedures.ts`, kept in an app-owned registry rather than the config, and served by `createProcedureHandler` from `@opensaas/stack-core/procedures`. Its `run` gets `db`, `session`, `storage` and `plugins` only. See ADR-0086.
+
 The secured surface has **no SQL escape of any kind** — no raw fragment inside `where()`, no `sql()` terminal. Reaching for SQL means reaching for `context.unsafe`.
 
 ### Hooks System

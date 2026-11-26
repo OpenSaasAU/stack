@@ -13,6 +13,7 @@ import {
   writeContext,
   projectDependsOnNext,
   writePluginTypes,
+  writeProcedures,
   writeTables,
   resolveOutputPaths,
   stageWritePaths,
@@ -351,6 +352,7 @@ export async function generateCommand(
         { next: projectDependsOnNext(cwd) },
       )
       writePluginTypes(config, paths.pluginTypes)
+      writeProcedures(paths.procedures)
 
       bundleSpinner.succeed(chalk.green('Bundle generation complete'))
       console.log(chalk.green('✅ TypeScript types generated'))
@@ -358,6 +360,7 @@ export async function generateCommand(
       console.log(chalk.green('✅ Dependency-set table and constraint map generated'))
       console.log(chalk.green('✅ Context factory generated'))
       console.log(chalk.green('✅ Plugin types generated'))
+      console.log(chalk.green('✅ Procedure builder generated'))
 
       if (config.plugins && config.plugins.length > 0) {
         const afterGenSpinner = ora('Running plugin afterGenerate hooks...').start()
