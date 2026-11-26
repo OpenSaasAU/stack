@@ -623,8 +623,10 @@ label text, never an id.
 The Filter builder is one bar at the top of the list. Focusing it lists every
 filterable field. Typing suggests fields whose names match, values a field
 enumerates in config (`draft` offers "Status is Draft"), plain phrases such as
-`views > 5000`, `status is draft` or `status draft`, and always a free-text
-search for exactly what was typed. Suggestions come from each field's Filter
+`views > 5000`, `views at least 5000`, `status is draft` or `status draft`, and always a free-text
+search for exactly what was typed. The words a chip shows read the same as their
+symbols: "greater than", "at least", "less than" and "at most" are `>`, `>=`, `<`
+and `<=`. Suggestions come from each field's Filter
 spec and the config only, never from the list's data.
 
 Choosing a field goes straight to its values with the field's default

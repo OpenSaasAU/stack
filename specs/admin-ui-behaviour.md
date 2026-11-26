@@ -119,3 +119,34 @@ Agreed 2026-11-25. The grammar is documented in full under "Filtering and sortin
 | 3.16 | Every query is ANDed with the access filter.                                                                                                                                                        | `ListView.test.tsx`                                        |
 | 3.17 | A second "is" typed on a field replaces the first; a pair in the URL shows as two chips and matches nothing.                                                                                        | `FilterBuilder.test.tsx`                                   |
 | 3.18 | A token naming a field the session doesn't have shows its chip as "Text contains …" with the note "no field called …".                                                                              | `FilterBuilderUnknownField.test.tsx`                       |
+
+## Area 4: Filtering, using the Filter builder
+
+Agreed 2026-11-26, reviewed against the live component.
+
+| #    | Expectation                                                                                                                            | Covered by                                                                   |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| 4.1  | Focusing the bar lists every filterable field; typing suggests fields, enumerated values, plain phrases and always a free-text search. | `FilterBuilder.test.tsx`                                                     |
+| 4.2  | Suggestions come only from config and field specs, except access-scoped relationship records.                                          | `FilterBuilder.test.tsx`                                                     |
+| 4.3  | Picking a field stages its values with the default condition; the condition switches by click, Tab or Alt+← →.                         | `FilterBuilder.test.tsx`                                                     |
+| 4.4  | Conditions offered follow the field: comparisons, is not / does not contain, is any of, is empty / not empty, between.                 | `FilterBuilder.test.tsx`                                                     |
+| 4.5  | A value that doesn't fit is explained, not applied.                                                                                    | `FilterBuilder.test.tsx`, `FilterBuilderComparisonWords.test.tsx`            |
+| 4.6  | "Is any of" ticks update one chip and the list at once, the menu staying open.                                                         | `FilterBuilder.test.tsx`                                                     |
+| 4.7  | Every committed chip applies at once, in a transition, with no Apply button; text being typed never navigates.                         | `FilterBuilder.test.tsx`, `ListViewClient.test.tsx`                          |
+| 4.8  | Any part of a chip edits it in place; × removes it; Clear removes all.                                                                 | `FilterBuilder.test.tsx`                                                     |
+| 4.9  | A second "is" or "is any of" replaces the first; "is not" never does; pasted URL syntax becomes chips.                                 | `FilterBuilder.test.tsx`                                                     |
+| 4.10 | A value a field can't take, arriving from a URL, shows as text and is written back as read.                                            | `FilterBuilder.test.tsx`                                                     |
+| 4.11 | "and" joins chips into an OR group; "or" splits it.                                                                                    | `FilterBuilder.test.tsx`                                                     |
+| 4.12 | `or` and a space starts an alternative; Backspace backs out; a phrase starting with "or" is quoted.                                    | `FilterBuilder.test.tsx`                                                     |
+| 4.13 | "draft or priya" searches words by default and offers the group next.                                                                  | `FilterBuilder.test.tsx`                                                     |
+| 4.14 | An alternative is one filter; a between that can't be one `a..b` token is refused in a group, with a hint.                             | `FilterBuilder.test.tsx`                                                     |
+| 4.15 | Between reads `1000-5000`, `1000 to 5000`, `1000..5000`, the phrase form and negative values, and is written as one `a..b`.            | `FilterBuilder.test.tsx`                                                     |
+| 4.16 | Date presets write absolute dates on the day they're picked.                                                                           | `FilterBuilder.test.tsx`, `filterBuilderOptions.test.ts`                     |
+| 4.17 | Timestamps are written as ISO instants in the browser's offset, covering whole days.                                                   | `filterBuilderOptions.test.ts`                                               |
+| 4.18 | Typed numeric dates follow the locale's day/month order; impossible dates are explained.                                               | `filterBuilderOptions.test.ts`                                               |
+| 4.19 | Picking a to-one record writes `field:#id` with its label on the chip; typing without picking writes "contains".                       | `FilterBuilder.test.tsx`                                                     |
+| 4.20 | Ids in a URL resolve to labels for the viewer; an unreadable record shows its raw id.                                                  | `ListView.test.tsx`                                                          |
+| 4.21 | `/` focuses the bar; arrows, Enter, Backspace, ← → and Esc work as documented; counts are announced.                                   | `FilterBuilder.test.tsx`, `KeyboardAccess.test.tsx`                          |
+| 4.22 | Header and value funnels stage or add filters; a to-many count links to the other list filtered.                                       | `ListViewFilterFromTable.test.tsx`, `ListViewFilterFromTableServer.test.tsx` |
+| 4.23 | The words a chip shows ("greater than", "at least", "less than", "at most") are read as their symbols when typed.                      | `FilterBuilderComparisonWords.test.tsx`                                      |
+| 4.24 | A preset's plain date on a timestamp field resolves to the viewer's local day.                                                         | Pending implementation                                                       |

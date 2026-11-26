@@ -120,6 +120,8 @@ const COMPARISON_LABELS: Record<Exclude<FilterOperator, 'eq'>, string> = {
   lte: 'at most',
 }
 
+const COMPARISON_OPERATORS = ['gt', 'gte', 'lt', 'lte'] as const
+
 interface PhraseCondition {
   operator: FilterOperator
   negated: boolean
@@ -137,10 +139,17 @@ const PHRASE_CONDITIONS: Record<string, PhraseCondition> = {
   'does not contain': { operator: 'eq', negated: true },
   after: { operator: 'gt', negated: false },
   before: { operator: 'lt', negated: false },
+  ...Object.fromEntries(
+    COMPARISON_OPERATORS.map((operator) => [
+      COMPARISON_LABELS[operator],
+      { operator, negated: false },
+    ]),
+  ),
 }
 
 const SYMBOL_PHRASE = /^(.+?)\s*(>=|<=|!=|>|<|=)\s*(.+)$/
-const WORD_PHRASE = /^(.+?)\s+(is not|does not contain|is|contains|after|before)\s+(.+)$/i
+const WORD_PHRASE =
+  /^(.+?)\s+(is not|does not contain|greater than|less than|at least|at most|is|contains|after|before)\s+(.+)$/i
 const EMPTY_PHRASE = /^(.+?)\s+is\s+(not\s+)?empty$/i
 const BETWEEN_PHRASE = /^(.+?)\s+between\s+(.+)$/i
 const RANGE_WORDS = /\s+(?:to|and)\s+/i
