@@ -843,13 +843,19 @@ describe('createProcedureHandler', () => {
     expect(await titles()).toEqual(['Ada'])
   })
 
-  test('the context carries the secured surface, session, storage and plugins only', async () => {
+  test('the context carries the secured surface, session, storage, plugins and transaction only', async () => {
     await call('createPost', { title: 'Hello' }, { cookie: 'session=ada' })
     const context = seenContext
     expect(context).toBeDefined()
     if (context === undefined) return
-    expect(Object.keys(context).sort()).toEqual(['db', 'plugins', 'session', 'storage'])
-    for (const member of ['sudo', 'unsafe', 'withSession', 'serverAction', 'transaction']) {
+    expect(Object.keys(context).sort()).toEqual([
+      'db',
+      'plugins',
+      'session',
+      'storage',
+      'transaction',
+    ])
+    for (const member of ['sudo', 'unsafe', 'withSession', 'serverAction', 'advisoryLock']) {
       expect(member in context).toBe(false)
       expect(Reflect.get(context, member)).toBeUndefined()
     }

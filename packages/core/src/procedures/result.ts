@@ -25,22 +25,36 @@ export const RESERVED_FAILURE_CODES = [
 
 export type ReservedFailureCode = (typeof RESERVED_FAILURE_CODES)[number]
 
+const RESERVED: ReadonlySet<string> = new Set<string>(RESERVED_FAILURE_CODES)
+
+/** Whether `code` is one of the codes the stack owns. */
+export function isReservedFailureCode(code: string): code is ReservedFailureCode {
+  return RESERVED.has(code)
+}
+
 /**
- * A failed call. `fieldErrors` is present when the failure names fields: on
- * `INVALID_INPUT` and `VALIDATION`, and on a `CONFLICT` raised by a unique
- * constraint the generator emitted, where it names the fields that collided.
- * A `CONFLICT`'s keys are the list's field names, which need not be keys of
- * the procedure's input.
+ * A failed call. `code` is a reserved code or one the procedure declares.
+ * `fieldErrors` is present when the failure names fields: on `INVALID_INPUT`
+ * and `VALIDATION`, and on a `CONFLICT` raised by a unique constraint the
+ * generator emitted, where it names the fields that collided. A `CONFLICT`'s
+ * keys are the list's field names, which need not be keys of the procedure's
+ * input.
+ *
+ * `RETRY` says the transaction that lost a race was rolled back. It does not
+ * say that work outside the transaction was undone, and nothing retries the
+ * call automatically: the caller decides whether running it again is safe.
+ *
+ * @typeParam TCode - the failure codes the procedure declares.
  */
-export interface ProcedureFailure {
-  code: ReservedFailureCode
+export interface ProcedureFailure<TCode extends string = never> {
+  code: ReservedFailureCode | TCode
   message: string
   fieldErrors?: Record<string, string>
 }
 
 /** The result of calling a procedure, on every surface. */
-export type ProcedureResult<TData> =
-  { success: true; data: TData } | { success: false; error: ProcedureFailure }
+export type ProcedureResult<TData, TCode extends string = never> =
+  { success: true; data: TData } | { success: false; error: ProcedureFailure<TCode> }
 
 export const FAILURE_STATUS: Readonly<Record<ReservedFailureCode, number>> = {
   UNAUTHENTICATED: 401,

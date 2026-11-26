@@ -13,11 +13,17 @@ export {
   type ProcedureContext,
   type ProcedureDefinition,
   type ProcedureExposure,
+  type ProcedureFailures,
   type ProcedureHostContext,
+  type ProcedureHostTransactionContext,
   type ProcedureRegistry,
+  type ProcedureResultOf,
   type ProcedureRunArgs,
   type ProcedureSurface,
+  type ProcedureTransactionContext,
+  type TransactionContextOf,
 } from './procedure.js'
+export { ProcedureFailureError, type ProcedureFail } from './failures.js'
 export {
   createProcedureHandler,
   ProcedureHostError,

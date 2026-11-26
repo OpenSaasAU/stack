@@ -1,5 +1,5 @@
 import type * as z from 'zod'
-import { procedureContextOf } from './context-face.js'
+import { declaredFailureOf } from './failures.js'
 import type { Procedure, ProcedureHostContext } from './procedure.js'
 import { failure, failureFromError, type ProcedureResult } from './result.js'
 
@@ -65,14 +65,14 @@ function fieldErrorsOf(error: z.ZodError): Record<string, string> {
 /** The pipeline every host shares. See ADR-0086. */
 export async function runProcedure<C extends ProcedureHostContext>(
   call: ProcedureCall<C>,
-): Promise<ProcedureResult<unknown>> {
+): Promise<ProcedureResult<unknown, string>> {
   const { name, procedure } = call
   const internal = (error: unknown): void => call.onUnexpectedError(error, name)
 
   try {
-    const context = procedureContextOf(await call.context())
+    const context = await call.context()
 
-    const admitted = await procedure.access({ session: context.session, context })
+    const admitted = await procedure.access({ context })
     if (admitted !== true) {
       return failure(context.session === null ? 'UNAUTHENTICATED' : 'DENIED')
     }
@@ -84,7 +84,16 @@ export async function runProcedure<C extends ProcedureHostContext>(
       return failure('INVALID_INPUT', { fieldErrors: fieldErrorsOf(input.error) })
     }
 
-    const returned = await procedure.run({ input: input.data, context })
+    let returned: unknown
+    try {
+      returned = await procedure.run({ input: input.data, context })
+    } catch (error) {
+      const declared = declaredFailureOf(error)
+      if (declared !== undefined && Object.hasOwn(procedure.failures, declared.code)) {
+        return { success: false, error: declared }
+      }
+      throw error
+    }
 
     const output = await procedure.output.safeParseAsync(returned)
     if (!output.success) {
