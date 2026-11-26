@@ -197,14 +197,14 @@ test.describe('Authentication', () => {
       await signOut(page)
 
       await page.goBack()
-      await expect(page.locator('text=/access denied/i')).toBeVisible({ timeout: 5000 })
+      await expect(page).toHaveURL(/\/sign-in/, { timeout: 5000 })
       await expect(page.getByRole('button', { name: 'Sign Out' })).toBeHidden()
 
       await page.reload()
-      await expect(page.locator('text=/access denied/i')).toBeVisible({ timeout: 5000 })
+      await expect(page).toHaveURL(/\/sign-in/, { timeout: 5000 })
 
       await page.goto('/admin')
-      await expect(page.locator('text=/access denied/i')).toBeVisible({ timeout: 5000 })
+      await expect(page).toHaveURL(/\/sign-in/, { timeout: 5000 })
     })
 
     test('leaves the user able to sign back in', async ({ page }) => {
