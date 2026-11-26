@@ -51,8 +51,9 @@ export interface ProcedureRunArgs<C extends ProcedureHostContext, TInput> {
  * @typeParam TIn - the Zod schema the input is parsed with.
  * @typeParam TOut - the Zod schema the output is parsed with. A default
  *   `z.object` removes keys it does not declare before the result leaves the
- *   host, and a strict one refuses them; a schema that does neither
- *   (`z.looseObject`, `z.record`, `z.unknown`) returns whatever `run` returned.
+ *   host, and a strict one refuses them. A schema that does neither (`z.looseObject`, `.catchall()`,
+ *   `z.unknown`, a `z.record` of open-ended values) is refused when a host is
+ *   created.
  */
 export interface ProcedureDefinition<
   C extends ProcedureHostContext,

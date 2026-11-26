@@ -18,12 +18,16 @@ export {
   type ProcedureRunArgs,
   type ProcedureSurface,
 } from './procedure.js'
+export { createProcedureHandler, type ProcedureHandlerOptions, type SessionOf } from './http.js'
 export {
-  createProcedureHandler,
+  assertProcedureNamesAvailable,
+  assertProcedureRegistry,
+  assertProcedureSchemas,
   ProcedureHostError,
-  type ProcedureHandlerOptions,
-  type SessionOf,
-} from './http.js'
+  type ProcedureRegistryChecks,
+  type ProcedureSchemaSide,
+  type ProcedureSchemas,
+} from './validate.js'
 export {
   RESERVED_FAILURE_CODES,
   type ProcedureFailure,
