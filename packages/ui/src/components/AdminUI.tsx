@@ -1,6 +1,7 @@
 import * as React from 'react'
 import Link from 'next/link.js'
 import { notFound, redirect } from 'next/navigation.js'
+import { SaveNotice } from './SaveNotice.js'
 import { operationAvailable } from '../lib/operationAvailable.js'
 import { ADMIN_WORDMARK, Navigation, NavLink } from './Navigation.js'
 import { AdminShell } from './AdminShell.js'
@@ -296,6 +297,7 @@ export async function AdminUI({
       >
         <React.Suspense fallback={fallback}>{content}</React.Suspense>
       </AdminShell>
+      <SaveNotice />
     </>
   )
 }
