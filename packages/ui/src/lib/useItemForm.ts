@@ -419,6 +419,7 @@ export interface UseItemFormResult {
   errors: Record<string, string>
   generalError: string | null
   isPending: boolean
+  isDirty: boolean
   editableFields: Array<[string, SerializableFieldConfig]>
   handleFieldChange: (fieldName: string, value: unknown) => void
   handleSubmit: (e: ItemFormSubmitEvent) => void
@@ -455,6 +456,8 @@ export function useItemForm({
 }: UseItemFormOptions): UseItemFormResult {
   const [isPending, startTransition] = useTransition()
   const [formData, setFormData] = useState<Record<string, unknown>>(initialData)
+  const [savedData, setSavedData] = useState<Record<string, unknown>>(initialData)
+  const [hasInvalidDraft, setHasInvalidDraft] = useState(false)
   const [serverErrors, setServerErrors] = useState<Map<string, string>>(new Map())
   const [constraintErrors, setConstraintErrors] = useState<Map<string, string>>(new Map())
   const [bannerError, setBannerError] = useState<string | null>(null)
@@ -516,11 +519,13 @@ export function useItemForm({
       markInvalid: (fieldName, focusTarget, onRefused) => {
         const mark = { fieldName, focusTarget, onRefused }
         invalidMarks.current.add(mark)
+        setHasInvalidDraft(true)
         // The mark's own message takes over, and a parsing field may never call `onChange`.
         setServerErrors((prev) => withoutKey(prev, fieldName))
         setConstraintErrors((prev) => withoutKey(prev, fieldName))
         return () => {
           invalidMarks.current.delete(mark)
+          setHasInvalidDraft(invalidMarks.current.size > 0)
         }
       },
     }),
@@ -613,6 +618,7 @@ export function useItemForm({
             }
           }
           if (Object.keys(data).length === 0) {
+            setSavedData(formData)
             onUnchanged?.({ edgesCommitted })
             return
           }
@@ -624,7 +630,10 @@ export function useItemForm({
         if (result && result.success === false) {
           if (result.fieldErrors) setServerErrors(new Map(Object.entries(result.fieldErrors)))
           report(result.error || errorFallback)
-        } else if (mode === 'update') {
+        } else {
+          setSavedData(formData)
+        }
+        if (!(result && result.success === false) && mode === 'update') {
           scalarBaseline.current = { ...scalarBaseline.current, ...data }
         }
       } catch (error: unknown) {
@@ -639,6 +648,7 @@ export function useItemForm({
     errors,
     generalError: [bannerError, unshownErrors].filter(Boolean).join(' ') || null,
     isPending,
+    isDirty: hasInvalidDraft || !isEqualValue(formData, savedData),
     editableFields: getEditableFields(fields, mode),
     handleFieldChange,
     handleSubmit,

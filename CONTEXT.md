@@ -224,6 +224,16 @@ _Avoid_: auth user, principal, account
 An app-owned `'use server'` function that runs an authentication mutation (sign in, sign up, request/perform password reset, social sign-in) by calling better-auth's server API directly against the app's own auth instance. The pre-built auth forms invoke Auth actions passed as props — one prop per concern — instead of the browser calling the `/api/auth/*` endpoints; the auth instance therefore never leaves the server, and the package owns only the form components and the actions' contract types, never the actions themselves.
 _Avoid_: auth handler, form action, authClient call
 
+### Procedures
+
+**Procedure**:
+A named application action with a description, input and output schemas, an access rule, the surfaces that expose it, and a `run` function, defined with the generated builder and held in an application-owned registry, never in the config. Its name is its identity on every surface. A host resolves who is calling; nothing in a call supplies a session. `run` sees the secured surface, the session, storage and plugin services, and never `sudo`, the Unsafe surface or a way to change who is asking. A rule that must always hold still belongs in list access or a validate hook, because other surfaces can change the same list (ADR-0086).
+_Avoid_: server action (that is Next's mechanism a procedure can be called from), endpoint, RPC, command
+
+**Actor**:
+Who a session says is acting: a human, or an agent acting on behalf of a human. The host sets it on the session it builds and strips it from anything incoming; an absent actor is never read as human (ADR-0086).
+_Avoid_: principal, caller, user (a user is who an agent acts for, not the actor itself)
+
 ### Storage
 
 **Storage provider**:

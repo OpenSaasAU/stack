@@ -5,7 +5,7 @@ This example demonstrates how to integrate the Model Context Protocol (MCP) with
 ## Features
 
 - 🔐 **Stack Auth Integration** - Uses `@opensaas/stack-auth` with MCP plugin
-- 🛠️ **Automatic CRUD Tools** - Read, create, update, delete operations for all lists
+- 🛠️ **Generated Tools** - A query tool for every list; create, update and delete tools only on lists that enable them
 - 🎯 **Custom Tools** - Publish/unpublish post operations
 - 🔒 **Access Control** - All tools respect access control rules
 - 📊 **Per-List Configuration** - Enable/disable tools per list
@@ -66,14 +66,14 @@ mcp: {
     loginPage: '/sign-in',
     scopes: ['openid', 'profile', 'email']
   },
-  defaultTools: {
-    read: true,
-    create: true,
-    update: true,
-    delete: true
-  }
+  // The app-wide default covers the query tool only
+  defaultTools: { read: true }
 }
 ```
+
+Enabling MCP gives each list a query tool. It gives no list a create, update or
+delete tool: a list enables each one it wants in its own `mcp.tools`. Setting
+`create`, `update` or `delete` under `mcp.defaultTools` is refused at startup.
 
 ### List-Level Configuration
 
@@ -81,8 +81,8 @@ mcp: {
 Post: list({
   fields: {/* ... */},
   mcp: {
+    // Each write tool is enabled deliberately; one left out stays off
     tools: {
-      read: true,
       create: true,
       update: true,
       delete: true,
@@ -163,11 +163,8 @@ Post: list({
 ### User Tools
 
 - **list_user_query** - Query users
-- **list_user_create** - Create a new user
-- **list_user_update** - Update user information
-- **list_user_delete** - Delete a user (enabled by this example's `defaultTools`)
 
-The auth-injected lists (Session, Account, Verification) also get CRUD tools; all of them are governed by the access control rules in `opensaas.config.ts`. Disable tools per list with `mcp: { enabled: false }` or `mcp: { tools: { delete: false } }`.
+The User list enables no write tool, so an agent cannot create, update or delete users. The auth-injected lists (Session, Account, Verification) get a query tool the same way, governed by the access control rules in `opensaas.config.ts`. Turn a list's query tool off with `mcp: { tools: { read: false } }`, or hide the list from MCP with `mcp: { enabled: false }`.
 
 ## Claude Desktop Integration
 

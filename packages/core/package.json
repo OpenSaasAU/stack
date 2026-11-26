@@ -37,6 +37,10 @@
       "types": "./dist/mcp/index.d.ts",
       "default": "./dist/mcp/index.js"
     },
+    "./procedures": {
+      "types": "./dist/procedures/index.d.ts",
+      "default": "./dist/procedures/index.js"
+    },
     "./db-client": {
       "types": "./dist/db/client.d.ts",
       "default": "./dist/db/client.js"

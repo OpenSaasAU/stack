@@ -142,6 +142,8 @@ Every query the ORM executes comes through exactly one of two surfaces, and a qu
 - **`context.db`** — the secured surface. Access control, Field Visibility, hooks, stack-owned errors. This is where application code belongs.
 - **`context.unsafe`** — the **Unsafe surface**, under a name that states the bypass. It carries Prisma's typed SQL builder (`unsafe.sql`), its raw tag (`unsafe.raw`) and its collections (`unsafe.orm`) untouched, and executes plans through `unsafe.query(plan)` and `unsafe.execute(plan)`. No access filter, no Field Visibility, no `resolveOutput`, no hooks, and raw driver errors. It is the address for application-authored SQL and for a read that must be consumed incrementally; every use should say why. See ADR-0056.
 
+An application action callable over HTTP (and, in later work, MCP) is a **Procedure**: defined with the generated `procedure` builder from `.opensaas/procedures.ts`, kept in an app-owned registry rather than the config, and served by `createProcedureHandler` from `@opensaas/stack-core/procedures`. Its `run` gets `db`, `session`, `storage` and `plugins` only. See ADR-0086.
+
 The secured surface has **no SQL escape of any kind** — no raw fragment inside `where()`, no `sql()` terminal. Reaching for SQL means reaching for `context.unsafe`.
 
 ### Hooks System
@@ -582,8 +584,8 @@ The stack provides Model Context Protocol server integration through `@opensaas/
 
 **How it works:**
 
-1. Enable MCP in config with `mcp: { enabled: true }` (the runtime reads `enabled`/`basePath`/`defaultTools`)
-2. Core runtime derives CRUD tools for each list (query, create, update, delete) at request time
+1. Enable MCP in config with `mcp: { enabled: true }` (the runtime reads `enabled`/`basePath`/`defaultTools`/`scopes`)
+2. Core runtime derives a query tool for each list at request time. Generated `create`/`update`/`delete` tools are **off** until a list enables each one with `mcp: { tools: { create: true } }`; `mcp.defaultTools` takes `read` only, and a config setting a write key there, even to `false`, is refused naming the per-list key
 3. OAuth with AI assistants is wired through Better-auth's `mcp` plugin (`authPlugin({ betterAuthPlugins: [jwt(), mcp({ loginPage: '/sign-in', consentPage: '/consent', resource: '<canonical MCP URL>' })] })`, imported from `@opensaas/stack-auth/plugins` — the plugin itself comes from the optional `@better-auth/mcp` peer since better-auth 1.7 split it out of `better-auth/plugins`, and requires `jwt()` from `better-auth/plugins` registered alongside it) and the `createBetterAuthMcpAdapter({ resource, baseURL })` session provider, which verifies the bearer JWT against the JWKS
 4. All tools respect existing access control rules, and the advertised vocabulary **omits** what a row-independent field rule denies this session — on reads and on writes alike, so a field a session can never see is not offered and asking for it anyway is refused exactly as an unknown name is (ADR-0053)
 5. A `where` argument is the Where vocabulary, the same grammar `context.db` takes

@@ -11,6 +11,7 @@ import { writeContext } from '../src/generator/context.js'
 import { writeContractModule } from '../src/generator/contract-module.js'
 import { writeLists } from '../src/generator/lists.js'
 import { writePluginTypes } from '../src/generator/plugin-types.js'
+import { writeProcedures } from '../src/generator/procedures.js'
 import { writePrismaConfig } from '../src/generator/prisma-config.js'
 import { writeTables } from '../src/generator/tables.js'
 import { writeTypes } from '../src/generator/types.js'
@@ -21,9 +22,10 @@ import { writeTypes } from '../src/generator/types.js'
  * The equivalence suite type-checks `prisma/contract.ts` alone, which is why a
  * `.opensaas/types.ts` importing a Prisma client tree the pipeline no longer
  * writes could sit on green CI (#1134 review). This runs `tsc --noEmit` over
- * every one of the seven files `opensaas generate` writes for the contract
+ * every one of the eight files `opensaas generate` writes for the contract
  * fixture — `prisma/contract.ts`, `prisma.config.ts`, and the bundle's
- * `types.ts`, `lists.ts`, `context.ts`, `plugin-types.ts`, `tables.ts` —
+ * `types.ts`, `lists.ts`, `context.ts`, `plugin-types.ts`, `procedures.ts`,
+ * `tables.ts` —
  * against the committed `prisma/contract.d.ts` and `contract.json` they
  * resolve into.
  *
@@ -113,6 +115,7 @@ describe('the generated bundle type-checks', () => {
     })
     writePluginTypes(config, paths.pluginTypes)
     writeTables(generatedTables, paths.tables)
+    writeProcedures(paths.procedures)
   }, 120_000)
 
   test('writes every file generate writes', () => {
@@ -120,6 +123,7 @@ describe('the generated bundle type-checks', () => {
       'context.ts',
       'lists.ts',
       'plugin-types.ts',
+      'procedures.ts',
       'tables.ts',
       'types.ts',
     ])
@@ -128,11 +132,11 @@ describe('the generated bundle type-checks', () => {
   })
 
   /**
-   * The tsconfig above has to reach all six. `prisma.config.ts` sits at the
+   * The tsconfig above has to reach all seven. `prisma.config.ts` sits at the
    * project root rather than under `.opensaas/` or `prisma/`, and went
    * unchecked for exactly that reason (#1190 review).
    */
-  test('the tsconfig include covers all six', () => {
+  test('the tsconfig include covers all seven', () => {
     fs.writeFileSync(
       path.join(projectDir, 'tsconfig.json'),
       JSON.stringify(TSCONFIG, null, 2),
@@ -153,6 +157,7 @@ describe('the generated bundle type-checks', () => {
       path.join(projectDir, '.opensaas', 'lists.ts'),
       path.join(projectDir, '.opensaas', 'context.ts'),
       path.join(projectDir, '.opensaas', 'plugin-types.ts'),
+      path.join(projectDir, '.opensaas', 'procedures.ts'),
     ]) {
       expect(listed, generated).toContain(generated)
     }

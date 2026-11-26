@@ -4,22 +4,13 @@ import { getContext, config } from '@/.opensaas/context'
 import { getSession } from '@/lib/auth'
 import { signOutAction } from '@/lib/actions/auth'
 import { redirect } from 'next/navigation'
-import { getUrlKey } from '@opensaas/stack-core'
 
 // User-defined wrapper function for server actions
 async function serverAction(props: ServerActionInput) {
   'use server'
   const session = await getSession()
   const context = await getContext(session ?? undefined)
-  const result = await context.serverAction(props)
-
-  // Redirect after successful operations
-  if (result && typeof result === 'object' && 'success' in result && result.success) {
-    const listUrl = `/admin/${getUrlKey(props.listKey)}`
-    redirect(listUrl)
-  }
-
-  return result
+  return await context.serverAction(props)
 }
 
 interface AdminPageProps {
@@ -35,16 +26,7 @@ export default async function AdminPage({ params, searchParams }: AdminPageProps
   const resolvedParams = await params
   const resolvedSearchParams = await searchParams
   const session = await getSession()
-  if (!session) {
-    return (
-      <div className="p-8">
-        <div className="bg-destructive/10 border border-destructive text-destructive rounded-lg p-6">
-          <h2 className="text-lg font-semibold mb-2">Access Denied</h2>
-          <p>You must be logged in to access the admin interface.</p>
-        </div>
-      </div>
-    )
-  }
+  if (!session) redirect('/sign-in')
   return (
     <AdminUI
       context={await getContext(session)}

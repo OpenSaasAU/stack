@@ -21,6 +21,7 @@ The package exposes a curated surface across several import paths. Use the narro
 - **`@opensaas/stack-core/db-client`** — `resolveRuntimeConnection`, which the generated bundle calls to turn `db.client` into the ORM client's connection options. Server-only: it reaches `pg`, so a `'use client'` module never imports it. `@opensaas/stack-core/client` is a deprecated alias of it, removed at the next major (issue #2432).
 - **`@opensaas/stack-core/client-safe`** — the pure helpers a `'use client'` module may import: `getUrlKey`, `getListKeyFromUrl`, `resolveListKeyFromUrl` and the filter-query helpers (`parseFilterQuery`, `serializeFilterQuery`, `recordIdFilterToken`, …). The root re-exports the same bindings, but importing the root from a client module pulls the server graph into the bundle, which `next build --webpack` rejects (issue #2430). `pnpm check:client-server-graph` fails when a client module reaches server-only code.
 - **`@opensaas/stack-core/mcp`** — MCP runtime handlers.
+- **`@opensaas/stack-core/procedures`** — `createProcedureBuilder` (which the generated `.opensaas/procedures.ts` binds to the app's `Context`) and `createProcedureHandler`, a web-standard `Request` → `Response` host serving `POST <basePath>/<name>`. A **Procedure** requires a description, input and output Zod schemas, an access rule and a non-empty `expose`; `run` receives a runtime-narrowed context (`db`, `session`, `storage`, `plugins`, nothing else). The registry is the app's own module, never the config. See ADR-0086 and the "Procedure" glossary entry.
 - **`@opensaas/stack-core/internal`** — `@internal` plumbing shared between the `@opensaas/*` packages and generated `.opensaas/` code. **No semver guarantees**; application code should never import from here.
 
 `Session` deliberately stays on the root entry point because it is the module-augmentation target (`declare module '@opensaas/stack-core'`).
@@ -572,6 +573,7 @@ A `where` naming a column the list does not have, a `select` naming a relation, 
 
 - Core provides an auth-agnostic MCP runtime via `@opensaas/stack-core/mcp` (`createMcpHandlers`)
 - The handler reads config to derive tools at request time (CRUD per list, list `mcp.customTools`, plugin-registered tools)
+- Generated write tools are opt-in per list: `create`, `update` and `delete` are listed and callable only where that list's `mcp.tools` sets them `true`. `mcp.defaultTools` keeps only `read`; `assertNoDefaultWriteTools` (`src/config/mcp-default-tools.ts`) refuses a write key there from both `config()` and `createMcpHandlers`
 - Every tool goes through `context.db`, so access control, validation and hooks apply with no parallel path
 - Custom tools may declare a Zod `inputSchema` — validated on `tools/call`, converted to JSON Schema for `tools/list` — or a plain JSON Schema object
 - Auth adapters (like `@opensaas/stack-auth/mcp`) provide session integration; custom session fields pass through to access control
