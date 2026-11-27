@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
 import * as z from 'zod'
 import type { OpenSaasConfig } from '../config/types.js'
-import { text } from '../fields/index.js'
+import { text, virtual } from '../fields/index.js'
 import { createMcpHandlers, mcpContextSession, McpSessionError } from '../mcp/index.js'
 import type { McpSession } from '../mcp/index.js'
 import { createProcedureHandler } from '../procedures/http.js'
@@ -17,6 +17,23 @@ const ORIGIN = 'http://app.test'
 type Ctx = StackContext<AccessControlledDB>
 
 let seen: Array<{ where: string; actor: Actor | undefined }> = []
+let forgeries: Array<{ where: string; threw: boolean }> = []
+let guardedRuleActors: Array<Actor | undefined> = []
+let nestedCreates: Array<Record<string, unknown> | null> = []
+
+const forgedSession: Session = {
+  userId: 'ada',
+  actor: { kind: 'human', userId: 'ada', via: 'web' },
+}
+
+function forge(where: string, context: { session: Session | null }): void {
+  try {
+    context.session = forgedSession
+    forgeries.push({ where, threw: false })
+  } catch (error) {
+    forgeries.push({ where, threw: error instanceof TypeError })
+  }
+}
 
 function schemaConfig(): OpenSaasConfig {
   return {
@@ -69,6 +86,40 @@ function schemaConfig(): OpenSaasConfig {
           },
         },
         mcp: { tools: { create: true } },
+      },
+      Forger: {
+        fields: {
+          label: text(),
+          guarded: text({
+            access: {
+              create: ({ session, context }) => {
+                guardedRuleActors.push(session?.actor)
+                forge('field rule', context)
+                return context.session?.actor?.kind === 'human'
+              },
+            },
+          }),
+          shown: virtual({
+            type: 'string',
+            hooks: {
+              resolveOutput: ({ context }) => {
+                forge('resolveOutput', context)
+                return 'shown'
+              },
+            },
+          }),
+        },
+        access: { operation: { query: () => true, create: () => true } },
+        hooks: {
+          resolveInput: async ({ resolvedData, context }) => {
+            forge('resolveInput', context)
+            nestedCreates.push(await context.db.HumanOnly.create({ data: { label: 'nested' } }))
+            return resolvedData
+          },
+          afterTransaction: async ({ context }) => {
+            forge('afterTransaction', context)
+          },
+        },
       },
     },
   }
@@ -155,6 +206,9 @@ describe('the actor on a host-built session', () => {
   beforeEach(async () => {
     await database.truncate()
     seen = []
+    forgeries = []
+    guardedRuleActors = []
+    nestedCreates = []
     built = undefined
     onUnexpectedError.mockClear()
   })
@@ -404,6 +458,8 @@ describe('the actor on a host-built session', () => {
         'clientId',
       ],
       ['no user id', { clientId: 'claude-desktop' }, 'userId'],
+      ['an empty user id', { userId: '', clientId: 'claude-desktop' }, 'userId'],
+      ['a numeric user id', { userId: 7, clientId: 'claude-desktop' }, 'userId'],
     ])(
       'a session with %s is a server misconfiguration: 500, and the log names the field',
       async (_label, resolved, field) => {
@@ -509,6 +565,7 @@ describe('the actor on a host-built session', () => {
       ['no client id', { userId: 'ada' }, ['clientId']],
       ['no user id', { clientId: 'claude-desktop' }, ['userId']],
       ['neither', {}, ['clientId', 'userId']],
+      ['a numeric user id', { userId: 7, clientId: 'claude-desktop' }, ['userId']],
     ])('a session with %s is refused', (_label, session, missing) => {
       const build = () => mcpContextSession(z.custom<McpSession>().parse(session))
 
@@ -626,6 +683,55 @@ describe('the actor on a host-built session', () => {
       expect(Reflect.set(agent.session?.actor ?? {}, 'kind', 'human')).toBe(false)
       expect(agent.session?.actor?.kind).toBe('agent')
       expect(Object.isFrozen(agent.session?.actor)).toBe(true)
+    })
+
+    test('cannot be forged by a hook, a field rule or resolveOutput rebinding context.session', async () => {
+      const context = database.context({ userId: 'ada' })
+
+      await expect(
+        context.db.Forger.create({ data: { label: 'guarded', guarded: 'g' } }),
+      ).rejects.toThrow('Cannot create "guarded": field-level access denied')
+      const stored = await context.db.Forger.create({ data: { label: 'stored' } })
+      const read = await context.db.Forger.where({ label: { equals: 'stored' } }).first()
+
+      expect(stored).toMatchObject({ label: 'stored', shown: 'shown' })
+      expect(read).toMatchObject({ label: 'stored', shown: 'shown' })
+      expect(new Set(forgeries.map((entry) => entry.where))).toEqual(
+        new Set(['resolveInput', 'field rule', 'resolveOutput', 'afterTransaction']),
+      )
+      for (const entry of forgeries) expect(entry).toEqual({ where: entry.where, threw: true })
+      expect(guardedRuleActors).toEqual([undefined])
+      expect(nestedCreates).toEqual([null, null])
+      expect(await database.context().sudo().db.HumanOnly.all()).toEqual([])
+      expect(context.session?.actor).toBeUndefined()
+    })
+
+    test('cannot be forged by rebinding tx.session inside a transaction', async () => {
+      const context = database.context({ userId: 'ada' })
+
+      await context.transaction(async (tx) => {
+        forge('tx', tx)
+        forge('tx.sudo()', tx.sudo())
+        forge('tx.withSession()', tx.withSession({ userId: 'ada' }))
+        await tx.transaction(async (inner) => {
+          forge('nested tx', inner)
+        })
+        await tx.db.Forger.create({ data: { label: 'in tx' } })
+        expect(tx.session?.actor).toBeUndefined()
+      })
+
+      expect(forgeries.map((entry) => entry.where)).toEqual([
+        'tx',
+        'tx.sudo()',
+        'tx.withSession()',
+        'nested tx',
+        'resolveInput',
+        'resolveOutput',
+        'afterTransaction',
+      ])
+      for (const entry of forgeries) expect(entry).toEqual({ where: entry.where, threw: true })
+      expect(nestedCreates).toEqual([null])
+      expect(await database.context().sudo().db.HumanOnly.all()).toEqual([])
     })
 
     test('leaves the session object the caller passed as it was', () => {

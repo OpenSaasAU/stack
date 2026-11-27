@@ -372,7 +372,7 @@ const context = await getContext({
 context.session?.actor // undefined: no host created this actor
 ```
 
-The same holds through `withSession()`, `createTestContext()`, `sudo()` and `context.transaction()`. The actor itself is frozen, and `context.session` is a frozen shallow copy of the session you passed, so an actor cannot be added to it or swapped on it afterwards; assigning to `context.session.actor` throws. Your own session object is not frozen or changed. It is the same actor object in access rules, in hooks and inside `context.transaction()`. An anonymous caller is still a `null` session, with no actor to read.
+The same holds through `withSession()`, `createTestContext()`, `sudo()` and `context.transaction()`. The actor itself is frozen, and `context.session` is a frozen shallow copy of the session you passed, so an actor cannot be added to it or swapped on it afterwards; assigning to `context.session.actor` throws. Rebinding `context.session` itself throws too, on every context, including the ones a hook, an access rule or a `context.transaction()` callback receives. Your own session object is not frozen or changed. Because the copy keeps the prototype but never runs the constructor, a session must be plain data, or a class with no private (`#`) fields and no methods that write to it; a `Map`, `Date` or array session does not survive it. It is the same actor object in access rules, in hooks and inside `context.transaction()`. An anonymous caller is still a `null` session, with no actor to read.
 
 The human actor's `userId` and the agent actor's `onBehalfOf` are the session's `userId` as given: a string, or a number when your user list uses `db.idField: 'int autoincrement'`.
 

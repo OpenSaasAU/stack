@@ -93,3 +93,9 @@ export function sealSession<S extends object>(session: S): S {
   sealedSessions.add(copy)
   return copy
 }
+
+/** `context`, with `session` made non-writable and non-configurable in place. */
+export function bindSessionReadOnly<T extends { session: unknown }>(context: T): T {
+  Object.defineProperty(context, 'session', { writable: false, configurable: false })
+  return context
+}

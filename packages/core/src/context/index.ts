@@ -1,7 +1,7 @@
 import type { OpenSaasConfig, ListConfig } from '../config/types.js'
 import type { Session, AccessContext, AccessControlledDB, StorageUtils } from '../access/index.js'
 import { checkAccess } from '../access/index.js'
-import { sealSession } from '../access/actor.js'
+import { bindSessionReadOnly, sealSession } from '../access/actor.js'
 import { ValidationError, DatabaseError, isPlainObject } from '../hooks/index.js'
 import { databaseErrorMessage, normalizeDatabaseError } from '../lib/prisma-errors.js'
 import { isClientSafeError } from '../lib/client-safe-error.js'
@@ -610,7 +610,7 @@ function transactionFace(
       fn: (txContext: StackTransactionContext<AccessControlledDB>) => Promise<T>,
     ): Promise<T> => joinNested(fn, face, owner),
   }
-  return face
+  return bindSessionReadOnly(face)
 }
 
 // A database failure reaches the client as the stack's own message (ADR-0042),
@@ -1530,9 +1530,8 @@ export function getContext<TConfig extends OpenSaasConfig>(
     _isSudo,
     [ENGINE_FACE]: context,
   }
-  Object.defineProperty(context, 'session', { writable: false, configurable: false })
-  Object.defineProperty(returned, 'session', { writable: false, configurable: false })
-  return returned
+  bindSessionReadOnly(context)
+  return bindSessionReadOnly(returned)
 }
 
 function vocabularyDerivedFrom(

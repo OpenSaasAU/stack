@@ -14,6 +14,7 @@ import {
 } from '../access/rule-item.js'
 import { RESOLVE_CHAIN_MAX_LENGTH } from '../access/depth-limits.js'
 import { ResolveOutputCycleError } from '../access/errors.js'
+import { bindSessionReadOnly } from '../access/actor.js'
 import { withDerivedSessionVocabulary } from '../access/session-vocabulary.js'
 import { getListDependencies } from '../access/declared-dependencies.js'
 import {
@@ -597,6 +598,7 @@ function deriveResolveOutputContext(
     ...context,
     _resolveOutputChain: [...context._resolveOutputChain, link],
   }
+  bindSessionReadOnly(derived)
   derived.db = binding.rebindDb(derived)
   withDerivedSessionVocabulary(derived, context, binding.config)
   return derived

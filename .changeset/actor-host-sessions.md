@@ -20,7 +20,9 @@ const trustedAgent: AccessControl = ({ session }) =>
 
 An agent's session keeps the user's `userId`, so rules that scope by it still limit the agent to what that user can do. A session no host built (`getContext(session)` in a server component, `withSession`, a test context) has no actor, and an absent actor is never human: check `=== 'human'` or `=== 'agent'`, never `!== 'agent'`. The actor is the same frozen object in access rules, hooks, `sudo()` and `context.transaction()`.
 
-`context.session` is now a frozen shallow copy of the session you pass, so assigning to it (`context.session.role = …`) throws. The object you passed is not frozen or changed.
+`context.session` is now a frozen shallow copy of the session you pass, so assigning to it (`context.session.role = …`) throws. The object you passed is not frozen or changed. Rebinding it (`context.session = …`) throws `TypeError` on every context, including the ones hooks, access rules and `context.transaction()` callbacks receive.
+
+A session must therefore be plain data, or an instance of a class with no private (`#`) fields and no methods that write to it. The copy keeps the prototype but never runs the constructor, so a `Map`, `Date` or array session, or a class reading private state, no longer works.
 
 **This can break an existing custom MCP session provider.** `McpSession` now requires `clientId`, the OAuth client id the provider verified. A provider that returns a session without one fails to compile, and at runtime every request it authenticates is answered `500`, with the missing field named in the server log (`401` stays the answer for no session). Return the client the credential was issued to, read from the part the authorization server controls and never from a custom claim:
 

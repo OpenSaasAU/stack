@@ -36,6 +36,10 @@ import type { TransactionRegistry } from './transaction-registry.js'
  *   return session?.role === 'admin'  // ✅ Autocomplete works
  * }
  * ```
+ *
+ * A context carries a frozen copy of the session it was given, prototype kept
+ * and constructor not run, so a session must be plain data or a class with no
+ * private (`#`) fields and no methods that write to it.
  */
 export interface Session {
   /**

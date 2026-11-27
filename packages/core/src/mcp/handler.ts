@@ -10,7 +10,7 @@ import { pascalToCamel } from '../lib/case-utils.js'
 import { isClientSafeError } from '../lib/client-safe-error.js'
 import { McpToolError } from './tool-error.js'
 import type { McpSession, McpSessionProvider } from './types.js'
-import { agentActor, isActorClientId, isActorUserId, type AgentActor } from '../access/actor.js'
+import { agentActor, isActorClientId, type AgentActor } from '../access/actor.js'
 import { controlFlowPredicateOf, decideAdvertisement } from '../access/decide-advertisement.js'
 import { mcpAdvertisement } from './advertise.js'
 import { McpWriteRefusedError, assertWritableData, generateFieldSchemas } from './field-schema.js'
@@ -63,7 +63,7 @@ export class McpSessionError extends Error {
 function missingAgentFields(session: McpSession): ('clientId' | 'userId')[] {
   const missing: ('clientId' | 'userId')[] = []
   if (!isActorClientId(session.clientId)) missing.push('clientId')
-  if (!isActorUserId(session.userId)) missing.push('userId')
+  if (typeof session.userId !== 'string' || session.userId === '') missing.push('userId')
   return missing
 }
 

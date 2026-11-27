@@ -25,6 +25,7 @@ import {
 } from '../secured/write.js'
 import { readWrittenRow, writeReturnReadsRelations } from '../secured/read.js'
 import { visibleWrittenRow, type VisibleRow } from '../secured/field-visibility.js'
+import { bindSessionReadOnly } from '../access/actor.js'
 import { hookPipeline } from './hook-pipeline.js'
 import {
   lowerRelationInput,
@@ -376,6 +377,7 @@ function bindContextToTransaction(
     _config: config,
     _baseContext: context._baseContext ?? context,
   }
+  bindSessionReadOnly(txContext)
   // Rebuild `db` against `tx`, referencing `txContext` itself so hooks reached
   // through it see the transactional context.
   txContext.db = buildDbDelegate(config, tx, txContext)
@@ -414,6 +416,7 @@ function resolveAfterTransactionContext(
     _baseContext: undefined,
     _config: config,
   }
+  bindSessionReadOnly(afterTransactionContext)
   afterTransactionContext.db = buildDbDelegate(config, base.ormHandle, afterTransactionContext)
   return withSingletonProbe(
     invalidatesSessionVocabularyOf(
@@ -504,7 +507,7 @@ async function runWriteInTransaction(
   const data = await filterWritableFields(splitData, writeOp, {
     session: context.session,
     item: originalItem,
-    context: { ...context, _isSudo: context._isSudo },
+    context: bindSessionReadOnly({ ...context, _isSudo: context._isSudo }),
     inputData: callerInput,
     listName,
     config,
