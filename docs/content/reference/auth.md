@@ -222,7 +222,7 @@ authPlugin({
 })
 ```
 
-**Include `userId` if the app serves procedures.** `createProcedureHandler` builds each signed-in session's human actor from `session.userId`, so a session resolved without one fails every cookie-authenticated procedure call with `INTERNAL` (500), and the error reported to `onUnexpectedError` names this setting. Nothing refuses the config at startup, because an app that serves no procedures does not need it. `userId` may be a string or a number.
+**Include `userId` if the app serves procedures.** `createProcedureHandler` and `createServerCaller` build each signed-in session's human actor from `session.userId`, so a session resolved without one fails every cookie-authenticated procedure call with `INTERNAL` (500 over HTTP), and the error reported to `onUnexpectedError` names this setting; the in-process caller's `context()` rejects with it. Nothing refuses the config at startup, because an app that serves no procedures does not need it. `userId` may be a string or a number.
 
 **`actor` is reserved.** A `sessionFields` entry named `actor` is refused when the auth instance is created, and again by `getSessionFromAuth`: the stack's hosts set `session.actor` themselves.
 

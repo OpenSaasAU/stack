@@ -3,9 +3,11 @@ import { config } from '../config/index.js'
 import { getContext } from './index.js'
 import { unavailableUnsafeSurface } from '../unsafe.js'
 import type { StorageUtils } from '../access/types.js'
+import { controlFlowPredicateOf } from '../access/decide-advertisement.js'
 import {
   engineContextOf,
   EngineContextUnavailableError,
+  engineFaceOf,
   type AnyStackContext,
 } from './engine-context.js'
 
@@ -63,6 +65,38 @@ describe('engineContextOf', () => {
       _isSudo: false,
     }
     expect(() => engineContextOf(assembled)).toThrow(EngineContextUnavailableError)
+  })
+})
+
+describe('engineFaceOf', () => {
+  const fallback = {
+    db: { provider: 'postgresql' as const },
+    lists: {},
+    isFrameworkControlFlow: () => true,
+  }
+
+  it('is the engine face of a context the engine built, and its config answers for control flow', async () => {
+    const appConfig = await config({
+      db: { provider: 'postgresql' },
+      lists: {},
+      isFrameworkControlFlow: (thrown) => thrown === 'app',
+    })
+    const context = getContext(appConfig, ormHandle, { userId: 'u1' }, storage)
+    const engine = engineFaceOf(context)
+    expect(engine).toBe(engineContextOf(context))
+    if (engine === undefined) throw new Error('expected an engine face')
+    expect(controlFlowPredicateOf(engine, fallback)?.('app')).toBe(true)
+  })
+
+  it('returns a value already on the engine face as it is', async () => {
+    const engine = engineContextOf(await engineBuiltContext())
+    expect(engineFaceOf(engine)).toBe(engine)
+  })
+
+  it('is undefined for an object the engine did not build, so a caller falls back to its own config', () => {
+    const assembled = { db: {}, session: null, storage, plugins: {} }
+    expect(engineFaceOf(assembled)).toBeUndefined()
+    expect(engineFaceOf({})).toBeUndefined()
   })
 })
 
