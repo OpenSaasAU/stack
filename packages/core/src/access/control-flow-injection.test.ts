@@ -313,7 +313,11 @@ describe('MCP', () => {
   function toolsList(contextOf: (session?: Session) => StackContext) {
     const { POST } = createMcpHandlers({
       config: schemaConfig(),
-      getSession: async () => ({ userId: 'author-1', scopes: ['read', 'write'] }),
+      getSession: async () => ({
+        userId: 'author-1',
+        clientId: 'client-1',
+        scopes: ['read', 'write'],
+      }),
       getContext: async (session) => contextOf(session ?? undefined),
     })
     return POST(

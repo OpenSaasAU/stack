@@ -130,6 +130,27 @@ describe('sessionFields fill-in from the user row (#1649)', () => {
   )
 
   it(
+    'throws at startup for a sessionFields entry named actor, even when the user list has that field',
+    async () => {
+      const reserved = await defineConfig({
+        plugins: [
+          authPlugin({
+            emailAndPassword: { enabled: true },
+            sessionFields: ['userId', 'actor'],
+            extendUserList: { fields: { actor: text() } },
+          }),
+        ],
+        db: { provider: 'postgresql' },
+        lists: {},
+      })
+      await expect(buildBetterAuthOptions(reserved, database.context())).rejects.toThrow(
+        /"actor" is reserved/,
+      )
+    },
+    BOOT,
+  )
+
+  it(
     'accepts a better-auth session field that is not a user field',
     async () => {
       const ok = await buildConfig(['userId', 'token', 'ipAddress'])

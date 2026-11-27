@@ -139,7 +139,11 @@ describe('a read rule on a relation counted over MCP', () => {
   async function query(fields: Record<string, unknown>): Promise<Record<string, unknown>[]> {
     const handlers = createMcpHandlers({
       config,
-      getSession: async () => ({ userId: 'user-123', scopes: ['read', 'write'] }),
+      getSession: async () => ({
+        userId: 'user-123',
+        clientId: 'client-1',
+        scopes: ['read', 'write'],
+      }),
       getContext: contextFor(),
     })
     const response = await handlers.POST(

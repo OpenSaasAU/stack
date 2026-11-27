@@ -1,3 +1,4 @@
+import { humanActor, isActorUserId, sessionWithActor } from '../access/actor.js'
 import type { OpenSaasConfig } from '../config/types.js'
 import {
   isProcedure,
@@ -34,6 +35,13 @@ export interface ProcedureHandlerOptions<C extends ProcedureHostContext> {
    * credential is anonymous without asking. Resolving `null` or `undefined`
    * means no session; resolving anything else that is not an object fails
    * the call with `INTERNAL` and is reported to `onUnexpectedError`.
+   *
+   * The host sets `session.actor` to a human actor carrying the session's
+   * `userId` as given, in place of any `actor` the resolved session holds.
+   * `userId` must be an own property of the session holding a non-empty
+   * string or a finite number; otherwise the call fails with `INTERNAL` and
+   * the cause is reported to `onUnexpectedError`. The session handed to
+   * `getContext` is a copy that keeps the resolved object's prototype.
    */
   getSession: (request: Request) => Promise<SessionOf<C> | null | undefined>
   /**
@@ -181,7 +189,8 @@ function parseJson(text: string): RawInput {
  * anonymous and the procedure's access rule decides; a request with a cookie
  * must come from an allowed origin and is resolved by `getSession`; a request
  * carrying an `Authorization` header is refused, with or without a cookie.
- * Nothing in the body can supply a session.
+ * Nothing in the body can supply a session. A resolved session carries a human
+ * `actor`, which the host sets itself.
  *
  * A call that reaches the pipeline answers with the result envelope:
  * `{ success: true, data }`, or `{ success: false, error: { code, message,
@@ -277,7 +286,17 @@ export function createProcedureHandler<C extends ProcedureHostContext>(
         if (resolved === null || resolved === undefined) {
           session = null
         } else if (typeof resolved === 'object') {
-          session = resolved
+          const userId: unknown = Object.hasOwn(resolved, 'userId')
+            ? Reflect.get(resolved, 'userId')
+            : undefined
+          if (!isActorUserId(userId)) {
+            throw new ProcedureHostError(
+              'getSession resolved a signed-in session with no usable `userId`, so the host cannot say who is acting. ' +
+                '`userId` must be an own property of the session holding a non-empty string or a finite number. ' +
+                "With @opensaas/stack-auth, include it in `authPlugin({ sessionFields })`, for example `sessionFields: ['userId', 'email']`.",
+            )
+          }
+          session = sessionWithActor(resolved, humanActor(userId))
         } else {
           throw new ProcedureHostError(
             `getSession resolved a ${typeof resolved}; it must resolve a session object, null or undefined.`,

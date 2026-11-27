@@ -392,7 +392,12 @@ describe('MCP', () => {
   ): Promise<Record<string, unknown>> {
     const handlers = createMcpHandlers({
       config,
-      getSession: async () => ({ userId: 'user-1', scopes: ['read', 'write'], ...session }),
+      getSession: async () => ({
+        userId: 'user-1',
+        clientId: 'client-1',
+        scopes: ['read', 'write'],
+        ...session,
+      }),
       getContext: async (given) => database.context(given ?? null),
     })
     const response = await handlers.POST(

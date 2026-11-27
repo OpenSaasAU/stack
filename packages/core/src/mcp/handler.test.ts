@@ -411,6 +411,7 @@ describe('the MCP surface', () => {
 
   const session: McpSessionProvider = async () => ({
     userId: 'user-123',
+    clientId: 'client-1',
     scopes: ['read', 'write'],
   })
 
@@ -520,7 +521,7 @@ describe('the MCP surface', () => {
           'tools/call',
           { name: 'list_settings_query', arguments: {} },
           undefined,
-          async () => ({ userId: 'someone-else', scopes: ['read'] }),
+          async () => ({ userId: 'someone-else', clientId: 'client-1', scopes: ['read'] }),
         )
         expect(body?.error).toBeDefined()
       },
@@ -695,7 +696,7 @@ describe('the MCP surface', () => {
         const handlers = handlersFor(schemaConfig(), async (req) => {
           seen.push({ method: req.method, url: req.url })
           await req.text()
-          return { userId: 'user-123' }
+          return { userId: 'user-123', clientId: 'client-1' }
         })
 
         const response = await handlers.POST(
@@ -740,8 +741,8 @@ describe('the MCP surface', () => {
         const config = schemaConfig()
         const spy = vi.fn(contextFor(config))
         const poisoned: McpSessionProvider = async () => {
-          const parsed: { userId: string; team: string } = JSON.parse(
-            '{"userId":"user-123","team":"blue","__proto__":{"role":"admin"}}',
+          const parsed: { userId: string; clientId: string; team: string } = JSON.parse(
+            '{"userId":"user-123","clientId":"client-1","team":"blue","__proto__":{"role":"admin"}}',
           )
           return parsed
         }
@@ -769,6 +770,7 @@ describe('the MCP surface', () => {
       async () => {
         const withUndefinedField: McpSessionProvider = async () => ({
           userId: 'user-123',
+          clientId: 'client-1',
           role: undefined,
         })
 
@@ -1088,9 +1090,17 @@ describe('the MCP surface', () => {
    * and the predicate check already use.
    */
   describe('the field grain of the published vocabulary', () => {
-    const anonymous: McpSessionProvider = async () => ({ userId: 'anon-1' })
-    const author: McpSessionProvider = async () => ({ userId: 'user-123', role: 'author' })
-    const admin: McpSessionProvider = async () => ({ userId: 'admin-1', role: 'admin' })
+    const anonymous: McpSessionProvider = async () => ({ userId: 'anon-1', clientId: 'client-1' })
+    const author: McpSessionProvider = async () => ({
+      userId: 'user-123',
+      clientId: 'client-1',
+      role: 'author',
+    })
+    const admin: McpSessionProvider = async () => ({
+      userId: 'admin-1',
+      clientId: 'client-1',
+      role: 'admin',
+    })
 
     async function toolsFor(getSession: McpSessionProvider): Promise<ToolList> {
       const { body } = await rpc('tools/list', undefined, schemaConfig(), getSession)
@@ -1858,7 +1868,11 @@ describe('the MCP surface', () => {
         const config = schemaConfig()
         config.mcp = { enabled: true, scopes: { read: 'read', write: 'write' } }
         config.lists.Post.mcp = { tools: { create: true } }
-        const readOnly: McpSessionProvider = async () => ({ userId: 'user-123', scopes: ['read'] })
+        const readOnly: McpSessionProvider = async () => ({
+          userId: 'user-123',
+          clientId: 'client-1',
+          scopes: ['read'],
+        })
 
         expect(await toolNames(config)).toContain('list_post_create')
         expect(await toolNames(config, readOnly)).not.toContain('list_post_create')
@@ -2154,7 +2168,11 @@ describe('the MCP surface', () => {
   })
 
   describe('opt-in OAuth scopes', () => {
-    const readOnly: McpSessionProvider = async () => ({ userId: 'user-123', scopes: ['mcp:read'] })
+    const readOnly: McpSessionProvider = async () => ({
+      userId: 'user-123',
+      clientId: 'client-1',
+      scopes: ['mcp:read'],
+    })
     const resultText = (body: Record<string, unknown> | null) =>
       (body?.result as { content: { text: string }[]; isError?: boolean }).content[0].text
 
@@ -2221,7 +2239,7 @@ describe('the MCP surface', () => {
             'tools/call',
             { name: 'list_user_create', arguments: { data: {} } },
             config,
-            async () => ({ userId: 'user-123', scopes }),
+            async () => ({ userId: 'user-123', clientId: 'client-1', scopes }),
           )
           return JSON.parse(resultText(body)) as Record<string, unknown>
         }
@@ -2246,7 +2264,11 @@ describe('the MCP surface', () => {
       }
       const holding =
         (...scopes: string[]): McpSessionProvider =>
-        async () => ({ userId: 'user-123', scopes: ['r:base', 'w:base', ...scopes] })
+        async () => ({
+          userId: 'user-123',
+          clientId: 'client-1',
+          scopes: ['r:base', 'w:base', ...scopes],
+        })
       type Schema = { properties?: Record<string, unknown> }
       const schemas = async (provider: McpSessionProvider, tool: string) => {
         const { body } = await rpc('tools/list', undefined, config, provider)
@@ -2325,6 +2347,7 @@ describe('the MCP surface', () => {
         const config = scoped({ write: 'mcp:write' }, { write: 'user:write' })
         const holder: McpSessionProvider = async () => ({
           userId: 'user-123',
+          clientId: 'client-1',
           scopes: ['user:write'],
         })
         expect(await names(config, holder)).toContain('list_user_create')
@@ -2354,6 +2377,7 @@ describe('the MCP surface', () => {
 
         const holder: McpSessionProvider = async () => ({
           userId: 'user-123',
+          clientId: 'client-1',
           scopes: ['reports:run'],
         })
         const ran = await rpc('tools/call', { name: 'runReport', arguments: {} }, config, holder)
@@ -2367,7 +2391,7 @@ describe('the MCP surface', () => {
   describe('custom tool default scope', () => {
     const asScopes =
       (scopes: string[]): McpSessionProvider =>
-      async () => ({ userId: 'user-123', scopes })
+      async () => ({ userId: 'user-123', clientId: 'client-1', scopes })
     const tool = (scopes?: string[]): McpCustomTool => ({
       name: 'doThing',
       description: 'd',

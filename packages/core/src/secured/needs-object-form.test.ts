@@ -392,7 +392,7 @@ describe('the object form of needs', () => {
   test('MCP delivers the same item', async () => {
     const handlers = createMcpHandlers({
       config,
-      getSession: async () => ({ userId: 'u1', role: 'staff' }),
+      getSession: async () => ({ userId: 'u1', clientId: 'client-1', role: 'staff' }),
       getContext: async () => staff,
     })
     const response = await handlers.POST(

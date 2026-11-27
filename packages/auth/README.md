@@ -499,7 +499,7 @@ no-op.
 Add custom fields to the User model:
 
 ```typescript
-const isAdmin = ({ session }: { session: { role?: string } | null }) => session?.role === 'admin'
+const isAdmin = ({ session }: { session: Session | null }) => session?.role === 'admin'
 
 authPlugin({
   extendUserList: {

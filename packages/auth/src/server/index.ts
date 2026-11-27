@@ -9,6 +9,7 @@ import { getAuthListRegistry } from '../lists/index.js'
 import type { NormalizedAuthConfig, NormalizedAuthModelConfig } from '../config/types.js'
 import {
   SESSION_FILL_IN,
+  assertNoReservedSessionField,
   assertSessionFieldsResolvable,
   createSessionFillIn,
   isSessionFillIn,
@@ -688,6 +689,7 @@ export async function getSessionFromAuth<TResolvedSession>(
   sessionFields: string[],
   headers: Headers,
 ): Promise<Session | null> {
+  assertNoReservedSessionField(sessionFields)
   const resolvedSession = await auth.api.getSession({ headers })
 
   if (!resolvedSession) {
