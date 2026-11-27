@@ -1,5 +1,169 @@
 # @opensaas/stack-ui
 
+## 0.44.0-alpha.7
+
+### Minor Changes
+
+- [#2431](https://github.com/OpenSaasAU/stack/pull/2431) [`6422e97`](https://github.com/OpenSaasAU/stack/commit/6422e97c0a5e22a3ae19c5cb2fbe9a076feee34e) Thanks [@borisno2](https://github.com/borisno2)! - Add client-safe entry points so `next build --webpack` builds the admin
+
+  A `'use client'` module that imported from `@opensaas/stack-core` or `@opensaas/stack-ui` pulled the
+  server graph into the browser bundle, and webpack refused it (`UnhandledSchemeError: node:async_hooks`).
+  Turbopack tolerated the same graph, so only `next build --webpack` failed. The admin's own client
+  components now import from two new entries that reach nothing server-side:
+
+  - `@opensaas/stack-core/client-safe` — `getUrlKey`, `getListKeyFromUrl`, `resolveListKeyFromUrl` and the
+    filter-query helpers (`parseFilterQuery`, `serializeFilterQuery`, `recordIdFilterToken`, …). The root
+    entry still exports the same bindings.
+  - `@opensaas/stack-ui/cells` — the cell components and `registerCellComponent`.
+
+  A field-registration module in your app should import from these, never from a package root:
+
+  ```ts
+  // lib/register-fields.ts
+  'use client'
+
+  // Before: pulled AdminUI and the server graph into the client bundle
+  // import { registerFieldComponent } from '@opensaas/stack-ui'
+  import { registerFieldComponent } from '@opensaas/stack-ui/fields'
+  import { registerCellComponent } from '@opensaas/stack-ui/cells'
+  import { getUrlKey } from '@opensaas/stack-core/client-safe'
+  ```
+
+  The rag and tiptap registration modules now do the same.
+
+- [#2420](https://github.com/OpenSaasAU/stack/pull/2420) [`4374e65`](https://github.com/OpenSaasAU/stack/commit/4374e651496547cafd7094fbd8330620b088a2ff) Thanks [@borisno2](https://github.com/borisno2)! - The singleton view and every Create and Delete affordance now read the Session vocabulary
+
+  `SingletonView` shows its editor only when the session's vocabulary for the singleton allows `query`, and offers its create-on-first-save form only where `create` is not denied. An operation rule returning `null` or `undefined` now hides the editor, as the engine already denied the read ([#2382](https://github.com/OpenSaasAU/stack/issues/2382)), and a sudo context on a singleton with no operation rules sees the editor. A query-denied singleton renders the same unavailable state the list view does (`data-slot="singleton-view-unavailable"`), and `get()` is not called for it. If reading the vocabulary throws, the singleton view logs the error and shows a load-failure state for that view (`data-slot="singleton-view-error"`) instead of failing the whole admin page. Framework control flow such as `redirect()` still propagates.
+
+  Create and Delete are offered only where the vocabulary does not deny `create` or `delete`, on top of `ui.hideCreate` and `ui.hideDelete`. This covers the list view's Create link and table Delete, the dashboard's Quick Actions Create links, and the item page's Delete. The `/create` route renders an unavailable state (`data-slot="item-create-unavailable"`) instead of a form where `create` is denied.
+
+  The admin package's own access classification (`isOperationPotentiallyAllowed`, `isFieldPotentiallyWritable`, `markWriteDeniedFields`) is deleted. Nothing in the admin calls an access rule, reads one off a config or calls the field-access evaluator: every affordance reads the vocabulary core resolves, so a write rule that optional-chains `item` is answered as row-dependent rather than as a static deny ([#2383](https://github.com/OpenSaasAU/stack/issues/2383)).
+
+- [#2416](https://github.com/OpenSaasAU/stack/pull/2416) [`495ad87`](https://github.com/OpenSaasAU/stack/commit/495ad87b024a41a1eae4320256ce5106b2d102a1) Thanks [@borisno2](https://github.com/borisno2)! - Relationship tables and item-form relationship lookups read the Session vocabulary
+
+  What a Relationship table tells the browser about its related list now comes from that list's own Session vocabulary rather than from the admin evaluating access rules itself:
+
+  - A related column the session can never read is left out of the columns, field configs, rows, sums and editable columns the client receives.
+  - Inline cell edit is offered wherever the related list's vocabulary does not deny the write. A field update rule written as `item?.ownerId === session?.userId` is row-dependent, so owners can edit their own rows inline; the secured commit still decides each row.
+  - Remove, disconnect, create and link controls appear only where the related list's (or junction list's) operation is not denied. An operation rule returning `null` or `undefined` now hides them, as the engine denies it.
+  - Disconnect and the foreign-key link also need the back-reference field's own `update`; "+ Add" needs its `create`; a junction link needs `create` on both of the junction's foreign keys.
+  - A related list the session may not query renders as unavailable, with no columns, rows, count or write controls. A related list the context cannot resolve does the same instead of failing the page.
+  - A relationship column's labels, and an item form's relationship options, are looked up only when the session may query the related list.
+
+  ```ts
+  // Task.status is inline-editable for the row's assignee
+  status: text({
+    access: { update: ({ session, item }) => item?.assignee === session?.userId },
+  }),
+  ```
+
+- [#2424](https://github.com/OpenSaasAU/stack/pull/2424) [`565c4ca`](https://github.com/OpenSaasAU/stack/commit/565c4ca5de288b8c54cf2e3b5c811b44e913bf47) Thanks [@borisno2](https://github.com/borisno2)! - `serializeItemForForm` takes the record's id and reads the row itself
+
+  `serializeItemForForm(context, listKey, id, purpose?)` on `@opensaas/stack-ui/server` now reads the row through the session's own secured surface, so Field Visibility applies every `read` rule, one that depends on the row included. It no longer takes a row, so a row from `context.unsafe`, a `sudo()` read or a hand-built object cannot reach a `'use client'` form: passing one is a compile error.
+
+  The id is parsed against the list's `db.idField`, as an admin URL segment is, so a string route param works for an `int autoincrement` list. The result is `null` when the session may not read the row, when no row has that id, and when the id is not one the list's key type can hold. A to-one relationship comes back as its related id. A to-many relationship is not prefilled. On a singleton list the row is read through `get()` and never auto-created, so a singleton with no stored row answers `null`. The access that applies is that of the context you pass: `context.sudo()` reads as sudo.
+
+  Migration:
+
+  ```tsx
+  // Before
+  const post = await context.db.Post.where({ id: { equals: params.id } }).first()
+  if (post === null) notFound()
+  const initialData = await serializeItemForForm(context, 'Post', {
+    id: post.id,
+    title: post.title,
+    status: post.status,
+  })
+
+  // After
+  const initialData = await serializeItemForForm(context, 'Post', params.id)
+  if (initialData === null) notFound()
+  ```
+
+- [#2415](https://github.com/OpenSaasAU/stack/pull/2415) [`59e8d70`](https://github.com/OpenSaasAU/stack/commit/59e8d70029aa90c01373aa8600a665bc538523ce) Thanks [@borisno2](https://github.com/borisno2)! - `serializeFieldConfigs` now takes the context and the list key, and applies the session's Session vocabulary
+
+  Field configs can no longer reach a client without the session applied. The serialiser on `@opensaas/stack-ui/server` reads the vocabulary itself: a field the session can never read is withheld, and a field it can never write for the form's operation is marked read-only. A rule that reads the row keeps its field editable when there is no row to answer it for, so a create rule written as `item?.ownerId === session.userId` no longer locks the field on a create form ([#2383](https://github.com/OpenSaasAU/stack/issues/2383)).
+
+  ```tsx
+  // app/posts/new/page.tsx (server)
+  import { serializeFieldConfigs } from '@opensaas/stack-ui/server'
+  import { getContext } from '@/.opensaas/context'
+
+  const context = await getContext(session)
+  const fields = await serializeFieldConfigs(context, 'Post', 'create') // or 'update', or 'display' (default)
+  ```
+
+  An edit form's values come from `serializeItemForForm`, also on `@opensaas/stack-ui/server`. It applies each field's `ui.valueForClientSerialization` (a `password()` field becomes `{ isSet }`) and leaves out every field the serialiser withholds:
+
+  ```tsx
+  const editFields = await serializeFieldConfigs(context, 'Post', 'update', post) // answers row-dependent rules for `post`
+  const initialData = await serializeItemForForm(context, 'Post', post.id)
+  if (initialData === null) notFound()
+  ```
+
+  ```tsx
+  // a 'use client' component
+  <ItemCreateForm fields={fields} onSubmit={createPost} />
+  <ItemEditForm fields={editFields} initialData={initialData} onSubmit={updatePost} />
+  ```
+
+  `ItemCreateForm` and `ItemEditForm` take the serialised result and no longer serialise on the client: their `fields` prop is `Record<string, SerializableFieldConfig>`, and the `listKey` and `config` props are gone (the serialiser marks the non-owning end of a one-to-one itself). `serializeFieldConfig` (singular) is no longer exported. `ItemEditForm` no longer applies a field's `ui.valueForClientSerialization` to `initialData`; pass it `serializeItemForForm`'s result. Its `TData` type parameter now extends `Record<string, unknown>`.
+
+  The admin's item forms read the same vocabulary, so a field whose write rule throws is now read-only rather than editable, a field on a list whose `update` operation the session is denied is read-only on the edit form, and per-row edit gating is preserved: on the edit form, a field whose update rule reads the row is answered through core against the row being edited as stored, as the update decides it, and is read-only on a row the rule denies ([#1402](https://github.com/OpenSaasAU/stack/issues/1402)). A rule that reaches for a relation off `item` is read-only, because the update itself rejects it: the stored row carries no relation. A field whose `read` rule depends on the row stays on the edit form, and its value is whatever the form's own secured read returned, Field Visibility applied. On a list the session may create but not query, an editable relationship field keeps its options on the create form.
+
+- [#2418](https://github.com/OpenSaasAU/stack/pull/2418) [`4c5d2d2`](https://github.com/OpenSaasAU/stack/commit/4c5d2d275e667287b1ae5443dfb8b41902c84b48) Thanks [@borisno2](https://github.com/borisno2)! - The admin list view reads the Session vocabulary for everything it offers
+
+  The column picker, default columns, Preset views and the Filter builder offer only fields the session can read, sorting follows each field's `sortable` answer, and a field with `isFilterable: false` is absent from every place a filter can be built. A row-dependent readable field stays shown but is neither filterable nor sortable (ADR-0031). Count links and filter-chip labels read the related list's vocabulary, so a related list whose `query` rule returns `false`, `null` or `undefined` gets no link and no label lookup.
+
+  A session denied the list's `query` now sees an explicit "can't be shown here" state instead of an empty table, and keeps the Create button when it may still create (a write-only inbox). A Preset view's search drops every token naming a field the session cannot filter by (a never-readable or row-dependent field, or `isFilterable: false`), and a context that resolves no Session vocabulary shows the list's "could not be loaded" state instead of failing the page.
+
+  `collectFilterSpecs`, `buildListFilterWhere`, `collectFilterSuggestions` and `isFieldFilterableById` now answer from the context's Session vocabulary, which builds each Filter spec once per request: a `read` rule or a spec builder that throws denies that one field and is logged instead of failing the list. They answer for the context's own session and config, so `FilterAccessArgs` no longer takes a `session`, and `listConfig` and `config` must be the context's own. A context core did not build gets no specs and no throw:
+
+  ```ts
+  const specs = await collectFilterSpecs(listConfig, 'Post', config, { context })
+  ```
+
+  A throw carrying a string `digest` (Next.js's `redirect()`, `notFound()` and dynamic-usage bailouts) now propagates out of the Session vocabulary and the MCP vocabulary instead of being treated as a deny, so a rule that redirects still redirects.
+
+  The internal `_orderableKeys` context member and `collectUnreadableFields` are removed; read `context._sessionVocabulary(listKey)` instead (`fields.get(key)?.sortable`, `fields.get(key)?.read`).
+
+- [#2545](https://github.com/OpenSaasAU/stack/pull/2545) [`231e963`](https://github.com/OpenSaasAU/stack/commit/231e96344d7312e74d79d09045caa88be9d94919) Thanks [@borisno2](https://github.com/borisno2)! - The admin item form now warns before unsaved edits are dropped by reload, Back, in-app links or Cancel, and shows a "Created."/"Saved." notice after a save. The auth examples redirect to `/sign-in` on an expired session instead of showing "Access Denied".
+
+### Patch Changes
+
+- [#2544](https://github.com/OpenSaasAU/stack/pull/2544) [`2f84ffd`](https://github.com/OpenSaasAU/stack/commit/2f84ffdf70d1a21df1cb9c5e1e3851da7963d33d) Thanks [@borisno2](https://github.com/borisno2)! - Fix hydration failures on date columns when the browser's locale or timezone differs from the server's; list, picker and read mode now share one `dd/MM/yyyy` format.
+
+- [#2490](https://github.com/OpenSaasAU/stack/pull/2490) [`05e83be`](https://github.com/OpenSaasAU/stack/commit/05e83bed1ce8abc38675036b5eea7da32e97dcbb) Thanks [@borisno2](https://github.com/borisno2)! - The Filter builder reads numeric dates in the viewer's locale order, and a date-only `lte`/range end on a timestamp covers its whole UTC day.
+
+- [#2528](https://github.com/OpenSaasAU/stack/pull/2528) [`0fe5094`](https://github.com/OpenSaasAU/stack/commit/0fe5094a919b42fb256722ec111b6d5d3d30c885) Thanks [@borisno2](https://github.com/borisno2)! - Fix admin list filters that made the read throw: integer and bigInt values outside the column range and NUL bytes now match nothing, a search too long for the where limit raises `FilterTooLongError`, and the list error panel offers "Clear filters" when the request carried a search.
+
+- [#2532](https://github.com/OpenSaasAU/stack/pull/2532) [`df68ff5`](https://github.com/OpenSaasAU/stack/commit/df68ff583f515ceae08b8216e9661b85c6d904c7) Thanks [@borisno2](https://github.com/borisno2)! - Relationship columns inside to-many item-view tables now show the related record's label (fixing junction tables), and a junction row's delete dialog says it only removes the link.
+
+- [#2529](https://github.com/OpenSaasAU/stack/pull/2529) [`2867a27`](https://github.com/OpenSaasAU/stack/commit/2867a279c54d2bea13b3cccdddea7630dc403426) Thanks [@borisno2](https://github.com/borisno2)! - The admin hides nav entries and dashboard cards for lists the session cannot query, and an item page renders read-only with no Save or Delete when a filter-returning `update`/`delete` rule does not match the row. The session vocabulary now answers `'row-dependent'` for a filter-returning `update` or `delete` rule.
+
+- [#2425](https://github.com/OpenSaasAU/stack/pull/2425) [`bc97369`](https://github.com/OpenSaasAU/stack/commit/bc973693857be40587c0c6903557cf32fe118ce5) Thanks [@borisno2](https://github.com/borisno2)! - Resolve Session vocabulary answers lazily, one question at a time
+
+  A list's Session vocabulary no longer resolves every rule of the list on the first ask. Each answer (an operation, a field's `read`/`create`/`update`, `filterable`, `sortable`) is asked only when a consumer needs it, and is memoised on its own for the context's life, so asking a related list's `query` and one field's `filterable` asks only those two rules. The whole vocabulary is assembled from the same answers, so no rule is asked twice per context.
+
+  The admin's list view filter labels, Relationship table column labels and link controls, item form relationship options and operation gates ask a related list only the questions they need.
+
+  `resolveNavCounts` behaviour changes:
+
+  - A list whose vocabulary read fails is now omitted and logged instead of rejecting the whole call.
+  - A framework's control flow (`redirect()`, `notFound()`) raised by a list's count call (`aggregate`) was previously caught, logged and the badge dropped; it now propagates out of `resolveNavCounts`, as control flow from the vocabulary read already did.
+
+- [#2452](https://github.com/OpenSaasAU/stack/pull/2452) [`dc6ae19`](https://github.com/OpenSaasAU/stack/commit/dc6ae1999ef9b4e02573f308dc8f69f03dabbd8b) Thanks [@borisno2](https://github.com/borisno2)! - Rendering an item view over a config `opensaas generate` refuses treats each to-many as no junction edge, leaving it read-only instead of failing the render.
+
+- [#2519](https://github.com/OpenSaasAU/stack/pull/2519) [`7f63691`](https://github.com/OpenSaasAU/stack/commit/7f636912128c1b9fafed76e1ae8ccd3a66acabb4) Thanks [@borisno2](https://github.com/borisno2)! - Admin list view now always appends an id tiebreaker to its order, so editing a row no longer moves it and paging stays stable.
+
+- [#2496](https://github.com/OpenSaasAU/stack/pull/2496) [`7a5b337`](https://github.com/OpenSaasAU/stack/commit/7a5b3370c24a71bcad47f9f23259b9cacdb8e95d) Thanks [@borisno2](https://github.com/borisno2)! - The list status line is shown once, on the render after the action, and is no longer replayed after a reload, navigation, or a sort, filter or page change.
+
+- [#2495](https://github.com/OpenSaasAU/stack/pull/2495) [`cad71da`](https://github.com/OpenSaasAU/stack/commit/cad71da5878100e8f27d07bef54efeac19a1a6fb) Thanks [@borisno2](https://github.com/borisno2)! - Pasted links no longer carry `title`, `class`, `rel` or `target` into a rich text document, so Wikipedia-style paste saves. Item forms hand the server action plain objects.
+
+- [`82f2ba7`](https://github.com/OpenSaasAU/stack/commit/82f2ba718f80f868a653c09bc9b5e7c0c4a089c5) Thanks [@borisno2](https://github.com/borisno2)! - `calendarDay` filters accept the viewer-locale date format, date-only timestamp chips say "(UTC)", `2026-8-4` and `8/4` are rejected as timestamp values, and saving an item confirms on the list.
+
+- [#2527](https://github.com/OpenSaasAU/stack/pull/2527) [`c9853fb`](https://github.com/OpenSaasAU/stack/commit/c9853fbc5fc90d9ea8fed4fbf0815970abd8ccb1) Thanks [@borisno2](https://github.com/borisno2)! - Relationship tables on the item page show a "View all" link to the filtered list when rows are bounded, and label footer sums as "(visible rows)".
+
 ## 0.44.0-alpha.6
 
 ### Minor Changes

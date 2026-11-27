@@ -1,5 +1,208 @@
 # @opensaas/stack-cli
 
+## 0.44.0-alpha.7
+
+### Minor Changes
+
+- [#2547](https://github.com/OpenSaasAU/stack/pull/2547) [`878c2ca`](https://github.com/OpenSaasAU/stack/commit/878c2ca8c30b0f7862ce71d639af00bacca7fa6d) Thanks [@borisno2](https://github.com/borisno2)! - Define an application action once as a procedure and call it over HTTP.
+
+  `opensaas generate` now writes `.opensaas/procedures.ts`, a `procedure` builder typed to your own `Context`. Keep procedures in a registry module of your own (never in `opensaas.config.ts`) and serve it with `createProcedureHandler` from `@opensaas/stack-core/procedures`:
+
+  ```typescript
+  // lib/procedures.ts
+  import * as z from 'zod'
+  import { procedure } from '@/.opensaas/procedures'
+
+  export const procedures = {
+    createPost: procedure({
+      description: 'Create a draft post authored by the caller',
+      input: z.object({ title: z.string().min(1) }),
+      output: z.object({ id: z.string(), title: z.string() }),
+      access: ({ session }) => session !== null,
+      expose: ['web'],
+      run: async ({ input, context }) => {
+        const post = await context.db.Post.create({ data: { title: input.title } })
+        if (post === null) throw new Error('Post was not created')
+        return post
+      },
+    }),
+  }
+
+  // app/api/procedures/[name]/route.ts
+  import { createProcedureHandler } from '@opensaas/stack-core/procedures'
+  import { getContext } from '@/.opensaas/context'
+  import { procedures } from '@/lib/procedures'
+  import { auth } from '@/lib/auth'
+
+  export const POST = createProcedureHandler({
+    procedures,
+    getContext,
+    getSession: async (request) => {
+      const result = await auth.api.getSession({ headers: request.headers })
+      return result ? { userId: result.user.id } : null
+    },
+    allowedOrigins: ['http://localhost:3000'],
+  })
+  ```
+
+  A caller POSTs JSON to `/api/procedures/<name>`. A call that reaches the procedure pipeline gets `{ success: true, data }` or `{ success: false, error: { code, message, fieldErrors? } }`. Transport failures do not use that envelope: 404 (unknown or unexposed name), 405 (not `POST`), 413 (body too large) and 415 (not `application/json`) answer `{ error: "<message>" }` with `error` as a string, so branch on the status first. Description, input, output, access and a non-empty `expose` are required. `run` receives `db`, `session`, `storage` and `plugins` only. A cookie request must come from an allowed origin, any `Authorization` header is refused, and unknown and unexposed names both answer 404. A default `z.object` output schema removes keys it does not declare and a strict one refuses them; a schema that does neither returns whatever `run` returned, and refusing such schemas when the host is created is [#2535](https://github.com/OpenSaasAU/stack/issues/2535). See ADR-0086.
+
+- [#2516](https://github.com/OpenSaasAU/stack/pull/2516) [`9f17366`](https://github.com/OpenSaasAU/stack/commit/9f17366402cb263793d2a38c8ca52791ed79be1b) Thanks [@borisno2](https://github.com/borisno2)! - `needs` takes an object form that reaches any depth, so a computed field over a chain of relations no longer reads per row (ADR-0085).
+
+  ```ts
+  label: virtual({
+    type: 'string',
+    needs: { enrolment: { student: true, classTerm: ['class', 'term'] } },
+    hooks: {
+      resolveOutput: ({ item }) => `${item.enrolment?.student?.name ?? ''}`,
+    },
+  })
+  ```
+
+  A column takes `true`. A relation takes `true` for its rows' stored columns, or an array or object for exactly what is named beneath it. Every hop keeps its list's `query` access. The array form still reaches one hop.
+
+  - A synthetic back-relation (`from_<List>_<field>`) is accepted as a key in either form.
+  - `pnpm generate` warns when an array form names a relation whose list has a computed field with relation `needs` of its own, and prints the object form.
+  - A hook is handed shallow copies of its declared rows, carrying no relation it did not declare and each multi-column field under its own key in place of its part columns.
+  - A field `read` rule sees one hop: a relation on a related row is withheld.
+
+  Re-run `pnpm generate` after adopting it.
+
+- [#2428](https://github.com/OpenSaasAU/stack/pull/2428) [`21bce38`](https://github.com/OpenSaasAU/stack/commit/21bce381ec8a4459bd591c3651962c4d6b21f646) Thanks [@borisno2](https://github.com/borisno2)! - Make the framework control-flow rethrow predicate injectable
+
+  A new `isFrameworkControlFlow` config option recognises a host framework's control flow thrown from inside an access rule, so the Session vocabulary, MCP's advertised vocabulary and the admin's nav counts let it propagate instead of folding it into a logged deny. It is OR'ed with the built-in recognition of Next.js's digests and React's postpone, and the `cause` walk applies to both. A predicate that throws recognises nothing and is reported once, so a rule's own throw still denies.
+
+  ```typescript
+  export default config({
+    db: { provider: 'postgresql' },
+    lists: {},
+    isFrameworkControlFlow: (thrown) => thrown instanceof Response,
+  })
+  ```
+
+  `opensaas generate` now wires Next.js's own `unstable_rethrow` into `.opensaas/context.ts` when the project's `package.json` declares `next`, so new Next control-flow signals are recognised without waiting for core to learn their digests. It is imported lazily, so the bundle still loads under plain Node, where it keeps the built-in recognition. Re-run `pnpm generate` to pick it up. A project without `next` gets the same context as before.
+
+- [#2482](https://github.com/OpenSaasAU/stack/pull/2482) [`bab30df`](https://github.com/OpenSaasAU/stack/commit/bab30dfe01663f03ba49717d5c3d688ef0792f42) Thanks [@borisno2](https://github.com/borisno2)! - Require `assembleColumns` on every multi-column field
+
+  A field whose `getContractField` returns `{ kind: 'columns' }` must now supply `assembleColumns`. Without it the field had no value under its own key, so `.select()` returned nothing for it, a `needs` entry naming it gave the hook nothing, and MCP advertised a field it never returned. `opensaas generate` now refuses such a config, and so does building a context over it; each names the list, the field and the member. Generate reports:
+
+  ```
+  Profile.avatar (type "avatar") is missing assembleColumns()
+  ```
+
+  and context construction throws:
+
+  ```
+  Field "Profile.avatar" (type "avatar") is not self-contained: it does not declare assembleColumns(). ...
+  ```
+
+  Migration: supply `assembleColumns` on any `kind: 'columns'` field.
+
+  ```typescript
+  import type { BaseFieldConfig, TypeInfo } from '@opensaas/stack-core/extend'
+  import { z } from 'zod'
+
+  const avatar: BaseFieldConfig<TypeInfo> = {
+    type: 'avatar',
+    outputType: '{ filename: string; filesize: number } | null',
+    getZodSchema: () => z.object({ filename: z.string(), filesize: z.number() }).nullable(),
+    getContractField: () => ({
+      kind: 'columns',
+      columns: [
+        { name: 'avatar_filename', type: { pack: 'pg', type: 'text' }, nullable: true },
+        { name: 'avatar_filesize', type: { pack: 'pg', type: 'int' }, nullable: true },
+      ],
+    }),
+    assembleColumns: (_fieldName, row) =>
+      row.avatar_filename === null
+        ? null
+        : { filename: row.avatar_filename, filesize: row.avatar_filesize },
+    splitColumns: (_fieldName, value) => {
+      const parts = typeof value === 'object' && value !== null ? value : {}
+      return {
+        avatar_filename: 'filename' in parts ? parts.filename : null,
+        avatar_filesize: 'filesize' in parts ? parts.filesize : null,
+      }
+    },
+  }
+  ```
+
+  `image()`/`file()` in multi-column mode and `embedding()` already supply it.
+
+### Patch Changes
+
+- [#2553](https://github.com/OpenSaasAU/stack/pull/2553) [`299fd83`](https://github.com/OpenSaasAU/stack/commit/299fd83a50593f4e8eee0265253b750964fd2327) Thanks [@borisno2](https://github.com/borisno2)! - A procedure can run several operations atomically and throw a named failure that rolls them back.
+
+  `run` opens no transaction of its own. Wrap the writes that must succeed together in `context.transaction`; its context is narrowed like the procedure's own (no `sudo`, `unsafe`, `withSession` or `serverAction`, at runtime as well as in the type) and keeps `.forUpdate()` and `advisoryLock`. Declare the outcomes a caller should handle in `failures`, and throw what `fail` constructs:
+
+  ```typescript
+  import * as z from 'zod'
+  import { procedure } from '@/.opensaas/procedures'
+
+  export const bookSlot = procedure({
+    description: 'Book a place in a slot',
+    input: z.object({ slotId: z.string() }),
+    output: z.object({ bookingId: z.string() }),
+    failures: { SLOT_FULL: 'The slot has no places left', NO_SLOT: 'No such slot' },
+    access: ({ session }) => session !== null,
+    expose: ['web'],
+    run: async ({ input, context, fail }) =>
+      context.transaction(async (tx) => {
+        const held = await tx.db.Slot.where({ id: { equals: input.slotId } })
+          .forUpdate()
+          .first()
+        if (held === null) throw fail('NO_SLOT')
+
+        const booking = await tx.db.Booking.create({ data: { slotId: input.slotId } })
+        const slot = await tx.db.Slot.where({ id: { equals: input.slotId } }).first()
+        const { taken } = await tx.db.Booking.where({ slotId: { equals: input.slotId } }).aggregate(
+          (aggregate) => ({ taken: aggregate.count() }),
+        )
+        // Thrown after the write: the booking is rolled back.
+        if (booking === null || slot === null || taken > slot.capacity) throw fail('SLOT_FULL')
+        return { bookingId: booking.id }
+      }),
+  })
+  ```
+
+  `fail` accepts only the codes the procedure declares, so an undeclared code is a compile error, and `ProcedureResultOf<typeof bookSlot>` exposes the declared codes beside the reserved ones. Over HTTP a declared failure answers 200 with `{ success: false, error: { code, message } }`; `VALIDATION` stays 400 with field errors and `RETRY` and `CONFLICT` stay 409. Nothing retries a `RETRY` automatically: it reports that the transaction rolled back, not that work outside it was undone.
+
+  Things to know:
+
+  - `throw` a failure. One returned from `run` or from a transaction callback is treated as thrown, so it still rolls the transaction back and answers its code.
+  - A code is upper-case letters, digits and `_`. Declaring a reserved code (`UNAUTHENTICATED`, `DENIED`, `INVALID_INPUT`, `VALIDATION`, `RETRY`, `CONFLICT`, `INTERNAL`) is a compile error and is refused when the procedure is defined.
+  - Output is parsed after `run` returns, so output that fails its schema is `INTERNAL` and does not undo a transaction that already committed.
+  - A defined procedure's `access` and `run` now take the application context (`{ context }` and `{ input, context }`) and narrow it themselves. This only matters to code that called them directly instead of going through a host.
+
+  See ADR-0086.
+
+- [#2512](https://github.com/OpenSaasAU/stack/pull/2512) [`55275fd`](https://github.com/OpenSaasAU/stack/commit/55275fdfd917e73e34f01bff1b5fc5b46e840cea) Thanks [@borisno2](https://github.com/borisno2)! - `opensaas db plan` treats a fork as resolved once a later package exists, so following the `--from` remedy no longer leads to an un-appliable plan.
+
+- [#2524](https://github.com/OpenSaasAU/stack/pull/2524) [`9efa3f1`](https://github.com/OpenSaasAU/stack/commit/9efa3f1f0fb4dd7e9e540a89ccfdf68e6f366fb4) Thanks [@borisno2](https://github.com/borisno2)! - Document that a required column added to a populated table is backfilled with placeholder values without consent.
+
+- [#2520](https://github.com/OpenSaasAU/stack/pull/2520) [`dd94f1f`](https://github.com/OpenSaasAU/stack/commit/dd94f1f39911b950baad3f452bea8cd7b290ca6b) Thanks [@borisno2](https://github.com/borisno2)! - Fix `migrate fk-renames` truncating long constraint names, give both migrate commands a clean error with no database, wrap `fk-renames --out` SQL in a transaction, and make `junction-ids` refuse composite-key tables.
+
+- [#2426](https://github.com/OpenSaasAU/stack/pull/2426) [`a4dcb7e`](https://github.com/OpenSaasAU/stack/commit/a4dcb7e45a3aadab0251121d566520cee027b654) Thanks [@borisno2](https://github.com/borisno2)! - Fix the session vocabulary keeping stale answers: a successful write or committed transaction clears it, `rawOpensaasContext` keeps nothing, and a `resolveOutput` hook no longer waits on its own pending answer.
+
+- [#2478](https://github.com/OpenSaasAU/stack/pull/2478) [`1b45d87`](https://github.com/OpenSaasAU/stack/commit/1b45d877684393fb2dd61ac53ac3e4176fb5b322) Thanks [@borisno2](https://github.com/borisno2)! - Internal restructuring: Field Visibility has one implementation, its single traversal; the old walks, the switch between them and the comparison harness are deleted.
+
+- [#2469](https://github.com/OpenSaasAU/stack/pull/2469) [`2f48eab`](https://github.com/OpenSaasAU/stack/commit/2f48eab7d64911588624fe7e66741c0c0ba540a9) Thanks [@borisno2](https://github.com/borisno2)! - Add `@opensaas/stack-core/db-client`, the server-only subpath for `resolveRuntimeConnection`, and deprecate `@opensaas/stack-core/client`
+
+  `/client` sat beside `/client-safe` and read as browser-safe, but it reaches `pg`. `opensaas generate` now emits the new subpath in `.opensaas/context.ts`. `/client` still resolves to the same bindings, marked `@deprecated`, and is removed at the next major.
+
+  Migration — regenerate (`pnpm generate`) and update any hand-written import:
+
+  ```typescript
+  // Before
+  import { resolveRuntimeConnection } from '@opensaas/stack-core/client'
+
+  // After
+  import { resolveRuntimeConnection } from '@opensaas/stack-core/db-client'
+  ```
+
+- Updated dependencies [[`9ead1d9`](https://github.com/OpenSaasAU/stack/commit/9ead1d9233bde5ce9c5396fd56b43227cbeabd7a), [`ae613f9`](https://github.com/OpenSaasAU/stack/commit/ae613f9fce8b76eaeb93354e527ad041504cb965), [`299fd83`](https://github.com/OpenSaasAU/stack/commit/299fd83a50593f4e8eee0265253b750964fd2327), [`7cb1192`](https://github.com/OpenSaasAU/stack/commit/7cb1192bc538049ec8f3cd91233a89daf9baafdf), [`4b768f2`](https://github.com/OpenSaasAU/stack/commit/4b768f232d8fed6af88b292e469e05ffb5203983), [`28ff344`](https://github.com/OpenSaasAU/stack/commit/28ff34407741a466cafd21048a8e385b7800652e), [`6422e97`](https://github.com/OpenSaasAU/stack/commit/6422e97c0a5e22a3ae19c5cb2fbe9a076feee34e), [`05e83be`](https://github.com/OpenSaasAU/stack/commit/05e83bed1ce8abc38675036b5eea7da32e97dcbb), [`c97bea7`](https://github.com/OpenSaasAU/stack/commit/c97bea7e07a22467c1d348b45f7b5295a204a147), [`0fe5094`](https://github.com/OpenSaasAU/stack/commit/0fe5094a919b42fb256722ec111b6d5d3d30c885), [`ba3e7ae`](https://github.com/OpenSaasAU/stack/commit/ba3e7ae4127ceea26f1bc8699c385da1412c444c), [`846f622`](https://github.com/OpenSaasAU/stack/commit/846f622c7e2f080c1d746f7ccd284fba214f5b6a), [`e790bf1`](https://github.com/OpenSaasAU/stack/commit/e790bf10fe4853fa65df5bf76ec2a4ae6bfda649), [`2867a27`](https://github.com/OpenSaasAU/stack/commit/2867a279c54d2bea13b3cccdddea7630dc403426), [`76fce00`](https://github.com/OpenSaasAU/stack/commit/76fce00b7ea85b0ac2af8d4f979757d1600912e9), [`bc97369`](https://github.com/OpenSaasAU/stack/commit/bc973693857be40587c0c6903557cf32fe118ce5), [`db8a224`](https://github.com/OpenSaasAU/stack/commit/db8a224028dcd92dc878c27f81df508069360d79), [`9774d08`](https://github.com/OpenSaasAU/stack/commit/9774d082befd990e392748487bab65fbd916c27c), [`5501533`](https://github.com/OpenSaasAU/stack/commit/5501533d6a6bd03e22fd8b6bcba95193ce0cf5fa), [`f188f16`](https://github.com/OpenSaasAU/stack/commit/f188f16f01c73358e6bd79587ff5f9a8ba8a7c64), [`dd3a77f`](https://github.com/OpenSaasAU/stack/commit/dd3a77f35ceff097fe397a56ce43839a58af2cc5), [`878c2ca`](https://github.com/OpenSaasAU/stack/commit/878c2ca8c30b0f7862ce71d639af00bacca7fa6d), [`4374e65`](https://github.com/OpenSaasAU/stack/commit/4374e651496547cafd7094fbd8330620b088a2ff), [`9f17366`](https://github.com/OpenSaasAU/stack/commit/9f17366402cb263793d2a38c8ca52791ed79be1b), [`756558e`](https://github.com/OpenSaasAU/stack/commit/756558eee7b8723827ff8770f0b346b43b4bd895), [`df46667`](https://github.com/OpenSaasAU/stack/commit/df466677dd0d9a1b3de7cda12cd3901e656b8b3a), [`e06f639`](https://github.com/OpenSaasAU/stack/commit/e06f639fb3099b71586771008bdf0be5f9a5f93d), [`a2598d5`](https://github.com/OpenSaasAU/stack/commit/a2598d5613274027b3c9500ad99f4b352547cecf), [`94e8358`](https://github.com/OpenSaasAU/stack/commit/94e8358c069e34b96ee2f75e9581029572abbe59), [`6840f89`](https://github.com/OpenSaasAU/stack/commit/6840f89e366f6e52bbe0612628169db6f83fd566), [`a4dcb7e`](https://github.com/OpenSaasAU/stack/commit/a4dcb7e45a3aadab0251121d566520cee027b654), [`dff4310`](https://github.com/OpenSaasAU/stack/commit/dff4310b1cbf901f9ba401b85f33b0200fd81179), [`5bd3fc6`](https://github.com/OpenSaasAU/stack/commit/5bd3fc6cd474acc1fea2cffa94d85209ddc913a6), [`565c4ca`](https://github.com/OpenSaasAU/stack/commit/565c4ca5de288b8c54cf2e3b5c811b44e913bf47), [`1b45d87`](https://github.com/OpenSaasAU/stack/commit/1b45d877684393fb2dd61ac53ac3e4176fb5b322), [`514a492`](https://github.com/OpenSaasAU/stack/commit/514a492e1d6c4f6c9f926f800c000e79a498f02c), [`59e8d70`](https://github.com/OpenSaasAU/stack/commit/59e8d70029aa90c01373aa8600a665bc538523ce), [`5850dd6`](https://github.com/OpenSaasAU/stack/commit/5850dd64bbbda381027f344044ebc803cac76958), [`999eeae`](https://github.com/OpenSaasAU/stack/commit/999eeaeb595196b96f3068303812db790af9c370), [`21bce38`](https://github.com/OpenSaasAU/stack/commit/21bce381ec8a4459bd591c3651962c4d6b21f646), [`dc6ae19`](https://github.com/OpenSaasAU/stack/commit/dc6ae1999ef9b4e02573f308dc8f69f03dabbd8b), [`4c5d2d2`](https://github.com/OpenSaasAU/stack/commit/4c5d2d275e667287b1ae5443dfb8b41902c84b48), [`a66e95e`](https://github.com/OpenSaasAU/stack/commit/a66e95e1fdbf6fe902b70b3ecd346084647e70cf), [`b3120a1`](https://github.com/OpenSaasAU/stack/commit/b3120a1d6cc843ae53a7865a5d7e8696a3b3c935), [`e2e18be`](https://github.com/OpenSaasAU/stack/commit/e2e18be4812600f83c924e62d1ece0b05ee0f180), [`ad85f09`](https://github.com/OpenSaasAU/stack/commit/ad85f095916eae5500e6e6b7e77e1ccbff24fa36), [`2f48eab`](https://github.com/OpenSaasAU/stack/commit/2f48eab7d64911588624fe7e66741c0c0ba540a9), [`d417e3a`](https://github.com/OpenSaasAU/stack/commit/d417e3a4a1fef505587b6f83edcc6568e9db82e7), [`5621a97`](https://github.com/OpenSaasAU/stack/commit/5621a977d4d13104c72d5166301ab8a3d2c535e7), [`bab30df`](https://github.com/OpenSaasAU/stack/commit/bab30dfe01663f03ba49717d5c3d688ef0792f42), [`df9191f`](https://github.com/OpenSaasAU/stack/commit/df9191f4b8f9810cc25280a822b8786d03cca3cd), [`6e9c64f`](https://github.com/OpenSaasAU/stack/commit/6e9c64f6afa74705ac5f5a34a5d13829ff4ba4ac)]:
+  - @opensaas/stack-core@0.44.0-alpha.7
+
 ## 0.44.0-alpha.6
 
 ### Minor Changes
