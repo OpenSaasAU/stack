@@ -141,6 +141,8 @@ import type { Plugin, BaseFieldConfig, TypeInfo } from '@opensaas/stack-core/ext
 import { createMcpHandlers } from '@opensaas/stack-core/mcp'
 ```
 
+Pass `procedures` to serve each procedure exposing `'mcp'` as a tool named after it. It runs the same pipeline as `createProcedureHandler` under the agent's session, is listed only when the token holds its scopes and its access rule admits the session, and returns the result envelope as JSON in the tool result's text, with `isError` set on a failure. A procedure not exposed to `'mcp'` answers as an unknown tool. See the [MCP Setup Guide](/docs/how-to/mcp).
+
 ## Sudo Mode
 
 Sudo mode creates a context that bypasses access control while still executing
