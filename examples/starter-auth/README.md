@@ -43,6 +43,8 @@ BETTER_AUTH_SECRET="your-generated-secret-here"
 BETTER_AUTH_URL="http://localhost:3000"
 ```
 
+`BETTER_AUTH_URL` is also the one origin the procedure host (`lib/server.ts`) accepts cookie calls from. Unset or empty, it falls back to `http://localhost:3000` in development; in production the app throws when `lib/server.ts` loads, naming the variable, rather than accepting calls from localhost only.
+
 Leave `DATABASE_URL` unset: `pnpm dev` runs the Dev database for this project.
 
 ### 3. Start Development Server
@@ -72,7 +74,7 @@ Visit:
 
 The rules that must always hold, such as "only the author edits a post", live on the `Post` list's access control and hooks, not in the procedures: the Admin UI changes the same list without calling them.
 
-`pnpm lint` runs `eslint.config.js`, which refuses any other import of `getContext` (and of `rawOpensaasContext` outside `lib/auth.ts`) and allows `'use server'` only in `lib/actions/*.ts` and the admin page. These rules are a guardrail, not a security boundary: they keep the wiring in one place by default, and access control is what protects the data. See [Procedures](https://stack.opensaas.au/docs/how-to/procedures).
+`pnpm lint` runs `eslint.config.js`, which refuses any other import of `getContext` (and of `rawOpensaasContext` outside `lib/auth.ts`) allows `'use server'` only in `lib/actions/*.ts` and the admin page, and refuses `withSession` and `sudo` calls in those files. It covers `.ts`, `.tsx` and the JavaScript extensions alike. These rules are a guardrail, not a security boundary: they keep the wiring in one place by default, and access control is what protects the data. See [Procedures](https://stack.opensaas.au/docs/how-to/procedures).
 
 ## Session Type Safety
 

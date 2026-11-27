@@ -54,6 +54,8 @@ describe('starter-auth guardrails (the with-auth template)', () => {
       ['app/page.tsx', "import { rawOpensaasContext } from '@/.opensaas/context'\n"],
       ['lib/auth.ts', "import { getContext } from '@/.opensaas/context'\n"],
       ['lib/server.ts', "import { rawOpensaasContext } from '@/.opensaas/context'\n"],
+      ['lib/probe.js', "import { getContext } from '../.opensaas/context.ts'\n"],
+      ['lib/probe.mjs', "import { getContext } from '@/.opensaas/context'\n"],
     ])('refuses an import in %s: %s', async (filePath, code) => {
       expect(await rulesHit(filePath, code)).toContain(restrictedImport)
     })
@@ -74,6 +76,8 @@ describe('starter-auth guardrails (the with-auth template)', () => {
       ['app/posts/page.tsx', "export async function a() {\n  'use server'\n}\n"],
       ['lib/actions/nested/posts.ts', "'use server'\nexport async function a() {}\n"],
       ['app/posts/[id]/page.tsx', "export async function a() {\n  'use server'\n}\n"],
+      ['lib/probe.js', "'use server'\nexport async function a() {}\n"],
+      ['app/probe.mjs', "export async function a() {\n  'use server'\n}\n"],
     ])('is refused in %s', async (filePath, code) => {
       expect(await rulesHit(filePath, code)).toContain(restrictedSyntax)
     })
@@ -87,8 +91,44 @@ describe('starter-auth guardrails (the with-auth template)', () => {
     })
   })
 
+  describe('switching the session in a server action', () => {
+    it.each([
+      [
+        'lib/actions/probe.ts',
+        "'use server'\nexport async function a(userId: string) {\n  return (await getServerContext()).withSession({ userId })\n}\n",
+      ],
+      [
+        'lib/actions/probe.ts',
+        "'use server'\nexport async function a() {\n  return (await getServerContext()).sudo()\n}\n",
+      ],
+      [
+        'lib/actions/probe.ts',
+        "'use server'\nexport async function a(userId: string) {\n  const context = await getServerContext()\n  return context?.['withSession']({ userId })\n}\n",
+      ],
+      [
+        'app/admin/[[...admin]]/page.tsx',
+        "async function a() {\n  'use server'\n  return (await getServerContext()).sudo()\n}\n",
+      ],
+    ])('is refused in %s', async (filePath, code) => {
+      expect(await rulesHit(filePath, code)).toContain(restrictedSyntax)
+    })
+
+    it('leaves a call through callProcedure alone', async () => {
+      const code =
+        "'use server'\nexport async function a(id: string) {\n  return callProcedure('publishPost', { id })\n}\n"
+      expect(await rulesHit('lib/actions/probe.ts', code)).toEqual([])
+    })
+  })
+
   it('passes over the template as committed', async () => {
-    const files = ['lib/server.ts', 'lib/auth.ts', 'lib/actions/posts.ts', 'app/posts/page.tsx']
+    const files = [
+      'lib/server.ts',
+      'lib/auth.ts',
+      'lib/actions/posts.ts',
+      'lib/actions/auth.ts',
+      'app/posts/page.tsx',
+      'app/admin/[[...admin]]/page.tsx',
+    ]
     for (const file of files) {
       const code = fs.readFileSync(path.join(root, file), 'utf-8')
       expect(await rulesHit(file, code)).toEqual([])

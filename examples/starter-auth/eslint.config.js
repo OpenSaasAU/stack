@@ -9,6 +9,8 @@ const CONTEXT_MODULE = '(^|/)\\.opensaas/context(\\.[cm]?[jt]s)?$'
 const WIRING_MODULE = 'lib/server.ts'
 const AUTH_MODULE = 'lib/auth.ts'
 
+const SOURCE_FILES = ['**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}']
+
 const SERVER_ACTION_FILES = ['lib/actions/*.ts', 'app/admin/\\[\\[...admin\\]\\]/page.tsx']
 
 function contextImportRule(importNames, message) {
@@ -20,7 +22,7 @@ export default [
     ignores: ['.next/**', '.opensaas/**', 'node_modules/**', 'prisma/**', 'migrations/**'],
   },
   {
-    files: ['**/*.ts', '**/*.tsx'],
+    files: SOURCE_FILES,
     languageOptions: {
       parser: tsparser,
       parserOptions: { ecmaVersion: 'latest', sourceType: 'module', ecmaFeatures: { jsx: true } },
@@ -59,6 +61,16 @@ export default [
   },
   {
     files: SERVER_ACTION_FILES,
-    rules: { 'no-restricted-syntax': 'off' },
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            'CallExpression > MemberExpression.callee[property.name=/^(withSession|sudo)$/], CallExpression > MemberExpression.callee[property.value=/^(withSession|sudo)$/]',
+          message:
+            'A server action is a public endpoint: do not switch the session or escalate here. Call a procedure with callProcedure, which resolves the session from the request.',
+        },
+      ],
+    },
   },
 ]

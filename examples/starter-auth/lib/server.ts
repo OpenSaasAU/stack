@@ -8,6 +8,20 @@ import { procedures } from '@/lib/procedures'
 
 const resolvedConfig = await config
 
+function appOrigin(): string {
+  const configured = process.env.BETTER_AUTH_URL
+  if (configured) return configured
+  if (
+    process.env.NODE_ENV === 'production' &&
+    process.env.NEXT_PHASE !== 'phase-production-build'
+  ) {
+    throw new Error(
+      "BETTER_AUTH_URL is not set. Set it to this app's public origin (https://app.example.com): the procedure host accepts cookie requests only from that origin.",
+    )
+  }
+  return 'http://localhost:3000'
+}
+
 const server = createServerCaller({
   procedures,
   config: resolvedConfig,
@@ -27,5 +41,5 @@ export const handleProcedureRequest = createProcedureHandler({
   config: resolvedConfig,
   getContext,
   getSession: (request) => getSessionFromHeaders(request.headers),
-  allowedOrigins: [process.env.BETTER_AUTH_URL ?? 'http://localhost:3000'],
+  allowedOrigins: [appOrigin()],
 })

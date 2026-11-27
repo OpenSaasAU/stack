@@ -9,7 +9,7 @@ A scaffolded auth app gets:
 - `lib/procedures.ts`: `createPost`, `updatePost`, `publishPost` and `deletePost`, each with Zod input and output, declared failures, `access: ({ session }) => session?.actor?.kind === 'human'` and `expose: ['web']`
 - `lib/server.ts`: the one module that imports `getContext`, exporting `callProcedure`, `getServerContext()` and the HTTP host served at `app/api/procedures/[name]/route.ts`
 - a `/posts` page that reads through `getServerContext()`, creates through a server action that only calls a procedure and redirects, and updates, publishes and deletes through the typed browser client
-- `eslint.config.js`, run by `pnpm lint`, which refuses any other import of the context factory and allows `'use server'` only in `lib/actions/*.ts` and the admin page
+- `eslint.config.js`, run by `pnpm lint`, which refuses any other import of the context factory and allows `'use server'` only in `lib/actions/*.ts` and the admin page, and refuses `withSession` and `sudo` calls there, over TypeScript and JavaScript files alike
 
 ```typescript
 // lib/actions/posts.ts

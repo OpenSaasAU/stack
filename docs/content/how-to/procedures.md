@@ -84,11 +84,13 @@ export const handleProcedureRequest = createProcedureHandler({
   config: resolvedConfig,
   getContext,
   getSession: (request) => getSessionFromHeaders(request.headers),
-  allowedOrigins: [process.env.BETTER_AUTH_URL ?? 'http://localhost:3000'],
+  allowedOrigins: [process.env.BETTER_AUTH_URL || 'http://localhost:3000'],
 })
 ```
 
 `getSession` takes no argument: it reads the request's own cookies. Nothing a caller passes can choose the session.
+
+The starter's `lib/server.ts` goes one step further for `allowedOrigins`: an unset or empty `BETTER_AUTH_URL` falls back to `http://localhost:3000` in development, and in production the module throws when it loads, naming the variable, rather than accepting cookie calls from localhost only.
 
 ```typescript
 // app/api/procedures/[name]/route.ts
@@ -166,9 +168,10 @@ A renamed procedure or input field is a compile error. A failure resolves with `
 
 ## The lint guardrails
 
-The auth template's `eslint.config.js` adds two rules, run by `pnpm lint`:
+The auth template's `eslint.config.js` adds three rules, run by `pnpm lint` over every TypeScript and JavaScript source file (`.ts`, `.tsx`, `.mts`, `.cts`, `.js`, `.jsx`, `.mjs`, `.cjs`):
 
 - **The context factory.** Only `lib/server.ts` may import `getContext` from `.opensaas/context`, and only `lib/auth.ts` may import `rawOpensaasContext` (for better-auth's adapter). Any other import, or a re-export, is an error. Importing `config` stays allowed.
 - **`'use server'`.** The directive is allowed only in `lib/actions/*.ts` and the admin page. Anywhere else, at the top of a file or inside a function, it is an error.
+- **No session switching in a server action.** In those same files, a call to `.withSession(` or `.sudo(` is an error. The context `getServerContext()` returns still has both, and a server action is a public endpoint, so `(await getServerContext()).withSession({ userId })` with `userId` taken from an argument would let any caller act as any user. A server action calls a procedure instead.
 
-**These rules are a guardrail, not a security boundary.** They keep the wiring in one place by default, so an arbitrary session is hard to introduce by accident. Code in the same process can still reach the factory another way, for example through a dynamic `import()`, a file the config ignores, or by disabling the rule. What protects data is the access control on each list and each procedure, which runs whichever way the code was reached. Change the file names in `eslint.config.js` when you move the wiring module or add an actions file.
+**These rules are a guardrail, not a security boundary.** They keep the wiring in one place by default, so an arbitrary session is hard to introduce by accident. Code in the same process can still reach the factory another way, for example through a dynamic `import()`, a file the config ignores, by passing a context to a helper module that calls `withSession` for it, or by disabling the rule. What protects data is the access control on each list and each procedure, which runs whichever way the code was reached. Change the file names in `eslint.config.js` when you move the wiring module or add an actions file.
