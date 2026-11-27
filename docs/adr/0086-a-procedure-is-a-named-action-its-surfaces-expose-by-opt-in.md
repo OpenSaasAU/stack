@@ -34,6 +34,16 @@ We decided an action is a **Procedure**: a named value with a description, an in
 - **`RETRY` reports a rollback and nothing retries.** A serialization failure is `RETRY`; every other stack-owned database error is `CONFLICT`. `RETRY` says the transaction that lost the race rolled back. It does not say that work outside the transaction was undone, so neither a host nor a client runs the call again on its own.
 - **Output is parsed after `run` returns, so after any transaction it opened has committed.** Output that fails its schema is `INTERNAL` and undoes nothing. A procedure that must not commit work it cannot report checks what it will return inside the transaction.
 
+## The browser client
+
+- **The client is typed from the registry and imports none of it.** `createProcedureClient<typeof procedures>()` takes the registry as a type argument. Its module imports types only, apart from the reserved codes and their statuses, which live in a module of their own that imports nothing, so client and host read one table. The registry, its schemas and whatever `run` reaches stay out of the browser bundle, and `pnpm check:client-server-graph` holds it to that as a client entry. A call names the procedure, and the name, the input and the result are inferred from it, so an unknown name or a renamed input field is a compile error.
+- **Having no schemas, the client does not parse.** The input is checked by the host and the data was parsed by the host's output schema. The client checks the shape of the envelope and nothing inside `data`.
+- **A transport failure is a third outcome, returned and never thrown.** A call resolves to success, a pipeline failure, or a failure whose code is `'transport'`: the request was not answered (`network`), the host refused it before the pipeline (`refused`, carrying the host's message), or the answer is not the host's (`malformed`). The code is lower-case because a declared code cannot be, so it collides with no procedure's own and one `switch` over `error.code` is exhaustive across all three kinds.
+- **Status and shape are read together.** An answer is a result only when it has the envelope's shape under the status the host gives it: success at 200, a reserved code at its own status, any other code at 200. Anything else is `malformed`, so an intermediary's error page or a JSON body from something that is not the host is never taken for a pipeline result.
+- **The client sends the input as given.** No input is an empty body, which the host reads as `undefined`, and the argument may be left out only when the input schema accepts `undefined`. The client never substitutes `{}`.
+- **The client never retries.** Not on `RETRY`, for the reason above, and not on a `network` failure, after which the call may already have run.
+- **Identity is the cookie.** The client sends no `Authorization` header and offers no way to add one. Credentials default to `same-origin`; `include` is for a host on another origin that lists the page's origin.
+
 ## The MCP write default
 
 This section records a decision that #2537 delivers; until it merges, generated MCP write tools behave as before.
@@ -54,6 +64,12 @@ The reason is the same as exposure's: an agent should be able to do what the app
 
 **Wrapping `run` in a transaction.** Rejected. Every external call a procedure makes would hold its row locks, and the author could not choose where the transaction ends.
 
+**A client object with a method per procedure.** Rejected. It needs a `Proxy`, which answers to every name, `then` included, so the client would be mistaken for a thenable wherever it is awaited or returned. A function taking the name is typed as precisely.
+
+**Throwing on a transport failure.** Rejected. A thrown value is untyped at the catch site, and a caller who forgets the `try` gets an unhandled rejection in an event handler.
+
+**A separate discriminator for transport failures.** Rejected. A second field to test before `error.code` gives two places to forget; a code no procedure can declare gives one exhaustive switch.
+
 **Returning a failure from `run`.** Rejected. Returned from a transaction callback it commits the writes before it; a throw cannot be mistaken for success.
 
 **Parsing output inside the transaction.** Rejected. The transaction is the procedure's own and may have committed, or never existed, by the time `run` returns.
@@ -68,5 +84,7 @@ The reason is the same as exposure's: an agent should be able to do what the app
 - Any `Authorization` header is refused, whatever its scheme. A site behind HTTP Basic auth, or behind a proxy that adds the header, gets 401 on every procedure call, anonymous ones included.
 - Access is decided before the body arrives, because the body is read only once access admits the call. A caller can pass access and then send the body slowly, up to the server's request timeout, so `run` executes with a session that old.
 - `run` opens no transaction of its own; one it needs is explicit, so external work can sit outside it (ADR-0028). A write made outside a transaction stays when a later step fails, a declared failure included.
+- The client's type offers every procedure in the registry, the ones not exposed to `'web'` included, because exposure is not in a procedure's type. Calling one answers a `refused` 404.
+- A registry annotated as `ProcedureRegistry<Context>` loses its per-name types, and the client then accepts any name and any input. `satisfies` keeps them.
 - A procedure whose output fails its schema has already committed. The caller gets `INTERNAL` for work that happened.
-- The first slice (#2533) ships the builder, the registry and the HTTP host, #2535 the startup refusals for unrepresentable schemas and name collisions, and #2534 transactions and declared failures. The Actor (#2536), the MCP write default (#2537), MCP exposure, the in-process caller and the browser client follow in their own changes against this record.
+- The first slice (#2533) ships the builder, the registry and the HTTP host, #2535 the startup refusals for unrepresentable schemas and name collisions, and #2534 transactions and declared failures. The Actor (#2536), the MCP write default (#2537), MCP exposure and the in-process caller follow in their own changes against this record. The browser client is #2540.

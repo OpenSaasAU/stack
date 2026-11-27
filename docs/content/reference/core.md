@@ -31,6 +31,8 @@ pnpm add @opensaas/stack-core
 | `@opensaas/stack-core/db-client`            | `resolveRuntimeConnection`, used by the generated context; server-only, it reaches `pg`                              |
 | `@opensaas/stack-core/client`               | Deprecated alias of `/db-client`, removed at the next major                                                          |
 | `@opensaas/stack-core/client-safe`          | The naming and filter-query helpers a `'use client'` module may import; reaches nothing server-side                  |
+| `@opensaas/stack-core/procedures`           | The procedure builder and `createProcedureHandler`, the HTTP host for an application's procedures                    |
+| `@opensaas/stack-core/procedures/client`    | `createProcedureClient`, the typed browser client for procedures; type-only imports, safe in a `'use client'` module |
 | `@opensaas/stack-core/dev-database`         | The PGlite-backed Dev database the `dev` loop can resolve to                                                         |
 | `@opensaas/stack-core/contract`             | Contract derivation fed into the Prisma builder                                                                      |
 | `@opensaas/stack-core/origin`               | `originTripwire`, the middleware the generated context installs                                                      |

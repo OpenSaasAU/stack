@@ -11,26 +11,14 @@ import {
   isSerializationFailure,
   isUniqueConstraintViolation,
 } from '../lib/database-errors.js'
+import type { ReservedFailureCode } from './codes.js'
 
-/** The failure codes the stack owns. A procedure cannot declare one of these. */
-export const RESERVED_FAILURE_CODES = [
-  'UNAUTHENTICATED',
-  'DENIED',
-  'INVALID_INPUT',
-  'VALIDATION',
-  'RETRY',
-  'CONFLICT',
-  'INTERNAL',
-] as const
-
-export type ReservedFailureCode = (typeof RESERVED_FAILURE_CODES)[number]
-
-const RESERVED: ReadonlySet<string> = new Set<string>(RESERVED_FAILURE_CODES)
-
-/** Whether `code` is one of the codes the stack owns. */
-export function isReservedFailureCode(code: string): code is ReservedFailureCode {
-  return RESERVED.has(code)
-}
+export {
+  FAILURE_STATUS,
+  isReservedFailureCode,
+  RESERVED_FAILURE_CODES,
+  type ReservedFailureCode,
+} from './codes.js'
 
 /**
  * A failed call. `code` is a reserved code or one the procedure declares.
@@ -55,16 +43,6 @@ export interface ProcedureFailure<TCode extends string = never> {
 /** The result of calling a procedure, on every surface. */
 export type ProcedureResult<TData, TCode extends string = never> =
   { success: true; data: TData } | { success: false; error: ProcedureFailure<TCode> }
-
-export const FAILURE_STATUS: Readonly<Record<ReservedFailureCode, number>> = {
-  UNAUTHENTICATED: 401,
-  DENIED: 403,
-  INVALID_INPUT: 400,
-  VALIDATION: 400,
-  RETRY: 409,
-  CONFLICT: 409,
-  INTERNAL: 500,
-}
 
 const MESSAGES: Readonly<Record<ReservedFailureCode, string>> = {
   UNAUTHENTICATED: 'Authentication required',
