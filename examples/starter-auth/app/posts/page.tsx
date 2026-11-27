@@ -12,7 +12,7 @@ export default async function PostsPage() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-8 p-8">
-      <div className="flex items-baseline justify-between">
+      <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Posts</h1>
         <Link href={signedIn ? '/admin' : '/sign-in'} className="text-sm text-blue-600">
           {signedIn ? 'Admin' : 'Sign in'}
