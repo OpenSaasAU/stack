@@ -1,5 +1,6 @@
 import type * as z from 'zod'
 import { processGlobal } from '../lib/process-global.js'
+import { DECLARED_FAILURE_CODE_PATTERN } from './codes.js'
 import { procedureContextOf } from './context-face.js'
 import { failWith, type ProcedureFail } from './failures.js'
 import { isReservedFailureCode, type ProcedureResult, type ReservedFailureCode } from './result.js'
@@ -283,8 +284,6 @@ function assertExposure(expose: unknown): asserts expose is ProcedureExposure {
   }
 }
 
-const FAILURE_CODE = /^[A-Z][A-Z0-9_]{0,63}$/
-
 function assertFailures(description: string, failures: unknown): void {
   if (failures === undefined) return
   if (typeof failures !== 'object' || failures === null || Array.isArray(failures)) {
@@ -293,7 +292,7 @@ function assertFailures(description: string, failures: unknown): void {
     )
   }
   for (const [code, message] of Object.entries(failures)) {
-    if (!FAILURE_CODE.test(code)) {
+    if (!DECLARED_FAILURE_CODE_PATTERN.test(code)) {
       throw new ProcedureDefinitionError(
         `Failure code ${JSON.stringify(code)} must start with an upper-case letter and contain only upper-case letters, digits and "_" (at most 64 characters).`,
       )

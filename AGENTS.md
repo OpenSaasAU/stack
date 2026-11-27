@@ -1140,7 +1140,8 @@ packages/my-field/
    `pnpm check:client-side-effect-imports` fails on the broken shape.
 
    A `'use client'` module imports from client-safe subpaths only — `@opensaas/stack-ui/fields`,
-   `@opensaas/stack-ui/cells`, `@opensaas/stack-ui/primitives`, `@opensaas/stack-core/client-safe` — never a
+   `@opensaas/stack-ui/cells`, `@opensaas/stack-ui/primitives`, `@opensaas/stack-core/client-safe`,
+   `@opensaas/stack-core/procedures/client` — never a
    package root, whose graph reaches Node builtins that `next build --webpack` refuses to bundle.
    `pnpm check:client-server-graph` fails on that shape.
 

@@ -1,6 +1,7 @@
 import * as z from 'zod'
 import { findMcpToolOwner, isReservedMcpToolName } from '../config/mcp-tool-names.js'
 import type { OpenSaasConfig } from '../config/types.js'
+import { PROCEDURE_NAME_PATTERN } from './codes.js'
 import { isProcedure } from './procedure.js'
 import { isReservedFailureCode } from './result.js'
 
@@ -30,8 +31,6 @@ export interface ProcedureRegistryChecks {
    */
   config?: OpenSaasConfig
 }
-
-const PROCEDURE_NAME = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/
 
 type SchemaPath = readonly (string | number)[]
 
@@ -310,7 +309,7 @@ export function assertProcedureRegistry(
 ): void {
   const names = Object.keys(procedures)
   for (const name of names) {
-    if (!PROCEDURE_NAME.test(name)) {
+    if (!PROCEDURE_NAME_PATTERN.test(name)) {
       throw new ProcedureHostError(
         `Procedure name "${name}" must start with a letter and contain only letters, digits, "_" and "-" (at most 64 characters). Rename the registry key.`,
       )
