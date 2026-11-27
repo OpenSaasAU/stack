@@ -80,6 +80,7 @@ const SKIP_DIRECTORIES = new Set(['node_modules', 'dist', '__tests__', 'tests', 
 const APPLICATION_ROOTS = ['examples']
 const CLIENT_ENTRIES = [
   'packages/core/src/client-safe.ts',
+  'packages/core/src/procedures/client.ts',
   'packages/ui/src/components/fields/index.ts',
   'packages/ui/src/components/cells/index.ts',
   'packages/ui/src/primitives/index.ts',

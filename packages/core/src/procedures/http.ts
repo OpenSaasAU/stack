@@ -6,6 +6,7 @@ import {
   type ProcedureHostContext,
   type ProcedureRegistry,
 } from './procedure.js'
+import { REFUSAL_STATUS } from './codes.js'
 import { FAILURE_STATUS, failure, isReservedFailureCode, type ProcedureResult } from './result.js'
 import { guardReporter, runProcedure, type RawInput } from './run.js'
 import { assertProcedureRegistry, ProcedureHostError } from './validate.js'
@@ -83,7 +84,7 @@ function json(status: number, body: object, headers: Record<string, string> = {}
   })
 }
 
-const notFound = (): Response => json(404, { error: 'Not found' })
+const notFound = (): Response => json(REFUSAL_STATUS.NOT_FOUND, { error: 'Not found' })
 
 function statusOf(result: ProcedureResult<unknown, string>): number {
   if (result.success) return 200
@@ -255,17 +256,23 @@ export function createProcedureHandler<C extends ProcedureHostContext>(
     if (procedure === undefined) return notFound()
 
     if (request.method !== 'POST')
-      return json(405, { error: 'Method not allowed' }, { allow: 'POST' })
+      return json(
+        REFUSAL_STATUS.METHOD_NOT_ALLOWED,
+        { error: 'Method not allowed' },
+        { allow: 'POST' },
+      )
 
     if (request.headers.has('authorization')) return resultResponse(failure('UNAUTHENTICATED'))
 
     if (!isJsonContentType(request.headers.get('content-type'))) {
-      return json(415, { error: 'Content-Type must be application/json' })
+      return json(REFUSAL_STATUS.UNSUPPORTED_MEDIA_TYPE, {
+        error: 'Content-Type must be application/json',
+      })
     }
 
     const declaredLength = Number(request.headers.get('content-length') ?? '0')
     if (Number.isFinite(declaredLength) && declaredLength > maxBodyBytes) {
-      return json(413, { error: 'Request body too large' })
+      return json(REFUSAL_STATUS.BODY_TOO_LARGE, { error: 'Request body too large' })
     }
 
     let session: SessionOf<C> | null = null
@@ -316,7 +323,9 @@ export function createProcedureHandler<C extends ProcedureHostContext>(
       },
       onUnexpectedError,
     })
-    if (transport.bodyTooLarge === true) return json(413, { error: 'Request body too large' })
+    if (transport.bodyTooLarge === true) {
+      return json(REFUSAL_STATUS.BODY_TOO_LARGE, { error: 'Request body too large' })
+    }
 
     try {
       return resultResponse(result)

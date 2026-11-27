@@ -41,6 +41,10 @@
       "types": "./dist/procedures/index.d.ts",
       "default": "./dist/procedures/index.js"
     },
+    "./procedures/client": {
+      "types": "./dist/procedures/client.d.ts",
+      "default": "./dist/procedures/client.js"
+    },
     "./db-client": {
       "types": "./dist/db/client.d.ts",
       "default": "./dist/db/client.js"
