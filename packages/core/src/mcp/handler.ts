@@ -10,7 +10,7 @@ import { pascalToCamel } from '../lib/case-utils.js'
 import { isClientSafeError } from '../lib/client-safe-error.js'
 import { McpToolError } from './tool-error.js'
 import type { McpSession, McpSessionProvider } from './types.js'
-import { agentActor, isActorId } from '../access/actor.js'
+import { agentActor, isActorClientId, isActorUserId, type AgentActor } from '../access/actor.js'
 import { controlFlowPredicateOf, decideAdvertisement } from '../access/decide-advertisement.js'
 import { mcpAdvertisement } from './advertise.js'
 import { McpWriteRefusedError, assertWritableData, generateFieldSchemas } from './field-schema.js'
@@ -46,33 +46,68 @@ type ContextSession = { userId: string; [key: string]: unknown }
 
 const UNSAFE_SESSION_KEYS: ReadonlySet<string> = new Set(['__proto__', 'constructor', 'prototype'])
 
+/** The session {@link mcpContextSession} builds: the user's id, the provider's custom fields and the agent actor. */
+export type McpContextSession = ContextSession & { actor: AgentActor }
+
+/** Thrown by {@link mcpContextSession} for an MCP session with no usable `clientId` or `userId`. */
+export class McpSessionError extends Error {
+  constructor(readonly missing: readonly ('clientId' | 'userId')[]) {
+    super(
+      `The MCP session has no usable ${missing.map((field) => `\`${field}\``).join(' or ')}. ` +
+        'A session provider must return the user the client acts for as `userId` and the OAuth client id it verified as `clientId`.',
+    )
+    this.name = 'McpSessionError'
+  }
+}
+
+function missingAgentFields(session: McpSession): ('clientId' | 'userId')[] {
+  const missing: ('clientId' | 'userId')[] = []
+  if (!isActorClientId(session.clientId)) missing.push('clientId')
+  if (!isActorUserId(session.userId)) missing.push('userId')
+  return missing
+}
+
 /**
- * Strips transport-level fields; userId and any custom session fields flow
- * through to access control. A custom field resolved to `undefined` is
- * dropped rather than passed through — `getContext` refuses a session
- * holding `undefined` for one of its own keys (#1397). The actor is assigned
- * after every incoming key, so a provider's own `actor` never survives.
+ * Build the context session for a verified MCP session, exactly as
+ * `createMcpHandlers` does: the user's `userId`, the provider's custom fields,
+ * and the agent actor `{ kind: 'agent', clientId, onBehalfOf, via: 'mcp' }`.
+ * Transport fields (`clientId`, `scopes`, `accessToken`, `expiresAt`) and any
+ * `actor` the session held are left out.
+ *
+ * Use it to build a context for a request an MCP session provider verified
+ * outside `createMcpHandlers`. Pass only a session a provider verified: the
+ * actor says whatever `clientId` and `userId` say.
+ *
+ * @throws {McpSessionError} when `clientId` or `userId` is missing or empty.
+ *
+ * @example
+ * ```typescript
+ * import { mcpContextSession, type McpSession } from '@opensaas/stack-core/mcp'
+ * import { getContext } from '@/.opensaas/context'
+ *
+ * declare const verified: McpSession
+ *
+ * const context = await getContext(mcpContextSession(verified))
+ * ```
  */
-function toContextSession(session: McpSession): ContextSession {
+export function mcpContextSession(session: McpSession): McpContextSession {
+  const missing = missingAgentFields(session)
+  if (missing.length > 0) throw new McpSessionError(missing)
   const {
     accessToken: _accessToken,
     expiresAt: _expiresAt,
     scopes: _scopes,
     clientId,
     userId,
+    actor: _actor,
     ...rest
   } = session
-  const cleaned: ContextSession = { userId }
+  const cleaned: McpContextSession = { userId, actor: agentActor(clientId, userId) }
   for (const [key, value] of Object.entries(rest)) {
     if (value === undefined || UNSAFE_SESSION_KEYS.has(key)) continue
     cleaned[key] = value
   }
-  cleaned.actor = agentActor(clientId, userId)
   return cleaned
-}
-
-function hasVerifiedAgent(session: McpSession): boolean {
-  return isActorId(session.clientId) && isActorId(session.userId)
 }
 
 /**
@@ -225,15 +260,23 @@ export function createMcpHandlers(options: {
 
   const handler = async (req: Request): Promise<Response> => {
     const session = await getSession(req.clone())
-    if (session && !hasVerifiedAgent(session)) {
-      console.error(
-        'MCP session provider returned a session without a verified `clientId` and `userId`; the request was refused. A provider must return the OAuth client id it verified as `clientId`.',
-      )
-    }
-    if (!session || !hasVerifiedAgent(session)) {
+    if (!session) {
       return new Response(null, {
         status: 401,
         headers: { 'WWW-Authenticate': challenge },
+      })
+    }
+    const missing = missingAgentFields(session)
+    if (missing.length > 0) {
+      console.error(
+        `[opensaas] The MCP session provider returned a session with no usable ${missing
+          .map((field) => `\`${field}\``)
+          .join(' or ')}; the request was refused with 500. ` +
+          'A provider must return the user the client acts for as `userId` and the OAuth client id it verified as `clientId`, each a non-empty string.',
+      )
+      return new Response(JSON.stringify({ error: 'MCP session provider misconfigured' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
       })
     }
 
@@ -271,7 +314,7 @@ export function createMcpHandlers(options: {
       }
 
       if (body.method === 'tools/list') {
-        const context = await getContext(toContextSession(session))
+        const context = await getContext(mcpContextSession(session))
         bindHeldScopes(context, session.scopes ?? [])
         return await handleToolsList(config, context, session, body.id)
       }
@@ -776,7 +819,7 @@ async function handleCrudTool(
   getContext: (session?: ContextSession) => Promise<AccessContext>,
   id?: number | string,
 ): Promise<Response> {
-  const context = await getContext(toContextSession(session))
+  const context = await getContext(mcpContextSession(session))
   bindHeldScopes(context, session.scopes ?? [])
 
   const listEntry = Object.entries(config.lists).find(
@@ -992,7 +1035,7 @@ async function handleCustomTool(
   id?: number | string,
 ): Promise<Response> {
   // Find the tool: list-level custom tools first, then plugin-registered tools
-  const context = await getContext(toContextSession(session))
+  const context = await getContext(mcpContextSession(session))
   bindHeldScopes(context, session.scopes ?? [])
 
   let customTool: McpCustomTool | undefined

@@ -11,6 +11,9 @@ import {
 } from '../src/mcp/better-auth.js'
 import type { BetterAuthMcpOptions } from '../src/mcp/better-auth.js'
 import type { McpSession } from '@opensaas/stack-core/mcp'
+import type { OpenSaasConfig } from '@opensaas/stack-core'
+import { text } from '@opensaas/stack-core/fields'
+import { createTestDatabase, type TestDatabase } from '@opensaas/stack-core/testing'
 
 describe('Better Auth MCP Adapter', () => {
   describe('token verification', () => {
@@ -126,7 +129,6 @@ describe('Better Auth MCP Adapter', () => {
 
     it.each([
       ['sub equals client_id and azp', { sub: 'c1', client_id: 'c1', azp: 'c1' }],
-      ['sub equals client_id', { sub: 'c1', client_id: 'c1', azp: undefined }],
       ['sub equals azp', { sub: 'c1', azp: 'c1' }],
     ])('rejects a machine token where %s', async (_name, claims) => {
       const token = mint({ ...claims, scope: 'read' })
@@ -258,28 +260,78 @@ describe('Better Auth MCP Adapter', () => {
   })
 
   describe('mcpSessionToContextSession', () => {
-    it('should extract userId from MCP session', () => {
+    const agent = { kind: 'agent', clientId: 'client-1', onBehalfOf: 'user-456', via: 'mcp' }
+
+    it('returns the user id and the agent actor, and nothing else', () => {
       const mcpSession: McpSession = {
         userId: 'user-456',
         clientId: 'client-1',
         scopes: ['admin'],
         accessToken: 'token-abc',
+        role: 'admin',
+        actor: { kind: 'human', userId: 'user-456', via: 'web' },
       }
 
-      const contextSession = mcpSessionToContextSession(mcpSession)
-
-      expect(contextSession).toEqual({ userId: 'user-456' })
+      expect(mcpSessionToContextSession(mcpSession)).toEqual({ userId: 'user-456', actor: agent })
     })
 
-    it('should work with minimal session', () => {
-      const mcpSession: McpSession = {
-        userId: 'user-789',
-        clientId: 'client-1',
+    it('refuses a session with no client id', () => {
+      expect(() => mcpSessionToContextSession({ userId: 'user-456', clientId: '' })).toThrow(
+        /clientId/,
+      )
+    })
+
+    describe('in a context', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'postgresql' },
+        lists: {
+          Note: {
+            fields: { label: text() },
+            access: {
+              operation: {
+                query: () => true,
+                create: ({ session }) => session !== null && session.actor?.kind !== 'agent',
+              },
+            },
+          },
+          AgentNote: {
+            fields: { label: text() },
+            access: {
+              operation: {
+                query: () => true,
+                create: ({ session }) =>
+                  session?.actor?.kind === 'agent' && session.actor.clientId === 'client-1',
+              },
+            },
+          },
+        },
       }
+      let database: TestDatabase
 
-      const contextSession = mcpSessionToContextSession(mcpSession)
+      beforeAll(async () => {
+        database = await createTestDatabase(config)
+      }, 120_000)
 
-      expect(contextSession).toEqual({ userId: 'user-789' })
+      afterAll(async () => {
+        await database?.close()
+      })
+
+      it('carries the agent actor, so a rule that denies agents denies it', async () => {
+        const context = database.context(
+          mcpSessionToContextSession({ userId: 'user-456', clientId: 'client-1' }),
+        )
+
+        expect(context.session?.actor).toEqual(agent)
+        expect(await context.db.Note.create({ data: { label: 'agent' } })).toBeNull()
+        expect(await context.db.AgentNote.create({ data: { label: 'agent' } })).not.toBeNull()
+      })
+
+      it('a session built by hand from the user id alone is not an agent', async () => {
+        const context = database.context({ userId: 'user-456' })
+
+        expect(await context.db.Note.create({ data: { label: 'person' } })).not.toBeNull()
+        expect(await context.db.AgentNote.create({ data: { label: 'person' } })).toBeNull()
+      })
     })
   })
 

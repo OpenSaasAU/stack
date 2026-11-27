@@ -9,6 +9,7 @@ import { getAuthListRegistry } from '../lists/index.js'
 import type { NormalizedAuthConfig, NormalizedAuthModelConfig } from '../config/types.js'
 import {
   SESSION_FILL_IN,
+  assertNoReservedSessionField,
   assertSessionFieldsResolvable,
   createSessionFillIn,
   isSessionFillIn,
@@ -688,13 +689,7 @@ export async function getSessionFromAuth<TResolvedSession>(
   sessionFields: string[],
   headers: Headers,
 ): Promise<Session | null> {
-  if (sessionFields.includes('actor')) {
-    throw new Error(
-      '[@opensaas/stack-auth] sessionFields: "actor" is reserved. The stack\'s hosts set ' +
-        '`session.actor` themselves, so it cannot be projected from the better-auth session ' +
-        'or the user list. Rename the field.',
-    )
-  }
+  assertNoReservedSessionField(sessionFields)
   const resolvedSession = await auth.api.getSession({ headers })
 
   if (!resolvedSession) {

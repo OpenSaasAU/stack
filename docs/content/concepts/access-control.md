@@ -341,13 +341,40 @@ const ownedByCaller: AccessControl = ({ session }) => {
   return { authorId: { equals: userId } }
 }
 
-const agentsMayNotDelete: AccessControl = (args) =>
+const ownerViaWebProcedureOnly: AccessControl = (args) =>
   args.session?.actor?.kind === 'human' ? ownedByCaller(args) : false
+
+const ownerUnlessAgent: AccessControl = (args) =>
+  args.session?.actor?.kind === 'agent' ? false : ownedByCaller(args)
 ```
 
-**Check positively for the kind you want.** The actor is absent on a session no host built: one passed to `getContext(session)` from a server component, a job runner's `withSession()`, a test's `createTestContext(config, session)`. Absent is never human, so `session?.actor?.kind === 'human'` denies those, and `session?.actor?.kind !== 'agent'` would admit them. Write the first form.
+Only the procedure HTTP host sets a human actor. These callers carry **no actor at all**:
 
-The `actor` key is reserved. A host assigns it last and overwrites whatever is already there, so a token claim, a session provider or a `getSession` result named `actor` has no effect. It is the same frozen object in access rules, in hooks and inside `context.transaction()`. An anonymous caller is still a `null` session, with no actor to read.
+- the Admin UI
+- a server component, server action or route handler that calls `getContext(session)` itself
+- a job runner's `context.withSession(session)`
+- a test's `createTestContext(config, session)`
+
+So `ownerViaWebProcedureOnly` admits a signed-in owner calling a procedure over HTTP and denies every caller in that list, the Admin UI included. Put it on a list operation only when that is what you mean. `ownerUnlessAgent` is the rule that keeps agents out and leaves the Admin UI and your own server code working: every agent the stack authenticates carries an agent actor, through the MCP handler and through `mcpSessionToContextSession` under `withMcpAuth` alike.
+
+**Check positively for the kind you want.** Absent is never human: `session?.actor?.kind === 'human'` denies a session with no actor, and `session?.actor?.kind !== 'agent'` used as a test for "a person" would admit one. Ask for `=== 'human'` when a rule grants something to people on the web host only, and for `=== 'agent'` when it treats agents differently, as the two rules above do.
+
+**Only a host sets the actor, and anything else is ignored.** The `actor` key is reserved. The stack keeps a private record of the actor objects its hosts created, and an `actor` that is not one of them is removed before the session reaches an access rule, a hook or a transaction, where it reads as absent. That covers a token claim, a session provider's or `getSession` result's `actor`, and an object your own code writes:
+
+```typescript
+import { getContext } from '@/.opensaas/context'
+
+const context = await getContext({
+  userId: 'user-123',
+  actor: { kind: 'human', userId: 'user-123', via: 'web' },
+})
+
+context.session?.actor // undefined: no host created this actor
+```
+
+The same holds through `withSession()`, `createTestContext()`, `sudo()` and `context.transaction()`. The actor itself is frozen, and `context.session` is a frozen shallow copy of the session you passed, so an actor cannot be added to it or swapped on it afterwards; assigning to `context.session.actor` throws. Your own session object is not frozen or changed. It is the same actor object in access rules, in hooks and inside `context.transaction()`. An anonymous caller is still a `null` session, with no actor to read.
+
+The human actor's `userId` and the agent actor's `onBehalfOf` are the session's `userId` as given: a string, or a number when your user list uses `db.idField: 'int autoincrement'`.
 
 ## Silent Failures
 

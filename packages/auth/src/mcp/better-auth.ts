@@ -1,5 +1,6 @@
 import type { McpProtectedRequestHandlerOptions } from '@better-auth/mcp'
-import type { McpSession, McpSessionProvider } from '@opensaas/stack-core/mcp'
+import { mcpContextSession } from '@opensaas/stack-core/mcp'
+import type { McpContextSession, McpSession, McpSessionProvider } from '@opensaas/stack-core/mcp'
 
 export type BetterAuthInstance = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Better Auth API types vary by plugins, must use any
@@ -50,7 +51,7 @@ function claimsToSession(
   req: Request,
 ): McpSession | null {
   if (typeof claims.sub !== 'string' || claims.sub === '') return null
-  if (claims.sub === claims.client_id || claims.sub === claims.azp) return null
+  if (claims.sub === claims.azp) return null
   const clientId = claims.azp
   if (typeof clientId !== 'string' || clientId === '') return null
   const { sub, scope: _scope, exp: _exp, ...customClaims } = claims
@@ -157,20 +158,32 @@ export function withMcpAuth(
 }
 
 /**
- * Convert MCP session to OpenSaaS context session
- * Allows using MCP session with OpenSaaS access control
+ * Convert a verified MCP session to an OpenSaaS context session: the user's
+ * `userId` and the agent actor the MCP handler sets,
+ * `{ kind: 'agent', clientId, onBehalfOf, via: 'mcp' }`. Custom claims are
+ * left out; use `mcpContextSession` from `@opensaas/stack-core/mcp` for the
+ * session `createMcpHandlers` builds, claims included.
+ *
+ * @throws {McpSessionError} from `@opensaas/stack-core/mcp` when the session
+ *   has no usable `clientId` or `userId`.
  *
  * @example
  * ```typescript
- * const mcpSession = await createBetterAuthMcpAdapter(options)(req)
- * const context = await getContext(mcpSessionToContextSession(mcpSession))
- * const posts = await context.db.Post.all()
+ * import { withMcpAuth, mcpSessionToContextSession } from '@opensaas/stack-auth/mcp'
+ * import { getContext } from '@/.opensaas/context'
+ *
+ * const handler = withMcpAuth(options, async (req, mcpSession) => {
+ *   const context = await getContext(mcpSessionToContextSession(mcpSession))
+ *   const posts = await context.db.Post.all()
+ *   return Response.json(posts)
+ * })
  * ```
  */
-export function mcpSessionToContextSession(mcpSession: McpSession): { userId: string } {
-  return {
-    userId: mcpSession.userId,
-  }
+export function mcpSessionToContextSession(
+  mcpSession: McpSession,
+): Pick<McpContextSession, 'userId' | 'actor'> {
+  const { userId, actor } = mcpContextSession(mcpSession)
+  return { userId, actor }
 }
 
 /**

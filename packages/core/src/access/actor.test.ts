@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vit
 import * as z from 'zod'
 import type { OpenSaasConfig } from '../config/types.js'
 import { text } from '../fields/index.js'
-import { createMcpHandlers } from '../mcp/index.js'
+import { createMcpHandlers, mcpContextSession, McpSessionError } from '../mcp/index.js'
 import type { McpSession } from '../mcp/index.js'
 import { createProcedureHandler } from '../procedures/http.js'
 import { createProcedureBuilder, type ProcedureRegistry } from '../procedures/procedure.js'
@@ -51,6 +51,15 @@ function schemaConfig(): OpenSaasConfig {
         },
         mcp: { tools: { create: true } },
       },
+      NoAgents: {
+        fields: { label: text() },
+        access: {
+          operation: {
+            query: () => true,
+            create: ({ session }) => session !== null && session.actor?.kind !== 'agent',
+          },
+        },
+      },
       HumanOnly: {
         fields: { label: text() },
         access: {
@@ -65,6 +74,25 @@ function schemaConfig(): OpenSaasConfig {
   }
 }
 
+class ClassSession {
+  [key: string]: unknown
+  constructor(readonly userId: string) {}
+  greeting(): string {
+    return 'hello'
+  }
+}
+
+class InheritedIdSession {
+  get userId(): string {
+    return 'ada'
+  }
+}
+
+function storedUserId(session: Session | null): string | number | null {
+  const userId = session?.userId
+  return typeof userId === 'string' || typeof userId === 'number' ? userId : null
+}
+
 const procedure = createProcedureBuilder<Ctx>()
 
 const whoAmI = procedure({
@@ -72,15 +100,17 @@ const whoAmI = procedure({
   input: z.object({}),
   output: z.object({
     signedIn: z.boolean(),
-    userId: z.string().nullable(),
-    actor: z.record(z.string(), z.string()).nullable(),
+    userId: z.union([z.string(), z.number()]).nullable(),
+    actor: z.record(z.string(), z.union([z.string(), z.number()])).nullable(),
+    methods: z.boolean(),
   }),
   access: () => true,
   expose: ['web'],
   run: ({ context }) => ({
     signedIn: context.session !== null,
-    userId: context.session === null ? null : String(context.session.userId),
+    userId: storedUserId(context.session),
     actor: context.session?.actor === undefined ? null : { ...context.session.actor },
+    methods: context.session instanceof ClassSession && context.session.greeting() === 'hello',
   }),
 })
 
@@ -162,9 +192,37 @@ describe('the actor on a host-built session', () => {
           signedIn: true,
           userId: 'ada',
           actor: { kind: 'human', userId: 'ada', via: 'web' },
+          methods: false,
         },
       })
       expect(built?.session).toMatchObject({ userId: 'ada', role: 'editor' })
+    })
+
+    test('a numeric user id is carried on the actor as given', async () => {
+      const response = await web({ userId: 7 }, 'whoAmI', {})
+
+      expect(await response.json()).toMatchObject({
+        success: true,
+        data: { userId: 7, actor: { kind: 'human', userId: 7, via: 'web' } },
+      })
+      expect(built?.session?.actor).toEqual({ kind: 'human', userId: 7, via: 'web' })
+    })
+
+    test('a class-instance session keeps its own user id and its methods', async () => {
+      const response = await web(new ClassSession('ada'), 'whoAmI', {})
+
+      expect(await response.json()).toMatchObject({
+        success: true,
+        data: { userId: 'ada', actor: { kind: 'human', userId: 'ada', via: 'web' }, methods: true },
+      })
+    })
+
+    test('a session whose user id is only inherited is refused, not passed on without one', async () => {
+      const response = await web(new InheritedIdSession(), 'whoAmI', {})
+
+      expect(response.status).toBe(500)
+      expect(onUnexpectedError).toHaveBeenCalledOnce()
+      expect(built).toBeUndefined()
     })
 
     test.each([
@@ -180,14 +238,26 @@ describe('the actor on a host-built session', () => {
       })
     })
 
-    test('a session with no user id fails closed and is reported', async () => {
-      for (const resolved of [{ role: 'editor' }, { userId: '' }, { userId: 7 }]) {
+    test('a session with no usable user id fails closed and the report names the fix', async () => {
+      for (const resolved of [
+        { role: 'editor' },
+        { userId: '' },
+        { userId: Number.NaN },
+        { userId: null },
+        { userId: { id: 'ada' } },
+      ]) {
         onUnexpectedError.mockClear()
         const response = await web(resolved, 'whoAmI', {})
 
         expect(response.status).toBe(500)
-        expect(await response.json()).toMatchObject({ error: { code: 'INTERNAL' } })
+        const body = await response.text()
+        expect(JSON.parse(body)).toMatchObject({ error: { code: 'INTERNAL' } })
+        expect(body).not.toContain('sessionFields')
         expect(onUnexpectedError).toHaveBeenCalledOnce()
+        const [reported] = onUnexpectedError.mock.calls[0] ?? []
+        expect(reported).toBeInstanceOf(Error)
+        expect(String(reported)).toContain('no usable `userId`')
+        expect(String(reported)).toContain('authPlugin({ sessionFields })')
       }
       expect(built).toBeUndefined()
     })
@@ -197,7 +267,7 @@ describe('the actor on a host-built session', () => {
 
       expect(await response.json()).toEqual({
         success: true,
-        data: { signedIn: false, userId: null, actor: null },
+        data: { signedIn: false, userId: null, actor: null, methods: false },
       })
       expect(built?.session).toBeNull()
 
@@ -235,10 +305,10 @@ describe('the actor on a host-built session', () => {
   })
 
   describe('the MCP host', () => {
-    async function mcp(
+    async function rpc(
       resolved: unknown,
-      name: string,
-      data: Record<string, unknown>,
+      method: string,
+      params?: Record<string, unknown>,
     ): Promise<{ status: number; text: string }> {
       const resolveSession = vi.fn<() => Promise<McpSession | null>>()
       resolveSession.mockResolvedValue(z.custom<McpSession | null>().parse(resolved))
@@ -251,16 +321,25 @@ describe('the actor on a host-built session', () => {
         new Request('http://localhost/api/mcp', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            jsonrpc: '2.0',
-            id: 1,
-            method: 'tools/call',
-            params: { name, arguments: { data } },
-          }),
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
         }),
       )
       return { status: response.status, text: await response.text() }
     }
+
+    const mcp = (resolved: unknown, name: string, data: Record<string, unknown>) =>
+      rpc(resolved, 'tools/call', { name, arguments: { data } })
+
+    const toolResult = z.object({
+      result: z.object({
+        isError: z.boolean().optional(),
+        content: z.array(z.object({ text: z.string() })),
+      }),
+    })
+
+    const toolList = z.object({
+      result: z.object({ tools: z.array(z.object({ name: z.string() })) }),
+    })
 
     test('an MCP session carries an agent actor and keeps the user id', async () => {
       const { status } = await mcp(
@@ -292,11 +371,9 @@ describe('the actor on a host-built session', () => {
       await mcp({ userId: 'ada', clientId: 'claude-desktop', actor }, 'list_entry_create', {
         label: 'spoofed',
       })
-      const denied = await mcp(
-        { userId: 'ada', clientId: 'claude-desktop', actor },
-        'list_human_only_create',
-        { label: 'spoofed' },
-      )
+      const provided = { userId: 'ada', clientId: 'claude-desktop', actor }
+      const listed = toolList.parse(JSON.parse((await rpc(provided, 'tools/list')).text))
+      const denied = await mcp(provided, 'list_humanOnly_create', { label: 'spoofed' })
 
       expect(built?.session?.actor).toEqual({
         kind: 'agent',
@@ -305,29 +382,62 @@ describe('the actor on a host-built session', () => {
         via: 'mcp',
       })
       expect(await entries()).toMatchObject([{ actorKind: 'agent', actorId: 'claude-desktop' }])
-      expect(denied.text).not.toContain('"success":true')
+      const names = listed.result.tools.map((tool) => tool.name)
+      expect(names).toContain('list_entry_create')
+      expect(names).not.toContain('list_humanOnly_create')
+      expect(denied.status).toBe(200)
+      const refusal = toolResult.parse(JSON.parse(denied.text)).result
+      expect(refusal.isError).toBe(true)
+      expect(refusal.content[0]?.text).toBe(
+        'Failed to create record. Access denied or validation failed.',
+      )
       expect(await database.context().sudo().db.HumanOnly.all()).toEqual([])
     })
 
     test.each([
-      ['no client id', { userId: 'ada' }],
-      ['an empty client id', { userId: 'ada', clientId: '' }],
-      ['a client id that is not a string', { userId: 'ada', clientId: 42 }],
-      ['only an actor naming a client', { userId: 'ada', actor: { kind: 'agent', clientId: 'x' } }],
-      ['no user id', { clientId: 'claude-desktop' }],
-    ])('a session with %s is refused', async (_label, resolved) => {
+      ['no client id', { userId: 'ada' }, 'clientId'],
+      ['an empty client id', { userId: 'ada', clientId: '' }, 'clientId'],
+      ['a client id that is not a string', { userId: 'ada', clientId: 42 }, 'clientId'],
+      [
+        'only an actor naming a client',
+        { userId: 'ada', actor: { kind: 'agent', clientId: 'x' } },
+        'clientId',
+      ],
+      ['no user id', { clientId: 'claude-desktop' }, 'userId'],
+    ])(
+      'a session with %s is a server misconfiguration: 500, and the log names the field',
+      async (_label, resolved, field) => {
+        const other = field === 'clientId' ? 'userId' : 'clientId'
+        const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+        try {
+          const response = await mcp(resolved, 'list_entry_create', { label: 'unverified' })
+
+          expect(response.status).toBe(500)
+          expect(response.text).not.toContain(field)
+          expect(logged).toHaveBeenCalledOnce()
+          const line = String(logged.mock.calls[0]?.[0])
+          expect(line).toContain(`no usable \`${field}\``)
+          expect(line).not.toContain(`no usable \`${other}\``)
+        } finally {
+          logged.mockRestore()
+        }
+        expect(built).toBeUndefined()
+        expect(await entries()).toEqual([])
+      },
+    )
+
+    test('no session at all is still 401 with the challenge', async () => {
       const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
       try {
-        const { status, text } = await mcp(resolved, 'list_entry_create', { label: 'unverified' })
+        const { status, text } = await mcp(null, 'list_entry_create', { label: 'anonymous' })
 
         expect(status).toBe(401)
         expect(text).toBe('')
-        expect(logged).toHaveBeenCalledOnce()
+        expect(logged).not.toHaveBeenCalled()
       } finally {
         logged.mockRestore()
       }
       expect(built).toBeUndefined()
-      expect(await entries()).toEqual([])
     })
 
     test('the actor is the same in the access rule, the hook and a transaction', async () => {
@@ -364,6 +474,168 @@ describe('the actor on a host-built session', () => {
     expect(await context.db.HumanOnly.create({ data: { label: 'no actor' } })).toBeNull()
     expect(await context.db.Entry.create({ data: { label: 'no actor' } })).toBeNull()
     expect(await entries()).toEqual([])
+  })
+
+  describe('a context built from a verified MCP session outside the handler', () => {
+    const verified: McpSession = {
+      userId: 'ada',
+      clientId: 'claude-desktop',
+      role: 'editor',
+      scopes: ['mcp:write'],
+      accessToken: 'token',
+      actor: { kind: 'human', userId: 'ada', via: 'web' },
+    }
+
+    test('carries the agent actor the handler sets, and a rule that denies agents denies it', async () => {
+      const context = database.context(mcpContextSession(verified))
+
+      expect(context.session).toEqual({
+        userId: 'ada',
+        role: 'editor',
+        actor: { kind: 'agent', clientId: 'claude-desktop', onBehalfOf: 'ada', via: 'mcp' },
+      })
+      expect(await context.db.NoAgents.create({ data: { label: 'agent' } })).toBeNull()
+      expect(await context.db.HumanOnly.create({ data: { label: 'agent' } })).toBeNull()
+      expect(await context.db.Entry.create({ data: { label: 'agent' } })).toMatchObject({
+        actorKind: 'agent',
+        actorId: 'claude-desktop',
+      })
+
+      const signedIn = database.context({ userId: 'ada' })
+      expect(await signedIn.db.NoAgents.create({ data: { label: 'person' } })).not.toBeNull()
+    })
+
+    test.each([
+      ['no client id', { userId: 'ada' }, ['clientId']],
+      ['no user id', { clientId: 'claude-desktop' }, ['userId']],
+      ['neither', {}, ['clientId', 'userId']],
+    ])('a session with %s is refused', (_label, session, missing) => {
+      const build = () => mcpContextSession(z.custom<McpSession>().parse(session))
+
+      expect(build).toThrow(McpSessionError)
+      expect(build).toThrow(expect.objectContaining({ missing }))
+    })
+  })
+
+  describe('an actor no host minted', () => {
+    const forgedHuman = { kind: 'human', userId: 'ada', via: 'web' } as const
+    const forged: Session = { userId: 'ada', actor: forgedHuman }
+
+    test('is absent in access rules and hooks, through getContext and withSession', async () => {
+      const direct = database.context(forged)
+      const substituted = database.context().withSession(forged)
+      const elevated = database.context(forged).sudo()
+
+      for (const context of [direct, substituted]) {
+        expect(context.session).toEqual({ userId: 'ada' })
+        expect(context.session !== null && 'actor' in context.session).toBe(false)
+        expect(await context.db.HumanOnly.create({ data: { label: 'forged' } })).toBeNull()
+        expect(await context.db.Entry.create({ data: { label: 'forged' } })).toBeNull()
+        expect(
+          await context.transaction((tx) => tx.db.HumanOnly.create({ data: { label: 'forged' } })),
+        ).toBeNull()
+      }
+      expect(seen.map((entry) => entry.actor)).toEqual([undefined, undefined])
+
+      seen = []
+      expect(elevated.session?.actor).toBeUndefined()
+      await elevated.db.Entry.create({ data: { label: 'elevated' } })
+      expect(seen).toEqual([{ where: 'hook', actor: undefined }])
+      expect(await entries()).toMatchObject([{ label: 'elevated', actorKind: null }])
+      expect(await database.context().sudo().db.HumanOnly.all()).toEqual([])
+      expect(forged.actor).toBe(forgedHuman)
+    })
+
+    test.each([
+      ['a frozen session', () => Object.freeze({ userId: 'ada', actor: forgedHuman })],
+      [
+        'a copy of a minted actor',
+        () => ({
+          userId: 'ada',
+          actor: { ...mcpContextSession({ userId: 'ada', clientId: 'c' }).actor },
+        }),
+      ],
+      [
+        'an accessor',
+        () =>
+          Object.defineProperty({ userId: 'ada' }, 'actor', {
+            get: () => mcpContextSession({ userId: 'ada', clientId: 'c' }).actor,
+            enumerable: true,
+          }),
+      ],
+      [
+        'a prototype',
+        () => Object.create({ actor: forgedHuman }, { userId: { value: 'ada', enumerable: true } }),
+      ],
+    ])('is absent when it arrives on %s', (_label, build) => {
+      const context = database.context(z.custom<Session>().parse(build()))
+
+      expect(context.session?.userId).toBe('ada')
+      expect(context.session?.actor).toBeUndefined()
+    })
+  })
+
+  describe('a host-minted actor', () => {
+    test('survives into rules, hooks, nested transactions, sudo() and withSession', async () => {
+      const session = mcpContextSession({ userId: 'ada', clientId: 'claude-desktop' })
+      const context = database.context(session)
+      const minted = session.actor
+
+      const nested = await context.transaction(async (tx) => {
+        await tx.db.Entry.create({ data: { label: 'outer' } })
+        return tx.transaction(async (inner) => {
+          await inner.sudo().db.Entry.create({ data: { label: 'inner sudo' } })
+          return [tx.session?.actor, inner.session?.actor, inner.sudo().session?.actor]
+        })
+      })
+
+      expect(context.session?.actor).toBe(minted)
+      expect(context.sudo().session?.actor).toBe(minted)
+      expect(database.context().withSession(context.session).session?.actor).toBe(minted)
+      for (const actor of nested) expect(actor).toBe(minted)
+      expect(seen.map((entry) => entry.where)).toEqual(['rule', 'hook', 'hook'])
+      for (const entry of seen) expect(entry.actor).toBe(minted)
+      expect(await entries()).toMatchObject([
+        { label: 'inner sudo', actorKind: 'agent', actorId: 'claude-desktop' },
+        { label: 'outer', actorKind: 'agent', actorId: 'claude-desktop' },
+      ])
+    })
+
+    test('cannot be swapped, added or edited on a context session', async () => {
+      const agent = database.context(mcpContextSession({ userId: 'ada', clientId: 'c' }))
+      const plain = database.context({ userId: 'ada' })
+      const human = { kind: 'human', userId: 'ada', via: 'web' } as const
+
+      for (const context of [agent, plain, agent.sudo(), plain.withSession({ userId: 'ada' })]) {
+        const session = context.session
+        if (session === null) throw new Error('expected a session')
+        const before = session.actor
+        expect(() => {
+          session.actor = human
+        }).toThrow(TypeError)
+        expect(() => Object.defineProperty(session, 'actor', { value: human })).toThrow(TypeError)
+        expect(() => {
+          context.session = { userId: 'ada', actor: human }
+        }).toThrow(TypeError)
+        expect(context.session).toBe(session)
+        expect(session.actor).toBe(before)
+        expect(
+          await database.context(session).db.HumanOnly.create({ data: { label: 'x' } }),
+        ).toBeNull()
+      }
+      expect(Reflect.set(agent.session?.actor ?? {}, 'kind', 'human')).toBe(false)
+      expect(agent.session?.actor?.kind).toBe('agent')
+      expect(Object.isFrozen(agent.session?.actor)).toBe(true)
+    })
+
+    test('leaves the session object the caller passed as it was', () => {
+      const given: Session = { userId: 'ada', actor: { kind: 'human', userId: 'ada', via: 'web' } }
+      const context = database.context(given)
+
+      expect(Object.isFrozen(given)).toBe(false)
+      expect(given.actor).toEqual({ kind: 'human', userId: 'ada', via: 'web' })
+      expect(Object.isFrozen(context.session)).toBe(true)
+    })
   })
 
   test('a host-built actor is frozen', async () => {

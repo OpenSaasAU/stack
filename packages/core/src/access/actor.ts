@@ -1,8 +1,8 @@
 /** A person calling through the web host. */
 export interface HumanActor {
   readonly kind: 'human'
-  /** The signed-in user's id, as the session carries it under `userId`. */
-  readonly userId: string
+  /** The signed-in user's id, exactly as the session carries it under `userId`. */
+  readonly userId: string | number
   readonly via: 'web'
 }
 
@@ -12,14 +12,15 @@ export interface AgentActor {
   /** The OAuth client id the host verified. */
   readonly clientId: string
   /** The id of the user the agent acts for. The session's `userId` is the same value. */
-  readonly onBehalfOf: string
+  readonly onBehalfOf: string | number
   readonly via: 'mcp'
 }
 
 /**
- * Who a host-built session says is acting. A host sets it on `session.actor`
- * after it has copied the session's own fields, so nothing a caller, a token
- * or a session provider supplies can choose it.
+ * Who a host-built session says is acting. Only a host can set it: an `actor`
+ * no host minted is removed before the session reaches an access rule, a hook
+ * or a transaction, so application code, a token or a session provider cannot
+ * choose one. The actor is frozen, and so is the session a context carries.
  *
  * A session a host did not build carries none, and an absent actor is never a
  * human: a rule checks positively for the kind it wants.
@@ -33,14 +34,62 @@ export interface AgentActor {
  */
 export type Actor = HumanActor | AgentActor
 
-export function humanActor(userId: string): HumanActor {
-  return Object.freeze({ kind: 'human', userId, via: 'web' })
+const mintedActors = new WeakMap<object, Actor>()
+const sealedSessions = new WeakSet<object>()
+
+export function humanActor(userId: string | number): HumanActor {
+  const actor: HumanActor = Object.freeze({ kind: 'human', userId, via: 'web' })
+  mintedActors.set(actor, actor)
+  return actor
 }
 
-export function agentActor(clientId: string, onBehalfOf: string): AgentActor {
-  return Object.freeze({ kind: 'agent', clientId, onBehalfOf, via: 'mcp' })
+export function agentActor(clientId: string, onBehalfOf: string | number): AgentActor {
+  const actor: AgentActor = Object.freeze({ kind: 'agent', clientId, onBehalfOf, via: 'mcp' })
+  mintedActors.set(actor, actor)
+  return actor
 }
 
-export function isActorId(value: unknown): value is string {
+export function isActorUserId(value: unknown): value is string | number {
+  return typeof value === 'string' ? value !== '' : Number.isFinite(value)
+}
+
+export function isActorClientId(value: unknown): value is string {
   return typeof value === 'string' && value !== ''
+}
+
+function mintedActorOf(value: unknown): Actor | undefined {
+  return typeof value === 'object' && value !== null ? mintedActors.get(value) : undefined
+}
+
+function copyWithActor<S extends object>(session: S, actor: Actor | undefined): S {
+  const prototype: object | null = Object.getPrototypeOf(session)
+  const descriptors: PropertyDescriptorMap = Object.getOwnPropertyDescriptors(session)
+  delete descriptors.actor
+  const copy: S = Object.create(prototype, descriptors)
+  if (actor !== undefined) {
+    Object.defineProperty(copy, 'actor', { value: actor, enumerable: true })
+  } else if ('actor' in copy) {
+    Object.defineProperty(copy, 'actor', { value: undefined, enumerable: false })
+  }
+  return copy
+}
+
+/** A copy of `session`, prototype kept, carrying `actor` in place of any it held. */
+export function sessionWithActor<S extends object>(session: S, actor: Actor): S {
+  return copyWithActor(session, actor)
+}
+
+/**
+ * The session a context carries: a frozen shallow copy of the one it was
+ * given, keeping `actor` only when a host minted it. The caller's own object
+ * is left as it was, and sealing a sealed session returns it unchanged.
+ */
+export function sealSession<S extends object>(session: S): S {
+  if (sealedSessions.has(session)) return session
+  const held = Object.getOwnPropertyDescriptor(session, 'actor')
+  const value: unknown = held !== undefined && 'value' in held ? held.value : undefined
+  const copy = copyWithActor(session, mintedActorOf(value))
+  Object.freeze(copy)
+  sealedSessions.add(copy)
+  return copy
 }

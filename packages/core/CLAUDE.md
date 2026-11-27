@@ -135,9 +135,10 @@ context.session?.email // ✅ Typed as string
 
 `Session` declares one key itself: `actor?: Actor`. It is reserved, so an augmentation must not redeclare it.
 
-- `createProcedureHandler` sets `{ kind: 'human', userId, via: 'web' }` from the resolved session's `userId`, and fails the call with `INTERNAL` when that is not a non-empty string.
-- `createMcpHandlers` sets `{ kind: 'agent', clientId, onBehalfOf, via: 'mcp' }` from `McpSession.clientId` and `userId`, and answers `401` when either is missing or empty. `clientId` is a transport field like `scopes`: it is stripped from the context session and lives on the actor only.
-- Both assign the actor after every incoming key, so an `actor` from `getSession`, a session provider or a token claim is overwritten. The object is frozen and is the same one in access rules, hooks and `context.transaction()`, because it rides on the session.
+- `createProcedureHandler` sets `{ kind: 'human', userId, via: 'web' }` from the resolved session's own `userId`, a non-empty string or a finite number carried as given, and fails the call with `INTERNAL` otherwise, reporting a message that names `authPlugin({ sessionFields })`. The session it hands on is a copy that keeps the resolved object's prototype.
+- `createMcpHandlers` sets `{ kind: 'agent', clientId, onBehalfOf, via: 'mcp' }` from `McpSession.clientId` and `userId`, and answers `500` when either is missing or empty, logging which (`401` is for no session). `clientId` is a transport field like `scopes`: it is stripped from the context session and lives on the actor only. `mcpContextSession(mcpSession)`, exported from `@opensaas/stack-core/mcp`, is that same builder for a context built outside the handler; it throws `McpSessionError`.
+- Both put the actor in place of any incoming `actor`, so one from `getSession`, a session provider or a token claim never survives. The object is frozen and is the same one in access rules, hooks and `context.transaction()`, because it rides on the session.
+- **Host-owned is enforced, not a convention.** `actor.ts` records every actor it mints in a module-private `WeakMap`. `getContext` (and so `withSession`, `createTestContext`, `sudo()` and `context.transaction()`) passes its session through `sealSession`: a frozen shallow copy, prototype kept, whose `actor` survives only when it is a minted object. Anything else, a look-alike object, a copy of a minted actor, an accessor or an inherited `actor`, reads as absent. The caller's own session object is neither frozen nor changed, and a sealed session is reused as is, so the session is the same object across `sudo()` and transactions. `session` is non-writable on the context.
 - A session no host built has no actor. **Absent is never human**: a rule checks `session?.actor?.kind === 'human'` or `=== 'agent'`, never the negation.
 - The constructors (`humanActor`, `agentActor`) are not exported from any entry point. Only the types (`Actor`, `HumanActor`, `AgentActor`) are, from the root. There is no system actor.
 
@@ -589,7 +590,7 @@ A `where` naming a column the list does not have, a `select` naming a relation, 
 - Every tool goes through `context.db`, so access control, validation and hooks apply with no parallel path
 - Custom tools may declare a Zod `inputSchema` — validated on `tools/call`, converted to JSON Schema for `tools/list` — or a plain JSON Schema object
 - Auth adapters (like `@opensaas/stack-auth/mcp`) provide session integration; custom session fields pass through to access control
-- A session provider must return the verified OAuth client id as `McpSession.clientId`; the handler builds the session's agent Actor from it and answers `401` without one (see "The Actor" above)
+- A session provider must return the verified OAuth client id as `McpSession.clientId`; the handler builds the session's agent Actor from it and answers `500` for a session without one (see "The Actor" above)
 - A `where` argument is the Where vocabulary, the same grammar `context.db` takes
 
 ### The MCP vocabulary omits what a row-independent rule denies (ADR-0053, ADR-0037)

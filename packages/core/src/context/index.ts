@@ -1,6 +1,7 @@
 import type { OpenSaasConfig, ListConfig } from '../config/types.js'
 import type { Session, AccessContext, AccessControlledDB, StorageUtils } from '../access/index.js'
 import { checkAccess } from '../access/index.js'
+import { sealSession } from '../access/actor.js'
 import { ValidationError, DatabaseError, isPlainObject } from '../hooks/index.js'
 import { databaseErrorMessage, normalizeDatabaseError } from '../lib/prisma-errors.js'
 import { isClientSafeError } from '../lib/client-safe-error.js'
@@ -723,7 +724,7 @@ function assertValidSession(session: Session | null): void {
 export function getContext<TConfig extends OpenSaasConfig>(
   config: TConfig,
   ormHandle: OrmClient,
-  session: Session | null,
+  givenSession: Session | null,
   storage?: StorageUtils,
   _isSudo: boolean = false,
   // Internal: when rebuilding the context against a transaction client, reuse the
@@ -754,7 +755,8 @@ export function getContext<TConfig extends OpenSaasConfig>(
   // fresh, non-transactional context, which is its own base.
   _baseContext?: AccessContext,
 ): StackContext<AccessControlledDB> {
-  assertValidSession(session)
+  assertValidSession(givenSession)
+  const session = givenSession === null ? null : sealSession(givenSession)
 
   // Broad type to allow dynamic model access; populated by populateDbDelegate below.
   const db: Record<string, unknown> = {}
@@ -1528,6 +1530,8 @@ export function getContext<TConfig extends OpenSaasConfig>(
     _isSudo,
     [ENGINE_FACE]: context,
   }
+  Object.defineProperty(context, 'session', { writable: false, configurable: false })
+  Object.defineProperty(returned, 'session', { writable: false, configurable: false })
   return returned
 }
 

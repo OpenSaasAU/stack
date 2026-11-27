@@ -24,7 +24,8 @@ export type McpSession = {
  * a clone of the incoming request so a provider can check its method and URL.
  *
  * A provider must return the verified OAuth client id as `clientId`. A session
- * with no `clientId`, or with an empty one, is answered `401`. Any `actor` a
+ * with no usable `clientId` or `userId` is a server misconfiguration and is
+ * answered `500`; returning `null` (no session) is answered `401`. Any `actor` a
  * provider returns is discarded: the handler sets it.
  */
 export type McpSessionProvider = (req: Request) => Promise<McpSession | null>

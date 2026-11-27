@@ -297,7 +297,7 @@ When Claude Desktop connects to your MCP server:
 5. **MCP Connection** - Claude uses token to authenticate tool calls
 6. **Access Control** - All operations respect your access control rules
 
-> **Machine clients are not supported.** A `client_credentials` token represents no user and carries the client id as its `sub`, so a token whose `sub` equals its `client_id` or `azp` claim is answered with a 401. Only user-delegated tokens are accepted.
+> **Machine clients are not supported.** A `client_credentials` token represents no user and carries the client id as its `sub`, so a token whose `sub` equals its `azp` claim is answered with a 401 (better-auth's verifier mirrors `azp` onto `client_id`, and a token with no `azp` is refused). Only user-delegated tokens are accepted.
 
 ## Generated Tools
 
@@ -584,11 +584,32 @@ export const getSession: McpSessionProvider = async (request) => {
 ```
 
 - `clientId` must be the OAuth client the credential was issued to, taken from the part of the credential the authorization server controls (`azp` or `client_id` on a verified JWT, the client of an introspected token). Never copy it from a custom claim, a header or the request body.
-- A session with no `clientId`, an empty one, or no `userId` is answered `401` and logged. The handler does not fall back to a human or an anonymous session.
+- A session with no `clientId`, an empty one, or no `userId` is a server misconfiguration, not a bad token: it is answered `500`, and the server log names the missing field. Returning `null` (no session) is still answered `401` with the challenge. The handler does not fall back to a human or an anonymous session.
 - `clientId` does not reach `context.session` as a flat field. It is on `session.actor.clientId`.
 - `createBetterAuthMcpAdapter` does this for you: it reads the verified token's `azp` and refuses a token without one.
 
-A provider written before this requirement returns no `clientId`, so every request it authenticates is now refused until it returns one.
+A provider written before this requirement returns no `clientId`, so every request it authenticates is now answered `500` until it returns one.
+
+### Building a context yourself under `withMcpAuth`
+
+A route that verifies the token with `withMcpAuth` and builds its own context gets the same agent actor from `mcpSessionToContextSession`:
+
+```typescript
+import { withMcpAuth, mcpSessionToContextSession } from '@opensaas/stack-auth/mcp'
+import { getContext } from '@/.opensaas/context'
+
+const handler = withMcpAuth(
+  { resource: 'http://localhost:3000/api/mcp', baseURL: 'http://localhost:3000/api/auth' },
+  async (_request, mcpSession) => {
+    const context = await getContext(mcpSessionToContextSession(mcpSession))
+    return Response.json(await context.db.Post.all())
+  },
+)
+
+export { handler as GET, handler as POST }
+```
+
+It returns `{ userId, actor }`. Building `{ userId: mcpSession.userId }` by hand instead gives a session with no actor, which a rule that denies agents would admit. With a custom session provider, `mcpContextSession` from `@opensaas/stack-core/mcp` builds the session `createMcpHandlers` builds, custom fields included. Writing an `actor` object yourself does nothing: only one a host created is honoured.
 
 ## Testing MCP Tools
 
