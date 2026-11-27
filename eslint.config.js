@@ -5,6 +5,7 @@ import react from 'eslint-plugin-react'
 import reactHooks from 'eslint-plugin-react-hooks'
 import prettier from 'eslint-config-prettier'
 import globals from 'globals'
+import starterAuthGuardrails from './examples/starter-auth/eslint.config.js'
 
 export default [
   {
@@ -103,5 +104,6 @@ export default [
       'no-console': ['warn', { allow: ['warn', 'error', 'log'] }],
     },
   },
+  ...starterAuthGuardrails.map((entry) => ({ ...entry, basePath: 'examples/starter-auth' })),
   prettier,
 ]

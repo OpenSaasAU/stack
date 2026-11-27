@@ -14,7 +14,7 @@
       "name": "opensaas-stack",
       "source": "./claude-plugins/opensaas-stack",
       "description": "Feature-driven development assistant for OpenSaaS Stack. Build complete applications by describing what you want to build instead of configuring infrastructure.",
-      "version": "0.2.4",
+      "version": "0.3.0",
       "author": {
         "name": "OpenSaaS",
         "url": "https://opensaas.au"

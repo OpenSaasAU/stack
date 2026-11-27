@@ -51,6 +51,8 @@ export const callProcedure = server.call
 export const getServerContext = server.context
 ```
 
+The auth template's `eslint.config.js` refuses any other import of `getContext`, as a guardrail rather than a security boundary. [Procedures](/docs/how-to/procedures) walks through the whole wiring, the HTTP host and the browser client included.
+
 `getSession` takes no argument: it reads the request's own cookies, as `getSession` in `lib/auth.ts` does through `headers()`. It runs on every `call` and every `context()` and is never cached, so concurrent requests never share a session. Wrapping it in React's `cache()` to share one lookup across a render is safe, because that cache is per request. A throw from it is `INTERNAL` and reported, as over HTTP. The session it resolves carries a human actor (`{ kind: 'human', userId, via: 'web' }`), built from its `userId`, exactly as the procedure HTTP host builds one.
 
 `getServerContext()` returns the context for the current request, for a server component's reads:

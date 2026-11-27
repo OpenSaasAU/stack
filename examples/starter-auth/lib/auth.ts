@@ -13,15 +13,20 @@ import { rawOpensaasContext } from '@/.opensaas/context'
 export const auth = createAuth(config, rawOpensaasContext)
 
 /**
- * Get the current session in OpenSaas format. Reads `sessionFields` from the
+ * Get a request's session in OpenSaas format. Reads `sessionFields` from the
  * resolved config at runtime, so changing it doesn't require regenerating
  * this file.
  */
-export async function getSession(): Promise<Session | null> {
+export async function getSessionFromHeaders(requestHeaders: Headers): Promise<Session | null> {
   const resolvedConfig = await config
   const authConfig = getPluginData<NormalizedAuthConfig>(resolvedConfig, 'auth')
   const sessionFields = authConfig?.sessionFields ?? ['userId', 'email', 'name']
-  return getSessionFromAuth(auth, sessionFields, await headers())
+  return getSessionFromAuth(auth, sessionFields, requestHeaders)
+}
+
+/** The current request's session, read from its own cookies. */
+export async function getSession(): Promise<Session | null> {
+  return getSessionFromHeaders(await headers())
 }
 
 /**
