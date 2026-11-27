@@ -148,7 +148,7 @@ describe('ListViewClient bulk delete', () => {
     // Only the allowed row counted; report never says which. Target the report by
     // its Slot (the Delete button's spinner also uses role="status").
     const status = await screen.findByText('1 of 2 deleted')
-    expect(status).toHaveAttribute('data-slot', 'selection-status')
+    expect(status.closest('[data-slot="selection-status"]')).not.toBeNull()
     // One secured server round-trip with both selected ids; denials are absorbed
     // server-side into the count.
     expect(serverAction).toHaveBeenCalledTimes(1)

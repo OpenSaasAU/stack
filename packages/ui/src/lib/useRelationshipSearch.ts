@@ -28,6 +28,10 @@ export interface UseRelationshipSearchOptions {
    * already server-rendered has no reason to set this.
    */
   loadOnOpen?: boolean
+  /** Fetch that window again on every open, for options that change while the control is closed. */
+  reloadOnOpen?: boolean
+  /** Ask only for records not already linked to this row of `listKey` through `fieldName`. */
+  linkableFor?: string
   /** The search text, when the caller owns it. `setSearchQuery` then does nothing. */
   query?: string
   /** Bounds each response's window, as the `relationshipOptions` op's `take`. */
@@ -94,6 +98,8 @@ export function useRelationshipSearch({
   selectedIds = [],
   debounceMs = 300,
   loadOnOpen = false,
+  reloadOnOpen = false,
+  linkableFor,
   query,
   take,
 }: UseRelationshipSearchOptions): UseRelationshipSearchResult {
@@ -142,9 +148,9 @@ export function useRelationshipSearch({
   // read from a ref inside the debounced callback so the search effect only
   // re-runs when the query itself (or the search mode) changes. Updated in an
   // effect (not during render) per the rules of hooks.
-  const latestRef = useRef({ serverAction, listKey, fieldName, selectedIds, take })
+  const latestRef = useRef({ serverAction, listKey, fieldName, selectedIds, take, linkableFor })
   useEffect(() => {
-    latestRef.current = { serverAction, listKey, fieldName, selectedIds, take }
+    latestRef.current = { serverAction, listKey, fieldName, selectedIds, take, linkableFor }
   })
 
   // Derived directly from render inputs — no effect needed for the
@@ -175,6 +181,7 @@ export function useRelationshipSearch({
         fieldName: currentFieldName,
         selectedIds: currentSelectedIds,
         take: currentTake,
+        linkableFor: currentLinkableFor,
       } = latestRef.current
       void action!({
         listKey: currentListKey!,
@@ -183,6 +190,7 @@ export function useRelationshipSearch({
         search: trimmedQuery,
         selectedIds: currentSelectedIds,
         ...(currentTake === undefined ? {} : { take: currentTake }),
+        ...(currentLinkableFor === undefined ? {} : { linkableFor: currentLinkableFor }),
       })
         .then((result) => {
           if (cancelled) return
@@ -224,6 +232,7 @@ export function useRelationshipSearch({
   // permanently empty.
   const loadedOpenForRef = useRef<{ fieldName: string | undefined } | null>(null)
   useEffect(() => {
+    if (!loadOnOpen && reloadOnOpen) loadedOpenForRef.current = null
     if (!loadOnOpen || !canSearchServer) return
     if (loadedOpenForRef.current?.fieldName === fieldName) return
     loadedOpenForRef.current = { fieldName }
@@ -237,6 +246,7 @@ export function useRelationshipSearch({
       fieldName: currentFieldName,
       selectedIds: currentSelectedIds,
       take: currentTake,
+      linkableFor: currentLinkableFor,
     } = latestRef.current
     void action!({
       listKey: currentListKey!,
@@ -244,6 +254,7 @@ export function useRelationshipSearch({
       field: currentFieldName!,
       selectedIds: currentSelectedIds,
       ...(currentTake === undefined ? {} : { take: currentTake }),
+      ...(currentLinkableFor === undefined ? {} : { linkableFor: currentLinkableFor }),
     })
       .then((result) => {
         settled = true
@@ -270,7 +281,7 @@ export function useRelationshipSearch({
         loadedOpenForRef.current = null
       }
     }
-  }, [loadOnOpen, canSearchServer, fieldName])
+  }, [loadOnOpen, reloadOnOpen, canSearchServer, fieldName])
 
   const resolveLabel = (id: string) =>
     fetchedLabels.get(id) ?? initialItems.find((item) => item.id === id)?.label

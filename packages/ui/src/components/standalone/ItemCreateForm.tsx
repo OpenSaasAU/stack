@@ -9,6 +9,8 @@ import { useItemForm } from '../../lib/useItemForm.js'
 import { FieldValidityContext } from '../../lib/fieldValidity.js'
 import { cn } from '../../lib/utils.js'
 import type { ItemFormClassNames } from './form-classnames.js'
+import { submitOrUnreachable } from './form-submit.js'
+import { FormNotice } from './FormNotice.js'
 
 export interface ItemCreateFormProps<TData = Record<string, unknown>> {
   /**
@@ -40,7 +42,24 @@ export interface ItemCreateFormProps<TData = Record<string, unknown>> {
  * />
  * ```
  */
-export function ItemCreateForm<TData = Record<string, unknown>>({
+export function ItemCreateForm<TData = Record<string, unknown>>(props: ItemCreateFormProps<TData>) {
+  const [generation, setGeneration] = React.useState(0)
+  const [notice, setNotice] = React.useState<string | null>(null)
+  return (
+    <CreateFormBody
+      key={generation}
+      {...props}
+      notice={notice}
+      onCreated={() => {
+        setGeneration((current) => current + 1)
+        setNotice('Created.')
+      }}
+      onEdit={() => setNotice(null)}
+    />
+  )
+}
+
+function CreateFormBody<TData>({
   fields,
   onSubmit,
   onCancel,
@@ -49,7 +68,14 @@ export function ItemCreateForm<TData = Record<string, unknown>>({
   cancelLabel = 'Cancel',
   className,
   classNames,
-}: ItemCreateFormProps<TData>) {
+  notice,
+  onCreated,
+  onEdit,
+}: ItemCreateFormProps<TData> & {
+  notice: string | null
+  onCreated: () => void
+  onEdit: () => void
+}) {
   const {
     formData,
     errors,
@@ -66,10 +92,12 @@ export function ItemCreateForm<TData = Record<string, unknown>>({
     mode: 'create',
     errorFallback: 'Failed to create item',
     onSubmit: async (data) => {
-      const result = await onSubmit(data as TData)
-      return result.success
-        ? { success: true }
-        : { success: false, error: result.error || 'Failed to create item' }
+      const result = await submitOrUnreachable(
+        () => onSubmit(data as TData),
+        'Failed to create item',
+      )
+      if (result.success) onCreated()
+      return result
     },
   })
 
@@ -104,7 +132,10 @@ export function ItemCreateForm<TData = Record<string, unknown>>({
               fieldName={fieldName}
               fieldConfig={fieldConfig}
               value={(formData as Record<string, unknown>)[fieldName]}
-              onChange={(value) => handleFieldChange(fieldName, value)}
+              onChange={(value) => {
+                onEdit()
+                handleFieldChange(fieldName, value)
+              }}
               error={errors[fieldName]}
               disabled={isPending}
               mode="edit"
@@ -123,7 +154,7 @@ export function ItemCreateForm<TData = Record<string, unknown>>({
           {isPending && (
             <LoadingSpinner size="sm" className="border-primary-foreground border-t-transparent" />
           )}
-          {isPending ? 'Creating...' : submitLabel}
+          {isPending ? 'Creating…' : submitLabel}
         </Button>
         {onCancel && (
           <Button
@@ -136,6 +167,7 @@ export function ItemCreateForm<TData = Record<string, unknown>>({
             {cancelLabel}
           </Button>
         )}
+        <FormNotice message={notice} className={classNames?.notice} />
       </div>
     </form>
   )

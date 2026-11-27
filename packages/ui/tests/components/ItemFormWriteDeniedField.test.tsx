@@ -117,7 +117,7 @@ describe('an item form omits a field its own access denies writing (#1402)', () 
     const titleInput = screen.getByLabelText('Title')
     await user.clear(titleInput)
     await user.type(titleInput, 'Updated')
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(screen.getByRole('button', { name: 'Save and close' }))
 
     // Falsify-the-fix case: before the payload dropped this field, the whole
     // update was refused ("Cannot update secretScore: field-level access

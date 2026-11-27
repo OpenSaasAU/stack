@@ -46,6 +46,8 @@ export interface RelationshipOptionsArgs {
    * falls back as {@link getItemLabel} does. @default true
    */
   labelReadable?: boolean
+  /** Narrows the primary window, ANDed with the search. `selectedIds` are not narrowed by it. */
+  scope?: Where
 }
 
 /**
@@ -75,6 +77,7 @@ export async function getRelationshipOptions(
     take: requestedTake = DEFAULT_TAKE,
     selectedIds = [],
     labelReadable = true,
+    scope,
   } = args
   if (!Number.isInteger(requestedTake) || requestedTake < 1) {
     throw new ValidationError(['take must be a positive integer'], {
@@ -84,7 +87,8 @@ export async function getRelationshipOptions(
   const take = Math.min(requestedTake, MAX_TAKE)
   const labelFieldConfig = relatedListConfig.fields[labelField] as
     { type?: string; virtual?: boolean } | undefined
-  const where = relationshipSearchWhere(config, relatedListKey, { search, labelReadable })
+  const searchWhere = relationshipSearchWhere(config, relatedListKey, { search, labelReadable })
+  const where = scope && searchWhere ? { AND: [scope, searchWhere] } : (scope ?? searchWhere)
 
   // Virtual/computed label fields (resolved at read time via `resolveOutput`)
   // have no backing database column, so passing them into `orderBy` fails

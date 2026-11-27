@@ -527,6 +527,36 @@ describe('context.serverAction', () => {
       BOOT,
     )
 
+    test(
+      'a handler that throws part way undoes what it already wrote',
+      async () => {
+        const ids = await seedPosts()
+        const config = withBulkAction({
+          handler: async ({ ids: selected, context }) => {
+            await context.db.Post.update({
+              where: { id: selected[0] },
+              data: { status: 'published' },
+            })
+            throw new Error('mail server down')
+          },
+        })
+
+        expect(
+          await contextAt(config).serverAction({
+            listKey: 'Post',
+            action: 'bulkAction',
+            key: 'publish',
+            ids,
+          }),
+        ).toMatchObject({ bulkAction: false, error: 'Action failed' })
+        expect((await harness.context.db.Post.all()).map((row) => row.status ?? null)).toEqual([
+          null,
+          null,
+        ])
+      },
+      BOOT,
+    )
+
     /**
      * A per-id Silent failure is absorbed into the handler's own count. The
      * outcome must not say which id was denied — that is the leak the count

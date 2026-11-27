@@ -2,6 +2,7 @@ import { applyClientValueTransforms } from '../lib/clientValueTransforms.js'
 import { resolveListUi } from '../lib/resolveListUi.js'
 import {
   getItemLabel,
+  getLabelFieldName,
   getUrlKey,
   isFieldFilterableById,
   resolveJunctionEdge,
@@ -20,9 +21,13 @@ import { vocabularyOrDeny, withheldFieldNames } from '../lib/sessionFieldConfigs
 import { vocabularyQuestionsOf } from '../lib/vocabularyQuestions.js'
 import { prepareItemForm } from '../lib/prepareItemForm.js'
 import type { RelationshipTableSection } from '../lib/deriveItemView.js'
-import { resolveToManyEdgePlan } from '../lib/relationshipEdges.js'
+import { junctionEdgeForRender, resolveToManyEdgePlan } from '../lib/relationshipEdges.js'
 import type { ServerActionInput } from '../server/types.js'
-import { RelationshipTableClient, type RemoveMode } from './RelationshipTableClient.js'
+import {
+  RelationshipTableClient,
+  type RelationshipTablePagination,
+  type RemoveMode,
+} from './RelationshipTableClient.js'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig is generic over TypeInfo
 type AnyListConfig = ListConfig<any>
@@ -59,6 +64,8 @@ export interface RelationshipTableProps {
   serverAction: (input: ServerActionInput) => Promise<unknown>
   /** Suppress every write affordance — set when the parent's item view is in `'read'` field mode. */
   readOnly?: boolean
+  /** Where {@link rows} start in the total, and the links to the pages around them. */
+  pagination?: RelationshipTablePagination
 }
 
 /**
@@ -341,6 +348,7 @@ export async function RelationshipTable({
   parentId,
   serverAction,
   readOnly = false,
+  pagination,
 }: RelationshipTableProps) {
   const context = engineContextOf(appContext)
   const config = context._config ?? propConfig
@@ -452,6 +460,9 @@ export async function RelationshipTable({
 
   // JSON round-trip so only serialisable data crosses to the client component.
   const serializedRows = jsonSafeClone(preparedRows)
+  const labelColumn = section.junctionTargetListKey
+    ? junctionEdgeForRender(config, parentListKey, section.fieldName)?.targetField
+    : getLabelFieldName(relatedListConfig)
 
   return (
     <RelationshipTableClient
@@ -482,6 +493,10 @@ export async function RelationshipTable({
       createFields={createForm?.fields}
       createRelationshipData={createForm?.relationshipData}
       relatedListTitle={formatListName(section.relatedListKey)}
+      pagination={pagination}
+      labelColumn={
+        labelColumn !== undefined && shownColumns.includes(labelColumn) ? labelColumn : undefined
+      }
       editableColumns={editableColumns.filter((column) => !unreadable.has(column))}
     />
   )

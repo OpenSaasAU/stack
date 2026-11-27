@@ -12,6 +12,7 @@ import { RelationshipManager } from '../../src/components/fields/RelationshipMan
 
 // Next.js navigation is used by SearchBar.
 vi.mock('next/navigation.js', () => ({
+  useSearchParams: () => new URLSearchParams(),
   useRouter: () => ({ push: vi.fn() }),
   usePathname: () => '/admin/posts',
 }))

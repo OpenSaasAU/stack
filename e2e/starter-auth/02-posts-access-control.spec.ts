@@ -228,7 +228,7 @@ test.describe('Posts CRUD and Access Control', () => {
       // Update title
       const updatedTitle = `Updated ${Date.now()}`
       await page.fill('input[name="title"]', updatedTitle)
-      await page.click('button[type="submit"]')
+      await page.getByRole('button', { name: 'Save and close' }).click()
 
       // Wait for navigation back to list page
       await page.waitForURL(/\/admin\/post$/, { timeout: 10000 })

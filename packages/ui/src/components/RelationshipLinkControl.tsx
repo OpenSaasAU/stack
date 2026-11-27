@@ -66,12 +66,10 @@ export function readAddOutcome(result: unknown): { ok: boolean; error?: string }
  * generic reason an endpoint the session cannot read gets, so the two stay
  * indistinguishable.
  *
- * Known limits: the offered options are not filtered by what is already linked.
- * The table's rows are a bounded window (`ui.itemView.take`), so "already
- * linked" is not answerable from them, and filtering by the window alone would
- * hide an option in one record and offer it in another. A junction that forbids
- * duplicate edges declares a unique pair index, and the violation surfaces here
- * as the create's own error.
+ * The options leave out the records already linked to this one: the server
+ * answers that from the edge itself (`linkableFor`), not from the table's
+ * bounded window. They are fetched again on every open, so a row unlinked
+ * from the table is offered the next time.
  *
  * The far endpoint's options are not fetched until this control actually
  * opens (issue #1365): an item view can carry several of these sections, and
@@ -94,17 +92,14 @@ export function RelationshipLinkControl({
   const [pending, setPending] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
 
-  // A junction edge searches the junction's own far-endpoint field; a foreign
-  // key edge searches the parent's to-many, which resolves to the same related
-  // list. Either way the options come back access-scoped. `loadOnOpen` defers
-  // the empty-query window to the control's first open rather than fetching
-  // it before the user has shown any intent to use it.
   const { searchQuery, setSearchQuery, searchResults, isSearching } = useRelationshipSearch({
     initialItems: [],
-    listKey: edge.mode === 'junction' ? edge.junctionListKey : parentListKey,
-    fieldName: edge.mode === 'junction' ? edge.targetField : fieldName,
+    listKey: parentListKey,
+    fieldName,
+    linkableFor: parentId,
     serverAction,
     loadOnOpen: open,
+    reloadOnOpen: true,
   })
 
   // The popover stays open until the create succeeds, so its items keep taking

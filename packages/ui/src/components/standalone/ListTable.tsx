@@ -99,6 +99,27 @@ export interface ListTableProps {
  * />
  * ```
  */
+type SortKind = 'number' | 'time' | 'text'
+
+function sortKind(fieldType: string | undefined): SortKind {
+  if (isNumericField(fieldType)) return 'number'
+  if (fieldType === 'timestamp' || fieldType === 'calendarDay') return 'time'
+  return 'text'
+}
+
+function sortKey(value: unknown, kind: SortKind): number | string | null {
+  if (value === null || value === undefined || value === '') return null
+  if (kind === 'number') {
+    const number = typeof value === 'number' ? value : Number(value)
+    return Number.isFinite(number) ? number : null
+  }
+  if (kind === 'time') {
+    const time = value instanceof Date ? value.getTime() : new Date(String(value)).getTime()
+    return Number.isFinite(time) ? time : null
+  }
+  return String(value)
+}
+
 export function ListTable({
   items,
   fieldTypes,
@@ -142,11 +163,15 @@ export function ListTable({
 
   const sortedItems = [...items]
   if (sortBy && sortable) {
+    const kind = sortKind(fieldTypes[sortBy])
     sortedItems.sort((a, b) => {
-      const aVal = a[sortBy]
-      const bVal = b[sortBy]
-      if (aVal === bVal) return 0
-      const comparison = String(aVal) > String(bVal) ? 1 : -1
+      const aKey = sortKey(a[sortBy], kind)
+      const bKey = sortKey(b[sortBy], kind)
+      if (aKey === null || bKey === null) return aKey === bKey ? 0 : aKey === null ? 1 : -1
+      const comparison =
+        typeof aKey === 'number' && typeof bKey === 'number'
+          ? aKey - bKey
+          : String(aKey).localeCompare(String(bKey))
       return sortOrder === 'asc' ? comparison : -comparison
     })
   }
@@ -228,8 +253,19 @@ export function ListTable({
               sortedItems.map((item) => (
                 <TableRow
                   key={String(item.id)}
-                  className={cn(onRowClick && 'cursor-pointer', classNames?.row)}
+                  className={cn(
+                    onRowClick &&
+                      'cursor-pointer focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+                    classNames?.row,
+                  )}
+                  tabIndex={onRowClick ? 0 : undefined}
                   onClick={() => onRowClick?.(item)}
+                  onKeyDown={(event) => {
+                    if (!onRowClick || event.target !== event.currentTarget) return
+                    if (event.key !== 'Enter') return
+                    event.preventDefault()
+                    onRowClick(item)
+                  }}
                 >
                   {displayColumns.map((column) => (
                     <TableCell

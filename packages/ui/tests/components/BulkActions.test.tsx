@@ -151,7 +151,7 @@ describe('ListViewClient custom bulk actions (#736)', () => {
 
     // The handler's message is surfaced in the persisted status line…
     const status = await screen.findByText('Published 2 of 2')
-    expect(status).toHaveAttribute('data-slot', 'selection-status')
+    expect(status.closest('[data-slot="selection-status"]')).not.toBeNull()
     expect(mockRefresh).toHaveBeenCalled()
     // …and the selection is cleared afterwards.
     expect(screen.queryByRole('toolbar', { name: /selection/i })).not.toBeInTheDocument()

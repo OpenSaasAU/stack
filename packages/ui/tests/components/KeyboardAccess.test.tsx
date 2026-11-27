@@ -24,6 +24,7 @@ import type { ServerActionInput } from '../../src/server/types.js'
 
 const mockPush = vi.fn()
 vi.mock('next/navigation.js', () => ({
+  useSearchParams: () => new URLSearchParams(),
   useRouter: () => ({ push: mockPush, refresh: vi.fn() }),
   usePathname: () => '/admin',
 }))

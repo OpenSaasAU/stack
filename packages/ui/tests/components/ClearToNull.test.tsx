@@ -68,7 +68,9 @@ function renderEdit(initialData: Record<string, unknown> = stored) {
   )
 }
 
-const save = () => screen.getByRole('button', { name: 'Save' })
+const save = () =>
+  screen.queryByRole('button', { name: 'Save and close' }) ??
+  screen.getByRole('button', { name: 'Save' })
 
 function expectWrote(data: Record<string, unknown>) {
   expect(serverAction).toHaveBeenCalledTimes(1)

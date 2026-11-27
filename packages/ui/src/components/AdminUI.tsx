@@ -5,6 +5,7 @@ import { SaveNotice } from './SaveNotice.js'
 import { operationAvailable } from '../lib/operationAvailable.js'
 import { ADMIN_WORDMARK, Navigation, NavLink } from './Navigation.js'
 import { AdminShell } from './AdminShell.js'
+import { ViewerTimeZone } from './ViewerTimeZone.js'
 import { Dashboard } from './Dashboard.js'
 import { ListView } from './ListView.js'
 import { ItemForm } from './ItemForm.js'
@@ -88,32 +89,26 @@ export async function AdminUI({
     )
   }
 
-  const [urlSegment, action] = params
-  // Falls back to the raw segment when it resolves to no configured list, so
-  // the existing "not found" branches below (which key off `config.lists`)
-  // still render instead of silently taking the Dashboard/root path.
+  const [urlSegment, action, ...trailing] = params
   const listKey = urlSegment
-    ? (resolveListKeyFromUrl(urlSegment, Object.keys(config.lists)) ?? urlSegment)
+    ? resolveListKeyFromUrl(urlSegment, Object.keys(config.lists))
     : undefined
+  if (urlSegment !== undefined && listKey === undefined) notFound()
+  const routedList = listKey === undefined ? undefined : config.lists[listKey]
+  if (trailing.length > 0 && !routedList?.isSingleton) notFound()
   const currentPath = deriveCurrentPath(params)
 
   let content: React.ReactNode
 
   if (!listKey) {
     content = <Dashboard context={context} config={config} basePath={basePath} />
-  } else if (
-    (Object.hasOwn(config.lists, listKey) ? config.lists[listKey] : undefined)?.isSingleton &&
-    action
-  ) {
+  } else if (routedList?.isSingleton && action) {
     // A singleton has a single record edited at its bare [list] route, so the
     // create/id sub-routes (`[list, 'create']` / `[list, id]`) don't apply.
     // Redirect them to the bare editor so old links keep working.
     redirect(`${basePath}/${getUrlKey(listKey)}`)
   } else if (action === 'create') {
-    const createListConfig = Object.hasOwn(config.lists, listKey)
-      ? config.lists[listKey]
-      : undefined
-    if ((await resolveListUi(createListConfig, engineContextOf(context))).hideCreate) notFound()
+    if ((await resolveListUi(routedList, engineContextOf(context))).hideCreate) notFound()
     content = (
       <ItemForm
         context={context}
@@ -142,11 +137,10 @@ export async function AdminUI({
         itemId={parsedId.value}
         basePath={basePath}
         serverAction={serverAction}
+        searchParams={searchParams}
       />
     )
-  } else if (
-    (Object.hasOwn(config.lists, listKey) ? config.lists[listKey] : undefined)?.isSingleton
-  ) {
+  } else if (routedList?.isSingleton) {
     content = (
       <SingletonView
         context={context}
@@ -187,8 +181,7 @@ export async function AdminUI({
     // list-level `ui.listView` config (mirrors Keystone). When absent, the
     // ListView falls back to its existing defaults (all non-system fields,
     // no default sort).
-    const listView = (Object.hasOwn(config.lists, listKey) ? config.lists[listKey] : undefined)?.ui
-      ?.listView
+    const listView = routedList?.ui?.listView
 
     // Parse `?sort=field:direction` URL param for user-triggered column sorts.
     const sortParam = typeof searchParams.sort === 'string' ? searchParams.sort : undefined
@@ -229,10 +222,7 @@ export async function AdminUI({
   let fallback: React.ReactNode
   if (!listKey) {
     fallback = <DashboardSkeleton />
-  } else if (
-    action ||
-    (Object.hasOwn(config.lists, listKey) ? config.lists[listKey] : undefined)?.isSingleton
-  ) {
+  } else if (action || routedList?.isSingleton) {
     fallback = <ItemFormSkeleton />
   } else {
     fallback = <ListViewSkeleton />
@@ -282,6 +272,7 @@ export async function AdminUI({
   return (
     <>
       {themeStyles && <style dangerouslySetInnerHTML={{ __html: themeStyles }} />}
+      <ViewerTimeZone />
       <AdminShell
         sidebar={sidebar}
         brand={

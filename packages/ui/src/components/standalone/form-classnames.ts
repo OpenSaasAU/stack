@@ -17,4 +17,6 @@ export interface ItemFormClassNames {
   submit?: string
   /** The cancel button (`data-slot="button"`). */
   cancel?: string
+  /** The outcome beside the buttons, such as "Saved." (`data-slot="form-notice"`). */
+  notice?: string
 }

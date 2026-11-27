@@ -265,7 +265,7 @@ describe('DeleteButton', () => {
       })
     })
 
-    it('should show error when delete throws exception', async () => {
+    it('says the outcome is unknown when delete throws', async () => {
       mockOnDelete.mockRejectedValue(new Error('Network error'))
       const user = userEvent.setup()
 
@@ -278,7 +278,9 @@ describe('DeleteButton', () => {
       await user.click(confirmButton)
 
       await waitFor(() => {
-        expect(screen.getByText('Network error')).toBeInTheDocument()
+        expect(screen.getByRole('alert')).toHaveTextContent(
+          "Couldn't reach the server. The item may or may not have been deleted",
+        )
       })
     })
 

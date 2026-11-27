@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useState, useTransition } from 'react'
-import { useRouter } from 'next/navigation.js'
+import { unstable_rethrow, useRouter } from 'next/navigation.js'
 import { FieldRenderer } from './fields/FieldRenderer.js'
 import { ConfirmDialog } from './ConfirmDialog.js'
 import { LoadingSpinner } from './LoadingSpinner.js'
@@ -13,8 +13,10 @@ import { FieldValidityContext } from '../lib/fieldValidity.js'
 import { useItemForm, type ItemFormSubmitResult } from '../lib/useItemForm.js'
 import { useUnsavedChangesGuard } from '../lib/useUnsavedChangesGuard.js'
 import { queueSaveNotice } from './SaveNotice.js'
+import { UNREACHABLE_SAVE, unreachableDelete } from '../lib/unreachable.js'
 import { applyEdgeWrites } from '../lib/applyEdgeWrites.js'
 import { handOffStatus } from '../lib/useBulkStatus.js'
+import { formatListName } from '../lib/utils.js'
 
 export interface ItemFormClientProps {
   listKey: string
@@ -41,6 +43,22 @@ export interface ItemFormClientProps {
   fieldMode?: 'edit' | 'read'
   /** A singleton returns to its own editor, which shows no list status. */
   singleton?: boolean
+  /** The item's label, which names it in the delete confirmation. */
+  itemLabel?: string
+}
+
+const UNREACHABLE_DELETE = unreachableDelete('item')
+
+async function reachServer(
+  call: () => Promise<unknown>,
+  unreachable: string,
+): Promise<ItemFormSubmitResult | { reached: true; result: unknown }> {
+  try {
+    return { reached: true, result: await call() }
+  } catch (error) {
+    unstable_rethrow(error)
+    return { success: false, error: unreachable }
+  }
 }
 
 /**
@@ -79,8 +97,13 @@ export function ItemFormClient({
   canDelete = true,
   fieldMode = 'edit',
   singleton = false,
+  itemLabel,
 }: ItemFormClientProps) {
   const router = useRouter()
+  const closeAfterSave = React.useRef(false)
+  const listHref = `${basePath}/${urlKey}`
+  const listName = formatListName(listKey)
+  const stayAfterSave = mode === 'edit' && !singleton
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   // Separate transition for delete (not a form submit, so outside the engine).
   const [isDeleting, startDeleteTransition] = useTransition()
@@ -105,27 +128,39 @@ export function ItemFormClient({
     errorFallback: 'Access denied or operation failed',
     onEdgeWrites: (changes) => applyEdgeWrites({ changes, parentId: itemId ?? '', serverAction }),
     onUnchanged: ({ edgesCommitted }) => {
+      if (stayAfterSave && !closeAfterSave.current) {
+        queueSaveNotice(edgesCommitted ? 'Saved.' : 'No changes to save.')
+        if (edgesCommitted) router.refresh()
+        return
+      }
       if (edgesCommitted) {
         if (singleton) queueSaveNotice('Saved.')
         else handOffStatus(listKey, 'Changes saved')
       }
-      router.push(`${basePath}/${urlKey}`)
+      router.push(listHref)
       router.refresh()
     },
     onSubmit: async (data, action) => {
-      const result =
-        action === 'create'
-          ? await serverAction({ listKey, action: 'create', data })
-          : await serverAction({ listKey, action: 'update', id: itemId!, data })
+      const reached = await reachServer(
+        () =>
+          action === 'create'
+            ? serverAction({ listKey, action: 'create', data })
+            : serverAction({ listKey, action: 'update', id: itemId!, data }),
+        UNREACHABLE_SAVE,
+      )
+      if (!('reached' in reached)) return reached
 
-      const normalized = toSubmitResult(result, 'Access denied or operation failed')
-      if (normalized.success) {
-        const text = action === 'create' ? 'Created.' : 'Saved.'
-        if (singleton) queueSaveNotice(text)
-        else handOffStatus(listKey, action === 'create' ? 'Item created' : 'Changes saved')
-        router.push(`${basePath}/${urlKey}`)
+      const normalized = toSubmitResult(reached.result, 'Access denied or operation failed')
+      if (!normalized.success) return normalized
+      if (stayAfterSave && !closeAfterSave.current) {
+        queueSaveNotice('Saved.')
         router.refresh()
+        return normalized
       }
+      if (singleton) queueSaveNotice(action === 'create' ? 'Created.' : 'Saved.')
+      else handOffStatus(listKey, action === 'create' ? 'Item created' : 'Changes saved')
+      router.push(listHref)
+      router.refresh()
       return normalized
     },
   })
@@ -139,10 +174,17 @@ export function ItemFormClient({
     setShowDeleteConfirm(false)
 
     startDeleteTransition(async () => {
-      const result = await serverAction({ listKey, action: 'delete', id: itemId })
-      const normalized = toSubmitResult(result, 'Access denied or failed to delete item')
+      const reached = await reachServer(
+        () => serverAction({ listKey, action: 'delete', id: itemId }),
+        UNREACHABLE_DELETE,
+      )
+      const normalized =
+        'reached' in reached
+          ? toSubmitResult(reached.result, 'Access denied or failed to delete item')
+          : reached
       if (normalized.success) {
-        router.push(`${basePath}/${urlKey}`)
+        handOffStatus(listKey, 'Item deleted')
+        router.push(listHref)
         router.refresh()
       } else {
         setGeneralError(normalized.error)
@@ -202,19 +244,45 @@ export function ItemFormClient({
           <div />
         ) : (
           <div className="flex gap-3">
-            <Button type="submit" disabled={busy} className="gap-2">
+            <Button
+              type="submit"
+              disabled={busy}
+              className="gap-2"
+              onClick={() => {
+                closeAfterSave.current = false
+              }}
+            >
               {isPending && (
                 <LoadingSpinner
                   size="sm"
                   className="border-primary-foreground border-t-transparent"
                 />
               )}
-              {isPending ? 'Saving...' : mode === 'create' ? 'Create' : 'Save'}
+              {isPending
+                ? mode === 'create'
+                  ? 'Creating…'
+                  : 'Saving…'
+                : mode === 'create'
+                  ? 'Create'
+                  : 'Save'}
             </Button>
+            {stayAfterSave && (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy}
+                onClick={() => {
+                  closeAfterSave.current = true
+                  formRef.current?.requestSubmit()
+                }}
+              >
+                Save and close
+              </Button>
+            )}
             <Button
               type="button"
               variant="secondary"
-              onClick={() => guard.requestLeave(`${basePath}/${urlKey}`)}
+              onClick={() => guard.requestLeave(listHref)}
               disabled={busy}
             >
               Cancel
@@ -247,8 +315,12 @@ export function ItemFormClient({
 
       <ConfirmDialog
         isOpen={showDeleteConfirm}
-        title="Delete Item"
-        message="Are you sure you want to delete this item? This action cannot be undone."
+        title={`Delete this ${listName}?`}
+        message={
+          itemLabel
+            ? `“${itemLabel}” will be permanently deleted. This cannot be undone.`
+            : `This ${listName} will be permanently deleted. This cannot be undone.`
+        }
         confirmLabel="Delete"
         cancelLabel="Cancel"
         variant="danger"

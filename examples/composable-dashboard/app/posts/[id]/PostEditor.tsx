@@ -51,6 +51,7 @@ export function PostEditor({
               return { success: true }
             }}
             onCancel={() => setEditing(false)}
+            onUnchanged={() => setEditing(false)}
             // Structured per-part classNames slots (issue #709) — tune the
             // actions footer without forking the form.
             classNames={{ actions: 'justify-end' }}

@@ -5,6 +5,8 @@ import { Button } from '../../primitives/button.js'
 import { ConfirmDialog } from '../ConfirmDialog.js'
 import { LoadingSpinner } from '../LoadingSpinner.js'
 import { cn } from '../../lib/utils.js'
+import { unreachableDelete } from '../../lib/unreachable.js'
+import { unstable_rethrow } from 'next/navigation.js'
 
 /**
  * Per-part `classNames` slots for `DeleteButton` (issue #709). Each merges onto
@@ -77,7 +79,8 @@ export function DeleteButton({
         setError(result.error || `Failed to delete ${itemName}`)
       }
     } catch (err: unknown) {
-      setError((err as Error).message || `Failed to delete ${itemName}`)
+      unstable_rethrow(err)
+      setError(unreachableDelete(itemName))
     } finally {
       setIsPending(false)
     }
@@ -104,6 +107,7 @@ export function DeleteButton({
 
       {error && (
         <div
+          role="alert"
           data-slot="delete-button-error"
           className={cn(
             'mt-2 bg-destructive/10 border border-destructive text-destructive rounded-lg p-3',

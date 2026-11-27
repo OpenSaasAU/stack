@@ -13,6 +13,7 @@ import {
   type ListConfig,
   type SecuredQuery,
   engineContextOf,
+  getItemLabel,
   getUrlKey,
   OpenSaasConfig,
 } from '@opensaas/stack-core'
@@ -20,6 +21,7 @@ import { resolveListUi } from '../lib/resolveListUi.js'
 import { itemOperationsOf, operationAvailable } from '../lib/operationAvailable.js'
 import { UnavailableState } from './UnavailableState.js'
 import { buildRelationshipInclude, prepareItemForm } from '../lib/prepareItemForm.js'
+import { readRelationshipPage, relationshipPagination } from '../lib/relationshipPages.js'
 import { deriveItemViewLayout, type ItemViewLayout } from '../lib/deriveItemView.js'
 
 export interface ItemFormProps {
@@ -32,6 +34,8 @@ export interface ItemFormProps {
   basePath?: string
   // See AdminUIProps.serverAction for why this is Promise<unknown>.
   serverAction: (input: ServerActionInput) => Promise<unknown>
+  /** The item page's query, which carries each Relationship table's page. */
+  searchParams?: { [key: string]: string | string[] | undefined }
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ListConfig is generic over TypeInfo
@@ -55,6 +59,7 @@ export function composeItemViewRead(
   read: SecuredQuery,
   listConfig: AnyListConfig,
   layout: ItemViewLayout,
+  pages: Record<string, number> = {},
 ): SecuredQuery {
   const withDetails = layout.detailsFields.reduce(
     (query, fieldName) =>
@@ -70,7 +75,10 @@ export function composeItemViewRead(
             (page, column) => page.include(column, (related) => related.count()),
             (section.relationshipColumns ?? []).reduce(
               (page, column) => page.include(column),
-              rows.limit(section.take),
+              rows
+                .orderBy({ id: 'asc' })
+                .offset(((pages[section.fieldName] ?? 1) - 1) * section.take)
+                .limit(section.take),
             ),
           ),
           [SECTION_TOTAL]: rows.count(),
@@ -134,7 +142,7 @@ export function buildDetailsItemData(
  * Edit-mode item view whose layout is DERIVED from the list shape (issue #734):
  * scalar/to-one fields (and picker-demoted relationships) in a details card
  * with the existing whole-form Save/Cancel, and each to-many relationship as a
- * read-only Relationship table.
+ * Relationship table.
  */
 async function ItemViewLayoutView({
   context,
@@ -145,7 +153,9 @@ async function ItemViewLayoutView({
   basePath,
   serverAction,
   layout,
+  searchParams,
 }: {
+  searchParams: { [key: string]: string | string[] | undefined }
   context: AccessContext
   config: OpenSaasConfig
   listConfig: AnyListConfig
@@ -166,6 +176,13 @@ async function ItemViewLayoutView({
   const canDelete = !hideDelete && canDeleteRow
   const fieldMode = canUpdate ? resolvedUi.fieldMode : 'read'
 
+  const pages = Object.fromEntries(
+    layout.sections.map((section) => [
+      section.fieldName,
+      readRelationshipPage(searchParams, section.fieldName),
+    ]),
+  )
+
   // One secured read: the bounded rows each table renders and the total its
   // footer shows come back from the SAME call, both scoped by the related
   // list's own `query` access (mirrors the list view's #732 count columns).
@@ -175,6 +192,7 @@ async function ItemViewLayoutView({
       context.db[listKey].where({ id: itemId }),
       listConfig,
       layout,
+      pages,
     ).first()
   } catch (error) {
     console.error(`Failed to fetch item ${itemId}:`, error)
@@ -203,7 +221,7 @@ async function ItemViewLayoutView({
   // The details card owns only the scalar/to-one/picker fields. Restricting the
   // form's fields (and data) to that subset keeps the whole-form Save/Cancel
   // behaviour identical to the pre-#734 edit page: one update, one hook pass —
-  // the read-only Relationship tables are never part of the form payload.
+  // the Relationship tables are never part of the form payload.
   const detailsFieldEntries = layout.detailsFields
     .map((fieldName): [string, FieldConfig] | null => {
       const field = listConfig.fields[fieldName]
@@ -215,6 +233,7 @@ async function ItemViewLayoutView({
     fields: Object.fromEntries(detailsFieldEntries),
   }
   const detailsItemData = buildDetailsItemData(itemData, layout)
+  const itemLabel = getItemLabel(listConfig, itemData)
 
   const { serializableFields, initialData, relationshipData } = await prepareItemForm(
     context,
@@ -241,6 +260,7 @@ async function ItemViewLayoutView({
         relationshipData={relationshipData}
         canDelete={canDelete}
         fieldMode={fieldMode}
+        itemLabel={itemLabel}
       />
     </Card>
   )
@@ -248,6 +268,7 @@ async function ItemViewLayoutView({
   const tables = layout.sections.map((section) => {
     const sectionValue = itemData?.[section.fieldName]
     const rows = sectionRows(sectionValue)
+    const total = readAccessScopedTotal(sectionValue, rows.length)
     return (
       <RelationshipTable
         key={section.fieldName}
@@ -255,7 +276,15 @@ async function ItemViewLayoutView({
         section={section}
         rows={rows}
         // M for "showing N of M" — see {@link readAccessScopedTotal}.
-        total={readAccessScopedTotal(sectionValue, rows.length)}
+        total={total}
+        pagination={relationshipPagination({
+          itemHref: `${basePath}/${urlKey}/${itemId}`,
+          searchParams,
+          fieldName: section.fieldName,
+          page: pages[section.fieldName],
+          take: section.take,
+          total,
+        })}
         unavailable={sectionValue === undefined}
         basePath={basePath}
         context={context}
@@ -272,7 +301,8 @@ async function ItemViewLayoutView({
       <PageHeader
         backHref={`${basePath}/${urlKey}`}
         backLabel={`Back to ${formatListName(listKey)}`}
-        title={`Edit ${formatListName(listKey)}`}
+        title={itemLabel}
+        description={formatListName(listKey)}
       />
 
       {layout.arrangement === 'split' ? (
@@ -303,6 +333,7 @@ export async function ItemForm({
   itemId,
   basePath = '/admin',
   serverAction,
+  searchParams = {},
 }: ItemFormProps) {
   const context = engineContextOf(appContext)
   const listConfig = Object.hasOwn(config.lists, listKey) ? config.lists[listKey] : undefined
@@ -349,6 +380,7 @@ export async function ItemForm({
           basePath={basePath}
           serverAction={serverAction}
           layout={layout}
+          searchParams={searchParams}
         />
       )
     }
@@ -412,13 +444,16 @@ export async function ItemForm({
     mode === 'create' ? undefined : itemId,
     itemVocabulary,
   )
+  const itemLabel =
+    mode === 'edit' && itemData !== null ? getItemLabel(listConfig, itemData) : undefined
 
   return (
     <div className="max-w-4xl p-4 md:p-8">
       <PageHeader
         backHref={`${basePath}/${urlKey}`}
         backLabel={`Back to ${formatListName(listKey)}`}
-        title={`${mode === 'create' ? 'Create' : 'Edit'} ${formatListName(listKey)}`}
+        title={itemLabel ?? `Create ${formatListName(listKey)}`}
+        description={itemLabel === undefined ? undefined : formatListName(listKey)}
       />
 
       <div className="bg-card border border-border rounded-lg p-4 md:p-6">
@@ -434,6 +469,7 @@ export async function ItemForm({
           relationshipData={relationshipData}
           canDelete={canDelete}
           fieldMode={fieldMode}
+          itemLabel={itemLabel}
         />
       </div>
     </div>

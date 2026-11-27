@@ -16,10 +16,11 @@ import {
 import { Card } from '../primitives/card.js'
 import { Button } from '../primitives/button.js'
 import { ConfirmDialog } from './ConfirmDialog.js'
-import { CellRenderer } from './cells/CellRenderer.js'
+import { CellRenderer, rendersAnchorFreeCell } from './cells/CellRenderer.js'
 import { RelationshipTableCell } from './RelationshipTableCell.js'
 import { RelationshipCreateDrawer } from './RelationshipCreateDrawer.js'
 import { RelationshipLinkControl } from './RelationshipLinkControl.js'
+import { readLinkOutcome } from '../lib/applyEdgeWrites.js'
 import type { LinkEdgeData } from './RelationshipTable.js'
 import type { SerializableFieldConfig } from '../lib/serializeFieldConfig.js'
 import type { ServerActionInput } from '../server/types.js'
@@ -110,6 +111,10 @@ export interface RelationshipTableClientProps {
   createRelationshipData?: Record<string, Array<{ id: string; label: string }>>
   /** Display name of the related list, used for the "+ Add" button + drawer heading. */
   relatedListTitle?: string
+  /** Where {@link rows} start in the access-scoped total, and the links to the pages around them. */
+  pagination?: RelationshipTablePagination
+  /** The related list's label field, when it is one of {@link columns}: it names each row and carries its link. */
+  labelColumn?: string
   /**
    * Columns whose cells are inline-editable for this session (issue #737),
    * decided server-side from the related list's operation- and field-level
@@ -121,13 +126,63 @@ export interface RelationshipTableClientProps {
   editableColumns?: string[]
 }
 
+export interface RelationshipTablePagination {
+  offset: number
+  previousHref?: string
+  nextHref?: string
+  /** Present when the page asked for is past the end: the table moves there. */
+  lastPageHref?: string
+}
+
 /**
  * The footer's "showing N of M" label (issue #752). When `total` is omitted it
  * falls back to `count`, so the row count is always shown (e.g. "Showing 3 of 3 rows").
  */
-export function formatCountLabel(count: number, total: number | undefined): string {
+export function formatCountLabel(
+  count: number,
+  total: number | undefined,
+  pagination?: RelationshipTablePagination,
+): string {
   const m = total ?? count
-  return `Showing ${count} of ${m} ${m === 1 ? 'row' : 'rows'}`
+  const rows = m === 1 ? 'row' : 'rows'
+  if (pagination && count > 0 && (pagination.offset > 0 || m > count)) {
+    return `Showing ${pagination.offset + 1}–${pagination.offset + count} of ${m} ${rows}`
+  }
+  return `Showing ${count} of ${m} ${rows}`
+}
+
+function PageLinks({
+  title,
+  pagination,
+  onNavigate,
+}: {
+  title: string
+  pagination: RelationshipTablePagination
+  onNavigate: (href: string) => void
+}) {
+  const links = [
+    { href: pagination.previousHref, label: 'Previous', name: `Previous page of ${title}` },
+    { href: pagination.nextHref, label: 'Next', name: `Next page of ${title}` },
+  ]
+  return (
+    <span data-slot="relationship-table-pages">
+      {links.map(({ href, label, name }) =>
+        href === undefined ? null : (
+          <React.Fragment key={label}>
+            {' · '}
+            <a
+              href={href}
+              aria-label={name}
+              className="underline"
+              onClick={(event) => followLink(event, href, onNavigate)}
+            >
+              {label}
+            </a>
+          </React.Fragment>
+        ),
+      )}
+    </span>
+  )
 }
 
 /** Read the `{ removed, error? }` outcome a row-removal server action returns. */
@@ -141,6 +196,32 @@ function readRemoveOutcome(result: unknown): { ok: boolean; error?: string } {
   }
   // An unrecognised shape is treated as a failure so the row is never silently lost.
   return { ok: false }
+}
+
+const UNDO_WINDOW_MS = 8000
+
+type UnlinkNotice =
+  | { kind: 'unlinked'; rowId: string; label: string }
+  | { kind: 'undoFailed'; label: string; error: string }
+
+function readLabel(value: unknown): string | undefined {
+  if (typeof value === 'number') return String(value)
+  if (typeof value === 'string') return value.trim() === '' ? undefined : value
+  if (typeof value === 'object' && value !== null && 'label' in value) {
+    return readLabel(value.label)
+  }
+  return undefined
+}
+
+function followLink(
+  event: React.MouseEvent<HTMLAnchorElement>,
+  href: string,
+  onNavigate: (href: string) => void,
+) {
+  event.stopPropagation()
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return
+  event.preventDefault()
+  onNavigate(href)
 }
 
 function ViewAllLink({ href, onNavigate }: { href: string; onNavigate: (href: string) => void }) {
@@ -221,6 +302,8 @@ export function RelationshipTableClient({
   createFields,
   createRelationshipData,
   relatedListTitle,
+  labelColumn,
+  pagination,
   editableColumns,
 }: RelationshipTableClientProps) {
   const router = useRouter()
@@ -234,6 +317,13 @@ export function RelationshipTableClient({
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [pendingId, setPendingId] = React.useState<string | null>(null)
   const [confirmId, setConfirmId] = React.useState<string | null>(null)
+  const [notice, setNotice] = React.useState<UnlinkNotice | null>(null)
+
+  React.useEffect(() => {
+    if (notice?.kind !== 'unlinked') return
+    const timer = setTimeout(() => setNotice(null), UNDO_WINDOW_MS)
+    return () => clearTimeout(timer)
+  }, [notice])
 
   // Rows optimistically shown after a successful pre-linked create (#1376),
   // before `rows` (the server-confirmed prop) has caught up with them. Once a
@@ -244,14 +334,24 @@ export function RelationshipTableClient({
   const pendingCreatedRows = createdRows.filter((row) => !realRowIds.has(String(row.id)))
 
   const columnFieldType = (column: string): string | undefined => fields[column]?.type
-  const countLabel = unavailable ? '' : formatCountLabel(count, total)
+  const countLabel = unavailable ? '' : formatCountLabel(count, total, pagination)
+  const lastPageHref = pagination?.lastPageHref
+  React.useEffect(() => {
+    if (lastPageHref !== undefined) router.replace(lastPageHref, { scroll: false })
+  }, [lastPageHref, router])
+  const stayOnItem = (href: string) => router.push(href, { scroll: false })
   const isPartial = !unavailable && total !== undefined && total > count
   const viewAllHref =
     isPartial && canViewAll && backReferenceField
       ? `${basePath}/${relatedUrlKey}?search=${encodeURIComponent(`${backReferenceField}:#${parentId}`)}`
       : null
   const showRemove = removeMode !== null
-  const removeVerb = removeMode === 'delete' ? 'Delete' : 'Disconnect'
+  const removeVerb = removeMode === 'delete' && !junctionTargetTitle ? 'Delete' : 'Unlink'
+  const titleColumn =
+    labelColumn && columns.includes(labelColumn)
+      ? labelColumn
+      : (columns.find((column) => fields[column]?.type !== 'relationship') ?? columns[0])
+  const itemHref = (rowId: string) => `${basePath}/${relatedUrlKey}/${rowId}`
   const totalColumns = columns.length + (showRemove ? 1 : 0)
 
   const performRemove = async (rowId: string) => {
@@ -281,9 +381,12 @@ export function RelationshipTableClient({
 
       const outcome = readRemoveOutcome(await serverAction(input))
       if (outcome.ok) {
-        // Optimistically hide, then refresh so the re-fetched table no longer
-        // includes the row (or, on a race, restores it as the source of truth).
         setRemovedIds((prev) => new Set(prev).add(rowId))
+        setNotice(
+          removeMode === 'disconnect'
+            ? { kind: 'unlinked', rowId, label: rowLabelOf(rowId) }
+            : null,
+        )
         router.refresh()
       } else {
         // Silent failure: leave the row and show why (never leak "denied vs
@@ -301,6 +404,35 @@ export function RelationshipTableClient({
     }
   }
 
+  const undoUnlink = async (rowId: string, label: string) => {
+    if (!backReferenceField) return
+    setNotice(null)
+    const fail = (error: string) => setNotice({ kind: 'undoFailed', label, error })
+    try {
+      const outcome = readLinkOutcome(
+        await serverAction({
+          listKey: relatedListKey,
+          action: 'linkRelated',
+          id: rowId,
+          field: backReferenceField,
+          parentId,
+        }),
+      )
+      if (!outcome.ok) {
+        fail(outcome.error ?? 'Access denied or link failed')
+        return
+      }
+      setRemovedIds((prev) => {
+        const next = new Set(prev)
+        next.delete(rowId)
+        return next
+      })
+      router.refresh()
+    } catch {
+      fail('Link failed')
+    }
+  }
+
   const onRemoveClick = (rowId: string) => {
     if (removeMode === 'delete') {
       setConfirmId(rowId)
@@ -309,10 +441,14 @@ export function RelationshipTableClient({
     }
   }
 
-  const visibleRows = [
-    ...rows.filter((row) => !removedIds.has(String(row.id))),
-    ...pendingCreatedRows,
-  ]
+  const allRows = [...rows, ...pendingCreatedRows]
+  function rowLabelOf(rowId: string): string {
+    const index = allRows.findIndex((row) => String(row.id) === rowId)
+    const label = labelColumn ? readLabel(allRows[index]?.[labelColumn]) : undefined
+    return label === undefined ? `row ${index + 1}` : `“${label}”`
+  }
+  const visibleRows = allRows.filter((row) => !removedIds.has(String(row.id)))
+  const confirmLabel = confirmId === null ? '' : rowLabelOf(confirmId)
 
   return (
     <Card data-slot="relationship-table" className="overflow-hidden">
@@ -405,27 +541,57 @@ export function RelationshipTableClient({
                   key={rowId}
                   data-slot="relationship-table-row"
                   className="cursor-pointer"
-                  onClick={() => router.push(`${basePath}/${relatedUrlKey}/${rowId}`)}
+                  onClick={() => router.push(itemHref(rowId))}
                 >
                   {columns.map((column) => {
                     const numeric = isNumericField(columnFieldType(column))
+                    const cell = (
+                      <RelationshipTableCell
+                        rowId={rowId}
+                        column={column}
+                        value={row[column]}
+                        field={fields[column] ?? { type: 'text' }}
+                        basePath={basePath}
+                        numeric={numeric}
+                        editable={editableColumnSet.has(column)}
+                        relatedListKey={relatedListKey}
+                        serverAction={serverAction}
+                      />
+                    )
+                    const wrapsLink =
+                      !editableColumnSet.has(column) &&
+                      rendersAnchorFreeCell(fields[column] ?? { type: 'text' })
                     return (
                       <TableCell
                         key={column}
                         data-slot="relationship-table-cell"
                         className={cn(numeric && 'text-right')}
                       >
-                        <RelationshipTableCell
-                          rowId={rowId}
-                          column={column}
-                          value={row[column]}
-                          field={fields[column] ?? { type: 'text' }}
-                          basePath={basePath}
-                          numeric={numeric}
-                          editable={editableColumnSet.has(column)}
-                          relatedListKey={relatedListKey}
-                          serverAction={serverAction}
-                        />
+                        {column !== titleColumn ? (
+                          cell
+                        ) : wrapsLink ? (
+                          <a
+                            href={itemHref(rowId)}
+                            data-slot="relationship-table-row-link"
+                            className="font-medium text-foreground hover:underline focus-visible:underline"
+                            onClick={(event) => followLink(event, itemHref(rowId), router.push)}
+                          >
+                            {cell}
+                          </a>
+                        ) : (
+                          <span className="inline-flex items-center gap-2">
+                            {cell}
+                            <a
+                              href={itemHref(rowId)}
+                              data-slot="relationship-table-row-link"
+                              aria-label={`Open ${rowLabelOf(rowId).replace(/^“|”$/g, '')}`}
+                              className="text-xs font-medium text-muted-foreground hover:underline focus-visible:underline"
+                              onClick={(event) => followLink(event, itemHref(rowId), router.push)}
+                            >
+                              Open
+                            </a>
+                          </span>
+                        )}
                       </TableCell>
                     )
                   })}
@@ -441,7 +607,7 @@ export function RelationshipTableClient({
                         variant="ghost"
                         size="sm"
                         data-slot="relationship-table-remove"
-                        aria-label={`${removeVerb} ${title} row`}
+                        aria-label={`${removeVerb} ${rowLabelOf(rowId)}`}
                         disabled={pendingId === rowId}
                         onClick={(event) => {
                           // Don't let the removal click also navigate the row.
@@ -478,6 +644,9 @@ export function RelationshipTableClient({
                 className="text-sm text-muted-foreground"
               >
                 <span>{countLabel}</span>
+                {pagination && !unavailable && (
+                  <PageLinks title={title} pagination={pagination} onNavigate={stayOnItem} />
+                )}
                 {viewAllHref && <ViewAllLink href={viewAllHref} onNavigate={router.push} />}
               </TableCell>
             ) : (
@@ -490,6 +659,13 @@ export function RelationshipTableClient({
                       {index === 0 && (
                         <span className="text-sm text-muted-foreground">
                           <span>{countLabel}</span>
+                          {pagination && !unavailable && (
+                            <PageLinks
+                              title={title}
+                              pagination={pagination}
+                              onNavigate={stayOnItem}
+                            />
+                          )}
                           {viewAllHref && (
                             <ViewAllLink href={viewAllHref} onNavigate={router.push} />
                           )}
@@ -520,13 +696,43 @@ export function RelationshipTableClient({
         </TableFooter>
       </Table>
 
+      {notice && (
+        <div
+          role="status"
+          data-slot="relationship-table-notice"
+          className="flex items-center gap-3 border-t border-border px-4 py-2 text-sm"
+        >
+          {notice.kind === 'unlinked' ? (
+            <>
+              <span>Unlinked {notice.label}</span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void undoUnlink(notice.rowId, notice.label)}
+              >
+                Undo
+              </Button>
+            </>
+          ) : (
+            <span className="text-destructive">
+              Couldn’t link {notice.label} back: {notice.error}
+            </span>
+          )}
+        </div>
+      )}
+
       <ConfirmDialog
         isOpen={confirmId !== null}
-        title={`Delete ${title} row`}
+        title={
+          junctionTargetTitle
+            ? `Unlink ${confirmLabel}?`
+            : `Delete this ${relatedListTitle ?? formatListName(relatedListKey)}?`
+        }
         message={
           junctionTargetTitle
             ? `This removes the link only. The ${junctionTargetTitle.toLowerCase()} record itself is kept.`
-            : `This permanently deletes the related ${title.toLowerCase()} record. This cannot be undone.`
+            : `${confirmLabel} will be permanently deleted. This cannot be undone.`
         }
         confirmLabel="Delete"
         variant="danger"

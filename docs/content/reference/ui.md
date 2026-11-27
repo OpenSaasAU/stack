@@ -314,8 +314,10 @@ resolves it on the server against the list's displayable fields:
 - A to-many relationship is counted only for a column that is shown, so the
   server resolves the set before it reads. A count in a column you add is
   therefore the same access-scoped count a default column shows.
-- Field Visibility still applies. Adding a column the session may not read
-  shows the column, never the value.
+- Field Visibility still applies. A field the session can never read (its
+  `read` rule denies regardless of the row) is not offered as a column, and a
+  `?columns=` naming it is ignored. A field whose `read` rule depends on the
+  row shows its column, with no value on the rows it denies.
 
 A pick that lands back on the default set drops `?columns=`, so the default
 set never appears in the URL.
@@ -374,7 +376,8 @@ Each row has a menu of **Row actions**. Edit, Copy link and Delete are built in;
 Delete asks for confirmation, and shows only where the list's `delete` access is
 not statically `false` and `ui.hideDelete` does not hide it. Per-row update and
 delete access is not computed, so a delete the session may not perform reports
-"not deleted" in the status line with no reason. The row title links to the item
+"“Draft one” not deleted. It may already be gone, or you may not have access."
+in the status line, which never says which. The row title links to the item
 page. The title column is the label column, else the first non-relationship
 column, else the first column. When it is a relationship, or renders through a
 `ui.cell` override or a Cell a package registered, whose markup may hold its own
@@ -458,7 +461,28 @@ network drops, or a deploy invalidated the server action), the server may still
 have run it, so the status line says the result is unknown and the list
 refreshes. Choosing another action, or confirming a Delete, on a row whose
 action is still running runs nothing and says that another action is still
-running.
+running. The status line has a ✕ that dismisses it.
+
+### Selection and Bulk actions
+
+Rows get checkboxes when the list offers bulk Delete or a custom Bulk action (see
+[Custom Bulk Actions](/docs/how-to/bulk-actions)). The header checkbox selects the
+page; the selection survives paging, sorting and a reload of the tab, and clears
+when the filter changes. While a Bulk action runs, every control in the selection
+bar is disabled. When it finishes, its outcome shows in the status line, the
+selection clears and the table refreshes on the same page; a page left empty moves
+to the last page. A dispatch that cannot reach the server says "Delete 2 posts:
+the result is unknown — refresh to check" and refreshes.
+
+The confirmations name the list in the plural by English rules ("Delete 2
+categories"). A list with an irregular plural sets `ui.plural`:
+
+```typescript
+import { list } from '@opensaas/stack-core'
+import { text } from '@opensaas/stack-core/fields'
+
+const Person = list({ fields: { name: text() }, ui: { plural: 'People' } })
+```
 
 The menu is keyboard operable: Enter, Space or ArrowDown on the trigger opens
 it, the arrow keys, Home and End move through it, Escape closes it, and focus
@@ -521,6 +545,15 @@ sort, column or page-size change — writes the preset's resolved query out as
 and the admin carries on refining from there. The All tab returns to the plain
 list.
 
+A plain `YYYY-MM-DD` on a timestamp field in a preset's `search` means that day
+in the viewer's time zone, not the UTC day a plain date in a URL means. The
+admin records the browser's IANA zone in an `opensaas-tz` cookie, and the
+server rewrites those days as offset instants before the read, so "Published
+today" is today wherever the admin is, and the `?search=` a first edit writes
+out keeps the same rows. Until that cookie exists (the very first request) the
+day is the UTC day. `ListView` takes `timeZone` to set the zone itself
+(ADR-0087).
+
 A key the list does not declare, one whose `hasAccess` denies the session, or
 one whose `search` throws opens the plain list, exactly as a link with no
 `?preset=` would. While a preset is open, `?search=` is ignored.
@@ -563,7 +596,10 @@ field whose Filter spec says what empty means; on any other field it degrades to
 free text. A token that cannot map in any part is searched as one free-text
 word, and its chip shows exactly that word. A positive token searches its
 values with the field name dropped: `nosuchfield:Findable` searches `Findable`,
-and `status:draft,bogus` searches `draft,bogus` rather than for drafts. A
+and `status:draft,bogus` searches `draft,bogus` rather than for drafts. When
+the field is one this session does not have, the chip says so: "Text contains
+Findable", noted "no field called nosuchfield", so a mistyped field never reads
+as a working filter. A
 negated token searches its whole literal and is never negated: `-secret:x`, on
 a field the session cannot read or the list does not have, searches for
 `-secret:x`, so negation never turns an unreadable field into a filter. A comma
@@ -618,8 +654,10 @@ label text, never an id.
 The Filter builder is one bar at the top of the list. Focusing it lists every
 filterable field. Typing suggests fields whose names match, values a field
 enumerates in config (`draft` offers "Status is Draft"), plain phrases such as
-`views > 5000`, `status is draft` or `status draft`, and always a free-text
-search for exactly what was typed. Suggestions come from each field's Filter
+`views > 5000`, `views at least 5000`, `status is draft` or `status draft`, and always a free-text
+search for exactly what was typed. The words a chip shows read the same as their
+symbols: "greater than", "at least", "less than" and "at most" are `>`, `>=`, `<`
+and `<=`. Suggestions come from each field's Filter
 spec and the config only, never from the list's data.
 
 Choosing a field goes straight to its values with the field's default
@@ -668,10 +706,12 @@ the builder (`04/08/2026`, `4.8.2026`) is read in the day/month order of the
 viewer's locale, the order the list cells use, so it is 4 August under en-AU and
 8 April under en-US; one that is not a real date in that order is explained, not
 searched as text. The builder's chip is the browser-local day. A date-only
-`YYYY-MM-DD` in a URL or a preset chip is the **UTC** day: "is `2026-08-04`"
+`YYYY-MM-DD` in a URL is the **UTC** day, and its chip says "(UTC)": "is `2026-08-04`"
 covers that whole UTC day, and the end of a range such as
 `releasedAt:2026-08-03..2026-08-04` includes the whole of its last day. Only an
-exact `YYYY-MM-DD` has this meaning; `2026-08` is not a day.
+exact `YYYY-MM-DD` has this meaning; `2026-08` is not a day. A Preset view is
+the exception: its plain days on a timestamp field mean the viewer's local day
+(see [Preset views](#preset-views)).
 
 On a field with date inputs, Tab moves from the bar into them and on to
 **Apply dates**, and Shift+Tab from the first date input returns to the bar.
@@ -805,7 +845,7 @@ records the `field:#id` tokens in `defaultValue` point at. Its
 slots are `filter-builder` (root),
 `filter-builder-bar`, `filter-builder-chip` (with `data-armed` and
 `data-editing`), `filter-builder-chip-field`, `filter-builder-chip-condition`,
-`filter-builder-chip-value`, `filter-builder-chip-remove`,
+`filter-builder-chip-value`, `filter-builder-chip-note` (the "no field called" note), `filter-builder-chip-remove`,
 `filter-builder-group` (an OR group, with `data-alternative` while one is being
 added to it), `filter-builder-connector` (the **and** or **or** button between
 chips, with `data-joined` on an **or**), `filter-builder-alternative` (the
@@ -851,6 +891,43 @@ Forms for creating and editing items with validation and field-level access cont
 - Required field indicators
 - Error messages
 - Cancel and delete actions
+
+An edit page is titled with the item's label, with the list name beneath it, and
+never says "Edit" on a read-only form. **Save** writes only the changed fields and
+stays on the item, showing "Saved." (or "No changes to save."); **Save and close**
+returns to the list, which shows "Changes saved". Pressing Enter in a field saves
+and stays. Creating returns to the list with "Item created", and deleting with
+"Item deleted". A singleton offers only Save and stays on its editor.
+
+A server action that cannot be reached (the network drops, or a deploy invalidated
+it) may still have run, so the form says so rather than showing the browser's error:
+"Couldn't reach the server. Your changes may or may not have been saved, so reload
+to check before trying again." Delete says the same of the item.
+
+#### Relationship tables
+
+Each to-many relationship shows on the item page as a table of its related rows
+(`ui.itemView.displayMode: 'table'`, the default). Columns are the related list's
+default columns without the field that points back, or `ui.itemView.columns`.
+
+- **Paging.** `ui.itemView.take` rows a page (10 by default). The footer reads
+  "Showing 11–20 of 42 rows" with Previous and Next, which page the table in place
+  through a `<field>Page` URL parameter, so each table on the page keeps its own
+  page. A page past the end moves to the last one. **View all** opens the related
+  list filtered to this record. A `ui.itemView.sum` total covers the visible rows.
+- **Opening a row.** Each row's label cell is a link to the related record, so it
+  can be tabbed to and opened in a new tab. Clicking elsewhere on the row opens it
+  too; clicking an editable cell edits it instead.
+- **Editing in place.** Columns the session may update edit in place and save that
+  one field; a refusal puts the old value back and shows why.
+- **+ Add** creates a related record already linked to this one.
+- **Link** searches the records not already linked to this one and links the one
+  picked.
+- **✕** follows `ui.itemView.removeAction`. `'disconnect'` (the default) unlinks the
+  row at once and shows "Unlinked “Hello world”" with **Undo** for a few seconds.
+  `'delete'` asks first ("Delete this Post? “Hello world” will be permanently
+  deleted. This cannot be undone."). `'none'` hides it. Each ✕ is named for its
+  row ("Unlink “Hello world”"). Through a junction list, ✕ removes only the link.
 
 ## Standalone Components
 
@@ -900,7 +977,11 @@ export default async function CreatePostPage() {
 
 `create()` returns `null` on denial as well as on failure, so the handler turns a
 falsy result into `{ success: false }` rather than dereferencing it — the form
-renders whatever `error` you return.
+renders whatever `error` you return. After a successful create the form clears and
+says "Created.", so a page that stays put is ready for the next one. A handler that
+throws (the server could not be reached, or a deploy invalidated the action) shows
+"Couldn't reach the server. Your changes may or may not have been saved, so reload
+to check before trying again." and keeps the values.
 
 **Props:**
 
@@ -956,12 +1037,18 @@ not exist and for one this session may not read, so the `notFound()` branch cove
 both. The same is true of
 `update()`'s `null`.
 
+The form sends only the fields you changed. A successful save says "Saved." until
+the next edit; Save with nothing changed says "No changes to save." and calls
+`onUnchanged` instead of `onSubmit`. A handler that throws gets the same message as
+on the create form.
+
 **Props:**
 
 - `fields` - The serialised field configs, from `serializeFieldConfigs(context, listKey, 'update')`
 - `initialData` - The values the form opens with, from `serializeItemForForm(context, listKey, id)` on the server. The form does not run a field's `ui.valueForClientSerialization` itself
 - `onSubmit` - `(data) => Promise<{ success: boolean; error?: string }>`
 - `onCancel?` - Called when the cancel button is pressed
+- `onUnchanged?` - Called instead of `onSubmit` when Save is pressed with nothing changed
 - `relationshipData?` - Pre-fetched `{ id, label }` options per relationship field
 - `submitLabel?`, `cancelLabel?`, `basePath?` - Button text and the admin base path for links
 - `className?`, `classNames?` - Root class and per-part `data-slot` class overrides
@@ -1000,7 +1087,10 @@ export default async function PostsPage() {
 ```
 
 A denied read is an empty array, so the table shows `emptyMessage` rather than
-failing. Columns are keys of the row objects you pass, which need not be list
+failing. Sorting is on by default and sorts the rows you passed, by value for
+numbers, by time for timestamps and calendar days, and as text otherwise, with
+empty values last in either direction. With `onRowClick`, each row can be tabbed to
+and opened with Enter. Columns are keys of the row objects you pass, which need not be list
 fields — map a relation onto a scalar of its own (`authorName`) and give it a
 `fieldTypes` entry, or declare the relation in `relationshipRefs`.
 
@@ -1008,12 +1098,12 @@ fields — map a relation onto a scalar of its own (`authorName`) and give it a
 
 - `items` - The rows to render
 - `fieldTypes` - Field type per column (`{ title: 'text', status: 'select' }`), which decides how each cell renders
-- `columns?` - Which columns to show, in order (defaults to the row's own keys, curated by `fields`)
+- `columns?` - Which columns to show, in order (defaults to the `fieldTypes` keys, curated by `fields`)
 - `relationshipRefs?` - `ref` string per relationship column, e.g. `{ author: 'User.posts' }`
 - `fieldOptions?` - Select options per column, so a `select` column resolves its label and badge variant
 - `fields?` - Serialised field configs, used only to honour `ui.listView.defaultColumn` when `columns` is absent
 - `onRowClick?`, `renderActions?` - Row click handler, and a per-row actions cell
-- `sortable?`, `emptyMessage?`, `basePath?` - Client-side column sorting, empty-state text, admin base path for links
+- `sortable?`, `emptyMessage?`, `basePath?` - Client-side column sorting (default `true`), empty-state text, admin base path for links
 - `className?`, `classNames?` - Root class and per-part `data-slot` class overrides
 
 ### SearchBar
@@ -1035,10 +1125,17 @@ export default function SearchPage() {
 }
 ```
 
+Without `onSearch`, it navigates to the current path with `?search=…`, keeping the
+page's other parameters and dropping `page` so results start at the first page.
+The ✕ clears the box and searches for nothing: `onSearch('')`, or the URL without
+`search`.
+
 **Props:**
 
 - `placeholder?` - Placeholder text for the search input
-- `onSearch` - Callback function when search is submitted
+- `onSearch?` - Called with the trimmed text on submit, and with `''` when cleared
+- `onClear?` - Also called when the ✕ clears the box
+- `defaultValue?`, `searchLabel?` - The starting text, and the button and input label
 
 ### DeleteButton
 
@@ -1081,7 +1178,7 @@ delete — indistinguishable by design — so a single falsy branch covers both.
 **Props:**
 
 - `onDelete` - `() => Promise<{ success: boolean; error?: string }>`; `success: false` keeps the dialog open and shows `error`
-- `itemName?` - Used in the default confirmation copy ("Delete post?")
+- `itemName?` - Used in the default confirmation copy ("Delete post") and in the message when the server cannot be reached
 - `confirmTitle?`, `confirmMessage?`, `confirmLabel?`, `cancelLabel?`, `buttonLabel?` - Override the dialog and trigger text
 - `variant?` - `'danger'` (default) or `'warning'`, the dialog's tone
 - `buttonVariant?`, `size?`, `disabled?` - Trigger button styling and state

@@ -13,6 +13,12 @@ export function formatListName(name: string): string {
     .replace(/^./, (str) => str.toUpperCase())
 }
 
+export function pluralize(noun: string): string {
+  if (/[^aeiou]y$/i.test(noun)) return `${noun.slice(0, -1)}ies`
+  if (/(s|x|z|ch|sh)$/i.test(noun)) return `${noun}es`
+  return `${noun}s`
+}
+
 export function formatFieldName(name: string): string {
   return name
     .replace(/([A-Z])/g, ' $1')
