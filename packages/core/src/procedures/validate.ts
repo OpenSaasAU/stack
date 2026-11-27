@@ -2,6 +2,7 @@ import * as z from 'zod'
 import { findMcpToolOwner, isReservedMcpToolName } from '../config/mcp-tool-names.js'
 import type { OpenSaasConfig } from '../config/types.js'
 import { isProcedure } from './procedure.js'
+import { isReservedFailureCode } from './result.js'
 
 /** Thrown when a host is created over options or a registry it cannot serve. */
 export class ProcedureHostError extends Error {
@@ -318,6 +319,12 @@ export function assertProcedureRegistry(
     if (!isProcedure(entry)) {
       throw new ProcedureHostError(
         `Registry entry "${name}" is not a procedure. Define it with the generated \`procedure\` builder.`,
+      )
+    }
+    const reserved = Object.keys(entry.failures).find(isReservedFailureCode)
+    if (reserved !== undefined) {
+      throw new ProcedureHostError(
+        `Procedure "${name}" declares the failure code "${reserved}", which is reserved. Declare a code of its own.`,
       )
     }
     assertProcedureSchemas(name, entry)

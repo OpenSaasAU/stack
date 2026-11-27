@@ -51,7 +51,7 @@ describe('the generated procedure builder', () => {
     })
 
     it(
-      'infers input, checks output and db, and omits privileged members',
+      'infers input, checks output, db, transactions and declared failures, and omits privileged members',
       { timeout: 300_000 },
       () => {
         const output = fixture.check(`${CONSUMER_PRELUDE}
@@ -84,6 +84,52 @@ export const createPost = procedure({
     if (post === null) throw new Error('not created')
     return post
   },
+})
+
+export const renamePost = procedure({
+  description: 'Rename a post under a row lock',
+  input: z.object({ id: z.string(), title: z.string() }),
+  output: z.object({ id: z.string() }),
+  failures: { NOT_FOUND: 'No such post' },
+  access: () => true,
+  expose: ['web'],
+  run: async ({ input, context, fail }) => {
+    // @ts-expect-error a row lock needs a transaction
+    context.db.Post.where({ id: { equals: input.id } }).forUpdate()
+    // @ts-expect-error GONE is not a declared failure
+    fail('GONE')
+    return context.transaction(async (tx) => {
+      // @ts-expect-error a transaction's context has no sudo()
+      tx.sudo()
+      // @ts-expect-error a transaction's context has no Unsafe surface
+      void tx.unsafe
+      // @ts-expect-error a transaction's context cannot switch session
+      tx.withSession(null)
+      // @ts-expect-error a transaction's context has no admin action
+      void tx.serverAction
+      // @ts-expect-error the app has no list called Comment
+      void tx.db.Comment
+      await tx.advisoryLock('posts')
+      const held = await tx.db.Post.where({ id: { equals: input.id } })
+        .forUpdate()
+        .first()
+      if (held === null) throw fail('NOT_FOUND')
+      const post = await tx.db.Post.update({ where: { id: input.id }, data: { title: input.title } })
+      if (post === null) throw fail('NOT_FOUND')
+      return { id: post.id }
+    })
+  },
+})
+
+procedure({
+  description: 'Declare a reserved failure code',
+  input: z.object({}),
+  output: z.object({}),
+  // @ts-expect-error a reserved code cannot be declared
+  failures: { CONFLICT: 'Mine now' },
+  access: () => true,
+  expose: ['web'],
+  run: () => ({}),
 })
 
 procedure({
