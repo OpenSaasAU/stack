@@ -17,10 +17,15 @@ export interface AgentActor {
 }
 
 /**
- * Who a host-built session says is acting. Only a host can set it: an `actor`
- * no host minted is removed before the session reaches an access rule, a hook
- * or a transaction, so application code, a token or a session provider cannot
- * choose one. The actor is frozen, and so is the session a context carries.
+ * Who a host-built session says is acting. Only a host mints one: the
+ * procedure HTTP host and the in-process caller (`createServerCaller`) a human
+ * from the session `getSession` resolves, the MCP handler an agent. An `actor`
+ * no host minted, or one minted for a different `userId` than the session's
+ * own, is removed before the session reaches an access rule, a hook or a
+ * transaction, so a token, a session provider or code spreading one into
+ * `getContext` cannot choose it; an application chooses identity only through
+ * the `getSession` it gives a host. The actor is frozen, and so is the session
+ * a context carries.
  *
  * A session a host did not build carries none, and an absent actor is never a
  * human: a rule checks positively for the kind it wants.

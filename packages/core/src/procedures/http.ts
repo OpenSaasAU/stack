@@ -33,7 +33,7 @@ export interface ProcedureHandlerOptions<C extends ProcedureHostContext> {
    *
    * The host sets `session.actor` to a human actor carrying the session's
    * `userId` as given, in place of any `actor` the resolved session holds.
-   * `userId` must be an own property of the session holding a non-empty
+   * `userId` must be an own data property (not a getter) of the session holding a non-empty
    * string or a finite number; otherwise the call fails with `INTERNAL` and
    * the cause is reported to `onUnexpectedError`. The session handed to
    * `getContext` is a copy that keeps the resolved object's prototype.

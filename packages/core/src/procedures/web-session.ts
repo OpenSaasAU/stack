@@ -32,13 +32,12 @@ export function webSessionOf<S extends object>(resolved: S | null | undefined): 
       `getSession resolved a ${typeof resolved}; it must resolve a session object, null or undefined.`,
     )
   }
-  const userId: unknown = Object.hasOwn(resolved, 'userId')
-    ? Reflect.get(resolved, 'userId')
-    : undefined
+  const held = Object.getOwnPropertyDescriptor(resolved, 'userId')
+  const userId: unknown = held !== undefined && 'value' in held ? held.value : undefined
   if (!isActorUserId(userId)) {
     throw new ProcedureHostError(
       'getSession resolved a signed-in session with no usable `userId`, so the host cannot say who is acting. ' +
-        '`userId` must be an own property of the session holding a non-empty string or a finite number. ' +
+        '`userId` must be an own data property of the session, not a getter, holding a non-empty string or a finite number. ' +
         "With @opensaas/stack-auth, include it in `authPlugin({ sessionFields })`, for example `sessionFields: ['userId', 'email']`.",
     )
   }

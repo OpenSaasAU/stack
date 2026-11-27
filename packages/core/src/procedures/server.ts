@@ -52,7 +52,7 @@ export interface ServerCallerOptions<TRegistry extends ProcedureRegistry<Procedu
    *
    * The caller sets `session.actor` to a human actor carrying the session's
    * own `userId`, exactly as `createProcedureHandler` does: `userId` must be
-   * an own property holding a non-empty string or a finite number.
+   * an own data property, not a getter, holding a non-empty string or a finite number.
    *
    * **The caller performs no cookie or `Origin` check.** Whatever this
    * resolves is acted on as the signed-in person. In a Next.js server action

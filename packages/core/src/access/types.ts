@@ -43,10 +43,13 @@ import type { TransactionRegistry } from './transaction-registry.js'
  */
 export interface Session {
   /**
-   * Who is acting, on a session a host built: a human through the web host,
-   * or an agent through the MCP host on behalf of the session's user. The key
-   * is reserved. A host sets it last and overwrites anything already there,
-   * so no caller, token or session provider can choose it.
+   * Who is acting, on a session a host built: a human through the procedure
+   * HTTP host or the in-process caller, or an agent through the MCP host on
+   * behalf of the session's user. The key is reserved. A host sets it last and
+   * overwrites anything already there, and a minted actor survives only on a
+   * session whose own `userId` it was minted for, so no caller, token or
+   * session provider can choose it; an application chooses identity only
+   * through the `getSession` it gives a host.
    *
    * A session a host did not build has none. Absent is not human: a rule
    * checks `session?.actor?.kind === 'human'` or `=== 'agent'` for the kind

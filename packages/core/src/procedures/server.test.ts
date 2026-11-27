@@ -688,6 +688,28 @@ describe('createServerCaller', () => {
       })
     })
 
+    test('a session whose user id is a getter is refused on both hosts, not run without an actor', async () => {
+      const accessorSession = async (): Promise<Session | null> => {
+        const session: Session = {}
+        Object.defineProperty(session, 'userId', { get: () => 'ada', enumerable: true })
+        return session
+      }
+      const internal = { success: false, error: { code: 'INTERNAL', message: 'Internal error' } }
+
+      const http = await overHttp('whoAmI', {}, 'ada', accessorSession)
+      expect(http.status).toBe(500)
+      expect(http.body).toEqual(internal)
+      expect(onUnexpectedError).toHaveBeenLastCalledWith(expect.any(ProcedureHostError), 'whoAmI')
+
+      onUnexpectedError.mockClear()
+      const result = await server({ getSession: accessorSession }).call('whoAmI')
+      expect(result).toEqual(internal)
+      expect(onUnexpectedError).toHaveBeenCalledWith(expect.any(ProcedureHostError), 'whoAmI')
+      await expect(server({ getSession: accessorSession }).context()).rejects.toBeInstanceOf(
+        ProcedureHostError,
+      )
+    })
+
     test('a session with no usable user id fails closed and is reported', async () => {
       const result = await asRequest({ email: 'ada@example.com' }, () => server().call('whoAmI'))
       expect(result).toEqual({
