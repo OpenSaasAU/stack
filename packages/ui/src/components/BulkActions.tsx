@@ -4,6 +4,7 @@ import * as React from 'react'
 import { Button } from '../primitives/button.js'
 import { ConfirmDialog } from './ConfirmDialog.js'
 import { LoadingSpinner } from './LoadingSpinner.js'
+import { pluralize } from '../lib/utils.js'
 import type { BulkActionVariant } from '@opensaas/stack-core'
 
 /**
@@ -38,6 +39,10 @@ export interface BulkActionsProps {
   count: number
   /** Noun for the confirm copy (e.g. "post"). Defaults to "item". */
   itemName?: string
+  /** Plural of {@link itemName}. Defaults to English plural rules. */
+  itemPlural?: string
+  /** Disables every action while another bulk action runs. */
+  disabled?: boolean
   /** Optional class merged onto each action button. */
   className?: string
 }
@@ -58,6 +63,8 @@ export function BulkActions({
   onRun,
   count,
   itemName = 'item',
+  itemPlural = pluralize(itemName),
+  disabled = false,
   className,
 }: BulkActionsProps) {
   const [pendingKey, setPendingKey] = React.useState<string | null>(null)
@@ -65,7 +72,8 @@ export function BulkActions({
 
   if (actions.length === 0) return null
 
-  const isPending = pendingKey !== null
+  const isPending = pendingKey !== null || disabled
+  const noun = count === 1 ? itemName : itemPlural
 
   const run = async (key: string) => {
     setPendingKey(key)
@@ -107,10 +115,8 @@ export function BulkActions({
       {confirmAction && (
         <ConfirmDialog
           isOpen={true}
-          title={`${confirmAction.label} ${count} ${itemName}${count === 1 ? '' : 's'}`}
-          message={`Are you sure you want to ${confirmAction.label.toLowerCase()} ${count} selected ${itemName}${
-            count === 1 ? '' : 's'
-          }?`}
+          title={`${confirmAction.label} ${count} ${noun}`}
+          message={`Are you sure you want to ${confirmAction.label.toLowerCase()} ${count} selected ${noun}?`}
           confirmLabel={confirmAction.label}
           variant="danger"
           onConfirm={() => {

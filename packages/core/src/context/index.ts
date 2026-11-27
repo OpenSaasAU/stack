@@ -942,11 +942,13 @@ export function getContext<TConfig extends OpenSaasConfig>(
         return { bulkAction: false, error: 'Access denied' }
       }
       try {
-        const result = await action.handler({
-          listKey: props.listKey,
-          ids: props.ids,
-          context,
-        })
+        const result = await transaction(async (tx) =>
+          action.handler({
+            listKey: props.listKey,
+            ids: props.ids,
+            context: engineContextOf(tx),
+          }),
+        )
         return { bulkAction: true, message: result?.message }
       } catch (error) {
         const failure = clientFailure(error, config, props.listKey, props.action, {

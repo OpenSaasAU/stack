@@ -4,7 +4,7 @@ import * as React from 'react'
 import { Button } from '../primitives/button.js'
 import { ConfirmDialog } from './ConfirmDialog.js'
 import { LoadingSpinner } from './LoadingSpinner.js'
-import { cn } from '../lib/utils.js'
+import { cn, pluralize } from '../lib/utils.js'
 
 /**
  * Per-part `classNames` Slots for {@link RowSelectionBar}. Each merges onto its
@@ -41,6 +41,10 @@ export interface RowSelectionBarProps {
   onDelete?: () => Promise<void>
   /** Noun for the confirm copy (e.g. "post"). Defaults to "item". */
   itemName?: string
+  /** Plural of {@link itemName}. Defaults to English plural rules. */
+  itemPlural?: string
+  /** Disables every control while a bulk action runs. */
+  busy?: boolean
   /**
    * Seam for issue #736 (custom per-list Bulk actions): extra action controls
    * render in the `data-slot="selection-actions"` region, to the left of the
@@ -67,6 +71,8 @@ export function RowSelectionBar({
   onClear,
   onDelete,
   itemName = 'item',
+  itemPlural = pluralize(itemName),
+  busy = false,
   actions,
   className,
   classNames,
@@ -121,7 +127,7 @@ export function RowSelectionBar({
             variant="destructive"
             size="sm"
             onClick={() => setShowConfirm(true)}
-            disabled={isPending}
+            disabled={isPending || busy}
             className={classNames?.delete}
           >
             {isPending && (
@@ -140,7 +146,7 @@ export function RowSelectionBar({
           variant="outline"
           size="sm"
           onClick={onClear}
-          disabled={isPending}
+          disabled={isPending || busy}
           className={classNames?.clear}
         >
           Clear
@@ -150,9 +156,9 @@ export function RowSelectionBar({
       {onDelete && (
         <ConfirmDialog
           isOpen={showConfirm}
-          title={`Delete ${count} ${itemName}${count === 1 ? '' : 's'}`}
-          message={`Are you sure you want to delete ${count} selected ${itemName}${
-            count === 1 ? '' : 's'
+          title={`Delete ${count} ${count === 1 ? itemName : itemPlural}`}
+          message={`Are you sure you want to delete ${count} selected ${
+            count === 1 ? itemName : itemPlural
           }? This action cannot be undone.`}
           confirmLabel="Delete"
           variant="danger"

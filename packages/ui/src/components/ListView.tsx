@@ -810,6 +810,7 @@ export async function ListView({
         canCreate={canCreate}
         avatarColumn={avatarColumn}
         labelColumn={labelColumn}
+        pluralLabel={listConfig.ui?.plural}
         bulkActions={bulkActions}
         rowActions={visibleRowActions.map(serializeRowAction)}
         rowActionKeys={rowActionKeys}

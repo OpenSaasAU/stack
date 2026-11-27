@@ -4,7 +4,7 @@ import * as React from 'react'
 import Link from 'next/link.js'
 import { ArrowUpDown, Columns3, Funnel, Inbox, Plus, SearchX } from 'lucide-react'
 import { useRouter } from 'next/navigation.js'
-import { cn, formatFieldName, isCountAlignedColumn } from '../lib/utils.js'
+import { cn, formatFieldName, isCountAlignedColumn, pluralize } from '../lib/utils.js'
 import {
   Table,
   TableBody,
@@ -153,6 +153,7 @@ function parseActionResult(
 }
 
 const OUTCOME_UNKNOWN = 'the result is unknown — refresh to check'
+const NOT_DELETED = 'not deleted. It may already be gone, or you may not have access.'
 
 const PAGE_SIZES = [
   { value: 25, label: '25' },
@@ -313,6 +314,8 @@ export interface ListViewClientProps {
    * report.
    */
   canDelete?: boolean
+  /** The list's `ui.plural`, which the confirmations use instead of English plural rules. */
+  pluralLabel?: string
   /** Whether the Create affordance is offered. `ListView` sets it from `ui.hideCreate` and the session's vocabulary. Defaults to `true`. */
   canCreate?: boolean
   /**
@@ -383,6 +386,7 @@ export function ListViewClient({
   countLinks = {},
   serverAction,
   canDelete = false,
+  pluralLabel,
   canCreate = true,
   avatarColumn,
   labelColumn,
@@ -431,6 +435,22 @@ export function ListViewClient({
   )
 
   const pageIds = items.map((item) => String(item.id))
+  const itemName = formatFieldName(listKey).toLowerCase()
+  const itemPlural = pluralLabel ? pluralLabel.toLowerCase() : pluralize(itemName)
+  const [bulkRunning, setBulkRunning] = React.useState(false)
+  const runBulk = async (unknownLabel: string, run: () => Promise<string>) => {
+    if (!serverAction) return
+    setBulkRunning(true)
+    try {
+      setBulkStatus(await run(), { handoff: true })
+      selection.clear()
+    } catch {
+      setBulkStatus(`${unknownLabel}: ${OUTCOME_UNKNOWN}`, { handoff: true })
+    } finally {
+      setBulkRunning(false)
+      router.refresh()
+    }
+  }
 
   // Starting a fresh selection dismisses any prior report.
   const handleToggle = (id: string) => {
@@ -583,40 +603,26 @@ export function ListViewClient({
   if (sortBy && !sortOptions.includes(sortBy)) sortOptions.push(sortBy)
 
   const handleBulkDelete = async () => {
-    if (!serverAction) return
     const ids = [...selection.selectedIds]
-
-    // One server round-trip: the deletion runs row-by-row through the secured
-    // context server-side, honouring Silent failure (a denied row is not
-    // counted). A single call avoids a client loop of Server Actions — each of
-    // which would trigger its own route refresh/redirect — and yields the
-    // "N of M" count directly without revealing which rows were denied or why.
-    const result = await serverAction({ listKey, action: 'bulkDelete', ids })
-    const { deleted, total } = parseBulkDeleteResult(result, ids.length)
-
-    // Set before navigating so it isn't lost on the remount navigation triggers.
-    setBulkStatus(`${deleted} of ${total} deleted`, { handoff: true })
-    selection.clear()
-
-    refreshFromFirstPage()
+    const noun = ids.length === 1 ? itemName : itemPlural
+    await runBulk(`Delete ${ids.length} ${noun}`, async () => {
+      const result = await serverAction?.({ listKey, action: 'bulkDelete', ids })
+      const { deleted, total } = parseBulkDeleteResult(result, ids.length)
+      return `${deleted} of ${total} deleted`
+    })
   }
 
-  // Runs a custom Bulk action (issue #736); mirrors `handleBulkDelete`'s
-  // round-trip/page-reset flow. Per-id denials are absorbed server-side and
-  // never leaked here.
   const handleBulkAction = async (key: string) => {
-    if (!serverAction) return
     const ids = [...selection.selectedIds]
     const label = bulkActions.find((a) => a.key === key)?.label ?? 'Action'
-
-    const result = await serverAction({ listKey, action: 'bulkAction', key, ids })
-    setBulkStatus(
-      parseActionResult(result, 'bulkAction', label, { fallback: `${label} complete` }),
-      { handoff: true },
+    await runBulk(label, async () =>
+      parseActionResult(
+        await serverAction?.({ listKey, action: 'bulkAction', key, ids }),
+        'bulkAction',
+        label,
+        { fallback: `${label} complete` },
+      ),
     )
-    selection.clear()
-
-    refreshFromFirstPage()
   }
 
   const itemHref = (id: string) => `${basePath}/${urlKey}/${id}`
@@ -642,7 +648,7 @@ export function ListViewClient({
       return
     }
     const { deleted } = parseBulkDeleteResult(result, 1)
-    setBulkStatus(deleted === 1 ? `“${name}” deleted` : `“${name}” not deleted`, {
+    setBulkStatus(deleted === 1 ? `“${name}” deleted` : `“${name}” ${NOT_DELETED}`, {
       handoff: true,
     })
     if (deleted === 1 && selection.isSelected(id)) selection.toggle(id)
@@ -906,9 +912,18 @@ export function ListViewClient({
         <div
           data-slot="selection-status"
           role="status"
-          className="rounded-lg border bg-muted/50 px-4 py-2 text-sm text-foreground"
+          className="flex items-start justify-between gap-3 rounded-lg border bg-muted/50 px-4 py-2 text-sm text-foreground"
         >
-          {bulkStatus}
+          <span>{bulkStatus}</span>
+          <button
+            type="button"
+            data-slot="selection-status-dismiss"
+            aria-label="Dismiss"
+            className="-my-0.5 rounded px-1 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            onClick={clearStatus}
+          >
+            <span aria-hidden="true">✕</span>
+          </button>
         </div>
       )}
 
@@ -917,14 +932,18 @@ export function ListViewClient({
           count={selection.selectedCount}
           onClear={selection.clear}
           onDelete={canBulkDelete ? handleBulkDelete : undefined}
-          itemName={formatFieldName(listKey).toLowerCase()}
+          itemName={itemName}
+          itemPlural={itemPlural}
+          busy={bulkRunning}
           actions={
             canRunBulkActions ? (
               <BulkActions
                 actions={bulkActions}
                 onRun={handleBulkAction}
                 count={selection.selectedCount}
-                itemName={formatFieldName(listKey).toLowerCase()}
+                itemName={itemName}
+                itemPlural={itemPlural}
+                disabled={bulkRunning}
               />
             ) : undefined
           }
@@ -1155,7 +1174,7 @@ export function ListViewClient({
                             `Another action on “${rowName(item, index)}” is still running`,
                           )
                         }
-                        itemName={formatFieldName(listKey).toLowerCase()}
+                        itemName={itemName}
                         className="max-md:-m-1.5 max-md:h-11 max-md:w-11"
                       />
                     </TableCell>

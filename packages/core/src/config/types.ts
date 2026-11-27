@@ -2507,6 +2507,17 @@ export type ListUIConfig<TTypeInfo extends TypeInfo = TypeInfo> = {
    */
   labelField?: string
   /**
+   * The list's plural, for the admin's confirmations ("Delete 3 people?"). When
+   * omitted the list name is pluralised by English rules (Category →
+   * categories), which suits regular names only.
+   *
+   * @example
+   * ```typescript
+   * ui: { plural: 'People' }
+   * ```
+   */
+  plural?: string
+  /**
    * Opt this list into an access-scoped record count next to its Admin chrome
    * nav item (issue #735). Default `false` — no count query runs for lists that
    * don't opt in. The count is fetched through the secured context, so it only
@@ -2686,8 +2697,10 @@ export interface BulkAction {
   }) => boolean | Promise<boolean>
   /**
    * The server-side handler. Receives the selected ids and the secured
-   * `context`; do all work through `context.db`. Returns an optional
-   * `{ message }` shown in the selection bar when the action completes.
+   * `context`, bound to one transaction around the whole handler, so a throw
+   * rolls back every write it made. Do all work through `context.db`, and keep
+   * slow external calls out of it: they hold the transaction open. Returns an
+   * optional `{ message }` shown in the status line when the action completes.
    */
   handler: (args: BulkActionContext) => BulkActionResult | void | Promise<BulkActionResult | void>
 }

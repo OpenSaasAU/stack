@@ -61,8 +61,16 @@ rows the session was actually allowed to write — a denied row is indistinguish
 from a missing one, which is the point.
 
 The action's button appears in the selection bar, in declaration order,
-alongside the built-in Delete. When it completes, its returned `message` shows in
-the selection bar's status line, the selection clears, and the table refreshes.
+alongside the built-in Delete. While it runs, the whole bar is disabled. When it
+completes, its returned `message` shows in the status line, the selection clears,
+and the table refreshes on the same page. If the server cannot be reached, the
+status line says the result is unknown and the table refreshes.
+
+The handler runs inside **one transaction**, and its `context` is bound to it: a
+handler that throws part way rolls back every write it made, and the admin sees
+"Action failed". The transaction stays open for as long as the handler runs, so
+make slow external calls (an email, a payment API) after the writes are decided,
+or from a job the handler enqueues.
 
 ## The secured-context / serialisation boundary
 

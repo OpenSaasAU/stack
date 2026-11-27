@@ -376,7 +376,8 @@ Each row has a menu of **Row actions**. Edit, Copy link and Delete are built in;
 Delete asks for confirmation, and shows only where the list's `delete` access is
 not statically `false` and `ui.hideDelete` does not hide it. Per-row update and
 delete access is not computed, so a delete the session may not perform reports
-"not deleted" in the status line with no reason. The row title links to the item
+"“Draft one” not deleted. It may already be gone, or you may not have access."
+in the status line, which never says which. The row title links to the item
 page. The title column is the label column, else the first non-relationship
 column, else the first column. When it is a relationship, or renders through a
 `ui.cell` override or a Cell a package registered, whose markup may hold its own
@@ -460,7 +461,28 @@ network drops, or a deploy invalidated the server action), the server may still
 have run it, so the status line says the result is unknown and the list
 refreshes. Choosing another action, or confirming a Delete, on a row whose
 action is still running runs nothing and says that another action is still
-running.
+running. The status line has a ✕ that dismisses it.
+
+### Selection and Bulk actions
+
+Rows get checkboxes when the list offers bulk Delete or a custom Bulk action (see
+[Custom Bulk Actions](/docs/how-to/bulk-actions)). The header checkbox selects the
+page; the selection survives paging, sorting and a reload of the tab, and clears
+when the filter changes. While a Bulk action runs, every control in the selection
+bar is disabled. When it finishes, its outcome shows in the status line, the
+selection clears and the table refreshes on the same page; a page left empty moves
+to the last page. A dispatch that cannot reach the server says "Delete 2 posts:
+the result is unknown — refresh to check" and refreshes.
+
+The confirmations name the list in the plural by English rules ("Delete 2
+categories"). A list with an irregular plural sets `ui.plural`:
+
+```typescript
+import { list } from '@opensaas/stack-core'
+import { text } from '@opensaas/stack-core/fields'
+
+const Person = list({ fields: { name: text() }, ui: { plural: 'People' } })
+```
 
 The menu is keyboard operable: Enter, Space or ArrowDown on the trigger opens
 it, the arrow keys, Home and End move through it, Escape closes it, and focus
