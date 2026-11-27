@@ -12,6 +12,7 @@ vi.mock('next/navigation.js', () => ({
     push: mockPush,
   }),
   usePathname: () => mockPathname,
+  useSearchParams: () => new URLSearchParams(),
 }))
 
 describe('SearchBar', () => {
@@ -161,7 +162,7 @@ describe('SearchBar', () => {
       const searchButton = screen.getByRole('button', { name: 'Search' })
       await user.click(searchButton)
 
-      expect(mockPush).toHaveBeenCalledWith('/admin/posts?search=test%20query')
+      expect(mockPush).toHaveBeenCalledWith('/admin/posts?search=test+query')
     })
 
     it('should call onClear when clear button clicked', async () => {

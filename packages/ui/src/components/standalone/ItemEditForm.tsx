@@ -9,6 +9,8 @@ import { useItemForm } from '../../lib/useItemForm.js'
 import { FieldValidityContext } from '../../lib/fieldValidity.js'
 import { cn } from '../../lib/utils.js'
 import type { ItemFormClassNames } from './form-classnames.js'
+import { submitOrUnreachable } from './form-submit.js'
+import { FormNotice } from './FormNotice.js'
 
 export interface ItemEditFormProps<
   TData extends Record<string, unknown> = Record<string, unknown>,
@@ -28,7 +30,7 @@ export interface ItemEditFormProps<
   onCancel?: () => void
   /**
    * Runs instead of `onSubmit` when Save is pressed with nothing changed, so no
-   * update is issued. Defaults to `onCancel`.
+   * update is issued. The form says "No changes to save." either way.
    */
   onUnchanged?: () => void
   relationshipData?: Record<string, Array<{ id: string; label: string }>>
@@ -67,6 +69,7 @@ export function ItemEditForm<TData extends Record<string, unknown> = Record<stri
   classNames,
   basePath = '/admin',
 }: ItemEditFormProps<TData>) {
+  const [notice, setNotice] = React.useState<string | null>(null)
   const {
     formData,
     errors,
@@ -83,12 +86,17 @@ export function ItemEditForm<TData extends Record<string, unknown> = Record<stri
     initialData,
     mode: 'update',
     errorFallback: 'Failed to update item',
-    onUnchanged: onUnchanged ?? onCancel,
+    onUnchanged: () => {
+      setNotice('No changes to save.')
+      onUnchanged?.()
+    },
     onSubmit: async (data) => {
-      const result = await onSubmit(data as TData)
-      return result.success
-        ? { success: true }
-        : { success: false, error: result.error || 'Failed to update item' }
+      const result = await submitOrUnreachable(
+        () => onSubmit(data as TData),
+        'Failed to update item',
+      )
+      if (result.success) setNotice('Saved.')
+      return result
     },
   })
 
@@ -123,7 +131,10 @@ export function ItemEditForm<TData extends Record<string, unknown> = Record<stri
               fieldName={fieldName}
               fieldConfig={fieldConfig}
               value={(formData as Record<string, unknown>)[fieldName]}
-              onChange={(value) => handleFieldChange(fieldName, value)}
+              onChange={(value) => {
+                setNotice(null)
+                handleFieldChange(fieldName, value)
+              }}
               error={errors[fieldName]}
               disabled={isPending}
               mode="edit"
@@ -143,7 +154,7 @@ export function ItemEditForm<TData extends Record<string, unknown> = Record<stri
           {isPending && (
             <LoadingSpinner size="sm" className="border-primary-foreground border-t-transparent" />
           )}
-          {isPending ? 'Saving...' : submitLabel}
+          {isPending ? 'Saving…' : submitLabel}
         </Button>
         {onCancel && (
           <Button
@@ -156,6 +167,7 @@ export function ItemEditForm<TData extends Record<string, unknown> = Record<stri
             {cancelLabel}
           </Button>
         )}
+        <FormNotice message={notice} className={classNames?.notice} />
       </div>
     </form>
   )

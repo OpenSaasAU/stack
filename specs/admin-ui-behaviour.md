@@ -224,3 +224,22 @@ Agreed 2026-11-27, reviewed against the live `ListViewClient`.
 | 7.17 | Confirmations use English plural rules ("categories", "addresses"), or the list's `ui.plural`.                                                                                              | `ListViewBulkExpectations.test.tsx`, `ListViewPlural.test.tsx`, `pluralize.test.ts`      |
 
 Decided and left as they are: Delete stays in every row's menu because per-row delete access is not computed for the page (7.3 says why it may not run), and there is no "select all matching" across pages.
+
+## Area 8: Standalone components
+
+Agreed 2026-11-27, reviewed against the live components from `@opensaas/stack-ui/standalone`.
+
+| #    | Expectation                                                                                                                                                                     | Covered by                                                 |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| 8.1  | The forms render the field configs from `serializeFieldConfigs`: never-readable fields left out, never-writable ones read-only. They never touch the database; `onSubmit` does. | `StandaloneFormWritability.test.tsx`                       |
+| 8.2  | Required, length and min/max are checked in the browser first, focusing the first problem field and sending nothing.                                                            | `FieldValidity.test.tsx`                                   |
+| 8.3  | `{ success: false, error }` keeps the form and its values, and shows the error in an alert banner.                                                                              | `StandaloneExpectations.test.tsx`                          |
+| 8.4  | A successful create clears the form and says "Created."; a successful save says "Saved." until the next edit.                                                                   | `StandaloneExpectations.test.tsx`                          |
+| 8.5  | The edit form sends only changed fields; Save with nothing changed says "No changes to save." and calls `onUnchanged`, never `onCancel` or `onSubmit`.                          | `StandaloneExpectations.test.tsx`,                         |
+| 8.6  | A handler that throws says "Couldn't reach the server…" with the may-or-may-not wording, on both forms and on `DeleteButton`.                                                   | `StandaloneExpectations.test.tsx`, `DeleteButton.test.tsx` |
+| 8.7  | Cancel shows only with `onCancel`; while sending, the button reads "Creating…" or "Saving…".                                                                                    | `StandaloneExpectations.test.tsx`                          |
+| 8.8  | `ListTable` renders the rows given, its columns are `columns` or the `fieldTypes` keys, and no rows shows `emptyMessage`; an actions cell's clicks don't trigger the row.       | `ListTable.test.tsx`                                       |
+| 8.9  | `ListTable` sorts on by default: numbers by value, dates by time, text as text, empty values last either way.                                                                   | `StandaloneExpectations.test.tsx`                          |
+| 8.10 | `ListTable` rows with `onRowClick` can be tabbed to and opened with Enter; rows without it stay out of the tab order.                                                           | `StandaloneExpectations.test.tsx`                          |
+| 8.11 | `SearchBar` calls `onSearch` with the trimmed text, or navigates keeping the page's other parameters and dropping `page`; ✕ searches for nothing.                               | `StandaloneExpectations.test.tsx`, `SearchBar.test.tsx`    |
+| 8.12 | `DeleteButton` asks first ("Delete post"), then runs `onDelete`; a refusal shows its error in an alert under the button.                                                        | `DeleteButton.test.tsx`, `StandaloneExpectations.test.tsx` |

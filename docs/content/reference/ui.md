@@ -977,7 +977,11 @@ export default async function CreatePostPage() {
 
 `create()` returns `null` on denial as well as on failure, so the handler turns a
 falsy result into `{ success: false }` rather than dereferencing it — the form
-renders whatever `error` you return.
+renders whatever `error` you return. After a successful create the form clears and
+says "Created.", so a page that stays put is ready for the next one. A handler that
+throws (the server could not be reached, or a deploy invalidated the action) shows
+"Couldn't reach the server. Your changes may or may not have been saved, so reload
+to check before trying again." and keeps the values.
 
 **Props:**
 
@@ -1033,12 +1037,18 @@ not exist and for one this session may not read, so the `notFound()` branch cove
 both. The same is true of
 `update()`'s `null`.
 
+The form sends only the fields you changed. A successful save says "Saved." until
+the next edit; Save with nothing changed says "No changes to save." and calls
+`onUnchanged` instead of `onSubmit`. A handler that throws gets the same message as
+on the create form.
+
 **Props:**
 
 - `fields` - The serialised field configs, from `serializeFieldConfigs(context, listKey, 'update')`
 - `initialData` - The values the form opens with, from `serializeItemForForm(context, listKey, id)` on the server. The form does not run a field's `ui.valueForClientSerialization` itself
 - `onSubmit` - `(data) => Promise<{ success: boolean; error?: string }>`
 - `onCancel?` - Called when the cancel button is pressed
+- `onUnchanged?` - Called instead of `onSubmit` when Save is pressed with nothing changed
 - `relationshipData?` - Pre-fetched `{ id, label }` options per relationship field
 - `submitLabel?`, `cancelLabel?`, `basePath?` - Button text and the admin base path for links
 - `className?`, `classNames?` - Root class and per-part `data-slot` class overrides
@@ -1077,7 +1087,10 @@ export default async function PostsPage() {
 ```
 
 A denied read is an empty array, so the table shows `emptyMessage` rather than
-failing. Columns are keys of the row objects you pass, which need not be list
+failing. Sorting is on by default and sorts the rows you passed, by value for
+numbers, by time for timestamps and calendar days, and as text otherwise, with
+empty values last in either direction. With `onRowClick`, each row can be tabbed to
+and opened with Enter. Columns are keys of the row objects you pass, which need not be list
 fields — map a relation onto a scalar of its own (`authorName`) and give it a
 `fieldTypes` entry, or declare the relation in `relationshipRefs`.
 
@@ -1085,12 +1098,12 @@ fields — map a relation onto a scalar of its own (`authorName`) and give it a
 
 - `items` - The rows to render
 - `fieldTypes` - Field type per column (`{ title: 'text', status: 'select' }`), which decides how each cell renders
-- `columns?` - Which columns to show, in order (defaults to the row's own keys, curated by `fields`)
+- `columns?` - Which columns to show, in order (defaults to the `fieldTypes` keys, curated by `fields`)
 - `relationshipRefs?` - `ref` string per relationship column, e.g. `{ author: 'User.posts' }`
 - `fieldOptions?` - Select options per column, so a `select` column resolves its label and badge variant
 - `fields?` - Serialised field configs, used only to honour `ui.listView.defaultColumn` when `columns` is absent
 - `onRowClick?`, `renderActions?` - Row click handler, and a per-row actions cell
-- `sortable?`, `emptyMessage?`, `basePath?` - Client-side column sorting, empty-state text, admin base path for links
+- `sortable?`, `emptyMessage?`, `basePath?` - Client-side column sorting (default `true`), empty-state text, admin base path for links
 - `className?`, `classNames?` - Root class and per-part `data-slot` class overrides
 
 ### SearchBar
@@ -1112,10 +1125,17 @@ export default function SearchPage() {
 }
 ```
 
+Without `onSearch`, it navigates to the current path with `?search=…`, keeping the
+page's other parameters and dropping `page` so results start at the first page.
+The ✕ clears the box and searches for nothing: `onSearch('')`, or the URL without
+`search`.
+
 **Props:**
 
 - `placeholder?` - Placeholder text for the search input
-- `onSearch` - Callback function when search is submitted
+- `onSearch?` - Called with the trimmed text on submit, and with `''` when cleared
+- `onClear?` - Also called when the ✕ clears the box
+- `defaultValue?`, `searchLabel?` - The starting text, and the button and input label
 
 ### DeleteButton
 
@@ -1158,7 +1178,7 @@ delete — indistinguishable by design — so a single falsy branch covers both.
 **Props:**
 
 - `onDelete` - `() => Promise<{ success: boolean; error?: string }>`; `success: false` keeps the dialog open and shows `error`
-- `itemName?` - Used in the default confirmation copy ("Delete post?")
+- `itemName?` - Used in the default confirmation copy ("Delete post") and in the message when the server cannot be reached
 - `confirmTitle?`, `confirmMessage?`, `confirmLabel?`, `cancelLabel?`, `buttonLabel?` - Override the dialog and trigger text
 - `variant?` - `'danger'` (default) or `'warning'`, the dialog's tone
 - `buttonVariant?`, `size?`, `disabled?` - Trigger button styling and state

@@ -6,7 +6,7 @@ import { Input } from '../../primitives/input.js'
 import { Button } from '../../primitives/button.js'
 import { Card } from '../../primitives/card.js'
 import { cn } from '../../lib/utils.js'
-import { usePathname, useRouter } from 'next/navigation.js'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation.js'
 
 /**
  * Per-part `classNames` slots for `SearchBar` (issue #709). Each merges onto its
@@ -65,19 +65,33 @@ export function SearchBar({
 }: SearchBarProps) {
   const router = useRouter()
   const pathname = usePathname()
+  const searchParams = useSearchParams()
   const [searchInput, setSearchInput] = useState(defaultValue)
   const inputRef = useRef<HTMLInputElement>(null)
 
+  const search = (query: string) => {
+    if (onSearch) {
+      onSearch(query)
+      return
+    }
+    const params = new URLSearchParams(searchParams?.toString())
+    params.delete('page')
+    if (query === '') params.delete('search')
+    else params.set('search', query)
+    const next = params.toString()
+    router.push(next === '' ? pathname : `${pathname}?${next}`)
+  }
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (onSearch) onSearch(searchInput.trim())
-    else router.push(`${pathname}?search=${encodeURIComponent(searchInput.trim())}`)
+    search(searchInput.trim())
   }
 
   const handleClear = () => {
     inputRef.current?.focus()
     setSearchInput('')
     onClear?.()
+    search('')
   }
 
   return (

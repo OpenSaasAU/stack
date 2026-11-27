@@ -13,6 +13,7 @@ import { FieldValidityContext } from '../lib/fieldValidity.js'
 import { useItemForm, type ItemFormSubmitResult } from '../lib/useItemForm.js'
 import { useUnsavedChangesGuard } from '../lib/useUnsavedChangesGuard.js'
 import { queueSaveNotice } from './SaveNotice.js'
+import { UNREACHABLE_SAVE, unreachableDelete } from '../lib/unreachable.js'
 import { applyEdgeWrites } from '../lib/applyEdgeWrites.js'
 import { handOffStatus } from '../lib/useBulkStatus.js'
 import { formatListName } from '../lib/utils.js'
@@ -46,10 +47,7 @@ export interface ItemFormClientProps {
   itemLabel?: string
 }
 
-const UNREACHABLE_SAVE =
-  "Couldn't reach the server. Your changes may or may not have been saved, so reload to check before trying again."
-const UNREACHABLE_DELETE =
-  "Couldn't reach the server. The item may or may not have been deleted, so reload to check before trying again."
+const UNREACHABLE_DELETE = unreachableDelete('item')
 
 async function reachServer(
   call: () => Promise<unknown>,
