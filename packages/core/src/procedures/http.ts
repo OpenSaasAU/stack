@@ -1,14 +1,9 @@
-import { humanActor, isActorUserId, sessionWithActor } from '../access/actor.js'
 import type { OpenSaasConfig } from '../config/types.js'
-import {
-  isProcedure,
-  type Procedure,
-  type ProcedureHostContext,
-  type ProcedureRegistry,
-} from './procedure.js'
+import type { ProcedureHostContext, ProcedureRegistry } from './procedure.js'
 import { FAILURE_STATUS, failure, isReservedFailureCode, type ProcedureResult } from './result.js'
 import { guardReporter, runProcedure, type RawInput } from './run.js'
 import { assertProcedureRegistry, ProcedureHostError } from './validate.js'
+import { webProcedureOf, webSessionOf } from './web-session.js'
 
 /** The session type an application context carries, without its `null`. */
 export type SessionOf<C extends ProcedureHostContext> = Exclude<C['session'], null>
@@ -129,16 +124,6 @@ function normaliseOrigins(origins: readonly string[]): ReadonlySet<string> {
   return normalised
 }
 
-function lookup<C extends ProcedureHostContext>(
-  procedures: ProcedureRegistry<C>,
-  name: string,
-): Procedure<C> | undefined {
-  if (!Object.hasOwn(procedures, name)) return undefined
-  const found = procedures[name]
-  if (!isProcedure<C>(found) || !found.expose.includes('web')) return undefined
-  return found
-}
-
 function isJsonContentType(header: string | null): boolean {
   if (header === null) return false
   const mediaType = header.split(';', 1)[0]?.trim().toLowerCase()
@@ -251,7 +236,7 @@ export function createProcedureHandler<C extends ProcedureHostContext>(
     const { pathname } = new URL(request.url)
     if (!pathname.startsWith(prefix)) return notFound()
     const name = pathname.slice(prefix.length, pathname.endsWith('/') ? -1 : undefined)
-    const procedure = lookup(procedures, name)
+    const procedure = webProcedureOf(procedures, name)
     if (procedure === undefined) return notFound()
 
     if (request.method !== 'POST')
@@ -275,26 +260,9 @@ export function createProcedureHandler<C extends ProcedureHostContext>(
         return resultResponse(failure('DENIED'))
       }
       try {
-        const resolved = await getSession(new Request(request.url, { headers: request.headers }))
-        if (resolved === null || resolved === undefined) {
-          session = null
-        } else if (typeof resolved === 'object') {
-          const userId: unknown = Object.hasOwn(resolved, 'userId')
-            ? Reflect.get(resolved, 'userId')
-            : undefined
-          if (!isActorUserId(userId)) {
-            throw new ProcedureHostError(
-              'getSession resolved a signed-in session with no usable `userId`, so the host cannot say who is acting. ' +
-                '`userId` must be an own property of the session holding a non-empty string or a finite number. ' +
-                "With @opensaas/stack-auth, include it in `authPlugin({ sessionFields })`, for example `sessionFields: ['userId', 'email']`.",
-            )
-          }
-          session = sessionWithActor(resolved, humanActor(userId))
-        } else {
-          throw new ProcedureHostError(
-            `getSession resolved a ${typeof resolved}; it must resolve a session object, null or undefined.`,
-          )
-        }
+        session = webSessionOf(
+          await getSession(new Request(request.url, { headers: request.headers })),
+        )
       } catch (error) {
         onUnexpectedError(error, name)
         return resultResponse(failure('INTERNAL'))

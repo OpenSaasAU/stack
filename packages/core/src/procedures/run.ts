@@ -21,6 +21,12 @@ export interface ProcedureCall<C extends ProcedureHostContext> {
   context: () => Promise<C>
   readInput: InputReader
   onUnexpectedError: UnexpectedErrorReporter
+  /**
+   * Handed every error the pipeline catches before it becomes a failure. A
+   * host that lets an error propagate, as the in-process caller does with a
+   * framework's control flow, rethrows it from here.
+   */
+  propagate?: (error: unknown) => void
 }
 
 export type UnexpectedErrorReporter = (error: unknown, procedureName: string) => void
@@ -105,6 +111,7 @@ export async function runProcedure<C extends ProcedureHostContext>(
     }
     return { success: true, data: output.data }
   } catch (error) {
+    call.propagate?.(error)
     return failureFromError(error, internal)
   }
 }

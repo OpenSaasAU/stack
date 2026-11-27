@@ -34,6 +34,56 @@ const authenticated = await getContext({ userId: 'user-123' })
 
 The ORM client behind it is a process singleton, built once from the committed `prisma/contract.json` artifact. Nothing that merely loads the config opens a connection.
 
+### The session-resolved context
+
+A server component or server action should not pick the session it passes to `getContext`. `createServerCaller` from `@opensaas/stack-core/procedures` resolves it from the request on every call, so one application module imports the generated `getContext` and everything else asks that module:
+
+```typescript
+// lib/server.ts
+import { createServerCaller } from '@opensaas/stack-core/procedures'
+import { config, getContext } from '@/.opensaas/context'
+import { procedures } from '@/lib/procedures'
+import { getSession } from '@/lib/auth'
+
+const server = createServerCaller({ procedures, config: await config, getContext, getSession })
+
+export const callProcedure = server.call
+export const getServerContext = server.context
+```
+
+`getSession` takes no argument: it reads the request's own cookies, as `getSession` in `lib/auth.ts` does through `headers()`. It runs on every `call` and every `context()` and is never cached, so concurrent requests never share a session. The session it resolves carries a human actor (`{ kind: 'human', userId, via: 'web' }`), built from its `userId`, exactly as the procedure HTTP host builds one.
+
+`getServerContext()` returns the context for the current request, for a server component's reads:
+
+```typescript
+// app/posts/page.tsx
+import { getServerContext } from '@/lib/server'
+
+export default async function Posts() {
+  const context = await getServerContext()
+  const posts = await context.db.Post.where({ published: { equals: true } }).all()
+  return posts.map((post) => post.title).join(', ')
+}
+```
+
+`callProcedure(name, input)` runs a procedure exposed to `'web'` through the same pipeline as the HTTP host and resolves to the same `{ success, data }` or `{ success: false, error: { code, message, fieldErrors? } }`, typed per procedure. It never throws for a pipeline outcome: a procedure not exposed to `'web'`, or no procedure at all, is `INTERNAL` and is reported to `onUnexpectedError`. A `redirect()` or `notFound()` thrown by the access rule or `run` reaches Next.js, so a server action can call a procedure and then redirect or revalidate:
+
+```typescript
+// app/posts/actions.ts
+'use server'
+
+import { redirect } from 'next/navigation'
+import { callProcedure } from '@/lib/server'
+
+export async function createPost(formData: FormData) {
+  const result = await callProcedure('createPost', { title: String(formData.get('title')) })
+  if (!result.success) return result.error
+  redirect(`/posts/${result.data.id}`)
+}
+```
+
+Declare the registry with `satisfies ProcedureRegistry<Context>` rather than annotating it, so each name keeps its own input, output and failure codes. Over HTTP a procedure's own `redirect()` is `INTERNAL`, so a procedure exposed beyond the web reports an outcome with a declared failure and leaves the redirect to the action.
+
 ### Module-init-time consumers
 
 A library whose constructor runs at import time — Better-auth's adapter is the standing example — cannot `await`. Pass `rawOpensaasContext` itself to a helper that defers construction behind a lazy proxy:

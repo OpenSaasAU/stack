@@ -26,6 +26,15 @@ export {
 export { ProcedureFailureError, type ProcedureFail } from './failures.js'
 export { createProcedureHandler, type ProcedureHandlerOptions, type SessionOf } from './http.js'
 export {
+  createServerCaller,
+  type RegistryContextOf,
+  type ServerCallArgs,
+  type ServerCaller,
+  type ServerCallerOptions,
+  type ServerCallResultOf,
+  type ServerProcedureName,
+} from './server.js'
+export {
   assertProcedureNamesAvailable,
   assertProcedureRegistry,
   assertProcedureSchemas,
