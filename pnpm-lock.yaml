@@ -3369,14 +3369,6 @@ packages:
     resolution: {integrity: sha512-24LyiHSY0R/MLcbTylurWXU6Uy4lzI6KJgsdzxkNnjT9/OLWc2zGPb/3k5AM1f0vcgCGrExanUG339t+TBiIrA==}
     engines: {node: '>=18.0.0'}
 
-  '@smithy/core@3.41.1':
-    resolution: {integrity: sha512-24LyiHSY0R/MLcbTylurWXU6Uy4lzI6KJgsdzxkNnjT9/OLWc2zGPb/3k5AM1f0vcgCGrExanUG339t+TBiIrA==}
-    engines: {node: '>=18.0.0'}
-
-  '@smithy/core@3.41.1':
-    resolution: {integrity: sha512-24LyiHSY0R/MLcbTylurWXU6Uy4lzI6KJgsdzxkNnjT9/OLWc2zGPb/3k5AM1f0vcgCGrExanUG339t+TBiIrA==}
-    engines: {node: '>=18.0.0'}
-
   '@smithy/credential-provider-imds@4.5.2':
     resolution: {integrity: sha512-A9uSdn72ozbRUSit0eib0TW7nXuNPlaeM0zcGkJ+nE6tFcSDbnmtwoxbTCFBukVQcszDAyvsd7+rTduPTXpygg==}
     engines: {node: '>=18.0.0'}
@@ -9371,12 +9363,6 @@ snapshots:
     dependencies:
       '@smithy/types': 4.20.0
       tslib: 2.9.1
-
-  '@smithy/core@3.41.1':
-    dependencies:
-      '@smithy/types': 4.20.0
-      tslib: 2.9.1
-    optional: true
 
   '@smithy/credential-provider-imds@4.5.2':
     dependencies:
