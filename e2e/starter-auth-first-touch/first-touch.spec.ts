@@ -67,7 +67,7 @@ async function adminWritesAndRowAction(
     .click()
   await page.waitForLoadState('networkidle')
   await page.fill('input[name="title"]', edited)
-  await page.click('button[type="submit"]')
+  await page.getByRole('button', { name: 'Save and close' }).click()
   await page.waitForURL(/\/admin\/post$/, { timeout: 30_000 })
 
   await page.goto(`/admin/post?search=${stamp}`)

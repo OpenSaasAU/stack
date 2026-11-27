@@ -240,3 +240,56 @@ describe('ImageField', () => {
     })
   })
 })
+
+describe('ImageField shows what its value holds', () => {
+  it('shows a picked image without a preview when showPreview is off', () => {
+    render(
+      <ImageField
+        name="photo"
+        label="Photo"
+        value={png()}
+        onChange={vi.fn()}
+        showPreview={false}
+      />,
+    )
+
+    expect(screen.getByText(/dog\.png • 9 Bytes • Will upload on save/)).toBeInTheDocument()
+    expect(screen.queryByRole('img')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Remove Photo' })).toBeInTheDocument()
+    expect(screen.queryByText('Choose an image or drag and drop')).not.toBeInTheDocument()
+  })
+
+  it('shows an image already waiting to upload when it mounts', async () => {
+    render(<ImageField name="photo" label="Photo" value={png()} onChange={vi.fn()} />)
+
+    expect(screen.getByText(/dog\.png • 9 Bytes • Will upload on save/)).toBeInTheDocument()
+    const preview = await screen.findByRole('img', { name: 'Preview' })
+    expect(preview.getAttribute('src')).toMatch(/^data:image\/png;base64,/)
+  })
+
+  it('drops the preview when the value is reset to empty from outside', async () => {
+    const { rerender } = render(
+      <ImageField name="photo" label="Photo" value={null} onChange={vi.fn()} />,
+    )
+    await userEvent.upload(screen.getByLabelText('Photo'), png())
+    rerender(<ImageField name="photo" label="Photo" value={png()} onChange={vi.fn()} />)
+    await screen.findByRole('img', { name: 'Preview' })
+
+    rerender(<ImageField name="photo" label="Photo" value={null} onChange={vi.fn()} />)
+
+    expect(screen.queryByRole('img')).not.toBeInTheDocument()
+    expect(screen.getByText('Choose an image or drag and drop')).toBeInTheDocument()
+  })
+
+  it('swaps to the stored image once the value becomes one', async () => {
+    const { rerender } = render(
+      <ImageField name="photo" label="Photo" value={png()} onChange={vi.fn()} />,
+    )
+    await screen.findByRole('img', { name: 'Preview' })
+
+    rerender(<ImageField name="photo" label="Photo" value={stored} onChange={vi.fn()} />)
+
+    expect(screen.getByRole('img', { name: 'cat.png' })).toHaveAttribute('src', stored.url)
+    expect(screen.queryByRole('img', { name: 'Preview' })).not.toBeInTheDocument()
+  })
+})

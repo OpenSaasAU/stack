@@ -3,4 +3,4 @@
 'create-opensaas-app': patch
 ---
 
-The admin returns a 404 for a URL naming no list or carrying segments after an item id, shows "Count unavailable" instead of "0 items" when a Dashboard count fails, moves a list page past the end to the last page instead of showing "No items yet", notes "no field called …" on a filter chip whose field does not exist, and reads the words a filter chip shows ("at least", "greater than") when typed.
+Fix admin UI behaviour agreed in the expectations review: unknown list URLs and trailing segments 404, a failed Dashboard count says "Count unavailable", a list page past the end moves to the last page, a filter chip notes "no field called …", the Filter builder reads "at least"/"greater than" when typed, the item page is titled with its label, delete names the item and confirms "Item deleted" on the list, an unreachable server says the save may or may not have happened, creating shows "Creating…", an image field shows the file its value holds and drops a stale preview, and a date-time picker opens on its current value.

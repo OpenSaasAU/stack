@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useCallback, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import type { ImageMetadata } from '@opensaas/stack-core/internal'
 import { Button } from '../../primitives/button.js'
 import { Input } from '../../primitives/input.js'
@@ -56,25 +56,34 @@ export function ImageField({
   const [isDragOver, setIsDragOver] = useState(false)
   // Choosing or removing an image swaps the focused input for another.
   const [focusInput, setFocusInput] = useState(false)
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [preview, setPreview] = useState<{ file: File; url: string } | null>(null)
+  const pendingFile = isPendingFile(value) ? value : null
+
+  useEffect(() => {
+    if (!pendingFile || !showPreview) return
+    let cancelled = false
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (!cancelled && typeof reader.result === 'string') {
+        setPreview({ file: pendingFile, url: reader.result })
+      }
+    }
+    reader.readAsDataURL(pendingFile)
+    return () => {
+      cancelled = true
+    }
+  }, [pendingFile, showPreview])
+
+  const previewUrl = showPreview && preview && preview.file === pendingFile ? preview.url : null
 
   const handleFileSelect = useCallback(
     (file: File) => {
       if (!file.type.startsWith('image/')) {
         return
       }
-
-      if (showPreview) {
-        const reader = new FileReader()
-        reader.onload = (e) => {
-          setPreviewUrl(e.target?.result as string)
-        }
-        reader.readAsDataURL(file)
-      }
-
       onChange(file)
     },
-    [onChange, showPreview],
+    [onChange],
   )
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -116,15 +125,9 @@ export function ImageField({
   const handleRemove = useCallback(() => {
     setFocusInput(true)
     onChange(null)
-    setPreviewUrl(null)
   }, [onChange])
 
-  // Use duck typing instead of instanceof to support SSR
-  const isFile =
-    value &&
-    typeof value === 'object' &&
-    'arrayBuffer' in value &&
-    typeof (value as { arrayBuffer?: unknown }).arrayBuffer === 'function'
+  const isFile = pendingFile !== null
   const isImageMetadata = value && !isFile && typeof value === 'object' && 'url' in value
 
   if (mode === 'read') {
@@ -195,21 +198,29 @@ export function ImageField({
         </FieldLabel>
       )}
 
-      {previewUrl || isImageMetadata ? (
+      {isFile || isImageMetadata ? (
         <div className="space-y-2">
           <div className="relative inline-block group">
-            <Image
-              src={previewUrl || (value as ImageMetadata).url}
-              alt={isImageMetadata ? (value as ImageMetadata).originalFilename : 'Preview'}
-              width={previewSize}
-              height={previewSize}
-              className="rounded-md object-cover border"
-              style={{
-                maxWidth: `${previewSize}px`,
-                maxHeight: `${previewSize}px`,
-              }}
-            />
-            <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
+            {(previewUrl || isImageMetadata) && (
+              <Image
+                src={previewUrl || (value as ImageMetadata).url}
+                alt={isImageMetadata ? (value as ImageMetadata).originalFilename : 'Preview'}
+                width={previewSize}
+                height={previewSize}
+                className="rounded-md object-cover border"
+                style={{
+                  maxWidth: `${previewSize}px`,
+                  maxHeight: `${previewSize}px`,
+                }}
+              />
+            )}
+            <div
+              className={
+                previewUrl || isImageMetadata
+                  ? 'absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity'
+                  : 'flex gap-1'
+              }
+            >
               {isImageMetadata && (
                 <Button
                   type="button"
@@ -334,6 +345,17 @@ export function ImageField({
       {helpText && <FieldHelp id={fieldHelpId(id)}>{helpText}</FieldHelp>}
       {error && <FieldError id={fieldErrorId(id)}>{error}</FieldError>}
     </FieldRoot>
+  )
+}
+
+function isPendingFile(value: unknown): value is File {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'arrayBuffer' in value &&
+    typeof value.arrayBuffer === 'function' &&
+    'name' in value &&
+    'size' in value
   )
 }
 

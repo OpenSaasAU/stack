@@ -147,7 +147,7 @@ describe("the item form's to-many edges are writes against the related list", ()
     const user = userEvent.setup()
     await user.click(screen.getByText('Connect Existing'))
     await user.click(await screen.findByText('Loose'))
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(screen.getByRole('button', { name: 'Save and close' }))
 
     await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/admin/user'))
     expect(await linkedPostTitles(allowed, seeded.userId)).toEqual(['Loose', 'Owned'])
@@ -160,7 +160,7 @@ describe("the item form's to-many edges are writes against the related list", ()
 
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: /^Remove/ }))
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(screen.getByRole('button', { name: 'Save and close' }))
 
     await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/admin/user'))
     expect(await linkedPostTitles(allowed, seeded.userId)).toEqual([])
@@ -187,7 +187,7 @@ describe("the item form's to-many edges are writes against the related list", ()
 
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: /^Remove/ }))
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(screen.getByRole('button', { name: 'Save and close' }))
 
     expect(await screen.findByText(/linked elsewhere/)).toBeInTheDocument()
     await waitFor(() => {
@@ -207,7 +207,7 @@ describe("the item form's to-many edges are writes against the related list", ()
     const user = userEvent.setup()
     await user.click(screen.getByText('Connect Existing'))
     await user.click(await screen.findByText('Loose'))
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(screen.getByRole('button', { name: 'Save and close' }))
 
     expect(await screen.findByText('Access denied or operation failed')).toBeInTheDocument()
     // Reverted: the control shows what the database actually holds, and the
@@ -279,7 +279,7 @@ describe('an integer-keyed related list round-trips its ids through the form', (
 
     const actor = userEvent.setup()
     await actor.click(screen.getByRole('button', { name: /^Remove/ }))
-    await actor.click(screen.getByRole('button', { name: 'Save' }))
+    await actor.click(screen.getByRole('button', { name: 'Save and close' }))
 
     await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/admin/user'))
     expect(await linkedPostTitles(harness, userId)).toEqual([])

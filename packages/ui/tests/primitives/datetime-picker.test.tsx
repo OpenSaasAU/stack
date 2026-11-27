@@ -104,3 +104,31 @@ describe('DateTimePicker', () => {
     expect(screen.getByRole('button', { name: /10\/06\/2026/ })).toBeDisabled()
   })
 })
+
+describe('DateTimePicker when its value changes from outside', () => {
+  it('opens on the current value, so Confirm keeps it', async () => {
+    const onChange = vi.fn()
+    const { rerender } = render(
+      <DateTimePicker value={new Date(2026, 5, 10, 14, 30)} onChange={onChange} />,
+    )
+    rerender(<DateTimePicker value={new Date(2026, 5, 20, 9, 0)} onChange={onChange} />)
+
+    await open(/20\/06\/2026/)
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+
+    const picked: Date = onChange.mock.calls[0][0]
+    expect(picked.getDate()).toBe(20)
+    expect(picked.getHours()).toBe(9)
+  })
+
+  it('opens empty once the value is cleared from outside', async () => {
+    const onChange = vi.fn()
+    const { rerender } = render(<DateTimePicker value={value} onChange={onChange} />)
+    rerender(<DateTimePicker value={null} onChange={onChange} />)
+
+    await open(/Pick a date and time/)
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+
+    expect(onChange).toHaveBeenCalledWith(null)
+  })
+})

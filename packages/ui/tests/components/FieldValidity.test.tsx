@@ -56,7 +56,9 @@ function editProps(overrides: Partial<ItemFormClientProps> = {}): ItemFormClient
   }
 }
 
-const save = () => screen.getByRole('button', { name: 'Save' })
+const save = () =>
+  screen.queryByRole('button', { name: 'Save and close' }) ??
+  screen.getByRole('button', { name: 'Save' })
 
 function expectNothingWritten() {
   expect(serverAction).not.toHaveBeenCalled()

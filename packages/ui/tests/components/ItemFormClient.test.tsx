@@ -89,7 +89,7 @@ describe('ItemFormClient', () => {
       const input = screen.getByLabelText('Title')
       await userEvent.clear(input)
       await userEvent.type(input, 'Changed')
-      await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Save and close' }))
 
       await waitFor(() => expect(push).toHaveBeenCalledWith('/admin/post'))
       expect(serverAction).toHaveBeenCalledWith({

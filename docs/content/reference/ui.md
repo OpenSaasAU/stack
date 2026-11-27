@@ -870,6 +870,18 @@ Forms for creating and editing items with validation and field-level access cont
 - Error messages
 - Cancel and delete actions
 
+An edit page is titled with the item's label, with the list name beneath it, and
+never says "Edit" on a read-only form. **Save** writes only the changed fields and
+stays on the item, showing "Saved." (or "No changes to save."); **Save and close**
+returns to the list, which shows "Changes saved". Pressing Enter in a field saves
+and stays. Creating returns to the list with "Item created", and deleting with
+"Item deleted". A singleton offers only Save and stays on its editor.
+
+A server action that cannot be reached (the network drops, or a deploy invalidated
+it) may still have run, so the form says so rather than showing the browser's error:
+"Couldn't reach the server. Your changes may or may not have been saved, so reload
+to check before trying again." Delete says the same of the item.
+
 ## Standalone Components
 
 Standalone components allow you to build custom admin interfaces by composing individual components.

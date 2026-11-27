@@ -71,7 +71,13 @@ export function DateTimePicker({
   }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        if (next) setSelectedDate(value ?? undefined)
+        setOpen(next)
+      }}
+    >
       <PopoverTrigger asChild>
         <Button
           variant="outline"

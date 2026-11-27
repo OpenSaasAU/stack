@@ -13,6 +13,7 @@ import {
   type ListConfig,
   type SecuredQuery,
   engineContextOf,
+  getItemLabel,
   getUrlKey,
   OpenSaasConfig,
 } from '@opensaas/stack-core'
@@ -215,6 +216,7 @@ async function ItemViewLayoutView({
     fields: Object.fromEntries(detailsFieldEntries),
   }
   const detailsItemData = buildDetailsItemData(itemData, layout)
+  const itemLabel = getItemLabel(listConfig, itemData)
 
   const { serializableFields, initialData, relationshipData } = await prepareItemForm(
     context,
@@ -241,6 +243,7 @@ async function ItemViewLayoutView({
         relationshipData={relationshipData}
         canDelete={canDelete}
         fieldMode={fieldMode}
+        itemLabel={itemLabel}
       />
     </Card>
   )
@@ -272,7 +275,8 @@ async function ItemViewLayoutView({
       <PageHeader
         backHref={`${basePath}/${urlKey}`}
         backLabel={`Back to ${formatListName(listKey)}`}
-        title={`Edit ${formatListName(listKey)}`}
+        title={itemLabel}
+        description={formatListName(listKey)}
       />
 
       {layout.arrangement === 'split' ? (
@@ -412,13 +416,16 @@ export async function ItemForm({
     mode === 'create' ? undefined : itemId,
     itemVocabulary,
   )
+  const itemLabel =
+    mode === 'edit' && itemData !== null ? getItemLabel(listConfig, itemData) : undefined
 
   return (
     <div className="max-w-4xl p-4 md:p-8">
       <PageHeader
         backHref={`${basePath}/${urlKey}`}
         backLabel={`Back to ${formatListName(listKey)}`}
-        title={`${mode === 'create' ? 'Create' : 'Edit'} ${formatListName(listKey)}`}
+        title={itemLabel ?? `Create ${formatListName(listKey)}`}
+        description={itemLabel === undefined ? undefined : formatListName(listKey)}
       />
 
       <div className="bg-card border border-border rounded-lg p-4 md:p-6">
@@ -434,6 +441,7 @@ export async function ItemForm({
           relationshipData={relationshipData}
           canDelete={canDelete}
           fieldMode={fieldMode}
+          itemLabel={itemLabel}
         />
       </div>
     </div>
