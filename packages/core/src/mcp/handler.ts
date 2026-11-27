@@ -417,12 +417,12 @@ export function createMcpHandlers(
         const procedureTool =
           typeof toolName === 'string' ? procedureTools.get(toolName) : undefined
         if (procedureTool !== undefined) {
-          const context = procedureContextOf(await appContextFor(mcpContextSession(session)))
           const args: unknown = body.params?.arguments
           const result = await callProcedureTool(procedureTool, args, {
             config,
             held: session.scopes ?? [],
-            context: async () => context,
+            context: async () =>
+              procedureContextOf(await appContextFor(mcpContextSession(session))),
             report: reportProcedureError,
           })
           return createToolResultResponse(result, body.id)

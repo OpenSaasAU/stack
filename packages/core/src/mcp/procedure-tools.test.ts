@@ -201,8 +201,42 @@ const accessThrows = procedure({
   run: () => ({}),
 })
 
-function filterRule(): boolean {
-  return JSON.parse('{"authorId":{"equals":"alice"}}')
+function filterRule(): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    Reflect.apply(resolve, undefined, [{ authorId: { equals: 'alice' } }])
+  })
+}
+
+const TreeNode = z
+  .object({
+    name: z.string(),
+    get children() {
+      return z.array(TreeNode)
+    },
+  })
+  .meta({ id: 'McpToolTreeNode' })
+
+const RegisteredAuthor = z.object({ name: z.string() }).meta({ id: 'McpToolRegisteredAuthor' })
+
+function unresolvedRefs(schema: Record<string, unknown>): string[] {
+  const defs = z.record(z.string(), z.unknown()).optional().parse(schema.$defs) ?? {}
+  const refs: string[] = []
+  const visit = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      value.forEach(visit)
+      return
+    }
+    if (typeof value !== 'object' || value === null) return
+    for (const [key, child] of Object.entries(value)) {
+      if (key === '$ref' && typeof child === 'string') refs.push(child)
+      visit(child)
+    }
+  }
+  visit(schema)
+  return refs.filter((ref) => {
+    const id = /^#\/\$defs\/(.+)$/.exec(ref)?.[1]
+    return id === undefined || !Object.hasOwn(defs, id)
+  })
 }
 
 const filterAccess = procedure({
@@ -529,14 +563,17 @@ describe('procedures as MCP tools', () => {
         has: (target, key) => typeof key !== 'symbol' && Reflect.has(target, key),
         get: (target, key) => (typeof key === 'symbol' ? undefined : Reflect.get(target, key)),
       })
-    const withoutDb = async (session?: Session): Promise<Ctx> =>
-      new Proxy(database.context(session), {
-        get: (target, key) => (key === 'db' ? null : Reflect.get(target, key)),
-      })
+    const withNull =
+      (member: string) =>
+      async (session?: Session): Promise<Ctx> =>
+        new Proxy(database.context(session), {
+          get: (target, key) => (key === member ? null : Reflect.get(target, key)),
+        })
 
     test.each([
       ['one the engine did not build', notEngineBuilt],
-      ['one with a null db', withoutDb],
+      ['one with a null db', withNull('db')],
+      ['one with null plugins', withNull('plugins')],
     ])('answers 500 on tools/list and tools/call: %s', async (_label, getContext) => {
       const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
       try {
@@ -568,6 +605,28 @@ describe('procedures as MCP tools', () => {
         logged.mockRestore()
       }
     })
+  })
+
+  test('a call refused for a missing scope never builds a context', async () => {
+    const getContext = vi.fn(async (): Promise<Ctx> => {
+      throw new Error('getContext must not be called')
+    })
+    const response = await handlers(registry, schemaConfig(), getContext).POST(
+      new Request('http://localhost/api/mcp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', authorization: bearer('alice', ['read']) },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 3,
+          method: 'tools/call',
+          params: { name: 'createPost', arguments: { title: 'Nope' } },
+        }),
+      }),
+    )
+    expect(response.status).toBe(200)
+    const result = toolResult.parse(rpcBody.parse(await response.json()).result)
+    expect(envelope.parse(JSON.parse(result.content[0].text)).error?.code).toBe('DENIED')
+    expect(getContext).not.toHaveBeenCalled()
   })
 
   describe('with no list opting in to a generated write tool', () => {
@@ -732,6 +791,31 @@ describe('procedures as MCP tools', () => {
         required: ['postId'],
       })
       expect(schema).not.toHaveProperty('$ref')
+    })
+
+    test.each([
+      [
+        'a registered root with a registered child',
+        z.object({ author: RegisteredAuthor }).meta({ id: 'McpToolRegisteredRoot' }),
+      ],
+      ['a recursive registered root', TreeNode],
+      ['a registered recursive child', z.object({ tree: TreeNode })],
+    ])('every $ref in the advertised schema of %s resolves within it', async (_label, input) => {
+      const registered = procedure({
+        description: 'Take an input with registered parts',
+        input,
+        output: z.object({}),
+        access: () => true,
+        expose: ['mcp'],
+        scopes: [],
+        run: () => ({}),
+      })
+      const { body } = await rpc('tools/list', undefined, { procedures: { registered } })
+      const tools = toolList.parse(z.object({ tools: z.unknown() }).parse(body.result).tools)
+      const schema = tools.find((tool) => tool.name === 'registered')?.inputSchema
+      expect(schema).toMatchObject({ type: 'object' })
+      expect(JSON.stringify(schema)).toContain('$ref')
+      expect(unresolvedRefs(schema ?? {})).toEqual([])
     })
 
     test.each([

@@ -325,7 +325,7 @@ const visibleToSession: AccessControl = ({ session }) => {
 
 A session a host builds carries an `actor`, which says whether a person or an agent is calling:
 
-- The procedure HTTP host sets `{ kind: 'human', userId, via: 'web' }`.
+- The procedure HTTP host and the in-process caller (`createServerCaller`, both its `call` and its session-resolved `context()`) set `{ kind: 'human', userId, via: 'web' }`.
 - The MCP handler sets `{ kind: 'agent', clientId, onBehalfOf, via: 'mcp' }`. `clientId` is the OAuth client id the session provider verified, and `onBehalfOf` is the user the agent acts for.
 
 An agent's session keeps that user's `userId`, so a rule that scopes by `session.userId` already limits an agent to what its user can do. Read the actor when a rule or a hook should treat the two differently:
@@ -341,23 +341,25 @@ const ownedByCaller: AccessControl = ({ session }) => {
   return { authorId: { equals: userId } }
 }
 
-const ownerViaWebProcedureOnly: AccessControl = (args) =>
+const ownerViaWebOnly: AccessControl = (args) =>
   args.session?.actor?.kind === 'human' ? ownedByCaller(args) : false
 
 const ownerUnlessAgent: AccessControl = (args) =>
   args.session?.actor?.kind === 'agent' ? false : ownedByCaller(args)
 ```
 
-Only the procedure HTTP host sets a human actor. These callers carry **no actor at all**:
+Only the procedure HTTP host and the in-process caller set a human actor. These callers carry **no actor at all**:
 
-- the Admin UI
-- a server component, server action or route handler that calls `getContext(session)` itself
+- the Admin UI, unless the app hands it the in-process caller's `context()`
+- a server component, server action or route handler that calls `getContext(session)` itself rather than the in-process caller's `context()`
 - a job runner's `context.withSession(session)`
 - a test's `createTestContext(config, session)`
 
-So `ownerViaWebProcedureOnly` admits a signed-in owner calling a procedure over HTTP and denies every caller in that list, the Admin UI included. Put it on a list operation only when that is what you mean. `ownerUnlessAgent` is the rule that keeps agents out and leaves the Admin UI and your own server code working: every agent the stack authenticates carries an agent actor, through the MCP handler and through `mcpSessionToContextSession` under `withMcpAuth` alike.
+So `ownerViaWebOnly` admits a signed-in owner calling a procedure over HTTP or in-process, or reading through the in-process caller's `context()`, and denies every caller in that list, the Admin UI included. Put it on a list operation only when that is what you mean. `ownerUnlessAgent` is the rule that keeps agents out and leaves the Admin UI and your own server code working: every agent the stack authenticates carries an agent actor, through the MCP handler and through `mcpSessionToContextSession` under `withMcpAuth` alike.
 
 **Check positively for the kind you want.** Absent is never human: `session?.actor?.kind === 'human'` denies a session with no actor, and `session?.actor?.kind !== 'agent'` used as a test for "a person" would admit one. Ask for `=== 'human'` when a rule grants something to people on the web host only, and for `=== 'agent'` when it treats agents differently, as the two rules above do.
+
+**An actor belongs to its session.** A minted actor is honoured only on a session whose own `userId` equals the actor's (`userId` for a human, `onBehalfOf` for an agent, same type and value), so an actor copied onto another user's session reads as absent.
 
 **Only a host sets the actor, and anything else is ignored.** The `actor` key is reserved. The stack keeps a private record of the actor objects its hosts created, and an `actor` that is not one of them is removed before the session reaches an access rule, a hook or a transaction, where it reads as absent. That covers a token claim, a session provider's or `getSession` result's `actor`, and an object your own code writes:
 

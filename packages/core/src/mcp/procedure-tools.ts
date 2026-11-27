@@ -168,6 +168,8 @@ function toolResultOf(
 /**
  * Call a procedure as an MCP tool: the scopes the token must hold, then the
  * shared pipeline (access, input, run, output) under the agent's context.
+ * `context` is built only once the scopes are held, and a failure to build it
+ * is thrown rather than reported as `INTERNAL`.
  * The tool result's text is the result envelope as JSON, the same body the
  * HTTP host answers with, and a failure sets `isError`.
  */
@@ -191,10 +193,11 @@ export async function callProcedureTool<C extends ProcedureHostContext>(
       options.report,
     )
   }
+  const context = await options.context()
   const result = await runProcedure<C>({
     name: tool.name,
     procedure: tool.procedure,
-    context: options.context,
+    context: async () => context,
     readInput: () => ({ ok: true, value: args === undefined ? {} : args }),
     onUnexpectedError: options.report,
   })
