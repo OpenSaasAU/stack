@@ -178,6 +178,14 @@ export interface ProcedureDefinition<
   /** The surfaces that expose the procedure. A surface not named answers as an unknown name. */
   expose: ProcedureExposure
   /**
+   * The OAuth scopes an MCP token must carry for the procedure to be listed
+   * or called as a tool. Omitted, the config's `mcp.scopes.write` is
+   * required, as for a custom tool that names none; `[]` requires none. Only
+   * the MCP host reads it: the HTTP host authenticates by cookie, which
+   * carries no scopes.
+   */
+  scopes?: readonly string[]
+  /**
    * The action itself. It runs in no transaction unless it opens one with
    * `context.transaction`. The value it returns is parsed by `output` after
    * any such transaction has committed, so output that fails its schema is
@@ -203,6 +211,8 @@ export interface Procedure<
   readonly input: TIn
   readonly output: TOut
   readonly expose: ProcedureExposure
+  /** The OAuth scopes an MCP token must carry, when the procedure names them. */
+  readonly scopes?: readonly string[]
   /** The declared failures, as code and message. */
   readonly failures: Readonly<Partial<Record<TCode, string>>>
   access(args: { context: C }): boolean | Promise<boolean>
@@ -308,6 +318,18 @@ function assertFailures(description: string, failures: unknown): void {
   }
 }
 
+function assertScopes(scopes: unknown): void {
+  if (scopes === undefined) return
+  if (
+    !Array.isArray(scopes) ||
+    !scopes.every((scope) => typeof scope === 'string' && scope !== '' && !/\s/.test(scope))
+  ) {
+    throw new ProcedureDefinitionError(
+      "A procedure's `scopes` is an array of OAuth scope names, each a non-empty string without whitespace.",
+    )
+  }
+}
+
 function declaredFailures<TCode extends string>(
   failures: Readonly<Record<TCode, string>> | undefined,
 ): Readonly<Partial<Record<TCode, string>>> {
@@ -323,6 +345,7 @@ function assertDefinition(definition: {
   access: unknown
   run: unknown
   expose: unknown
+  scopes?: unknown
 }): void {
   if (typeof definition.description !== 'string' || definition.description.trim() === '') {
     throw new ProcedureDefinitionError('A procedure needs a non-empty `description`.')
@@ -343,6 +366,7 @@ function assertDefinition(definition: {
     throw new ProcedureDefinitionError('A procedure needs a `run` function.')
   }
   assertExposure(definition.expose)
+  assertScopes(definition.scopes)
 }
 
 /**
@@ -369,6 +393,7 @@ export function createProcedureBuilder<
       input: definition.input,
       output: definition.output,
       expose: Object.freeze([...definition.expose]) satisfies ProcedureExposure,
+      ...(definition.scopes === undefined ? {} : { scopes: Object.freeze([...definition.scopes]) }),
       failures,
       access: (args: { context: C }) => {
         const context = procedureContextOf<C, Tx>(args.context)

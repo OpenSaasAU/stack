@@ -13,6 +13,16 @@ import type { McpSession, McpSessionProvider } from './types.js'
 import { agentActor, isActorClientId, type AgentActor } from '../access/actor.js'
 import { controlFlowPredicateOf, decideAdvertisement } from '../access/decide-advertisement.js'
 import { mcpAdvertisement } from './advertise.js'
+import type { ProcedureHostContext, ProcedureRegistry } from '../procedures/procedure.js'
+import { ProcedureHostError } from '../procedures/validate.js'
+import {
+  callProcedureTool,
+  listedProcedureTools,
+  mcpProcedureTools,
+  procedureErrorReporter,
+  type McpToolInputSchema,
+  type McpToolResult,
+} from './procedure-tools.js'
 import { McpWriteRefusedError, assertWritableData, generateFieldSchemas } from './field-schema.js'
 import { resolveListMembers } from '../members/list-members.js'
 import { assertListMembersResolve } from '../members/list-members.js'
@@ -212,7 +222,7 @@ function assertResourceMetadataUrl(value: string): void {
  * export { GET, POST, DELETE }
  * ```
  */
-export function createMcpHandlers(options: {
+export function createMcpHandlers<C extends AnyStackContext = AnyStackContext>(options: {
   config: OpenSaasConfig
   getSession: McpSessionProvider
   /**
@@ -221,7 +231,34 @@ export function createMcpHandlers(options: {
    * face is assignable to the other, so the boundary takes both and narrows
    * once, the way `AdminUI` and `createAuth` do.
    */
-  getContext: (session?: ContextSession) => Promise<AnyStackContext>
+  getContext: (session?: ContextSession) => Promise<C>
+  /**
+   * The application's procedure registry. Each procedure exposing `'mcp'` is
+   * a tool named after it, listed with its description and its input schema
+   * as JSON Schema, and called through the same pipeline the HTTP host runs,
+   * under the agent's session. One not exposing `'mcp'` is neither listed nor
+   * callable and answers exactly as an unknown tool does.
+   *
+   * A procedure's tool is listed only when the token holds its scopes (its
+   * own `scopes`, else `mcp.scopes.write`) and its access rule admits the
+   * session, and both are checked again on every call. The tool result's
+   * text is the result envelope as JSON, `{ success: true, data }` or
+   * `{ success: false, error: { code, message, fieldErrors? } }`, the same
+   * body the HTTP host answers with; a failure also sets `isError`. A missing
+   * scope is `DENIED` with the scopes named.
+   *
+   * The registry is checked when the handlers are created, exactly as the
+   * HTTP host checks it, and an MCP-exposed procedure whose input is not an
+   * object is refused, since a tool's arguments are one JSON object.
+   */
+  procedures?: ProcedureRegistry<NoInfer<C> & ProcedureHostContext>
+  /**
+   * Told of every procedure failure the operator should see, with the
+   * procedure's name, exactly as the HTTP host's `onUnexpectedError` is;
+   * the caller receives `INTERNAL` with no detail. Also told of an access
+   * rule that throws while tools are listed. Default `console.error`.
+   */
+  onUnexpectedProcedureError?: (error: unknown, procedureName: string) => void
   /**
    * Absolute URL of the RFC 9728 protected resource metadata document. When set,
    * the 401 challenge carries it as `resource_metadata` so a spec-following MCP
@@ -248,6 +285,22 @@ export function createMcpHandlers(options: {
 
   assertNoDefaultWriteTools(config)
   assertListMembersResolve(config)
+
+  const procedureTools =
+    options.procedures === undefined
+      ? new Map()
+      : mcpProcedureTools<C & ProcedureHostContext>(options.procedures, config)
+  const reportProcedureError = procedureErrorReporter(options.onUnexpectedProcedureError)
+
+  const procedureContext = async (session: McpSession): Promise<C & ProcedureHostContext> => {
+    const context = await options.getContext(mcpContextSession(session))
+    if (!isProcedureHostContext(context)) {
+      throw new ProcedureHostError(
+        'createMcpHandlers: `getContext` returned a context procedures cannot run in. Pass the generated `getContext`.',
+      )
+    }
+    return context
+  }
 
   const basePath = config.mcp.basePath || '/api/mcp'
 
@@ -314,12 +367,41 @@ export function createMcpHandlers(options: {
       }
 
       if (body.method === 'tools/list') {
-        const context = await getContext(mcpContextSession(session))
+        const appContext = await options.getContext(mcpContextSession(session))
+        const context = engineContextOf(appContext)
         bindHeldScopes(context, session.scopes ?? [])
-        return await handleToolsList(config, context, session, body.id)
+        let procedureToolList: McpTool[] = []
+        if (procedureTools.size > 0) {
+          if (isProcedureHostContext(appContext)) {
+            procedureToolList = await listedProcedureTools(
+              procedureTools,
+              appContext,
+              config,
+              session.scopes ?? [],
+              reportProcedureError,
+            )
+          } else {
+            console.error(
+              '[opensaas] createMcpHandlers: `getContext` returned a context procedures cannot run in, so no procedure is listed. Pass the generated `getContext`.',
+            )
+          }
+        }
+        return await handleToolsList(config, context, session, procedureToolList, body.id)
       }
 
       if (body.method === 'tools/call') {
+        const toolName: unknown = body.params?.name
+        const procedureTool =
+          typeof toolName === 'string' ? procedureTools.get(toolName) : undefined
+        if (procedureTool !== undefined) {
+          const result = await callProcedureTool(procedureTool, body.params?.arguments, {
+            config,
+            held: session.scopes ?? [],
+            context: () => procedureContext(session),
+            report: reportProcedureError,
+          })
+          return createToolResultResponse(result, body.id)
+        }
         return await handleToolsCall(body.params, session, config, getContext, body.id)
       }
 
@@ -356,6 +438,18 @@ export function createMcpHandlers(options: {
   }
 }
 
+function isProcedureHostContext<T extends object>(value: T): value is T & ProcedureHostContext {
+  return (
+    'db' in value &&
+    typeof value.db === 'object' &&
+    'session' in value &&
+    'storage' in value &&
+    'plugins' in value &&
+    'transaction' in value &&
+    typeof value.transaction === 'function'
+  )
+}
+
 function jsonRpcError(code: number, message: string): Response {
   return new Response(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code, message } }), {
     status: 400,
@@ -387,11 +481,7 @@ function isRpcEnvelope(value: unknown): value is RpcEnvelope {
 type McpTool = {
   name: string
   description: string
-  inputSchema: {
-    type: 'object'
-    properties: Record<string, unknown>
-    required?: string[]
-  }
+  inputSchema: McpToolInputSchema
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Initialize params are from the client
@@ -445,6 +535,7 @@ async function handleToolsList(
   config: OpenSaasConfig,
   context: AccessContext,
   session: McpSession,
+  procedureTools: readonly McpTool[],
   id?: number | string,
 ): Promise<Response> {
   const tools: McpTool[] = []
@@ -617,6 +708,8 @@ async function handleToolsList(
       inputSchema: toolInputSchemaToJson(pluginTool.inputSchema),
     })
   }
+
+  tools.push(...procedureTools)
 
   return new Response(
     JSON.stringify({
@@ -1147,6 +1240,12 @@ function createErrorResultResponse(message: string, id?: number | string): Respo
       headers: { 'Content-Type': 'application/json' },
     },
   )
+}
+
+function createToolResultResponse(result: McpToolResult, id?: number | string): Response {
+  return new Response(JSON.stringify({ jsonrpc: '2.0', id: id ?? null, result }), {
+    headers: { 'Content-Type': 'application/json' },
+  })
 }
 
 /** Genuine JSON-RPC protocol failures — unknown method, malformed request, unknown tool name. */

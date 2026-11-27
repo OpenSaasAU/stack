@@ -205,6 +205,82 @@ lists: {
 }
 ```
 
+### 5. Expose Procedures as Tools
+
+A [procedure](/docs/reference/core) is an action defined once, with typed input
+and output, and served to every surface its `expose` names. Add `'mcp'` and pass
+the registry to `createMcpHandlers`, and an agent can call it as a tool. This is
+the recommended way to give an agent a write: it is one deliberate action, not a
+generic write tool on the list.
+
+```typescript
+// lib/procedures.ts
+import * as z from 'zod'
+import type { ProcedureRegistry } from '@opensaas/stack-core/procedures'
+import { procedure } from '@/.opensaas/procedures'
+import type { Context } from '@/.opensaas/types'
+
+const publishPost = procedure({
+  description: 'Publish one of your draft posts',
+  input: z.object({ postId: z.string() }),
+  output: z.object({ id: z.string(), title: z.string() }),
+  failures: { NOT_FOUND: 'No draft post with that id' },
+  access: ({ session }) => session !== null,
+  expose: ['web', 'mcp'],
+  scopes: ['posts:publish'],
+  run: async ({ input, context, fail }) => {
+    const post = await context.db.Post.update({
+      where: { id: input.postId },
+      data: { status: 'published' },
+    })
+    if (post === null) throw fail('NOT_FOUND')
+    return post
+  },
+})
+
+export const procedures = { publishPost } satisfies ProcedureRegistry<Context>
+```
+
+```typescript
+// app/api/mcp/[[...transport]]/route.ts
+const { GET, POST, DELETE } = createMcpHandlers({
+  config: await config,
+  getSession: createBetterAuthMcpAdapter({ resource, baseURL }),
+  getContext,
+  procedures,
+})
+```
+
+How a procedure behaves as a tool:
+
+- **Only `expose: ['mcp']` reaches an agent.** A procedure exposed to `'web'`
+  alone is neither listed nor callable, and calling it answers `Unknown tool`,
+  exactly as a name that does not exist.
+- **The tool name is the procedure's name**, and the tool carries its
+  `description` and its input schema as JSON Schema. An MCP-exposed procedure's
+  input must be a `z.object`, because a tool's arguments are one JSON object.
+- **It runs the same pipeline as the web host**: access, then input parsing,
+  then `run`, then output parsing, under the agent's session. The access rule
+  sees the agent actor (`session.actor.kind === 'agent'`), and list access and
+  hooks apply to every `context.db` call inside `run`.
+- **It is listed only when the session may call it.** The token must hold the
+  procedure's `scopes`, or, when it names none, the configured `mcp.scopes.write`
+  (`scopes: []` requires none), and its access rule must return `true`. Both are
+  checked again on every call.
+- **The tool result's text is the result envelope as JSON**, the same body the
+  web host answers with: `{ "success": true, "data": … }`, or
+  `{ "success": false, "error": { "code", "message", "fieldErrors"? } }` with
+  `isError: true`. Branch on `error.code`: `DENIED` (access, or a missing scope,
+  whose message names it), `INVALID_INPUT` and `VALIDATION` (with
+  `fieldErrors`), `RETRY`, `CONFLICT`, `INTERNAL` (redacted; the detail goes to
+  `onUnexpectedProcedureError`, default `console.error`), or one the procedure
+  declares in `failures`.
+- **Names are checked when the handlers are created.** A procedure named like a
+  generated tool (`list_<list>_<operation>`), a list custom tool or a plugin tool
+  is refused, as is a schema the registry check refuses on the web host.
+
+Procedures work whether or not a list enables its generated write tools.
+
 ## Setup Route Handlers
 
 ### 1. Create MCP API Route
@@ -255,7 +331,7 @@ export const GET = createOAuthProtectedResourceHandler(auth)
 
 ## How Tools Are Built
 
-MCP tools are derived from your config **at request time** by `createMcpHandlers` — nothing MCP-specific is generated to disk. Every list gets a query tool (unless disabled via `mcp.enabled: false` on the list), write tools only on the lists that enable them in `mcp.tools`, plus any custom tools you define and any tools registered by plugins.
+MCP tools are derived from your config **at request time** by `createMcpHandlers` — nothing MCP-specific is generated to disk. Every list gets a query tool (unless disabled via `mcp.enabled: false` on the list), write tools only on the lists that enable them in `mcp.tools`, plus any custom tools you define, any tools registered by plugins, and a tool per procedure in the `procedures` registry that exposes `'mcp'`.
 
 You only need to run `pnpm generate` when your schema or lists change, to keep the Prisma schema and generated context in sync.
 
@@ -476,6 +552,7 @@ lists: {
 
 - `query` tools need the `read` scope(s); `create`, `update` and `delete` need the `write` scope(s).
 - A custom tool (`mcp.customTools` or a plugin's `registerMcpTool`) can declare `scopes: ['reports:run']`. A list custom tool that omits `scopes` requires the configured `write` scope (fail closed) when `mcp.scopes` is set; declare `scopes: []` to leave it open to any token.
+- A procedure exposed to MCP takes its own `scopes`, or requires the configured `write` scope when it names none; `scopes: []` leaves it open to any token.
 - A token missing a scope gets a tool error naming it, and the tool is left out of that session's `tools/list`.
 - A list's scope also applies through relations: a relation to a list whose `read` scope the token lacks cannot be selected, filtered or ordered on, and `connect` into a list needs its `write` scope. A `create` or `update` returns `{ success: true, id }` instead of the row when the token lacks that list's read tool or `read` scope. Access control still decides rows and fields.
 - In your own route handlers, `hasScopes(session, [...])` from `@opensaas/stack-auth/mcp` does the same check.
