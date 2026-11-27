@@ -51,7 +51,7 @@ export const callProcedure = server.call
 export const getServerContext = server.context
 ```
 
-`getSession` takes no argument: it reads the request's own cookies, as `getSession` in `lib/auth.ts` does through `headers()`. It runs on every `call` and every `context()` and is never cached, so concurrent requests never share a session. The session it resolves carries a human actor (`{ kind: 'human', userId, via: 'web' }`), built from its `userId`, exactly as the procedure HTTP host builds one.
+`getSession` takes no argument: it reads the request's own cookies, as `getSession` in `lib/auth.ts` does through `headers()`. It runs on every `call` and every `context()` and is never cached, so concurrent requests never share a session. Wrapping it in React's `cache()` to share one lookup across a render is safe, because that cache is per request. A throw from it is `INTERNAL` and reported, as over HTTP. The session it resolves carries a human actor (`{ kind: 'human', userId, via: 'web' }`), built from its `userId`, exactly as the procedure HTTP host builds one.
 
 `getServerContext()` returns the context for the current request, for a server component's reads:
 
@@ -81,6 +81,14 @@ export async function createPost(formData: FormData) {
   redirect(`/posts/${result.data.id}`)
 }
 ```
+
+**The caller performs no cookie or `Origin` check.** Whatever `getSession` resolves is acted on as the signed-in person:
+
+- In a server action, the cross-site protection is Next.js's own server-action `Origin` check, and only that. Widening `serverActions.allowedOrigins` widens this caller too.
+- A route handler that calls `callProcedure` for a mutation must not answer `GET`, and must check the request's origin itself. Serving the procedure through `createProcedureHandler` does both.
+- A job or script runs outside any request, so its `getSession` must resolve `null`. Any session it resolved would carry `{ kind: 'human', userId, via: 'web' }`, which nothing checked.
+
+The name's type covers every procedure in the registry, including one exposed only to `'mcp'`, which answers `INTERNAL` at runtime.
 
 Declare the registry with `satisfies ProcedureRegistry<Context>` rather than annotating it, so each name keeps its own input, output and failure codes. Over HTTP a procedure's own `redirect()` is `INTERNAL`, so a procedure exposed beyond the web reports an outcome with a declared failure and leaves the redirect to the action.
 

@@ -28,11 +28,8 @@ export { createProcedureHandler, type ProcedureHandlerOptions, type SessionOf } 
 export {
   createServerCaller,
   type RegistryContextOf,
-  type ServerCallArgs,
   type ServerCaller,
   type ServerCallerOptions,
-  type ServerCallResultOf,
-  type ServerProcedureName,
 } from './server.js'
 export {
   assertProcedureNamesAvailable,

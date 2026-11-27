@@ -98,3 +98,10 @@ export function engineContextOf(context: AnyStackContext): AccessContext {
   if (isAccessContext(context)) return context
   throw new EngineContextUnavailableError()
 }
+
+/** The engine's face of `value` when the engine built it, else `undefined`. */
+export function engineFaceOf(value: object): AccessContext | undefined {
+  if (isEngineFaced(value)) return value[ENGINE_FACE]
+  if (isAccessContext(value)) return value
+  return undefined
+}

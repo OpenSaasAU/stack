@@ -33,4 +33,6 @@ export async function createPost(formData: FormData) {
 }
 ```
 
+The caller performs no cookie or `Origin` check. In a server action the protection is Next's own server-action `Origin` check, and only that; a route handler that calls `call` for a mutation must be non-`GET` and check the origin itself (or use `createProcedureHandler`), and outside a request `getSession` must resolve `null`, since any session it resolves is acted on as a human on the web.
+
 `call` runs the HTTP host's pipeline (exposure, access, input and output parsing, declared failures, redaction) and resolves to the same result, typed per procedure. Only procedures exposed to `'web'` are callable; any other name is `INTERNAL` and reported. A `redirect()` or `notFound()` thrown by the session resolver, the access rule or `run` reaches the framework in-process, and is `INTERNAL` over HTTP.

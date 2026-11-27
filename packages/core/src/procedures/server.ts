@@ -1,6 +1,12 @@
-import type * as z from 'zod'
-import { rethrowControlFlow } from '../access/decide-advertisement.js'
+import { controlFlowPredicateOf, rethrowControlFlow } from '../access/decide-advertisement.js'
 import type { OpenSaasConfig } from '../config/types.js'
+import { engineFaceOf } from '../context/engine-context.js'
+import type {
+  ProcedureArgsFor,
+  ProcedureCodeOf,
+  ProcedureDataOf,
+  ProcedureNameOf,
+} from './client.js'
 import type { SessionOf } from './http.js'
 import type { Procedure, ProcedureHostContext, ProcedureRegistry } from './procedure.js'
 import { failure, isReservedFailureCode, type ProcedureResult } from './result.js'
@@ -19,59 +25,17 @@ export type RegistryContextOf<TRegistry> =
     ? C
     : never
 
-type InputOf<TProcedure> =
-  TProcedure extends Procedure<infer _C, infer TIn, infer _TOut, infer _TCode>
-    ? z.input<TIn>
-    : never
-
-type DataOf<TProcedure> =
-  TProcedure extends Procedure<infer _C, infer _TIn, infer TOut, infer _TCode>
-    ? z.output<TOut>
-    : never
-
-type CodeOf<TProcedure> =
-  TProcedure extends Procedure<infer _C, infer _TIn, infer _TOut, infer TCode> ? TCode : never
-
-type IsUnion<T, TAll = T> = T extends unknown ? ([TAll] extends [T] ? false : true) : never
-
-type CallArgs<TProcedure> =
-  undefined extends InputOf<TProcedure>
-    ? [input?: InputOf<TProcedure>]
-    : [input: InputOf<TProcedure>]
-
-/**
- * The arguments after the name: the input, which may be left out only when
- * the procedure's input schema accepts `undefined`. A name typed as a union of
- * names takes no input that type-checks; narrow it to one procedure first.
- */
-export type ServerCallArgs<TRegistry, TName extends keyof TRegistry> =
-  true extends IsUnion<TName> ? [input: never] : CallArgs<TRegistry[TName]>
-
-/**
- * The names the in-process caller of `TRegistry` accepts. A registry type that
- * admits any string as a name, as one annotated `ProcedureRegistry<Context>`
- * does, admits none: declare it with `satisfies` instead.
- */
-export type ServerProcedureName<TRegistry> = string extends keyof TRegistry
-  ? never
-  : keyof TRegistry & string
-
-/**
- * What an in-process call of `TProcedure` resolves to: its parsed output, or a
- * failure whose code is a reserved code or one the procedure declares. The
- * same result `ProcedureResultOf` names, with no transport failure.
- */
-export type ServerCallResultOf<TProcedure> = ProcedureResult<DataOf<TProcedure>, CodeOf<TProcedure>>
-
 /** Options for {@link createServerCaller}. */
 export interface ServerCallerOptions<TRegistry extends ProcedureRegistry<ProcedureHostContext>> {
   /** The application's procedure registry. Only procedures exposing `'web'` are callable. */
   procedures: TRegistry
   /**
    * The resolved config, checked against the registry as `createProcedureHandler`
-   * checks it. Pass `await config` from `.opensaas/context.ts`: its
-   * `isFrameworkControlFlow` is what lets a framework's control flow the
-   * built-in check does not know reach the framework.
+   * checks it. Pass `await config` from `.opensaas/context.ts`. A framework's
+   * control flow is recognised by the built-in check and by the
+   * `isFrameworkControlFlow` of the config the context carries; this config's
+   * is the fallback, and the only one consulted for a throw from `getSession`,
+   * which happens before there is a context.
    */
   config?: OpenSaasConfig
   /** The generated `getContext`: called with the resolved session, or with nothing when anonymous. */
@@ -82,11 +46,24 @@ export interface ServerCallerOptions<TRegistry extends ProcedureRegistry<Procedu
    * Resolve the current request's session from the server, as from the
    * request's cookies, and never from anything a caller passes. Called once
    * per call and once per `context()`, and never cached, so two requests
-   * never share a session. Resolving `null` or `undefined` means anonymous.
+   * never share a session; wrapping it in React's `cache()` to share one
+   * lookup across a render is safe, since that cache is per request.
+   * Resolving `null` or `undefined` means anonymous.
    *
    * The caller sets `session.actor` to a human actor carrying the session's
    * own `userId`, exactly as `createProcedureHandler` does: `userId` must be
    * an own property holding a non-empty string or a finite number.
+   *
+   * **The caller performs no cookie or `Origin` check.** Whatever this
+   * resolves is acted on as the signed-in person. In a Next.js server action
+   * the cross-site protection is Next's own server-action `Origin` check, and
+   * only there; widening `serverActions.allowedOrigins` widens this caller's
+   * exposure too. A route handler that calls `call` for a mutation must not
+   * answer `GET` and must check the request's origin itself, or serve the
+   * procedure through `createProcedureHandler` instead. Outside a request (a
+   * job, a script) there is no person to act for: this must resolve `null`,
+   * because any session it resolves there still gets
+   * `{ kind: 'human', userId, via: 'web' }`.
    */
   getSession: () => Promise<SessionOf<RegistryContextOf<TRegistry>> | null | undefined>
   /**
@@ -107,11 +84,17 @@ export interface ServerCaller<TRegistry extends ProcedureRegistry<ProcedureHostC
    * framework's control flow (`redirect()`, `notFound()`) thrown from the
    * session resolver, the access rule or `run` is rethrown, so the framework
    * acts on it; a transaction it leaves is rolled back first.
+   *
+   * The name's type is every key of the registry and does not reflect
+   * exposure: a procedure exposed only to `'mcp'` type-checks here, and at
+   * runtime answers `INTERNAL`, reported, as an unknown name does.
    */
-  call: <TName extends ServerProcedureName<TRegistry>>(
+  call: <TName extends ProcedureNameOf<TRegistry>>(
     name: TName,
-    ...args: ServerCallArgs<TRegistry, TName>
-  ) => Promise<ServerCallResultOf<TRegistry[TName]>>
+    ...args: ProcedureArgsFor<TRegistry, TName>
+  ) => Promise<
+    ProcedureResult<ProcedureDataOf<TRegistry[TName]>, ProcedureCodeOf<TRegistry[TName]>>
+  >
   /**
    * The context for the current request's session, for a server component's
    * reads through `context.db`. The session carries the same human actor a
@@ -136,8 +119,8 @@ function isOutcomeOf<TData, TCode extends string>(
 }
 
 /**
- * The in-process host for server code: a server action, a route handler or a
- * job that runs inside a request. `call` runs a procedure through the same
+ * The in-process host for server code running inside a request: a Next.js
+ * server action, and a server component through `context`. `call` runs a procedure through the same
  * pipeline as `createProcedureHandler`, with the same exposure, access rule,
  * input and output parsing, declared failures, result and redaction, and
  * `context` gives a server component the context for the same session.
@@ -147,6 +130,15 @@ function isOutcomeOf<TData, TCode extends string>(
  * not exposed to `'web'` answers exactly as an unknown name does: `INTERNAL`,
  * reported to `onUnexpectedError`. Unlike the HTTP host, a framework's control
  * flow propagates, so a procedure may `redirect()`; over HTTP it is `INTERNAL`.
+ *
+ * **It performs no cookie or `Origin` check of its own.** A server action is
+ * protected by Next's server-action `Origin` check and nothing else, and
+ * widening `serverActions.allowedOrigins` widens this caller too. A route
+ * handler calling `call` for a mutation must answer only non-`GET` methods
+ * and check the origin itself, or serve the procedure through
+ * `createProcedureHandler`. A job or script outside a request must have
+ * `getSession` resolve `null`: any session it resolves there is acted on as
+ * a human on the web.
  *
  * Keep the module that creates the caller the one place that imports the
  * generated `getContext`, and export `call` and `context` from it.
@@ -184,10 +176,13 @@ export function createServerCaller<TRegistry extends ProcedureRegistry<Procedure
   const isFrameworkControlFlow = options.config?.isFrameworkControlFlow
   assertProcedureRegistry(procedures, { config: options.config })
 
-  const context = async (): Promise<RegistryContextOf<TRegistry>> => {
-    const session = webSessionOf(await getSession())
-    return session === null ? getContext() : getContext(session)
-  }
+  const contextFor = (
+    session: SessionOf<RegistryContextOf<TRegistry>> | null,
+  ): Promise<RegistryContextOf<TRegistry>> =>
+    session === null ? getContext() : getContext(session)
+
+  const context = async (): Promise<RegistryContextOf<TRegistry>> =>
+    contextFor(webSessionOf(await getSession()))
 
   async function invoke<TData, TCode extends string>(
     name: string,
@@ -201,13 +196,35 @@ export function createServerCaller<TRegistry extends ProcedureRegistry<Procedure
       )
       return failure('INTERNAL')
     }
+
+    let session: SessionOf<RegistryContextOf<TRegistry>> | null
+    try {
+      session = webSessionOf(await getSession())
+    } catch (error) {
+      rethrowControlFlow(error, isFrameworkControlFlow)
+      onUnexpectedError(error, name)
+      return failure('INTERNAL')
+    }
+
+    let resolved: RegistryContextOf<TRegistry> | undefined
     const result = await runProcedure({
       name,
       procedure,
-      context,
+      context: async () => {
+        resolved = await contextFor(session)
+        return resolved
+      },
       readInput: () => ({ ok: true, value: input }),
       onUnexpectedError,
-      propagate: (error) => rethrowControlFlow(error, isFrameworkControlFlow),
+      propagate: (error) => {
+        const engine = resolved === undefined ? undefined : engineFaceOf(resolved)
+        rethrowControlFlow(
+          error,
+          engine === undefined
+            ? isFrameworkControlFlow
+            : controlFlowPredicateOf(engine, options.config),
+        )
+      },
     })
     if (isOutcomeOf<TData, TCode>(procedure, result)) return result
     onUnexpectedError(
@@ -218,10 +235,11 @@ export function createServerCaller<TRegistry extends ProcedureRegistry<Procedure
   }
 
   return {
-    call: <TName extends ServerProcedureName<TRegistry>>(
+    call: <TName extends ProcedureNameOf<TRegistry>>(
       name: TName,
-      ...args: ServerCallArgs<TRegistry, TName>
-    ) => invoke<DataOf<TRegistry[TName]>, CodeOf<TRegistry[TName]>>(name, args[0]),
+      ...args: ProcedureArgsFor<TRegistry, TName>
+    ) =>
+      invoke<ProcedureDataOf<TRegistry[TName]>, ProcedureCodeOf<TRegistry[TName]>>(name, args[0]),
     context,
   }
 }

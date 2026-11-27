@@ -6,6 +6,7 @@ import { createMcpHandlers, mcpContextSession, McpSessionError } from '../mcp/in
 import type { McpSession } from '../mcp/index.js'
 import { createProcedureHandler } from '../procedures/http.js'
 import { createProcedureBuilder, type ProcedureRegistry } from '../procedures/procedure.js'
+import { createServerCaller } from '../procedures/server.js'
 import { createTestDatabase, type TestDatabase } from '../testing/context.js'
 import type { StackContext } from '../types/context.js'
 import type { Actor } from './actor.js'
@@ -656,6 +657,39 @@ describe('the actor on a host-built session', () => {
         { label: 'inner sudo', actorKind: 'agent', actorId: 'claude-desktop' },
         { label: 'outer', actorKind: 'agent', actorId: 'claude-desktop' },
       ])
+    })
+
+    test('belongs to the session it was minted for and is dropped on any other', async () => {
+      const contextAs = (userId: string | number) =>
+        createServerCaller({
+          procedures: registry,
+          getContext: async (session?: Session) => database.context(session),
+          getSession: async () => ({ userId }),
+        }).context()
+      const ada = await contextAs('ada')
+      const human = ada.session?.actor
+      const numeric = (await contextAs(5)).session?.actor
+      const agent = mcpContextSession({ userId: 'ada', clientId: 'claude-desktop' }).actor
+      if (human === undefined || agent === undefined || numeric === undefined) {
+        throw new Error('expected minted actors')
+      }
+
+      expect(database.context({ userId: 'ada', actor: human }).session?.actor).toBe(human)
+      expect(database.context({ userId: 'ada', actor: agent }).session?.actor).toBe(agent)
+      expect(database.context().withSession(ada.session).session?.actor).toBe(human)
+
+      for (const session of [
+        { userId: 'victim', actor: human },
+        { userId: 'victim', actor: agent },
+        { actor: human },
+        { userId: '5', actor: numeric },
+        Object.assign(Object.create({ userId: 'ada' }), { actor: human }),
+      ]) {
+        const context = database.context(session)
+        expect(context.session?.actor).toBeUndefined()
+        expect(context.withSession(context.session).session?.actor).toBeUndefined()
+        expect(await context.db.HumanOnly.create({ data: { label: 'stolen' } })).toBeNull()
+      }
     })
 
     test('cannot be swapped, added or edited on a context session', async () => {

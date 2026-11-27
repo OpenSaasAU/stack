@@ -8,7 +8,7 @@ import {
   type ProcedureResultOf,
 } from './procedure.js'
 import type { ProcedureResult } from './result.js'
-import { createServerCaller, type ServerCaller } from './server.js'
+import { createServerCaller, type ServerCaller, type ServerCallerOptions } from './server.js'
 
 type Ctx = StackContext<AccessControlledDB>
 
@@ -87,7 +87,10 @@ describe('the in-process caller types', () => {
       void server.call('book', { slotId: 's1' }, { userId: 'ada' })
       // @ts-expect-error context takes no argument
       void server.context({ userId: 'ada' })
-      expectTypeOf(getSession).parameters.toEqualTypeOf<[]>()
+      expectTypeOf<ServerCallerOptions<typeof procedures>['getSession']>().parameters.toEqualTypeOf<
+        []
+      >()
+      expectTypeOf<ServerCaller<typeof procedures>['context']>().parameters.toEqualTypeOf<[]>()
       createServerCaller({
         procedures,
         getContext,
@@ -103,6 +106,32 @@ describe('the in-process caller types', () => {
       const loose = createServerCaller({ procedures: annotated, getContext, getSession })
       // @ts-expect-error the names of an annotated registry are not known
       void loose.call('book', { slotId: 's1' })
+    })
+  })
+
+  test('a name typed as a union of names takes no input until it is narrowed', () => {
+    const callEither = (name: 'book' | 'ping') =>
+      // @ts-expect-error the input one procedure requires cannot be typed for another
+      server.call(name, { slotId: 's1' })
+    expectTypeOf(callEither).toBeFunction()
+  })
+
+  test('the name type does not reflect exposure', () => {
+    const agentOnly = procedure({
+      description: 'Reachable by agents only',
+      input: z.object({}),
+      output: z.object({}),
+      access: () => true,
+      expose: ['mcp'],
+      run: () => ({}),
+    })
+    const withAgentOnly = createServerCaller({
+      procedures: { agentOnly } satisfies ProcedureRegistry<Ctx>,
+      getContext,
+      getSession,
+    })
+    typeOnly(() => {
+      void withAgentOnly.call('agentOnly', {})
     })
   })
 })

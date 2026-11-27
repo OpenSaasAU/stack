@@ -1,4 +1,4 @@
-/** A person calling through the web host. */
+/** A person on the web: set by the procedure HTTP host and by the in-process caller. */
 export interface HumanActor {
   readonly kind: 'human'
   /** The signed-in user's id, exactly as the session carries it under `userId`. */
@@ -61,6 +61,12 @@ function mintedActorOf(value: unknown): Actor | undefined {
   return typeof value === 'object' && value !== null ? mintedActors.get(value) : undefined
 }
 
+function actsFor(actor: Actor, session: object): boolean {
+  const held = Object.getOwnPropertyDescriptor(session, 'userId')
+  const userId: unknown = held !== undefined && 'value' in held ? held.value : undefined
+  return (actor.kind === 'human' ? actor.userId : actor.onBehalfOf) === userId
+}
+
 function copyWithActor<S extends object>(session: S, actor: Actor | undefined): S {
   const prototype: object | null = Object.getPrototypeOf(session)
   const descriptors: PropertyDescriptorMap = Object.getOwnPropertyDescriptors(session)
@@ -81,14 +87,19 @@ export function sessionWithActor<S extends object>(session: S, actor: Actor): S 
 
 /**
  * The session a context carries: a frozen shallow copy of the one it was
- * given, keeping `actor` only when a host minted it. The caller's own object
+ * given, keeping `actor` only when a host minted it for this session's own
+ * `userId`. The caller's own object
  * is left as it was, and sealing a sealed session returns it unchanged.
  */
 export function sealSession<S extends object>(session: S): S {
   if (sealedSessions.has(session)) return session
   const held = Object.getOwnPropertyDescriptor(session, 'actor')
   const value: unknown = held !== undefined && 'value' in held ? held.value : undefined
-  const copy = copyWithActor(session, mintedActorOf(value))
+  const minted = mintedActorOf(value)
+  const copy = copyWithActor(
+    session,
+    minted !== undefined && actsFor(minted, session) ? minted : undefined,
+  )
   Object.freeze(copy)
   sealedSessions.add(copy)
   return copy

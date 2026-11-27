@@ -26,6 +26,7 @@ const owned = ({ session }: { session: Session | null }) =>
 function schemaConfig(): OpenSaasConfig {
   return {
     db: { provider: 'postgresql' },
+    isFrameworkControlFlow: (thrown) => thrown instanceof Response,
     lists: {
       Post: {
         fields: {
@@ -315,7 +316,12 @@ describe('createServerCaller', () => {
     return requestSession.getStore() ?? null
   })
 
-  function server(options: { config?: OpenSaasConfig } = {}) {
+  function server(
+    options: {
+      config?: OpenSaasConfig
+      getSession?: () => Promise<Session | null | undefined>
+    } = {},
+  ) {
     return createServerCaller({
       procedures: registry,
       getContext: async (session) => database.context(session),
@@ -325,11 +331,17 @@ describe('createServerCaller', () => {
     })
   }
 
-  async function overHttp(name: string, input: unknown, userId: string | null) {
+  async function overHttp(
+    name: string,
+    input: unknown,
+    userId: string | null,
+    resolver?: () => Promise<Session | null>,
+  ) {
     const handler = createProcedureHandler<Ctx>({
       procedures: registry,
       getContext: async (session) => database.context(session),
       getSession: async (request) => {
+        if (resolver !== undefined) return resolver()
         const match = /session=([a-z]+)/.exec(request.headers.get('cookie') ?? '')
         return match === null ? null : { userId: match[1] }
       },
@@ -374,46 +386,62 @@ describe('createServerCaller', () => {
       label: string
       name: keyof typeof registry
       input: object
+      signedIn: string
+      anonymous: string
       call: (caller: Caller) => Promise<unknown>
     }> = [
       {
         label: 'a successful call with its output stripped',
+        signedIn: 'SUCCESS',
+        anonymous: 'UNAUTHENTICATED',
         name: 'createPost',
         input: { title: 'Hello' },
         call: (caller) => caller.call('createPost', { title: 'Hello' }),
       },
       {
         label: 'input its schema refuses',
+        signedIn: 'INVALID_INPUT',
+        anonymous: 'UNAUTHENTICATED',
         name: 'createPost',
         input: { title: '' },
         call: (caller) => caller.call('createPost', { title: '' }),
       },
       {
         label: 'a declared failure after a write',
+        signedIn: 'SLOT_FULL',
+        anonymous: 'SLOT_FULL',
         name: 'bookFull',
         input: {},
         call: (caller) => caller.call('bookFull', {}),
       },
       {
         label: 'a validation error',
+        signedIn: 'VALIDATION',
+        anonymous: 'VALIDATION',
         name: 'validateExplicitly',
         input: {},
         call: (caller) => caller.call('validateExplicitly', {}),
       },
       {
         label: 'a lost race',
+        signedIn: 'RETRY',
+        anonymous: 'RETRY',
         name: 'loseRace',
         input: {},
         call: (caller) => caller.call('loseRace', {}),
       },
       {
         label: 'an unexpected error',
+        signedIn: 'INTERNAL',
+        anonymous: 'INTERNAL',
         name: 'explode',
         input: {},
         call: (caller) => caller.call('explode', {}),
       },
       {
         label: 'output its schema refuses',
+        signedIn: 'INTERNAL',
+        anonymous: 'INTERNAL',
         name: 'misreport',
         input: {},
         call: (caller) => caller.call('misreport', {}),
@@ -424,7 +452,7 @@ describe('createServerCaller', () => {
       JSON.parse(JSON.stringify(body).replace(/"id":"[^"]+"/g, '"id":"<id>"'))
 
     for (const userId of ['ada', null]) {
-      for (const { label, name, input, call } of cases) {
+      for (const { label, name, input, call, signedIn, anonymous } of cases) {
         test(`${label}, ${userId === null ? 'anonymous' : 'signed in'}`, async () => {
           const http = await overHttp(name, input, userId)
           const httpRows = await titles()
@@ -442,11 +470,92 @@ describe('createServerCaller', () => {
             procedureName,
           ])
 
-          expect(scrub(envelope.parse(result))).toEqual(scrub(http.body))
+          const parsed = envelope.parse(result)
+          expect(parsed.error?.code ?? 'SUCCESS').toBe(userId === null ? anonymous : signedIn)
+          expect(scrub(parsed)).toEqual(scrub(http.body))
           expect(await titles()).toEqual(httpRows)
           expect(reports).toEqual(httpReports)
         })
       }
+    }
+
+    const failingResolvers: Array<{ label: string; resolve: () => Promise<Session | null> }> = [
+      {
+        label: 'a ValidationError',
+        resolve: async () => {
+          throw new ValidationError(['Session lookup: email secret@x.test invalid'], {
+            email: 'secret@x.test is invalid',
+          })
+        },
+      },
+      {
+        label: 'a serialization failure',
+        resolve: async () => {
+          const driverError = Object.assign(new Error('could not serialize access'), {
+            kind: 'sql_query',
+            sqlState: '40001',
+          })
+          throw classifyDriverError(driverError) ?? driverError
+        },
+      },
+      {
+        label: 'a unique violation from a write it made',
+        resolve: async () => {
+          await database
+            .context()
+            .sudo()
+            .db.Post.create({
+              data: { title: 'Session row', authorId: 'ada', slug: 'session-row' },
+            })
+          return { userId: 'ada' }
+        },
+      },
+      {
+        label: 'a plain Error',
+        resolve: async () => {
+          throw new Error('auth backend at postgres://admin:hunter2@db is down')
+        },
+      },
+    ]
+
+    for (const { label, resolve } of failingResolvers) {
+      test(`a resolver that throws ${label} is INTERNAL and reported on both hosts`, async () => {
+        const seed = async () => {
+          await database.truncate()
+          await database
+            .context()
+            .sudo()
+            .db.Post.create({
+              data: { title: 'Seed', authorId: 'ada', slug: 'session-row' },
+            })
+          onUnexpectedError.mockClear()
+          seenActors = []
+        }
+        await seed()
+        const http = await overHttp('createPost', { title: 'Never' }, 'ada', resolve)
+        const httpRows = await titles()
+        const httpReports = onUnexpectedError.mock.calls.map(([error, procedureName]) => [
+          String(error),
+          procedureName,
+        ])
+
+        await seed()
+        const result = await server({ getSession: resolve }).call('createPost', { title: 'Never' })
+        const reports = onUnexpectedError.mock.calls.map(([error, procedureName]) => [
+          String(error),
+          procedureName,
+        ])
+
+        const internal = { success: false, error: { code: 'INTERNAL', message: 'Internal error' } }
+        expect(http.status).toBe(500)
+        expect(http.body).toEqual(internal)
+        expect(result).toEqual(internal)
+        expect(JSON.stringify(result)).not.toMatch(/secret|hunter2|unique|serializ/i)
+        expect(reports).toHaveLength(1)
+        expect(reports).toEqual(httpReports)
+        expect(await titles()).toEqual(httpRows)
+        expect(seenActors).toEqual([])
+      })
     }
 
     test('the access rule denies a signed-in caller as it does over HTTP', async () => {
@@ -723,16 +832,29 @@ describe('createServerCaller', () => {
       await expect(rejection).rejects.not.toHaveProperty('message', 'wrapped')
     })
 
-    test("what the config's isFrameworkControlFlow recognises propagates too", async () => {
-      const unrecognised = await asRequest(null, () => server().call('customControlFlow', {}))
-      expect(unrecognised.success).toBe(false)
-
-      const config = {
-        ...schemaConfig(),
-        isFrameworkControlFlow: (thrown: unknown) => thrown instanceof Response,
-      }
+    test("what the app config's isFrameworkControlFlow recognises propagates without passing config", async () => {
       await expect(
-        asRequest(null, () => server({ config }).call('customControlFlow', {})),
+        asRequest(null, () => server().call('customControlFlow', {})),
+      ).rejects.toBeInstanceOf(Response)
+
+      const http = await overHttp('customControlFlow', {}, null)
+      expect(http.status).toBe(500)
+      expect(onUnexpectedError).toHaveBeenCalledWith(expect.any(Response), 'customControlFlow')
+    })
+
+    test('a resolver throwing what only the config recognises needs config, as there is no context yet', async () => {
+      const throwsResponse = async (): Promise<Session | null> => {
+        throw new Response(null, { status: 303 })
+      }
+      const unconfigured = await server({ getSession: throwsResponse }).call('whoAmI')
+      expect(unconfigured).toEqual({
+        success: false,
+        error: { code: 'INTERNAL', message: 'Internal error' },
+      })
+      expect(onUnexpectedError).toHaveBeenCalledWith(expect.any(Response), 'whoAmI')
+
+      await expect(
+        server({ getSession: throwsResponse, config: schemaConfig() }).call('whoAmI'),
       ).rejects.toBeInstanceOf(Response)
     })
 
