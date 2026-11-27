@@ -139,6 +139,15 @@ const admin = { userId: 'user-1', role: 'admin' }
 
 describe('Relationship table reads the related list’s Session vocabulary', () => {
   it(
+    'names each row by the related list’s label column when it is shown',
+    async () => {
+      expect((await tableProps(admin)).labelColumn).toBe('title')
+      expect((await tableProps(admin, { columns: ['status'] })).labelColumn).toBeUndefined()
+    },
+    BOOT,
+  )
+
+  it(
     'leaves never-readable related columns out of everything that reaches the client',
     async () => {
       const props = await tableProps(admin)

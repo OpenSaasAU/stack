@@ -46,7 +46,8 @@ import {
   updateWriteStrategy,
   deleteWriteStrategy,
 } from './write-pipeline.js'
-import { resolveJunctionEdge } from './junction.js'
+import { resolveJunctionEdge, resolveLinkableScope, type LinkableScope } from './junction.js'
+import type { Where, WhereValue } from '../secured/vocabulary.js'
 import {
   assertListMembersResolve,
   resolveListMember,
@@ -63,6 +64,8 @@ import {
 } from '../access/transaction-registry.js'
 export { TransactionRolledBackError }
 import type { TransactionSettleOutcome } from '../access/transaction-registry.js'
+
+const LINKED_TARGET_LIMIT = 1000
 
 export type ServerActionProps =
   | { listKey: string; action: 'create'; data: Record<string, unknown> }
@@ -168,6 +171,8 @@ export type ServerActionProps =
       search?: string
       take?: number
       selectedIds?: string[]
+      /** Leave out the records already linked to this row of `listKey` through `field`. */
+      linkableFor?: string
     }
 
 /**
@@ -1314,13 +1319,38 @@ export function getContext<TConfig extends OpenSaasConfig>(
           }
         }
 
-        const relatedListKey = fieldConfig.ref.split('.')[0]
+        const linkedTargetIds = async (
+          linkable: Extract<LinkableScope, { kind: 'junction' }>,
+        ): Promise<WhereValue[]> => {
+          const rows = await context.db[linkable.junctionListKey]
+            .where(linkable.linkedRows)
+            .limit(LINKED_TARGET_LIMIT)
+            .all()
+          return rows.flatMap((row) => {
+            const id = row[linkable.targetForeignKey]
+            return typeof id === 'string' || typeof id === 'number' ? [id] : []
+          })
+        }
+        let relatedListKey = fieldConfig.ref.split('.')[0]
+        let scope: Where | undefined
+        if (props.linkableFor !== undefined) {
+          const parentId = parseId(props.listKey, props.linkableFor)
+          if (parentId === null) return { options: [], searched: false }
+          const linkable = resolveLinkableScope(config, props.listKey, props.field, parentId)
+          if (linkable === null) return { options: [], searched: false }
+          relatedListKey = linkable.listKey
+          scope =
+            linkable.kind === 'where'
+              ? linkable.where
+              : { id: { notIn: await linkedTargetIds(linkable) } }
+        }
         const labelReadable = await isRelationshipLabelReadable(context, config, relatedListKey)
         const options = await getRelationshipOptions(context, config, relatedListKey, {
           labelReadable,
           search: props.search,
           take: props.take,
           selectedIds: props.selectedIds,
+          scope,
         })
         const searched =
           relationshipSearchWhere(config, relatedListKey, {

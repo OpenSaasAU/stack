@@ -180,7 +180,7 @@ describe('RelationshipTableClient', () => {
     )
     const user = userEvent.setup()
 
-    const removeButtons = screen.getAllByRole('button', { name: /disconnect posts row/i })
+    const removeButtons = screen.getAllByRole('button', { name: /^unlink row 1$/i })
     await user.click(removeButtons[0])
 
     // Disconnect is an UPDATE on the RELATED list, assigning `null` to the
@@ -212,7 +212,7 @@ describe('RelationshipTableClient', () => {
       />,
     )
     const user = userEvent.setup()
-    await user.click(screen.getAllByRole('button', { name: /disconnect posts row/i })[0])
+    await user.click(screen.getAllByRole('button', { name: /^unlink row 1$/i })[0])
 
     expect(serverAction).toHaveBeenCalledWith(
       expect.objectContaining({ mode: 'disconnect', parentId: baseProps().parentId }),
@@ -236,7 +236,7 @@ describe('RelationshipTableClient', () => {
     )
     const user = userEvent.setup()
 
-    await user.click(screen.getAllByRole('button', { name: /disconnect posts row/i })[0])
+    await user.click(screen.getAllByRole('button', { name: /^unlink row 1$/i })[0])
 
     // Denied: the row stays and the reason is shown (no leak of denied-vs-missing).
     expect(screen.getByText('First')).toBeInTheDocument()
@@ -339,7 +339,7 @@ describe('RelationshipTableClient', () => {
     )
     const user = userEvent.setup()
 
-    await user.click(screen.getAllByRole('button', { name: /delete posts row/i })[0])
+    await user.click(screen.getAllByRole('button', { name: /^delete row 1$/i })[0])
 
     // A confirmation dialog appears; no action runs until confirmed.
     expect(serverAction).not.toHaveBeenCalled()

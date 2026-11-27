@@ -1,4 +1,5 @@
 import type { FieldConfig, OpenSaasConfig } from '../config/types.js'
+import type { Where } from '../secured/vocabulary.js'
 import {
   resolveListMember,
   resolveListMembers,
@@ -127,5 +128,56 @@ export function resolveJunctionEdge(
     backReferenceField,
     targetField: target.field,
     targetListKey: target.list,
+  }
+}
+
+/** How {@link resolveLinkableScope} leaves out the records already linked to a parent row. */
+export type LinkableScope =
+  | { listKey: string; kind: 'where'; where: Where }
+  | {
+      listKey: string
+      kind: 'junction'
+      junctionListKey: string
+      linkedRows: Where
+      targetForeignKey: string
+    }
+
+/**
+ * The records a new edge on `parentListKey.fieldName` may point at for the
+ * parent row `parentId`, and how to leave out the ones already linked to it:
+ * a predicate on the far list for an edge held in its own foreign key, or the
+ * junction rows whose far foreign keys to exclude. `null` when the field is
+ * not a to-many relationship.
+ */
+export function resolveLinkableScope(
+  config: OpenSaasConfig,
+  parentListKey: string,
+  fieldName: string,
+  parentId: string | number,
+): LinkableScope | null {
+  if (!Object.hasOwn(config.lists, parentListKey)) return null
+  const field = relationStorageOf(resolveListMember(config, parentListKey, fieldName))
+  if (field === undefined || !field.many) return null
+
+  const linkedToParent = { id: { equals: parentId } }
+  const edge = resolveJunctionEdge(config, parentListKey, fieldName)
+  if (edge === null) {
+    return {
+      listKey: field.relatedList,
+      kind: 'where',
+      where: { [field.inverse.field]: { none: linkedToParent } },
+    }
+  }
+
+  const target = relationStorageOf(
+    resolveListMember(config, edge.junctionListKey, edge.targetField),
+  )
+  if (target?.foreignKey === undefined) return null
+  return {
+    listKey: edge.targetListKey,
+    kind: 'junction',
+    junctionListKey: edge.junctionListKey,
+    linkedRows: { [edge.backReferenceField]: { some: linkedToParent } },
+    targetForeignKey: target.foreignKey.name,
   }
 }

@@ -32,6 +32,21 @@ describe('ComboboxField', () => {
     })
   })
 
+  it('shows a link to a record the session cannot see as empty, never its id', () => {
+    render(
+      <ComboboxField
+        name="author"
+        value="hidden-7"
+        onChange={vi.fn()}
+        label="Author"
+        items={initialItems}
+      />,
+    )
+
+    expect(screen.getByRole('button')).toHaveTextContent('Select...')
+    expect(screen.queryByText(/hidden-7/)).not.toBeInTheDocument()
+  })
+
   describe('with a server action (debounced live search)', () => {
     it('shows the currently-selected value label on initial render without searching', () => {
       const serverAction = vi.fn()

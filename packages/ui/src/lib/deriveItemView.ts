@@ -26,7 +26,7 @@ export const DEFAULT_ITEM_VIEW_TAKE = 10
 
 /**
  * One derived Relationship-table section — a to-many relationship on the record
- * being edited, rendered read-only as a table of related rows.
+ * being edited, rendered as a table of related rows.
  */
 export interface RelationshipTableSection {
   /** The to-many relationship field name on the parent list. */

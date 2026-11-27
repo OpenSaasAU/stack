@@ -137,6 +137,7 @@ export async function AdminUI({
         itemId={parsedId.value}
         basePath={basePath}
         serverAction={serverAction}
+        searchParams={searchParams}
       />
     )
   } else if (routedList?.isSingleton) {

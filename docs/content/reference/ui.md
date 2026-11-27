@@ -882,6 +882,31 @@ it) may still have run, so the form says so rather than showing the browser's er
 "Couldn't reach the server. Your changes may or may not have been saved, so reload
 to check before trying again." Delete says the same of the item.
 
+#### Relationship tables
+
+Each to-many relationship shows on the item page as a table of its related rows
+(`ui.itemView.displayMode: 'table'`, the default). Columns are the related list's
+default columns without the field that points back, or `ui.itemView.columns`.
+
+- **Paging.** `ui.itemView.take` rows a page (10 by default). The footer reads
+  "Showing 11–20 of 42 rows" with Previous and Next, which page the table in place
+  through a `<field>Page` URL parameter, so each table on the page keeps its own
+  page. A page past the end moves to the last one. **View all** opens the related
+  list filtered to this record. A `ui.itemView.sum` total covers the visible rows.
+- **Opening a row.** Each row's label cell is a link to the related record, so it
+  can be tabbed to and opened in a new tab. Clicking elsewhere on the row opens it
+  too; clicking an editable cell edits it instead.
+- **Editing in place.** Columns the session may update edit in place and save that
+  one field; a refusal puts the old value back and shows why.
+- **+ Add** creates a related record already linked to this one.
+- **Link** searches the records not already linked to this one and links the one
+  picked.
+- **✕** follows `ui.itemView.removeAction`. `'disconnect'` (the default) unlinks the
+  row at once and shows "Unlinked “Hello world”" with **Undo** for a few seconds.
+  `'delete'` asks first ("Delete this Post? “Hello world” will be permanently
+  deleted. This cannot be undone."). `'none'` hides it. Each ✕ is named for its
+  row ("Unlink “Hello world”"). Through a junction list, ✕ removes only the link.
+
 ## Standalone Components
 
 Standalone components allow you to build custom admin interfaces by composing individual components.

@@ -176,6 +176,30 @@ describe('the to-many section can add an edge across a junction', () => {
 
     expect(serverAction).not.toHaveBeenCalled()
   })
+
+  it('asks for the records not already linked to this one, again on every open', async () => {
+    const serverAction = serverActionReturning({ added: true, id: 'e1' }, TAG_OPTIONS)
+    const user = userEvent.setup()
+    render(<RelationshipTableClient {...junctionProps(serverAction)} />)
+
+    const trigger = screen.getByRole('button', { name: /Link Tag/i })
+    await user.click(trigger)
+    await screen.findByText('beta')
+    await user.keyboard('{Escape}')
+    await user.click(trigger)
+    await screen.findByText('beta')
+
+    const loads = serverAction.mock.calls.filter(
+      ([input]) => input.action === 'relationshipOptions',
+    )
+    expect(loads).toHaveLength(2)
+    expect(loads[0][0]).toMatchObject({
+      listKey: 'Post',
+      action: 'relationshipOptions',
+      field: 'tags',
+      linkableFor: 'p1',
+    })
+  })
 })
 
 describe('the to-many section can link an existing row by its own foreign key', () => {

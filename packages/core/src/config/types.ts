@@ -1203,7 +1203,8 @@ export type RelationshipItemViewConfig = {
   /**
    * How this to-many relationship is presented on the owning record's item
    * view:
-   * - `'table'` (default): a read-only Relationship table of related rows.
+   * - `'table'` (default): a Relationship table of related rows, which pages,
+   *   edits cells in place, adds, links and removes rows.
    * - `'picker'`: demote it back to the compact relationship picker inside the
    *   details card (the pre-#734 behaviour).
    *
@@ -1230,11 +1231,10 @@ export type RelationshipItemViewConfig = {
    */
   columns?: string[]
   /**
-   * The maximum number of related rows to fetch and render in this
-   * Relationship table (issue #752). The item view fetches related rows
-   * through the secured context bounded by this `take`, so a record with many
-   * related rows never loads/renders every one on edit-page open. The totals
-   * footer still shows the full access-scoped total ("showing N of M").
+   * The number of related rows a page of this Relationship table shows
+   * (issue #752). The item view fetches one page at a time through the secured
+   * context, and the footer shows the range and the full access-scoped total
+   * ("Showing 11–20 of 42 rows") with links to the pages either side.
    *
    * When omitted, a sensible default cap applies (the UI's
    * `DEFAULT_ITEM_VIEW_TAKE`). Must be a positive integer; non-positive or
