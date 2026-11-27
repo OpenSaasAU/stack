@@ -6,7 +6,7 @@ import {
   type ProcedureHostContext,
   type ProcedureRegistry,
 } from './procedure.js'
-import { FAILURE_STATUS, failure, type ProcedureResult } from './result.js'
+import { FAILURE_STATUS, failure, isReservedFailureCode, type ProcedureResult } from './result.js'
 import { guardReporter, runProcedure, type RawInput } from './run.js'
 import { assertProcedureRegistry, ProcedureHostError } from './validate.js'
 
@@ -85,8 +85,14 @@ function json(status: number, body: object, headers: Record<string, string> = {}
 
 const notFound = (): Response => json(404, { error: 'Not found' })
 
-function resultResponse(result: ProcedureResult<unknown>): Response {
-  return json(result.success ? 200 : FAILURE_STATUS[result.error.code], result)
+function statusOf(result: ProcedureResult<unknown, string>): number {
+  if (result.success) return 200
+  const { code } = result.error
+  return isReservedFailureCode(code) ? FAILURE_STATUS[code] : 200
+}
+
+function resultResponse(result: ProcedureResult<unknown, string>): Response {
+  return json(statusOf(result), result)
 }
 
 function defaultUnexpectedError(error: unknown, procedureName: string): void {
@@ -189,6 +195,9 @@ function parseJson(text: string): RawInput {
  * `{ success: true, data }`, or `{ success: false, error: { code, message,
  * fieldErrors? } }` with `UNAUTHENTICATED` 401, `DENIED` 403,
  * `INVALID_INPUT`/`VALIDATION` 400, `RETRY`/`CONFLICT` 409 and `INTERNAL` 500.
+ * A failure the procedure declares is an expected outcome and answers 200
+ * with its own code. The host never retries a call: `RETRY` reports that the
+ * transaction rolled back and leaves running it again to the caller.
  * An unexpected error's message is passed to `onUnexpectedError` and never to
  * the client. An empty or missing body is `undefined` input, which the input
  * schema accepts or refuses; a body that is not JSON is `INVALID_INPUT`.
@@ -201,10 +210,12 @@ function parseJson(text: string): RawInput {
  * branch on the status before reading `success`.
  *
  * The host refuses, when it is created, a registry it cannot serve safely: a
- * schema that cannot be carried on the wire or accepts open-ended values, and
- * a name that clashes with an MCP tool. See {@link assertProcedureRegistry}.
+ * schema that cannot be carried on the wire or accepts open-ended values, a
+ * name that clashes with an MCP tool, and a procedure declaring a reserved
+ * failure code. See {@link assertProcedureRegistry}.
  *
- * @throws {ProcedureHostError} for an invalid option, name, schema or registry entry.
+ * @throws {ProcedureHostError} for an invalid option, name, schema or registry entry,
+ *   or a procedure declaring a reserved failure code.
  *
  * @example
  * ```typescript

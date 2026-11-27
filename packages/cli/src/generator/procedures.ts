@@ -24,6 +24,10 @@ import type { Context } from './types.ts'
  * procedures in a registry module of your own and give it to a host such as
  * \`createProcedureHandler\` from \`@opensaas/stack-core/procedures\`.
  *
+ * \`run\` opens no transaction. Wrap the writes that must succeed together in
+ * \`context.transaction\`, and throw \`fail('<CODE>')\` for an outcome declared
+ * in \`failures\`: a throw inside the transaction rolls it back.
+ *
  * @example
  * \`\`\`typescript
  * import * as z from 'zod'
