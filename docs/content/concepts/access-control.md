@@ -321,6 +321,61 @@ const visibleToSession: AccessControl = ({ session }) => {
 }
 ```
 
+## Who Is Acting: the Actor
+
+A session a host builds carries an `actor`, which says whether a person or an agent is calling:
+
+- The procedure HTTP host sets `{ kind: 'human', userId, via: 'web' }`.
+- The MCP handler sets `{ kind: 'agent', clientId, onBehalfOf, via: 'mcp' }`. `clientId` is the OAuth client id the session provider verified, and `onBehalfOf` is the user the agent acts for.
+
+An agent's session keeps that user's `userId`, so a rule that scopes by `session.userId` already limits an agent to what its user can do. Read the actor when a rule or a hook should treat the two differently:
+
+```typescript
+import type { AccessControl } from '@opensaas/stack-core'
+
+const humansOnly: AccessControl = ({ session }) => session?.actor?.kind === 'human'
+
+const ownedByCaller: AccessControl = ({ session }) => {
+  const userId = session?.userId
+  if (typeof userId !== 'string') return false
+  return { authorId: { equals: userId } }
+}
+
+const ownerViaWebProcedureOnly: AccessControl = (args) =>
+  args.session?.actor?.kind === 'human' ? ownedByCaller(args) : false
+
+const ownerUnlessAgent: AccessControl = (args) =>
+  args.session?.actor?.kind === 'agent' ? false : ownedByCaller(args)
+```
+
+Only the procedure HTTP host sets a human actor. These callers carry **no actor at all**:
+
+- the Admin UI
+- a server component, server action or route handler that calls `getContext(session)` itself
+- a job runner's `context.withSession(session)`
+- a test's `createTestContext(config, session)`
+
+So `ownerViaWebProcedureOnly` admits a signed-in owner calling a procedure over HTTP and denies every caller in that list, the Admin UI included. Put it on a list operation only when that is what you mean. `ownerUnlessAgent` is the rule that keeps agents out and leaves the Admin UI and your own server code working: every agent the stack authenticates carries an agent actor, through the MCP handler and through `mcpSessionToContextSession` under `withMcpAuth` alike.
+
+**Check positively for the kind you want.** Absent is never human: `session?.actor?.kind === 'human'` denies a session with no actor, and `session?.actor?.kind !== 'agent'` used as a test for "a person" would admit one. Ask for `=== 'human'` when a rule grants something to people on the web host only, and for `=== 'agent'` when it treats agents differently, as the two rules above do.
+
+**Only a host sets the actor, and anything else is ignored.** The `actor` key is reserved. The stack keeps a private record of the actor objects its hosts created, and an `actor` that is not one of them is removed before the session reaches an access rule, a hook or a transaction, where it reads as absent. That covers a token claim, a session provider's or `getSession` result's `actor`, and an object your own code writes:
+
+```typescript
+import { getContext } from '@/.opensaas/context'
+
+const context = await getContext({
+  userId: 'user-123',
+  actor: { kind: 'human', userId: 'user-123', via: 'web' },
+})
+
+context.session?.actor // undefined: no host created this actor
+```
+
+The same holds through `withSession()`, `createTestContext()`, `sudo()` and `context.transaction()`. The actor itself is frozen, and `context.session` is a frozen shallow copy of the session you passed, so an actor cannot be added to it or swapped on it afterwards; assigning to `context.session.actor` throws. Rebinding `context.session` itself throws too, on every context, including the ones a hook, an access rule or a `context.transaction()` callback receives. Your own session object is not frozen or changed. Because the copy keeps the prototype but never runs the constructor, a session must be plain data, or a class with no private (`#`) fields and no methods that write to it; a `Map`, `Date` or array session does not survive it. It is the same actor object in access rules, in hooks and inside `context.transaction()`. An anonymous caller is still a `null` session, with no actor to read.
+
+The human actor's `userId` and the agent actor's `onBehalfOf` are the session's `userId` as given: a string, or a number when your user list uses `db.idField: 'int autoincrement'`.
+
 ## Silent Failures
 
 Stack returns `null` (for single records) or `[]` (for multiple records) when access is denied, rather than throwing errors. This prevents information leakage about whether records exist. There is no `AccessDeniedError` to catch: a denial is not an exception, it is an empty answer.

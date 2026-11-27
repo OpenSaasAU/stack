@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import * as React from 'react'
 import { render, screen } from '@testing-library/react'
-import type { AccessContext, OpenSaasConfig } from '@opensaas/stack-core'
+import type { AccessContext, OpenSaasConfig, Session } from '@opensaas/stack-core'
 import { list } from '@opensaas/stack-core'
 import { relationship, text } from '@opensaas/stack-core/fields'
 import { createTestContext, type TestContext } from '@opensaas/stack-core/testing'
@@ -36,7 +36,7 @@ const isAsyncComponent = (type: unknown): type is (props: unknown) => Promise<Re
 
 const OPEN = { query: () => true, create: () => true, update: () => true, delete: () => true }
 
-const isViewer = ({ session }: { session: { role?: string } | null }) => session?.role === 'viewer'
+const isViewer = ({ session }: { session: Session | null }) => session?.role === 'viewer'
 
 const config: OpenSaasConfig = {
   db: { provider: 'postgresql', timestamps: true },

@@ -1,4 +1,5 @@
 import type { RowLockLane } from '../secured/lock.js'
+import type { Actor } from './actor.js'
 import type { SecuredQuery } from '../secured/read.js'
 import type { UnsafeTransactionScope } from '../unsafe.js'
 import type { TransactionRegistry } from './transaction-registry.js'
@@ -35,8 +36,23 @@ import type { TransactionRegistry } from './transaction-registry.js'
  *   return session?.role === 'admin'  // ✅ Autocomplete works
  * }
  * ```
+ *
+ * A context carries a frozen copy of the session it was given, prototype kept
+ * and constructor not run, so a session must be plain data or a class with no
+ * private (`#`) fields and no methods that write to it.
  */
 export interface Session {
+  /**
+   * Who is acting, on a session a host built: a human through the web host,
+   * or an agent through the MCP host on behalf of the session's user. The key
+   * is reserved. A host sets it last and overwrites anything already there,
+   * so no caller, token or session provider can choose it.
+   *
+   * A session a host did not build has none. Absent is not human: a rule
+   * checks `session?.actor?.kind === 'human'` or `=== 'agent'` for the kind
+   * it wants.
+   */
+  actor?: Actor
   [key: string]: unknown
 }
 

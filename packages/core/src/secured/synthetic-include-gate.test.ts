@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { text, relationship } from '../fields/index.js'
 import { createTestContext, type TestContext } from '../testing/context.js'
 import type { OpenSaasConfig } from '../config/types.js'
+import type { Session } from '../access/types.js'
 
 const BOOT = 120_000
 
@@ -213,10 +214,7 @@ describe('synthetic back-relation count with a row-independent allow rule (#1910
 
 describe('synthetic back-relation include answers the same rule with and without select() (#2066)', () => {
   function projectionConfig(
-    read: (args: {
-      item?: Record<string, unknown>
-      session?: { userId?: string } | null
-    }) => boolean,
+    read: (args: { item?: Record<string, unknown>; session?: Session | null }) => boolean,
   ): OpenSaasConfig {
     const allow = { operation: { query: () => true, create: () => true } }
     return {

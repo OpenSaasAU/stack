@@ -11,6 +11,9 @@ import {
 } from '../src/mcp/better-auth.js'
 import type { BetterAuthMcpOptions } from '../src/mcp/better-auth.js'
 import type { McpSession } from '@opensaas/stack-core/mcp'
+import type { OpenSaasConfig } from '@opensaas/stack-core'
+import { text } from '@opensaas/stack-core/fields'
+import { createTestDatabase, type TestDatabase } from '@opensaas/stack-core/testing'
 
 describe('Better Auth MCP Adapter', () => {
   describe('token verification', () => {
@@ -40,7 +43,14 @@ describe('Better Auth MCP Adapter', () => {
 
     function mint(claims: Record<string, unknown>): string {
       const now = Math.floor(Date.now() / 1000)
-      const body = { iss: baseURL, aud: resource, iat: now, exp: now + 300, ...claims }
+      const body = {
+        iss: baseURL,
+        aud: resource,
+        iat: now,
+        exp: now + 300,
+        azp: 'client-1',
+        ...claims,
+      }
       const signingInput = `${b64({ alg: 'ES256', typ: 'JWT', kid: 'k1' })}.${b64(body)}`
       const signature = sign('sha256', Buffer.from(signingInput), {
         key: privateKey,
@@ -58,6 +68,7 @@ describe('Better Auth MCP Adapter', () => {
 
       expect(session).toMatchObject({
         userId: 'user-123',
+        clientId: 'client-1',
         scopes: ['read', 'write'],
         accessToken: token,
       })
@@ -118,7 +129,6 @@ describe('Better Auth MCP Adapter', () => {
 
     it.each([
       ['sub equals client_id and azp', { sub: 'c1', client_id: 'c1', azp: 'c1' }],
-      ['sub equals client_id', { sub: 'c1', client_id: 'c1' }],
       ['sub equals azp', { sub: 'c1', azp: 'c1' }],
     ])('rejects a machine token where %s', async (_name, claims) => {
       const token = mint({ ...claims, scope: 'read' })
@@ -135,6 +145,40 @@ describe('Better Auth MCP Adapter', () => {
       const session = await createBetterAuthMcpAdapter(options)(bearer(token))
 
       expect(session?.userId).toBe('user-123')
+      expect(session?.clientId).toBe('c1')
+    })
+
+    it.each([
+      ['no azp', { azp: undefined }],
+      ['an empty azp', { azp: '' }],
+      ['a non-string azp', { azp: 42 }],
+      ['no azp but a client_id', { azp: undefined, client_id: 'c1' }],
+    ])('refuses a user token carrying %s', async (_name, claims) => {
+      const token = mint({ sub: 'user-123', scope: 'read', ...claims })
+      expect(await createBetterAuthMcpAdapter(options)(bearer(token))).toBeNull()
+
+      const handler = vi.fn(async () => new Response('ok'))
+      const response = await withMcpAuth(options, handler)(bearer(token))
+      expect(response.status).toBe(401)
+      expect(handler).not.toHaveBeenCalled()
+    })
+
+    it('does not let a clientId claim choose the client id', async () => {
+      const token = mint({ sub: 'user-123', azp: 'c1', clientId: 'trusted-first-party' })
+      const session = await createBetterAuthMcpAdapter(options)(bearer(token))
+
+      expect(session?.clientId).toBe('c1')
+    })
+
+    it('drops a claim named actor', async () => {
+      const token = mint({
+        sub: 'user-123',
+        actor: { kind: 'human', userId: 'user-123', via: 'web' },
+      })
+      const session = await createBetterAuthMcpAdapter(options)(bearer(token))
+
+      expect(session).toMatchObject({ userId: 'user-123', clientId: 'client-1' })
+      expect(session).not.toHaveProperty('actor')
     })
 
     it('returns null without a token', async () => {
@@ -216,26 +260,78 @@ describe('Better Auth MCP Adapter', () => {
   })
 
   describe('mcpSessionToContextSession', () => {
-    it('should extract userId from MCP session', () => {
+    const agent = { kind: 'agent', clientId: 'client-1', onBehalfOf: 'user-456', via: 'mcp' }
+
+    it('returns the user id and the agent actor, and nothing else', () => {
       const mcpSession: McpSession = {
         userId: 'user-456',
+        clientId: 'client-1',
         scopes: ['admin'],
         accessToken: 'token-abc',
+        role: 'admin',
+        actor: { kind: 'human', userId: 'user-456', via: 'web' },
       }
 
-      const contextSession = mcpSessionToContextSession(mcpSession)
-
-      expect(contextSession).toEqual({ userId: 'user-456' })
+      expect(mcpSessionToContextSession(mcpSession)).toEqual({ userId: 'user-456', actor: agent })
     })
 
-    it('should work with minimal session', () => {
-      const mcpSession: McpSession = {
-        userId: 'user-789',
+    it('refuses a session with no client id', () => {
+      expect(() => mcpSessionToContextSession({ userId: 'user-456', clientId: '' })).toThrow(
+        /clientId/,
+      )
+    })
+
+    describe('in a context', () => {
+      const config: OpenSaasConfig = {
+        db: { provider: 'postgresql' },
+        lists: {
+          Note: {
+            fields: { label: text() },
+            access: {
+              operation: {
+                query: () => true,
+                create: ({ session }) => session !== null && session.actor?.kind !== 'agent',
+              },
+            },
+          },
+          AgentNote: {
+            fields: { label: text() },
+            access: {
+              operation: {
+                query: () => true,
+                create: ({ session }) =>
+                  session?.actor?.kind === 'agent' && session.actor.clientId === 'client-1',
+              },
+            },
+          },
+        },
       }
+      let database: TestDatabase
 
-      const contextSession = mcpSessionToContextSession(mcpSession)
+      beforeAll(async () => {
+        database = await createTestDatabase(config)
+      }, 120_000)
 
-      expect(contextSession).toEqual({ userId: 'user-789' })
+      afterAll(async () => {
+        await database?.close()
+      })
+
+      it('carries the agent actor, so a rule that denies agents denies it', async () => {
+        const context = database.context(
+          mcpSessionToContextSession({ userId: 'user-456', clientId: 'client-1' }),
+        )
+
+        expect(context.session?.actor).toEqual(agent)
+        expect(await context.db.Note.create({ data: { label: 'agent' } })).toBeNull()
+        expect(await context.db.AgentNote.create({ data: { label: 'agent' } })).not.toBeNull()
+      })
+
+      it('a session built by hand from the user id alone is not an agent', async () => {
+        const context = database.context({ userId: 'user-456' })
+
+        expect(await context.db.Note.create({ data: { label: 'person' } })).not.toBeNull()
+        expect(await context.db.AgentNote.create({ data: { label: 'person' } })).toBeNull()
+      })
     })
   })
 
@@ -243,6 +339,7 @@ describe('Better Auth MCP Adapter', () => {
     it('should return true when all required scopes are present', () => {
       const session: McpSession = {
         userId: 'user-123',
+        clientId: 'client-1',
         scopes: ['read', 'write', 'delete'],
       }
 
@@ -254,6 +351,7 @@ describe('Better Auth MCP Adapter', () => {
     it('should return false when some required scopes are missing', () => {
       const session: McpSession = {
         userId: 'user-123',
+        clientId: 'client-1',
         scopes: ['read'],
       }
 
@@ -264,6 +362,7 @@ describe('Better Auth MCP Adapter', () => {
     it('should return false when session has no scopes', () => {
       const session: McpSession = {
         userId: 'user-123',
+        clientId: 'client-1',
       }
 
       expect(hasScopes(session, ['read'])).toBe(false)
@@ -272,6 +371,7 @@ describe('Better Auth MCP Adapter', () => {
     it('should return false when scopes array is empty', () => {
       const session: McpSession = {
         userId: 'user-123',
+        clientId: 'client-1',
         scopes: [],
       }
 
@@ -281,6 +381,7 @@ describe('Better Auth MCP Adapter', () => {
     it('should return true when no scopes are required', () => {
       const session: McpSession = {
         userId: 'user-123',
+        clientId: 'client-1',
         scopes: ['read'],
       }
 
@@ -295,6 +396,7 @@ describe('Better Auth MCP Adapter', () => {
 
       const session: McpSession = {
         userId: 'user-123',
+        clientId: 'client-1',
         expiresAt: pastDate,
       }
 
@@ -307,6 +409,7 @@ describe('Better Auth MCP Adapter', () => {
 
       const session: McpSession = {
         userId: 'user-123',
+        clientId: 'client-1',
         expiresAt: futureDate,
       }
 
@@ -316,6 +419,7 @@ describe('Better Auth MCP Adapter', () => {
     it('should return false when no expiresAt is set', () => {
       const session: McpSession = {
         userId: 'user-123',
+        clientId: 'client-1',
       }
 
       expect(isSessionExpired(session)).toBe(false)

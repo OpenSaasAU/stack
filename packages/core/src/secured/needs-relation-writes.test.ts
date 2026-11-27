@@ -591,7 +591,12 @@ describe('a write returns a needs: [relation] field exactly as a read of that ro
     async function call(name: string, args: Record<string, unknown>): Promise<unknown> {
       const handlers = createMcpHandlers({
         config,
-        getSession: async () => ({ userId: 'user-123', role: 'staff', scopes: ['read', 'write'] }),
+        getSession: async () => ({
+          userId: 'user-123',
+          clientId: 'client-1',
+          role: 'staff',
+          scopes: ['read', 'write'],
+        }),
         getContext: contextFor,
       })
       const response = await handlers.POST(

@@ -61,8 +61,18 @@ function hasCustomSession(plugins: readonly BetterAuthPlugin[]): boolean {
   return plugins.some((plugin) => plugin.id === 'custom-session')
 }
 
+/** Throws when `sessionFields` names `actor`, which only the stack's hosts set on a session. */
+export function assertNoReservedSessionField(sessionFields: readonly string[]): void {
+  if (!sessionFields.includes('actor')) return
+  throw new Error(
+    '[@opensaas/stack-auth] sessionFields: "actor" is reserved. The stack\'s hosts set ' +
+      '`session.actor` themselves, so it cannot be projected from the better-auth session ' +
+      'or the user list. Rename the field.',
+  )
+}
+
 /**
- * Throws when a `sessionFields` entry resolves to nothing better-auth's session
+ * Throws when `sessionFields` names the reserved `actor`, or when an entry resolves to nothing better-auth's session
  * or the user list carries. An app using `customSession` is exempt, since that
  * plugin replaces the session shape with names this check cannot see.
  */
@@ -77,6 +87,7 @@ export function assertSessionFieldsResolvable(
   const extended = Object.keys(authConfig.extendUserList.fields ?? {})
   const customSession = hasCustomSession(authConfig.betterAuthPlugins)
 
+  assertNoReservedSessionField(authConfig.sessionFields)
   for (const entry of authConfig.sessionFields) {
     if (extended.includes(entry) && userOwned.has(entry)) {
       throw new Error(
