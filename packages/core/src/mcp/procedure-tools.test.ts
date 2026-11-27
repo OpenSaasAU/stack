@@ -201,7 +201,21 @@ const accessThrows = procedure({
   run: () => ({}),
 })
 
+function filterRule(): boolean {
+  return JSON.parse('{"authorId":{"equals":"alice"}}')
+}
+
+const filterAccess = procedure({
+  description: 'An access rule that returns a filter instead of a boolean',
+  input: z.object({}),
+  output: z.object({}),
+  access: filterRule,
+  expose: ['mcp'],
+  run: () => ({}),
+})
+
 const registry = {
+  filterAccess,
   createPost,
   renamePost,
   publishBatch,
@@ -267,11 +281,12 @@ describe('procedures as MCP tools', () => {
   function handlers(
     procedures: ProcedureRegistry<Ctx> = registry,
     config: OpenSaasConfig = schemaConfig(),
+    getContext: (session?: Session) => Promise<Ctx> = async (session) => database.context(session),
   ) {
     return createMcpHandlers({
       config,
       getSession,
-      getContext: async (session) => database.context(session),
+      getContext,
       procedures,
       onUnexpectedProcedureError,
     })
@@ -280,9 +295,13 @@ describe('procedures as MCP tools', () => {
   async function rpc(
     method: string,
     params: unknown,
-    init: { authorization?: string; procedures?: ProcedureRegistry<Ctx> } = {},
+    init: {
+      authorization?: string
+      procedures?: ProcedureRegistry<Ctx>
+      getContext?: (session?: Session) => Promise<Ctx>
+    } = {},
   ): Promise<{ status: number; body: z.infer<typeof rpcBody> }> {
-    const response = await handlers(init.procedures).POST(
+    const response = await handlers(init.procedures, undefined, init.getContext).POST(
       new Request('http://localhost/api/mcp', {
         method: 'POST',
         headers: {
@@ -359,6 +378,13 @@ describe('procedures as MCP tools', () => {
       const names = await listNames()
       expect(names).toContain('whoAmI')
       expect(names).not.toContain('humansOnly')
+    })
+
+    test('leaves out a procedure whose access rule returns anything but true', async () => {
+      expect(await listNames()).not.toContain('filterAccess')
+      const { result, envelope: answer } = await call('filterAccess', {})
+      expect(result.isError).toBe(true)
+      expect(answer.error?.code).toBe('DENIED')
     })
 
     test('leaves out a procedure whose access rule throws, and reports it by name', async () => {
@@ -497,6 +523,53 @@ describe('procedures as MCP tools', () => {
     })
   })
 
+  describe('a context procedures cannot run in', () => {
+    const notEngineBuilt = async (session?: Session): Promise<Ctx> =>
+      new Proxy(database.context(session), {
+        has: (target, key) => typeof key !== 'symbol' && Reflect.has(target, key),
+        get: (target, key) => (typeof key === 'symbol' ? undefined : Reflect.get(target, key)),
+      })
+    const withoutDb = async (session?: Session): Promise<Ctx> =>
+      new Proxy(database.context(session), {
+        get: (target, key) => (key === 'db' ? null : Reflect.get(target, key)),
+      })
+
+    test.each([
+      ['one the engine did not build', notEngineBuilt],
+      ['one with a null db', withoutDb],
+    ])('answers 500 on tools/list and tools/call: %s', async (_label, getContext) => {
+      const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+      try {
+        const listed = await handlers(registry, schemaConfig(), getContext).POST(
+          new Request('http://localhost/api/mcp', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', authorization: bearer('alice') },
+            body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+          }),
+        )
+        const called = await handlers(registry, schemaConfig(), getContext).POST(
+          new Request('http://localhost/api/mcp', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', authorization: bearer('alice') },
+            body: JSON.stringify({
+              jsonrpc: '2.0',
+              id: 2,
+              method: 'tools/call',
+              params: { name: 'createPost', arguments: { title: 'Never' } },
+            }),
+          }),
+        )
+        expect(listed.status).toBe(500)
+        expect(called.status).toBe(500)
+        expect(await called.json()).toEqual(await listed.json())
+        expect(logged).toHaveBeenCalledTimes(2)
+        expect(await rows()).toEqual([])
+      } finally {
+        logged.mockRestore()
+      }
+    })
+  })
+
   describe('with no list opting in to a generated write tool', () => {
     test('a procedure is still the agent’s way to write', async () => {
       const names = await listNames()
@@ -628,7 +701,7 @@ describe('procedures as MCP tools', () => {
         expose: ['mcp'],
         run: () => ({}),
       })
-      expect(() => handlers({ scalar })).toThrow("exposed to 'mcp', but its input is not an object")
+      expect(() => handlers({ scalar })).toThrow("exposed to 'mcp', but its input schema")
       const webScalar = procedure({
         description: 'Take a bare string over the web',
         input: z.string(),
@@ -638,6 +711,51 @@ describe('procedures as MCP tools', () => {
         run: () => ({}),
       })
       expect(() => handlers({ webScalar })).not.toThrow()
+    })
+
+    test('a registered object input is accepted and advertised as its object schema', async () => {
+      const registered = procedure({
+        description: 'Take an input registered under an id',
+        input: z.object({ postId: z.string() }).meta({ id: 'RegisteredPublishInput' }),
+        output: z.object({}),
+        access: () => true,
+        expose: ['mcp'],
+        scopes: [],
+        run: () => ({}),
+      })
+      const { body } = await rpc('tools/list', undefined, { procedures: { registered } })
+      const tools = toolList.parse(z.object({ tools: z.unknown() }).parse(body.result).tools)
+      const schema = tools.find((tool) => tool.name === 'registered')?.inputSchema
+      expect(schema).toMatchObject({
+        type: 'object',
+        properties: { postId: { type: 'string' } },
+        required: ['postId'],
+      })
+      expect(schema).not.toHaveProperty('$ref')
+    })
+
+    test.each([
+      ['a union', z.union([z.object({ a: z.string() }), z.object({ b: z.string() })])],
+      [
+        'a union',
+        z.discriminatedUnion('kind', [
+          z.object({ kind: z.literal('a') }),
+          z.object({ kind: z.literal('b') }),
+        ]),
+      ],
+      ['a union', z.object({ a: z.string() }).nullable()],
+      ['a JSON string', z.string()],
+    ])('an MCP-exposed input whose top level is %s is refused', (described, input) => {
+      const topLevel = procedure({
+        description: 'Take an input that is not one object',
+        input,
+        output: z.object({}),
+        access: () => true,
+        expose: ['mcp'],
+        run: () => ({}),
+      })
+      expect(() => handlers({ topLevel })).toThrow(`input schema's top level is ${described}`)
+      expect(() => handlers({ topLevel })).not.toThrow('declare the input as')
     })
 
     test('an unrepresentable schema is refused', () => {

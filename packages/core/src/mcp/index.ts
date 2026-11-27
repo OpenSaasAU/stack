@@ -4,6 +4,12 @@
  */
 
 export { createMcpHandlers, mcpContextSession, McpSessionError } from './handler.js'
-export type { McpContextSession } from './handler.js'
+export type {
+  McpContextSession,
+  McpHandlerOptions,
+  McpHandlers,
+  McpProcedureContext,
+  McpProcedureHandlerOptions,
+} from './handler.js'
 export type { McpSession, McpSessionProvider } from './types.js'
 export { McpToolError } from './tool-error.js'

@@ -14,6 +14,7 @@ import { agentActor, isActorClientId, type AgentActor } from '../access/actor.js
 import { controlFlowPredicateOf, decideAdvertisement } from '../access/decide-advertisement.js'
 import { mcpAdvertisement } from './advertise.js'
 import type { ProcedureHostContext, ProcedureRegistry } from '../procedures/procedure.js'
+import type { SessionOf } from '../procedures/http.js'
 import { ProcedureHostError } from '../procedures/validate.js'
 import {
   callProcedureTool,
@@ -202,6 +203,84 @@ function assertResourceMetadataUrl(value: string): void {
   }
 }
 
+/** What {@link createMcpHandlers} returns: one handler per HTTP method. */
+export interface McpHandlers {
+  GET: (req: Request) => Promise<Response>
+  POST: (req: Request) => Promise<Response>
+  DELETE: (req: Request) => Promise<Response>
+}
+
+/** A context procedures can run in that the MCP handler can also narrow to the engine's face. */
+export type McpProcedureContext = ProcedureHostContext & AnyStackContext
+
+/** Options for {@link createMcpHandlers} without procedures. */
+export interface McpHandlerOptions {
+  config: OpenSaasConfig
+  getSession: McpSessionProvider
+  /**
+   * The app's context factory — the generated `getContext` — whose return the
+   * handlers narrow to the engine's face with {@link engineContextOf}. Neither
+   * face is assignable to the other, so the boundary takes both and narrows
+   * once, the way `AdminUI` and `createAuth` do.
+   */
+  getContext: (session?: ContextSession) => Promise<AnyStackContext>
+  procedures?: undefined
+  onUnexpectedProcedureError?: undefined
+  /**
+   * Absolute URL of the RFC 9728 protected resource metadata document. When set,
+   * the 401 challenge carries it as `resource_metadata` so a spec-following MCP
+   * client can discover the authorization server.
+   */
+  resourceMetadataUrl?: string
+}
+
+/**
+ * Options for {@link createMcpHandlers} serving an application's procedures
+ * beside the generated, custom and plugin tools.
+ *
+ * @typeParam C - the application's own context, inferred from `procedures`.
+ */
+export interface McpProcedureHandlerOptions<C extends McpProcedureContext> {
+  config: OpenSaasConfig
+  getSession: McpSessionProvider
+  /**
+   * The generated `getContext`. The handler calls it with the agent's session
+   * and runs each procedure in the context it returns; a context the engine
+   * did not build, or one procedures cannot run in, answers `500`.
+   */
+  getContext: (session?: SessionOf<C>) => Promise<C>
+  /**
+   * The application's procedure registry. Each procedure whose `expose`
+   * includes `'mcp'` is a tool named after it, listed with its description
+   * and its input schema as JSON Schema, and called through the same pipeline
+   * the HTTP host runs, under the agent's session. Any other procedure is
+   * neither listed nor callable and answers exactly as an unknown tool does.
+   *
+   * A procedure's tool is listed only when the token holds its scopes (its
+   * own `scopes`, else `mcp.scopes.write`) and its access rule returns
+   * `true`, and both are checked again on every call. The tool result's text
+   * is the result envelope as JSON, `{ success: true, data }` or `{ success:
+   * false, error: { code, message, fieldErrors? } }`, the same body the HTTP
+   * host answers with; a failure also sets `isError`. A missing scope is
+   * `DENIED` with the scopes named.
+   *
+   * The registry is checked when the handlers are created, exactly as the
+   * HTTP host checks it, and an MCP-exposed procedure whose input is not a
+   * JSON object at the top level is refused, since a tool's arguments are one
+   * JSON object.
+   */
+  procedures: ProcedureRegistry<C>
+  /**
+   * Told of every procedure failure the operator should see, with the
+   * procedure's name, exactly as the HTTP host's `onUnexpectedError` is;
+   * the caller receives `INTERNAL` with no detail. Also told of an access
+   * rule that throws while tools are listed. Default `console.error`.
+   */
+  onUnexpectedProcedureError?: (error: unknown, procedureName: string) => void
+  /** As {@link McpHandlerOptions.resourceMetadataUrl}. */
+  resourceMetadataUrl?: string
+}
+
 /**
  * Create MCP route handlers
  *
@@ -212,67 +291,30 @@ function assertResourceMetadataUrl(value: string): void {
  * import { createBetterAuthMcpAdapter } from '@opensaas/stack-auth/mcp'
  * import config from '@/opensaas.config'
  * import { getContext } from '@/.opensaas/context'
+ * import { procedures } from '@/lib/procedures'
  *
  * const { GET, POST, DELETE } = createMcpHandlers({
  *   config: await config,
  *   getSession: createBetterAuthMcpAdapter({ resource, baseURL }),
- *   getContext
+ *   getContext,
+ *   procedures,
  * })
  *
  * export { GET, POST, DELETE }
  * ```
  */
-export function createMcpHandlers<C extends AnyStackContext = AnyStackContext>(options: {
-  config: OpenSaasConfig
-  getSession: McpSessionProvider
-  /**
-   * The app's context factory — the generated `getContext` — whose return the
-   * handlers narrow to the engine's face with {@link engineContextOf}. Neither
-   * face is assignable to the other, so the boundary takes both and narrows
-   * once, the way `AdminUI` and `createAuth` do.
-   */
-  getContext: (session?: ContextSession) => Promise<C>
-  /**
-   * The application's procedure registry. Each procedure exposing `'mcp'` is
-   * a tool named after it, listed with its description and its input schema
-   * as JSON Schema, and called through the same pipeline the HTTP host runs,
-   * under the agent's session. One not exposing `'mcp'` is neither listed nor
-   * callable and answers exactly as an unknown tool does.
-   *
-   * A procedure's tool is listed only when the token holds its scopes (its
-   * own `scopes`, else `mcp.scopes.write`) and its access rule admits the
-   * session, and both are checked again on every call. The tool result's
-   * text is the result envelope as JSON, `{ success: true, data }` or
-   * `{ success: false, error: { code, message, fieldErrors? } }`, the same
-   * body the HTTP host answers with; a failure also sets `isError`. A missing
-   * scope is `DENIED` with the scopes named.
-   *
-   * The registry is checked when the handlers are created, exactly as the
-   * HTTP host checks it, and an MCP-exposed procedure whose input is not an
-   * object is refused, since a tool's arguments are one JSON object.
-   */
-  procedures?: ProcedureRegistry<NoInfer<C> & ProcedureHostContext>
-  /**
-   * Told of every procedure failure the operator should see, with the
-   * procedure's name, exactly as the HTTP host's `onUnexpectedError` is;
-   * the caller receives `INTERNAL` with no detail. Also told of an access
-   * rule that throws while tools are listed. Default `console.error`.
-   */
-  onUnexpectedProcedureError?: (error: unknown, procedureName: string) => void
-  /**
-   * Absolute URL of the RFC 9728 protected resource metadata document. When set,
-   * the 401 challenge carries it as `resource_metadata` so a spec-following MCP
-   * client can discover the authorization server.
-   */
-  resourceMetadataUrl?: string
-}): {
-  GET: (req: Request) => Promise<Response>
-  POST: (req: Request) => Promise<Response>
-  DELETE: (req: Request) => Promise<Response>
-} {
+export function createMcpHandlers(options: McpHandlerOptions): McpHandlers
+export function createMcpHandlers<C extends McpProcedureContext>(
+  options: McpProcedureHandlerOptions<C>,
+): McpHandlers
+export function createMcpHandlers(
+  options: McpHandlerOptions | McpProcedureHandlerOptions<McpProcedureContext>,
+): McpHandlers {
   const { config, getSession } = options
+  const appContextFor = (session?: ContextSession): Promise<AnyStackContext> =>
+    options.getContext(session)
   const getContext = async (session?: ContextSession): Promise<AccessContext> =>
-    engineContextOf(await options.getContext(session))
+    engineContextOf(await appContextFor(session))
 
   if (!config.mcp?.enabled) {
     const notEnabledHandler = async () =>
@@ -286,21 +328,8 @@ export function createMcpHandlers<C extends AnyStackContext = AnyStackContext>(o
   assertNoDefaultWriteTools(config)
   assertListMembersResolve(config)
 
-  const procedureTools =
-    options.procedures === undefined
-      ? new Map()
-      : mcpProcedureTools<C & ProcedureHostContext>(options.procedures, config)
+  const procedureTools = mcpProcedureTools<McpProcedureContext>(options.procedures, config)
   const reportProcedureError = procedureErrorReporter(options.onUnexpectedProcedureError)
-
-  const procedureContext = async (session: McpSession): Promise<C & ProcedureHostContext> => {
-    const context = await options.getContext(mcpContextSession(session))
-    if (!isProcedureHostContext(context)) {
-      throw new ProcedureHostError(
-        'createMcpHandlers: `getContext` returned a context procedures cannot run in. Pass the generated `getContext`.',
-      )
-    }
-    return context
-  }
 
   const basePath = config.mcp.basePath || '/api/mcp'
 
@@ -367,25 +396,19 @@ export function createMcpHandlers<C extends AnyStackContext = AnyStackContext>(o
       }
 
       if (body.method === 'tools/list') {
-        const appContext = await options.getContext(mcpContextSession(session))
+        const appContext = await appContextFor(mcpContextSession(session))
         const context = engineContextOf(appContext)
         bindHeldScopes(context, session.scopes ?? [])
-        let procedureToolList: McpTool[] = []
-        if (procedureTools.size > 0) {
-          if (isProcedureHostContext(appContext)) {
-            procedureToolList = await listedProcedureTools(
-              procedureTools,
-              appContext,
-              config,
-              session.scopes ?? [],
-              reportProcedureError,
-            )
-          } else {
-            console.error(
-              '[opensaas] createMcpHandlers: `getContext` returned a context procedures cannot run in, so no procedure is listed. Pass the generated `getContext`.',
-            )
-          }
-        }
+        const procedureToolList =
+          procedureTools.size === 0
+            ? []
+            : await listedProcedureTools(
+                procedureTools,
+                procedureContextOf(appContext),
+                config,
+                session.scopes ?? [],
+                reportProcedureError,
+              )
         return await handleToolsList(config, context, session, procedureToolList, body.id)
       }
 
@@ -394,10 +417,12 @@ export function createMcpHandlers<C extends AnyStackContext = AnyStackContext>(o
         const procedureTool =
           typeof toolName === 'string' ? procedureTools.get(toolName) : undefined
         if (procedureTool !== undefined) {
-          const result = await callProcedureTool(procedureTool, body.params?.arguments, {
+          const context = procedureContextOf(await appContextFor(mcpContextSession(session)))
+          const args: unknown = body.params?.arguments
+          const result = await callProcedureTool(procedureTool, args, {
             config,
             held: session.scopes ?? [],
-            context: () => procedureContext(session),
+            context: async () => context,
             report: reportProcedureError,
           })
           return createToolResultResponse(result, body.id)
@@ -442,12 +467,34 @@ function isProcedureHostContext<T extends object>(value: T): value is T & Proced
   return (
     'db' in value &&
     typeof value.db === 'object' &&
+    value.db !== null &&
     'session' in value &&
     'storage' in value &&
     'plugins' in value &&
+    typeof value.plugins === 'object' &&
+    value.plugins !== null &&
     'transaction' in value &&
     typeof value.transaction === 'function'
   )
+}
+
+/**
+ * The context a procedure runs in, on both `tools/list` and `tools/call`: one
+ * the engine built and that carries every member a procedure reaches. Any
+ * other is the application's misconfiguration, which the handler answers with
+ * `500` as it does an unusable session.
+ *
+ * @throws {EngineContextUnavailableError} for a context the engine did not build.
+ * @throws {ProcedureHostError} for one procedures cannot run in.
+ */
+function procedureContextOf(appContext: AnyStackContext): McpProcedureContext {
+  engineContextOf(appContext)
+  if (!isProcedureHostContext(appContext)) {
+    throw new ProcedureHostError(
+      'createMcpHandlers: `getContext` returned a context procedures cannot run in. Pass the generated `getContext`.',
+    )
+  }
+  return appContext
 }
 
 function jsonRpcError(code: number, message: string): Response {

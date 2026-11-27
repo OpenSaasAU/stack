@@ -30,17 +30,35 @@ export interface McpToolResult {
   isError?: true
 }
 
+const LOCAL_DEFINITION = /^#\/\$defs\/(.+)$/
+
+function rootOf(schema: z.core.JSONSchema.BaseSchema): z.core.JSONSchema.BaseSchema {
+  const id = schema.$ref === undefined ? undefined : LOCAL_DEFINITION.exec(schema.$ref)?.[1]
+  const definition = id === undefined ? undefined : schema.$defs?.[id]
+  return typeof definition === 'object' ? definition : schema
+}
+
+function describeRoot(root: z.core.JSONSchema.BaseSchema): string {
+  if (root.anyOf !== undefined || root.oneOf !== undefined) return 'a union'
+  if (Array.isArray(root.type)) return `one of ${root.type.join(', ')}`
+  if (root.type !== undefined) return `a JSON ${root.type}`
+  return 'not a single JSON type'
+}
+
 function inputSchemaOf<C extends ProcedureHostContext>(
   name: string,
   procedure: Procedure<C>,
 ): McpToolInputSchema {
   const { $schema: _schema, ...schema } = z.toJSONSchema(procedure.input, { io: 'input' })
-  if (schema.type !== 'object') {
+  const root = rootOf(schema)
+  if (root.type !== 'object') {
     throw new ProcedureHostError(
-      `Procedure "${name}" is exposed to 'mcp', but its input is not an object. MCP passes a tool's arguments as one JSON object, so declare the input as \`z.object({ … })\`; for no input use \`z.object({})\`.`,
+      `Procedure "${name}" is exposed to 'mcp', but its input schema's top level is ${describeRoot(root)}. MCP passes a tool's arguments as one JSON object, so the top level must be an object: a union, a discriminated union or a \`.nullable()\` input is refused there. Move it under a key, for example \`z.object({ choice: … })\`.`,
     )
   }
-  return { ...schema, type: 'object', properties: schema.properties ?? {} }
+  const { $ref: _ref, ...rest } = schema
+  const { $id: _id, ...definition } = root === schema ? {} : root
+  return { ...rest, ...definition, type: 'object', properties: root.properties ?? {} }
 }
 
 /**
@@ -53,11 +71,12 @@ function inputSchemaOf<C extends ProcedureHostContext>(
  *   MCP-exposed procedure whose input is not an object.
  */
 export function mcpProcedureTools<C extends ProcedureHostContext>(
-  procedures: ProcedureRegistry<C>,
+  procedures: ProcedureRegistry<C> | undefined,
   config: OpenSaasConfig,
 ): ReadonlyMap<string, McpProcedureTool<C>> {
-  assertProcedureRegistry(procedures, { config })
   const tools = new Map<string, McpProcedureTool<C>>()
+  if (procedures === undefined) return tools
+  assertProcedureRegistry(procedures, { config })
   for (const name of Object.keys(procedures)) {
     const procedure = procedures[name]
     if (!isProcedure<C>(procedure) || !procedure.expose.includes('mcp')) continue

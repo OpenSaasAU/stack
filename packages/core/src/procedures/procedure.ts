@@ -322,7 +322,9 @@ function assertScopes(scopes: unknown): void {
   if (scopes === undefined) return
   if (
     !Array.isArray(scopes) ||
-    !scopes.every((scope) => typeof scope === 'string' && scope !== '' && !/\s/.test(scope))
+    !scopes.every(
+      (scope: unknown) => typeof scope === 'string' && scope !== '' && !/\s/.test(scope),
+    )
   ) {
     throw new ProcedureDefinitionError(
       "A procedure's `scopes` is an array of OAuth scope names, each a non-empty string without whitespace.",

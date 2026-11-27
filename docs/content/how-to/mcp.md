@@ -253,12 +253,14 @@ const { GET, POST, DELETE } = createMcpHandlers({
 
 How a procedure behaves as a tool:
 
-- **Only `expose: ['mcp']` reaches an agent.** A procedure exposed to `'web'`
+- **Only a procedure whose `expose` includes `'mcp'` reaches an agent.** One exposed to `'web'`
   alone is neither listed nor callable, and calling it answers `Unknown tool`,
   exactly as a name that does not exist.
 - **The tool name is the procedure's name**, and the tool carries its
   `description` and its input schema as JSON Schema. An MCP-exposed procedure's
-  input must be a `z.object`, because a tool's arguments are one JSON object.
+  input must be an object at its top level (a `z.object`, optionally wrapped in
+  `.optional()`, `.meta()` or a transform), because a tool's arguments are one
+  JSON object; a top-level union, discriminated union or `.nullable()` is refused.
 - **It runs the same pipeline as the web host**: access, then input parsing,
   then `run`, then output parsing, under the agent's session. The access rule
   sees the agent actor (`session.actor.kind === 'agent'`), and list access and
@@ -552,7 +554,8 @@ lists: {
 
 - `query` tools need the `read` scope(s); `create`, `update` and `delete` need the `write` scope(s).
 - A custom tool (`mcp.customTools` or a plugin's `registerMcpTool`) can declare `scopes: ['reports:run']`. A list custom tool that omits `scopes` requires the configured `write` scope (fail closed) when `mcp.scopes` is set; declare `scopes: []` to leave it open to any token.
-- A procedure exposed to MCP takes its own `scopes`, or requires the configured `write` scope when it names none; `scopes: []` leaves it open to any token.
+- A procedure exposed to MCP takes its own `scopes`, or requires the configured `write` scope when it names none; `scopes: []` leaves it open to any token. With no `mcp.scopes` configured, a procedure that names none requires no scope at all.
+- A procedure's scopes are the only scopes its call checks. List scopes gate the generated tools, not the `context.db` calls inside `run`, so a token holding only `read` can write a list through a procedure that declares `scopes: ['read']`. Give a procedure that writes a scope that says so.
 - A token missing a scope gets a tool error naming it, and the tool is left out of that session's `tools/list`.
 - A list's scope also applies through relations: a relation to a list whose `read` scope the token lacks cannot be selected, filtered or ordered on, and `connect` into a list needs its `write` scope. A `create` or `update` returns `{ success: true, id }` instead of the row when the token lacks that list's read tool or `read` scope. Access control still decides rows and fields.
 - In your own route handlers, `hasScopes(session, [...])` from `@opensaas/stack-auth/mcp` does the same check.

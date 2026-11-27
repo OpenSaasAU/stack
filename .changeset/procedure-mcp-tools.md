@@ -37,4 +37,4 @@ export const { GET, POST, DELETE } = createMcpHandlers({
 })
 ```
 
-A procedure is listed only when the token holds its scopes and its access rule admits the session, and both are checked again on every call; a missing scope is `DENIED` with the scope named. The registry is checked when the handlers are created, and an MCP-exposed procedure's input must be a `z.object`.
+A procedure is listed only when the token holds its scopes and its access rule admits the session, and both are checked again on every call; a missing scope is `DENIED` with the scope named. The registry is checked when the handlers are created, and an MCP-exposed procedure's input must be an object at its top level. With `procedures`, the context type is inferred from the registry, so the generated `getContext` and `procedure` builder type-check together.
