@@ -50,6 +50,10 @@ export const navigation: NavItem[] = [
             href: '/docs/how-to/composability',
           },
           {
+            title: 'Procedures',
+            href: '/docs/how-to/procedures',
+          },
+          {
             title: 'Bulk Actions',
             href: '/docs/how-to/bulk-actions',
           },

@@ -153,6 +153,9 @@ opensaas_implement_feature({
 - PascalCase for list names in config
 - Always use `context.db`, never direct Prisma
 - Define access control for every operation
+- Write an action as a procedure in `lib/procedures.ts`, called from a server action through `callProcedure` or from a client component through `createProcedureClient`; read in server components through `getServerContext()`. Only `lib/server.ts` imports `getContext`
+- Check the actor positively (`session?.actor?.kind === 'human'`), never `!== 'agent'`
+- Put a rule that must always hold in list access or a `validate` hook: a rule written only in a procedure is not an invariant, because the Admin UI and MCP write tools change the same list
 - Use typed field builders
 - Include hooks for business logic
 

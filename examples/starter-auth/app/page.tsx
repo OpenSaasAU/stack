@@ -22,6 +22,19 @@ export default function HomePage() {
           </div>
 
           <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+            <h2 className="text-xl font-semibold">Posts</h2>
+            <p className="mt-2 text-sm text-gray-600">
+              Write, publish and delete posts through procedures
+            </p>
+            <Link
+              href="/posts"
+              className="mt-4 inline-block rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Go to Posts
+            </Link>
+          </div>
+
+          <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
             <h2 className="text-xl font-semibold">Authentication</h2>
             <div className="mt-4 flex gap-2">
               <Link
