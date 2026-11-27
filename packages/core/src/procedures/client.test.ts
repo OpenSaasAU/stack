@@ -109,7 +109,17 @@ const agentOnly = procedure({
   run: () => ({}),
 })
 
+const nothing = procedure({
+  description: 'Return nothing at all',
+  input: z.object({}),
+  output: z.object({ count: z.number() }).optional(),
+  access: () => true,
+  expose: ['web'],
+  run: () => undefined,
+})
+
 const registry = {
+  nothing,
   createPost,
   book,
   ping,
@@ -297,6 +307,122 @@ describe('createProcedureClient', () => {
     expect(await call('agentOnly', {})).toEqual({ success: false, error: refused })
   })
 
+  test('the host refusing a method or a content type is a refused transport failure', async () => {
+    const rewriting =
+      (init: { method?: string; contentType?: string }) =>
+      async (request: Request): Promise<Response> => {
+        await record(request)
+        const headers = new Headers(request.headers)
+        if (init.contentType !== undefined) headers.set('content-type', init.contentType)
+        const method = init.method ?? request.method
+        const body = await request.text()
+        return host()(
+          new Request(request.url, {
+            method,
+            headers,
+            body: method === 'GET' || body === '' ? undefined : body,
+          }),
+        )
+      }
+    const viaGet = client(undefined, { fetch: rewriting({ method: 'GET' }) })
+    expect(await viaGet('ping', {})).toEqual({
+      success: false,
+      error: { code: 'transport', reason: 'refused', status: 405, message: 'Method not allowed' },
+    })
+    const asText = client(undefined, { fetch: rewriting({ contentType: 'text/plain' }) })
+    expect(await asText('ping', {})).toEqual({
+      success: false,
+      error: {
+        code: 'transport',
+        reason: 'refused',
+        status: 415,
+        message: 'Content-Type must be application/json',
+      },
+    })
+  })
+
+  test('an error body under a status the host never refuses with is malformed, not refused', async () => {
+    for (const status of [401, 403, 429, 500, 502, 503, 504]) {
+      const call = client(undefined, {
+        fetch: answering(() => Response.json({ error: 'upstream timeout' }, { status })),
+      })
+      expect(await call('ping', {}), String(status)).toEqual({
+        success: false,
+        error: {
+          code: 'transport',
+          reason: 'malformed',
+          status,
+          message: 'The response is not a procedure result',
+        },
+      })
+    }
+  })
+
+  test('an input JSON cannot carry resolves as unsent and sends nothing', async () => {
+    const send = vi.fn(browser())
+    const call = client('session=ada', { fetch: send })
+    const circular: { title: string; self?: object } = { title: 'Loop' }
+    circular.self = circular
+    const big = { title: 'Big', count: 1n }
+    const throwing = {
+      title: 'Throws',
+      toJSON(): never {
+        throw new Error('toJSON refused')
+      },
+    }
+    for (const input of [circular, big, throwing]) {
+      const result = await call('createPost', input)
+      expect(result).toMatchObject({
+        success: false,
+        error: { code: 'transport', reason: 'unsent', message: expect.any(String) },
+      })
+      expect(result.success === false && 'status' in result.error).toBe(false)
+    }
+    expect(send).not.toHaveBeenCalled()
+    expect(await database.context().sudo().db.Post.all()).toEqual([])
+  })
+
+  test('a name a host cannot serve is never sent, so it cannot leave the base path', async () => {
+    const send = vi.fn(browser())
+    const call = createProcedureClient<
+      Registry & {
+        '..': typeof ping
+        '../../admin/delete': typeof ping
+        'ping?x=1': typeof ping
+        'ping#x': typeof ping
+        'a/b': typeof ping
+        '': typeof ping
+      }
+    >({ baseUrl: `${ORIGIN}/api/procedures`, fetch: send })
+    const results = [
+      await call('..', {}),
+      await call('../../admin/delete', {}),
+      await call('ping?x=1', {}),
+      await call('ping#x', {}),
+      await call('a/b', {}),
+      await call('', {}),
+    ]
+    for (const result of results) {
+      expect(result).toMatchObject({
+        success: false,
+        error: { code: 'transport', reason: 'unsent' },
+      })
+    }
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  test('an output that accepts undefined is a success with no data key on the wire', async () => {
+    const wire: string[] = []
+    const send = async (request: Request): Promise<Response> => {
+      const response = await browser()(request)
+      wire.push(await response.clone().text())
+      return response
+    }
+    const result = await client(undefined, { fetch: send })('nothing', {})
+    expect(result).toStrictEqual({ success: true, data: undefined })
+    expect(wire).toEqual(['{"success":true}'])
+  })
+
   test('a body over the host limit is a refused transport failure', async () => {
     const result = await client('session=ada')('createPost', { title: 'x'.repeat(600) })
     expect(result).toEqual({
@@ -373,6 +499,9 @@ describe('createProcedureClient', () => {
       { status: 200, body: { success: false, error: { code: 7, message: 'Seven' } } },
       { status: 200, body: { success: false, error: { code: 'INTERNAL', message: 'Hidden' } } },
       { status: 500, body: { success: false, error: { code: 'SLOT_FULL', message: 'Full' } } },
+      { status: 200, body: { success: false, error: { code: 'transport', message: 'Lies' } } },
+      { status: 200, body: { success: false, error: { code: 'slot_full', message: 'Full' } } },
+      { status: 200, body: { success: false, error: { code: '', message: 'Empty' } } },
       {
         status: 400,
         body: {

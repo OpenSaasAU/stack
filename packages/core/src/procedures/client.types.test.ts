@@ -62,9 +62,23 @@ function outcome(result: ProcedureClientResultOf<typeof book>): string {
       return 'reserved'
     case 'transport':
       expectTypeOf(error).toEqualTypeOf<ProcedureTransportFailure>()
-      return error.reason
+      return reasonOf(error)
     default: {
       const unreachable: never = error
+      return unreachable
+    }
+  }
+}
+
+function reasonOf(error: ProcedureTransportFailure): string {
+  switch (error.reason) {
+    case 'network':
+    case 'refused':
+    case 'malformed':
+    case 'unsent':
+      return error.reason
+    default: {
+      const unreachable: never = error.reason
       return unreachable
     }
   }
@@ -141,6 +155,31 @@ describe('the procedure client types', () => {
     await call('ping')
     await call('ping', {})
     await call('ping', undefined)
+  })
+
+  test('a name typed as a union is not callable until it is narrowed', async () => {
+    const either = (pick: boolean): 'book' | 'ping' => (pick ? 'book' : 'ping')
+    const name = either(true)
+    // @ts-expect-error a union of names is not callable
+    await call(name)
+    // @ts-expect-error a union of names is not callable
+    await call(name, {})
+    // @ts-expect-error a union of names is not callable
+    await call(name, { slotId: 'a' })
+    if (name === 'book') await call(name, { slotId: 'a' })
+    else await call(name)
+  })
+
+  test('a registry type whose names are any string leaves no name callable', async () => {
+    const untyped = createProcedureClient({ fetch: unanswered })
+    // @ts-expect-error no type argument gives the client no names
+    await untyped('book', { slotId: 'a' })
+
+    const annotated: ProcedureRegistry<Ctx> = registry
+    expectTypeOf(annotated).toEqualTypeOf<ProcedureRegistry<Ctx>>()
+    const erased = createProcedureClient<typeof annotated>({ fetch: unanswered })
+    // @ts-expect-error an annotated registry has lost its names
+    await erased('book', { slotId: 'a' })
   })
 
   test('a value that is not a registry is refused', () => {

@@ -4,7 +4,13 @@
 // Its only runtime import is `codes.ts`, which imports nothing. See ADR-0086.
 
 import type * as z from 'zod'
-import { FAILURE_STATUS, isReservedFailureCode } from './codes.js'
+import {
+  DECLARED_FAILURE_CODE_PATTERN,
+  FAILURE_STATUS,
+  isRefusalStatus,
+  isReservedFailureCode,
+  PROCEDURE_NAME_PATTERN,
+} from './codes.js'
 import type { Procedure, ProcedureHostContext, ProcedureRegistry } from './procedure.js'
 import type { ProcedureFailure } from './result.js'
 
@@ -20,11 +26,16 @@ import type { ProcedureFailure } from './result.js'
  *   than `POST` (405), a body over the host's limit (413) or a content type
  *   it does not take (415).
  * - `'malformed'`: an answer arrived that is not the host's: not JSON, or
- *   JSON in neither of its shapes, as a proxy's error page is.
+ *   JSON in neither of its shapes under its status, as a proxy's error page
+ *   or a gateway's `{ "error": … }` under a 502 or 504 is. The call may or
+ *   may not have run.
+ * - `'unsent'`: the client sent nothing, because the input cannot be
+ *   serialised as JSON (a circular value, a `bigint`, a throwing `toJSON`)
+ *   or the name is not one a host can serve. The call did not run.
  */
 export interface ProcedureTransportFailure {
   code: 'transport'
-  reason: 'network' | 'refused' | 'malformed'
+  reason: 'network' | 'refused' | 'malformed' | 'unsent'
   /** The HTTP status, when a response arrived. */
   status?: number
   message: string
@@ -74,28 +85,60 @@ export type ProcedureCallArgs<TProcedure> =
     ? [input?: ProcedureInputOf<TProcedure>]
     : [input: ProcedureInputOf<TProcedure>]
 
+type IsUnion<T, TAll = T> = T extends unknown ? ([TAll] extends [T] ? false : true) : never
+
+/**
+ * The arguments after `TName`. A name typed as a union of names takes no
+ * input that type-checks: the input one procedure requires cannot be typed
+ * for another, so narrow the name to one procedure first.
+ */
+export type ProcedureArgsFor<TRegistry, TName extends keyof TRegistry> =
+  true extends IsUnion<TName> ? [input: never] : ProcedureCallArgs<TRegistry[TName]>
+
+/**
+ * The names a client of `TRegistry` may call. A registry type that admits any
+ * string as a name, as one annotated `ProcedureRegistry<Context>` or a client
+ * created without a type argument does, admits none.
+ */
+export type ProcedureNameOf<TRegistry> = string extends keyof TRegistry
+  ? never
+  : keyof TRegistry & string
+
 /**
  * Calls a procedure of `TRegistry` by name. The name, the input and the result
  * are typed from the registry, so an unknown name or a renamed input field is
  * a compile error.
  */
 export type ProcedureClient<TRegistry extends ProcedureRegistry<ProcedureHostContext>> = <
-  TName extends keyof TRegistry & string,
+  TName extends ProcedureNameOf<TRegistry>,
 >(
   name: TName,
-  ...args: ProcedureCallArgs<TRegistry[TName]>
+  ...args: ProcedureArgsFor<TRegistry, TName>
 ) => Promise<ProcedureClientResultOf<TRegistry[TName]>>
 
 /** Options for {@link createProcedureClient}. */
 export interface ProcedureClientOptions {
   /**
    * Where the host is mounted; each call is `POST <baseUrl>/<name>`. Default
-   * `/api/procedures`, the host's own default. An absolute URL reaches a host
-   * on another origin, which must list this page's origin in its
-   * `allowedOrigins` and needs `credentials: 'include'`.
+   * `/api/procedures`, the host's own default, and a host on the page's own
+   * origin needs nothing more.
+   *
+   * A host on another origin is not reachable with the host alone. Every call
+   * is a JSON `POST`, so the browser sends a CORS preflight first, and
+   * `createProcedureHandler` answers `OPTIONS` with 405 and sends no
+   * `Access-Control-*` headers: the browser blocks the call and it resolves to
+   * `'network'`. The application must answer the preflight and add the CORS
+   * headers itself (`Access-Control-Allow-Origin` naming this page's origin,
+   * `Access-Control-Allow-Credentials: true`, and for the preflight the
+   * method and `Content-Type`), in addition to listing this page's origin in
+   * the host's `allowedOrigins` and passing `credentials: 'include'`.
    */
   baseUrl?: string
-  /** Whether the session cookie is sent. Default `'same-origin'`. */
+  /**
+   * Whether the session cookie is sent. Default `'same-origin'`. `'include'`
+   * sends it to another origin, which also needs the CORS headers described
+   * under `baseUrl`.
+   */
   credentials?: 'same-origin' | 'include'
   /** Sends the request. Default the global `fetch`. */
   fetch?: (request: Request) => Promise<Response>
@@ -112,6 +155,7 @@ function isFieldErrors(value: unknown): boolean {
   return isRecord(value) && Object.values(value).every((message) => typeof message === 'string')
 }
 
+/** A success needs no `data` key: an output accepting `undefined` serialises without it. */
 function isSuccess<TData>(status: number, body: unknown): body is { success: true; data: TData } {
   return status === 200 && isRecord(body) && body.success === true
 }
@@ -126,11 +170,12 @@ function isFailure<TCode extends string>(
     return false
   }
   if (!isFieldErrors(error.fieldErrors)) return false
-  return status === (isReservedFailureCode(error.code) ? FAILURE_STATUS[error.code] : 200)
+  if (isReservedFailureCode(error.code)) return status === FAILURE_STATUS[error.code]
+  return status === 200 && DECLARED_FAILURE_CODE_PATTERN.test(error.code)
 }
 
 function isRefusal(status: number, body: unknown): body is { error: string } {
-  return status >= 400 && isRecord(body) && typeof body.error === 'string'
+  return isRefusalStatus(status) && isRecord(body) && typeof body.error === 'string'
 }
 
 function transport(
@@ -149,16 +194,26 @@ function messageOf(error: unknown, fallback: string): string {
 
 async function exchange<TData, TCode extends string>(
   send: (request: Request) => Promise<Response>,
-  url: string,
+  baseUrl: string,
+  name: string,
   credentials: 'same-origin' | 'include',
   input: unknown,
 ): Promise<ProcedureClientResult<TData, TCode>> {
-  const body = input === undefined ? undefined : JSON.stringify(input)
+  if (!PROCEDURE_NAME_PATTERN.test(name)) {
+    return transport('unsent', `${JSON.stringify(name)} is not a procedure name`)
+  }
+
+  let body: string | undefined
+  try {
+    body = input === undefined ? undefined : JSON.stringify(input)
+  } catch (error) {
+    return transport('unsent', messageOf(error, 'The input cannot be serialised as JSON'))
+  }
 
   let response: Response
   try {
     response = await send(
-      new Request(url, {
+      new Request(`${baseUrl}/${name}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         credentials,
@@ -199,10 +254,15 @@ async function exchange<TData, TCode extends string>(
  * three outcomes: `{ success: true, data }`, a failure from the pipeline
  * (`error.code` a reserved code or one the procedure declares), or a
  * {@link ProcedureTransportFailure} (`error.code` `'transport'`) when the
- * request was not answered, the host refused it before the pipeline ran, or
- * the answer is not the host's. The status and the shape are checked together:
- * an answer is read as a result only when it has the result's shape under the
- * status the host gives that result.
+ * request was not sent or not answered, the host refused it before the
+ * pipeline ran, or the answer is not the host's. The status and the shape are
+ * checked together: an answer is read as a result only when it has the
+ * result's shape under the status the host gives that result, and a refusal
+ * only under one of the host's own refusal statuses (404, 405, 413, 415).
+ *
+ * The platform `fetch` follows redirects: a 307 or 308 sends the `POST` again
+ * to the new location, while a 301, 302 or 303 turns it into a `GET`, which
+ * the host answers as a `'refused'` 405.
  *
  * Identity is the session cookie alone. The client sends no `Authorization`
  * header, which the host refuses, and takes no session argument. It sends the
@@ -221,7 +281,8 @@ async function exchange<TData, TCode extends string>(
  *
  * @typeParam TRegistry - `typeof` the registry object. Declare the registry
  *   with `satisfies ProcedureRegistry<Context>` rather than annotating it, so
- *   each name keeps its own procedure type.
+ *   each name keeps its own procedure type. A registry type whose names are
+ *   any string, an annotated one or none given, leaves no name callable.
  *
  * @example
  * ```typescript
@@ -247,13 +308,14 @@ export function createProcedureClient<TRegistry extends ProcedureRegistry<Proced
   const credentials = options.credentials ?? 'same-origin'
   const send = options.fetch ?? ((request: Request) => globalThis.fetch(request))
 
-  return <TName extends keyof TRegistry & string>(
+  return <TName extends ProcedureNameOf<TRegistry>>(
     name: TName,
-    ...args: ProcedureCallArgs<TRegistry[TName]>
+    ...args: ProcedureArgsFor<TRegistry, TName>
   ) =>
     exchange<ProcedureDataOf<TRegistry[TName]>, ProcedureCodeOf<TRegistry[TName]>>(
       send,
-      `${baseUrl}/${name}`,
+      baseUrl,
+      name,
       credentials,
       args[0],
     )
