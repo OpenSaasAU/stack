@@ -1,5 +1,594 @@
 # @opensaas/stack-core
 
+## 0.44.0-alpha.7
+
+### Minor Changes
+
+- [#2559](https://github.com/OpenSaasAU/stack/pull/2559) [`9ead1d9`](https://github.com/OpenSaasAU/stack/commit/9ead1d9233bde5ce9c5396fd56b43227cbeabd7a) Thanks [@borisno2](https://github.com/borisno2)! - Every session a host builds carries an actor, so access rules and hooks can tell a person on the web from an agent acting for one
+
+  `session.actor` is a reserved key. The procedure HTTP host sets a human actor and the MCP handler sets an agent actor. Only a host can set it: an `actor` no host created, whether from a token claim, a session provider, a `getSession` result or an object application code passes to `getContext` or `withSession`, is removed before the session reaches an access rule or a hook, and reads as absent.
+
+  ```typescript
+  import type { AccessControl } from '@opensaas/stack-core'
+
+  // { kind: 'human', userId, via: 'web' }
+  const humansOnly: AccessControl = ({ session }) => session?.actor?.kind === 'human'
+
+  // { kind: 'agent', clientId, onBehalfOf, via: 'mcp' }
+  const trustedAgent: AccessControl = ({ session }) =>
+    session?.actor?.kind === 'agent' && session.actor.clientId === 'my-first-party-client'
+  ```
+
+  An agent's session keeps the user's `userId`, so rules that scope by it still limit the agent to what that user can do. A session no host built (`getContext(session)` in a server component, `withSession`, a test context) has no actor, and an absent actor is never human: check `=== 'human'` or `=== 'agent'`, never `!== 'agent'`. The actor is the same frozen object in access rules, hooks, `sudo()` and `context.transaction()`.
+
+  `context.session` is now a frozen shallow copy of the session you pass, so assigning to it (`context.session.role = …`) throws. The object you passed is not frozen or changed. Rebinding it (`context.session = …`) throws `TypeError` on every context, including the ones hooks, access rules and `context.transaction()` callbacks receive.
+
+  A session must therefore be plain data, or an instance of a class with no private (`#`) fields and no methods that write to it. The copy keeps the prototype but never runs the constructor, so a `Map`, `Date` or array session, or a class reading private state, no longer works.
+
+  **This can break an existing custom MCP session provider.** `McpSession` now requires `clientId`, the OAuth client id the provider verified. A provider that returns a session without one fails to compile, and at runtime every request it authenticates is answered `500`, with the missing field named in the server log (`401` stays the answer for no session). Return the client the credential was issued to, read from the part the authorization server controls and never from a custom claim:
+
+  ```typescript
+  import type { McpSessionProvider } from '@opensaas/stack-core/mcp'
+
+  declare function verifyToken(
+    request: Request,
+  ): Promise<{ subject: string; clientId: string; scopes: string[] } | null>
+
+  export const getSession: McpSessionProvider = async (request) => {
+    const verified = await verifyToken(request)
+    if (verified === null) return null
+    return { userId: verified.subject, clientId: verified.clientId, scopes: verified.scopes }
+  }
+  ```
+
+  `createBetterAuthMcpAdapter` needs no change in your app: it now carries the verified token's `azp` as `clientId` and refuses a token without one. `clientId` and `actor` are no longer usable as custom claim names or flat session fields over MCP.
+
+  A context built under `withMcpAuth` carries the agent actor too: `mcpSessionToContextSession` now returns `{ userId, actor }`. For a custom provider, `mcpContextSession` from `@opensaas/stack-core/mcp` builds the session the MCP handler builds.
+
+  Other changes that can affect an app:
+
+  - `createProcedureHandler` fails a call with `INTERNAL` when `getSession` resolves a session with no usable `userId`, because it cannot say who is acting. `userId` must be an own property holding a non-empty string or a finite number. With `@opensaas/stack-auth`, `authPlugin({ sessionFields })` must include `userId` for an app that serves procedures; nothing refuses a config without it at startup, and the reported error names the fix.
+  - `sessionFields` naming `actor` is refused when the auth instance is created, and by `getSessionFromAuth`.
+  - `Session` now declares `actor`, so a `Session` augmentation must not redeclare it, and a rule annotated with an inline all-optional session type (`{ session: { role?: string } | null }`) no longer accepts `Session`. Annotate with `Session` or `AccessControl`.
+
+- [#2553](https://github.com/OpenSaasAU/stack/pull/2553) [`299fd83`](https://github.com/OpenSaasAU/stack/commit/299fd83a50593f4e8eee0265253b750964fd2327) Thanks [@borisno2](https://github.com/borisno2)! - A procedure can run several operations atomically and throw a named failure that rolls them back.
+
+  `run` opens no transaction of its own. Wrap the writes that must succeed together in `context.transaction`; its context is narrowed like the procedure's own (no `sudo`, `unsafe`, `withSession` or `serverAction`, at runtime as well as in the type) and keeps `.forUpdate()` and `advisoryLock`. Declare the outcomes a caller should handle in `failures`, and throw what `fail` constructs:
+
+  ```typescript
+  import * as z from 'zod'
+  import { procedure } from '@/.opensaas/procedures'
+
+  export const bookSlot = procedure({
+    description: 'Book a place in a slot',
+    input: z.object({ slotId: z.string() }),
+    output: z.object({ bookingId: z.string() }),
+    failures: { SLOT_FULL: 'The slot has no places left', NO_SLOT: 'No such slot' },
+    access: ({ session }) => session !== null,
+    expose: ['web'],
+    run: async ({ input, context, fail }) =>
+      context.transaction(async (tx) => {
+        const held = await tx.db.Slot.where({ id: { equals: input.slotId } })
+          .forUpdate()
+          .first()
+        if (held === null) throw fail('NO_SLOT')
+
+        const booking = await tx.db.Booking.create({ data: { slotId: input.slotId } })
+        const slot = await tx.db.Slot.where({ id: { equals: input.slotId } }).first()
+        const { taken } = await tx.db.Booking.where({ slotId: { equals: input.slotId } }).aggregate(
+          (aggregate) => ({ taken: aggregate.count() }),
+        )
+        // Thrown after the write: the booking is rolled back.
+        if (booking === null || slot === null || taken > slot.capacity) throw fail('SLOT_FULL')
+        return { bookingId: booking.id }
+      }),
+  })
+  ```
+
+  `fail` accepts only the codes the procedure declares, so an undeclared code is a compile error, and `ProcedureResultOf<typeof bookSlot>` exposes the declared codes beside the reserved ones. Over HTTP a declared failure answers 200 with `{ success: false, error: { code, message } }`; `VALIDATION` stays 400 with field errors and `RETRY` and `CONFLICT` stay 409. Nothing retries a `RETRY` automatically: it reports that the transaction rolled back, not that work outside it was undone.
+
+  Things to know:
+
+  - `throw` a failure. One returned from `run` or from a transaction callback is treated as thrown, so it still rolls the transaction back and answers its code.
+  - A code is upper-case letters, digits and `_`. Declaring a reserved code (`UNAUTHENTICATED`, `DENIED`, `INVALID_INPUT`, `VALIDATION`, `RETRY`, `CONFLICT`, `INTERNAL`) is a compile error and is refused when the procedure is defined.
+  - Output is parsed after `run` returns, so output that fails its schema is `INTERNAL` and does not undo a transaction that already committed.
+  - A defined procedure's `access` and `run` now take the application context (`{ context }` and `{ input, context }`) and narrow it themselves. This only matters to code that called them directly instead of going through a host.
+
+  See ADR-0086.
+
+- [#2431](https://github.com/OpenSaasAU/stack/pull/2431) [`6422e97`](https://github.com/OpenSaasAU/stack/commit/6422e97c0a5e22a3ae19c5cb2fbe9a076feee34e) Thanks [@borisno2](https://github.com/borisno2)! - Add client-safe entry points so `next build --webpack` builds the admin
+
+  A `'use client'` module that imported from `@opensaas/stack-core` or `@opensaas/stack-ui` pulled the
+  server graph into the browser bundle, and webpack refused it (`UnhandledSchemeError: node:async_hooks`).
+  Turbopack tolerated the same graph, so only `next build --webpack` failed. The admin's own client
+  components now import from two new entries that reach nothing server-side:
+
+  - `@opensaas/stack-core/client-safe` — `getUrlKey`, `getListKeyFromUrl`, `resolveListKeyFromUrl` and the
+    filter-query helpers (`parseFilterQuery`, `serializeFilterQuery`, `recordIdFilterToken`, …). The root
+    entry still exports the same bindings.
+  - `@opensaas/stack-ui/cells` — the cell components and `registerCellComponent`.
+
+  A field-registration module in your app should import from these, never from a package root:
+
+  ```ts
+  // lib/register-fields.ts
+  'use client'
+
+  // Before: pulled AdminUI and the server graph into the client bundle
+  // import { registerFieldComponent } from '@opensaas/stack-ui'
+  import { registerFieldComponent } from '@opensaas/stack-ui/fields'
+  import { registerCellComponent } from '@opensaas/stack-ui/cells'
+  import { getUrlKey } from '@opensaas/stack-core/client-safe'
+  ```
+
+  The rag and tiptap registration modules now do the same.
+
+- [#2562](https://github.com/OpenSaasAU/stack/pull/2562) [`76fce00`](https://github.com/OpenSaasAU/stack/commit/76fce00b7ea85b0ac2af8d4f979757d1600912e9) Thanks [@borisno2](https://github.com/borisno2)! - Add `createServerCaller`, the in-process host for procedures, and a session-resolved context for server components
+
+  Server actions call procedures without passing an identity, and server components read through a context whose session comes from the request. Neither takes a session: `getSession` takes no argument and runs on every call, and the session it resolves carries the same human actor the HTTP host sets.
+
+  ```typescript
+  // lib/server.ts
+  import { createServerCaller } from '@opensaas/stack-core/procedures'
+  import { config, getContext } from '@/.opensaas/context'
+  import { procedures } from '@/lib/procedures' // declared with `satisfies ProcedureRegistry<Context>`
+  import { getSession } from '@/lib/auth'
+
+  const server = createServerCaller({ procedures, config: await config, getContext, getSession })
+
+  export const callProcedure = server.call
+  export const getServerContext = server.context
+  ```
+
+  ```typescript
+  // app/posts/actions.ts
+  'use server'
+
+  import { redirect } from 'next/navigation'
+  import { callProcedure } from '@/lib/server'
+
+  export async function createPost(formData: FormData) {
+    const result = await callProcedure('createPost', { title: String(formData.get('title')) })
+    if (!result.success) return result.error
+    redirect(`/posts/${result.data.id}`)
+  }
+  ```
+
+  The caller performs no cookie or `Origin` check. In a server action the protection is Next's own server-action `Origin` check, and only that; a route handler that calls `call` for a mutation must be non-`GET` and check the origin itself (or use `createProcedureHandler`), and outside a request `getSession` must resolve `null`, since any session it resolves is acted on as a human on the web.
+
+  `call` runs the HTTP host's pipeline (exposure, access, input and output parsing, declared failures, redaction) and resolves to the same result, typed per procedure. Only procedures exposed to `'web'` are callable; any other name is `INTERNAL` and reported. A `redirect()` or `notFound()` thrown by the session resolver, the access rule or `run` reaches the framework in-process, and is `INTERNAL` over HTTP.
+
+- [#2425](https://github.com/OpenSaasAU/stack/pull/2425) [`bc97369`](https://github.com/OpenSaasAU/stack/commit/bc973693857be40587c0c6903557cf32fe118ce5) Thanks [@borisno2](https://github.com/borisno2)! - Resolve Session vocabulary answers lazily, one question at a time
+
+  A list's Session vocabulary no longer resolves every rule of the list on the first ask. Each answer (an operation, a field's `read`/`create`/`update`, `filterable`, `sortable`) is asked only when a consumer needs it, and is memoised on its own for the context's life, so asking a related list's `query` and one field's `filterable` asks only those two rules. The whole vocabulary is assembled from the same answers, so no rule is asked twice per context.
+
+  The admin's list view filter labels, Relationship table column labels and link controls, item form relationship options and operation gates ask a related list only the questions they need.
+
+  `resolveNavCounts` behaviour changes:
+
+  - A list whose vocabulary read fails is now omitted and logged instead of rejecting the whole call.
+  - A framework's control flow (`redirect()`, `notFound()`) raised by a list's count call (`aggregate`) was previously caught, logged and the badge dropped; it now propagates out of `resolveNavCounts`, as control flow from the vocabulary read already did.
+
+- [#2547](https://github.com/OpenSaasAU/stack/pull/2547) [`878c2ca`](https://github.com/OpenSaasAU/stack/commit/878c2ca8c30b0f7862ce71d639af00bacca7fa6d) Thanks [@borisno2](https://github.com/borisno2)! - Define an application action once as a procedure and call it over HTTP.
+
+  `opensaas generate` now writes `.opensaas/procedures.ts`, a `procedure` builder typed to your own `Context`. Keep procedures in a registry module of your own (never in `opensaas.config.ts`) and serve it with `createProcedureHandler` from `@opensaas/stack-core/procedures`:
+
+  ```typescript
+  // lib/procedures.ts
+  import * as z from 'zod'
+  import { procedure } from '@/.opensaas/procedures'
+
+  export const procedures = {
+    createPost: procedure({
+      description: 'Create a draft post authored by the caller',
+      input: z.object({ title: z.string().min(1) }),
+      output: z.object({ id: z.string(), title: z.string() }),
+      access: ({ session }) => session !== null,
+      expose: ['web'],
+      run: async ({ input, context }) => {
+        const post = await context.db.Post.create({ data: { title: input.title } })
+        if (post === null) throw new Error('Post was not created')
+        return post
+      },
+    }),
+  }
+
+  // app/api/procedures/[name]/route.ts
+  import { createProcedureHandler } from '@opensaas/stack-core/procedures'
+  import { getContext } from '@/.opensaas/context'
+  import { procedures } from '@/lib/procedures'
+  import { auth } from '@/lib/auth'
+
+  export const POST = createProcedureHandler({
+    procedures,
+    getContext,
+    getSession: async (request) => {
+      const result = await auth.api.getSession({ headers: request.headers })
+      return result ? { userId: result.user.id } : null
+    },
+    allowedOrigins: ['http://localhost:3000'],
+  })
+  ```
+
+  A caller POSTs JSON to `/api/procedures/<name>`. A call that reaches the procedure pipeline gets `{ success: true, data }` or `{ success: false, error: { code, message, fieldErrors? } }`. Transport failures do not use that envelope: 404 (unknown or unexposed name), 405 (not `POST`), 413 (body too large) and 415 (not `application/json`) answer `{ error: "<message>" }` with `error` as a string, so branch on the status first. Description, input, output, access and a non-empty `expose` are required. `run` receives `db`, `session`, `storage` and `plugins` only. A cookie request must come from an allowed origin, any `Authorization` header is refused, and unknown and unexposed names both answer 404. A default `z.object` output schema removes keys it does not declare and a strict one refuses them; a schema that does neither returns whatever `run` returned, and refusing such schemas when the host is created is [#2535](https://github.com/OpenSaasAU/stack/issues/2535). See ADR-0086.
+
+- [#2420](https://github.com/OpenSaasAU/stack/pull/2420) [`4374e65`](https://github.com/OpenSaasAU/stack/commit/4374e651496547cafd7094fbd8330620b088a2ff) Thanks [@borisno2](https://github.com/borisno2)! - `checkFieldAccess` and `isListQueryStaticallyDenied` are gone from core's entry points, nav counts read the Session vocabulary, and the vocabulary rethrows only real framework control flow
+
+  The admin reads the Session vocabulary instead of evaluating access rules itself, so the field-access evaluator leaves `@opensaas/stack-core/internal`, and `isListQueryStaticallyDenied` leaves the root entry point.
+
+  `resolveNavCounts` counts a list only where the session's vocabulary does not deny `query`. A `query` rule returning `null` or `undefined` now shows no nav count instead of a `0`, and a context that resolves no vocabulary counts nothing.
+
+  A rule that throws while the vocabulary or MCP decides what to advertise is rethrown only when it is framework control flow: a string `digest` starting with one of Next.js's control-flow prefixes (`NEXT_REDIRECT`, `NEXT_HTTP_ERROR_FALLBACK`, `NEXT_NOT_FOUND`, `DYNAMIC_SERVER_USAGE`, `BAILOUT_TO_CLIENT_SIDE_RENDERING`, `HANGING_PROMISE_REJECTION`, `NEXT_PRERENDER_INTERRUPTED`), or React's postpone. As Next's `unstable_rethrow` does, an `Error` whose `cause` chain reaches one of those has that cause rethrown, so a rule wrapping `redirect()` in `new Error(message, { cause })` still redirects. Any other throw, including one carrying an unrelated `digest` or an unrelated `cause`, denies that answer and logs a warning.
+
+  `isHookOnlyField(field)` is added to `@opensaas/stack-core/internal`, so the admin marks a Hook-only field without reading its `access` itself.
+
+- [#2516](https://github.com/OpenSaasAU/stack/pull/2516) [`9f17366`](https://github.com/OpenSaasAU/stack/commit/9f17366402cb263793d2a38c8ca52791ed79be1b) Thanks [@borisno2](https://github.com/borisno2)! - `needs` takes an object form that reaches any depth, so a computed field over a chain of relations no longer reads per row (ADR-0085).
+
+  ```ts
+  label: virtual({
+    type: 'string',
+    needs: { enrolment: { student: true, classTerm: ['class', 'term'] } },
+    hooks: {
+      resolveOutput: ({ item }) => `${item.enrolment?.student?.name ?? ''}`,
+    },
+  })
+  ```
+
+  A column takes `true`. A relation takes `true` for its rows' stored columns, or an array or object for exactly what is named beneath it. Every hop keeps its list's `query` access. The array form still reaches one hop.
+
+  - A synthetic back-relation (`from_<List>_<field>`) is accepted as a key in either form.
+  - `pnpm generate` warns when an array form names a relation whose list has a computed field with relation `needs` of its own, and prints the object form.
+  - A hook is handed shallow copies of its declared rows, carrying no relation it did not declare and each multi-column field under its own key in place of its part columns.
+  - A field `read` rule sees one hop: a relation on a related row is withheld.
+
+  Re-run `pnpm generate` after adopting it.
+
+- [#2566](https://github.com/OpenSaasAU/stack/pull/2566) [`e06f639`](https://github.com/OpenSaasAU/stack/commit/e06f639fb3099b71586771008bdf0be5f9a5f93d) Thanks [@borisno2](https://github.com/borisno2)! - Serve procedures as MCP tools
+
+  Pass the procedure registry to `createMcpHandlers`, and each procedure whose `expose` names `'mcp'` becomes a tool named after it, with its description and its input schema as JSON Schema. A call runs the same pipeline as `createProcedureHandler` under the agent's session, and the tool result's text is the result envelope as JSON (`{ success, data }` or `{ success: false, error: { code, message, fieldErrors? } }`), with `isError` set on a failure. A procedure not exposed to `'mcp'` answers as an unknown tool.
+
+  ```typescript
+  import * as z from 'zod'
+  import { createMcpHandlers } from '@opensaas/stack-core/mcp'
+  import { procedure } from '@/.opensaas/procedures'
+
+  const publishPost = procedure({
+    description: 'Publish one of your draft posts',
+    input: z.object({ postId: z.string() }),
+    output: z.object({ id: z.string() }),
+    access: ({ session }) => session !== null,
+    expose: ['web', 'mcp'],
+    scopes: ['posts:publish'], // omitted: requires mcp.scopes.write; [] requires none
+    run: async ({ input, context }) => {
+      const post = await context.db.Post.update({
+        where: { id: input.postId },
+        data: { status: 'published' },
+      })
+      if (post === null) throw new Error('Post was not published')
+      return post
+    },
+  })
+
+  export const { GET, POST, DELETE } = createMcpHandlers({
+    config: await config,
+    getSession,
+    getContext,
+    procedures: { publishPost },
+    onUnexpectedProcedureError: (error, name) => console.error(name, error),
+  })
+  ```
+
+  A procedure is listed only when the token holds its scopes and its access rule admits the session, and both are checked again on every call; a missing scope is `DENIED` with the scope named. The registry is checked when the handlers are created, and an MCP-exposed procedure's input must be an object at its top level. With `procedures`, the context type is inferred from the registry, so the generated `getContext` and `procedure` builder type-check together.
+
+- [#2546](https://github.com/OpenSaasAU/stack/pull/2546) [`a2598d5`](https://github.com/OpenSaasAU/stack/commit/a2598d5613274027b3c9500ad99f4b352547cecf) Thanks [@borisno2](https://github.com/borisno2)! - MCP write tools are now opt-in per list. This changes a default.
+
+  Enabling MCP gives each list its `list_<list>_query` tool and no generated `create`, `update` or `delete` tool. A list enables each write tool deliberately in its own `mcp.tools`; a write tool it has not enabled is neither listed nor callable (`Unknown tool`). An enabled tool still runs the list's access control, hooks and scopes. Custom and plugin tools are unchanged.
+
+  ```typescript
+  Post: list({
+    fields: { title: text() },
+    mcp: { tools: { create: true, update: true } }, // delete stays off
+  })
+  ```
+
+  `mcp.defaultTools` now takes `read` only. A config setting `create`, `update` or `delete` there, even to `false`, is refused by `config()` and `createMcpHandlers` with an error naming `lists.<List>.mcp.tools.<operation>`. `config()` refuses it even when `mcp.enabled` is not `true`, so an app with MCP switched off and the old `defaultTools` shape must remove those keys too.
+
+  To keep a list's write tools, move them onto the list:
+
+  ```typescript
+  // Before
+  mcp: { enabled: true, defaultTools: { read: true, create: true, update: true, delete: true } }
+
+  // After
+  mcp: { enabled: true, defaultTools: { read: true } }
+  // and on each list agents may write to:
+  Post: list({ fields: { /* ... */ }, mcp: { tools: { create: true, update: true, delete: true } } })
+  ```
+
+- [#2415](https://github.com/OpenSaasAU/stack/pull/2415) [`59e8d70`](https://github.com/OpenSaasAU/stack/commit/59e8d70029aa90c01373aa8600a665bc538523ce) Thanks [@borisno2](https://github.com/borisno2)! - The Session vocabulary can answer its row-dependent write questions for one stored row
+
+  A consumer naming one row by its id now gets the vocabulary with each `'row-dependent'` write answer resolved for that row, against the stored row, as the write decides: core reads the row by identity exactly as an update does before it decides (every column, no relation), then answers a field's `update` against it as the row's guarded `item`, and the list's `update` and `delete` by the same target resolution a write runs (a filter-returning rule allows only a row its filter matches). A rule reaching for a relation the stored row does not carry answers deny, as the write does, and a row that is not there answers every row-dependent write question deny. A field's `read` is not resolved per row: Field Visibility decides it on each read, against the row that read delivers, so a row-dependent `read` stays `'row-dependent'`. `allow` and `deny` answers pass through without their rules being asked again, a rule that reads the payload stays `'row-dependent'`, and a rule that throws answers deny and is logged. It is disclosure only; the write still decides.
+
+  It is internal plumbing on the engine context (`_sessionVocabularyForItem(listKey, id)`), which `@opensaas/stack-ui` reads for the admin edit form and for `serializeFieldConfigs(context, listKey, 'update', item)`.
+
+- [#2428](https://github.com/OpenSaasAU/stack/pull/2428) [`21bce38`](https://github.com/OpenSaasAU/stack/commit/21bce381ec8a4459bd591c3651962c4d6b21f646) Thanks [@borisno2](https://github.com/borisno2)! - Make the framework control-flow rethrow predicate injectable
+
+  A new `isFrameworkControlFlow` config option recognises a host framework's control flow thrown from inside an access rule, so the Session vocabulary, MCP's advertised vocabulary and the admin's nav counts let it propagate instead of folding it into a logged deny. It is OR'ed with the built-in recognition of Next.js's digests and React's postpone, and the `cause` walk applies to both. A predicate that throws recognises nothing and is reported once, so a rule's own throw still denies.
+
+  ```typescript
+  export default config({
+    db: { provider: 'postgresql' },
+    lists: {},
+    isFrameworkControlFlow: (thrown) => thrown instanceof Response,
+  })
+  ```
+
+  `opensaas generate` now wires Next.js's own `unstable_rethrow` into `.opensaas/context.ts` when the project's `package.json` declares `next`, so new Next control-flow signals are recognised without waiting for core to learn their digests. It is imported lazily, so the bundle still loads under plain Node, where it keeps the built-in recognition. Re-run `pnpm generate` to pick it up. A project without `next` gets the same context as before.
+
+- [#2452](https://github.com/OpenSaasAU/stack/pull/2452) [`dc6ae19`](https://github.com/OpenSaasAU/stack/commit/dc6ae1999ef9b4e02573f308dc8f69f03dabbd8b) Thanks [@borisno2](https://github.com/borisno2)! - Junction-edge detection, the delegate's singleton shape and write-field ownership now ask the List member resolver, so a context built over a config whose list or member names `opensaas generate` refuses throws generate's own error at construction. Generate still runs further checks that context construction does not.
+
+  **Migrating:** a test or script that builds a context over a hand-written config with names `opensaas generate` would refuse (for example a camelCase list key, or a list-only to-many) now fails at `getContext`/`createTestContext`. Fix the config so `pnpm generate` accepts it.
+
+- [#2418](https://github.com/OpenSaasAU/stack/pull/2418) [`4c5d2d2`](https://github.com/OpenSaasAU/stack/commit/4c5d2d275e667287b1ae5443dfb8b41902c84b48) Thanks [@borisno2](https://github.com/borisno2)! - The admin list view reads the Session vocabulary for everything it offers
+
+  The column picker, default columns, Preset views and the Filter builder offer only fields the session can read, sorting follows each field's `sortable` answer, and a field with `isFilterable: false` is absent from every place a filter can be built. A row-dependent readable field stays shown but is neither filterable nor sortable (ADR-0031). Count links and filter-chip labels read the related list's vocabulary, so a related list whose `query` rule returns `false`, `null` or `undefined` gets no link and no label lookup.
+
+  A session denied the list's `query` now sees an explicit "can't be shown here" state instead of an empty table, and keeps the Create button when it may still create (a write-only inbox). A Preset view's search drops every token naming a field the session cannot filter by (a never-readable or row-dependent field, or `isFilterable: false`), and a context that resolves no Session vocabulary shows the list's "could not be loaded" state instead of failing the page.
+
+  `collectFilterSpecs`, `buildListFilterWhere`, `collectFilterSuggestions` and `isFieldFilterableById` now answer from the context's Session vocabulary, which builds each Filter spec once per request: a `read` rule or a spec builder that throws denies that one field and is logged instead of failing the list. They answer for the context's own session and config, so `FilterAccessArgs` no longer takes a `session`, and `listConfig` and `config` must be the context's own. A context core did not build gets no specs and no throw:
+
+  ```ts
+  const specs = await collectFilterSpecs(listConfig, 'Post', config, { context })
+  ```
+
+  A throw carrying a string `digest` (Next.js's `redirect()`, `notFound()` and dynamic-usage bailouts) now propagates out of the Session vocabulary and the MCP vocabulary instead of being treated as a deny, so a rule that redirects still redirects.
+
+  The internal `_orderableKeys` context member and `collectUnreadableFields` are removed; read `context._sessionVocabulary(listKey)` instead (`fields.get(key)?.sortable`, `fields.get(key)?.read`).
+
+- [#2449](https://github.com/OpenSaasAU/stack/pull/2449) [`e2e18be`](https://github.com/OpenSaasAU/stack/commit/e2e18be4812600f83c924e62d1ece0b05ee0f180) Thanks [@borisno2](https://github.com/borisno2)! - The Write Pipeline's ownership, singleton and part-column checks ask the List member resolver instead of re-deriving them from the config.
+
+  - Writes on a config whose list or member names `opensaas generate` refuses now throw generate's own error.
+  - Under sudo, a Synthetic back-relation key whose value is `undefined` is now refused as undeclared, like any other unknown key.
+  - `RelationTargetMissingError` is removed from `@opensaas/stack-core`: a `connect` to an undeclared list now fails with generate's refusal, so the error could no longer be thrown.
+
+  **Migrating:** remove any `instanceof RelationTargetMissingError` checks. The same mistake (a relationship whose `ref` names a list that does not exist) is now refused by `pnpm generate`, with a message naming the list and field, before any context is built.
+
+- [#2412](https://github.com/OpenSaasAU/stack/pull/2412) [`ad85f09`](https://github.com/OpenSaasAU/stack/commit/ad85f095916eae5500e6e6b7e77e1ccbff24fa36) Thanks [@borisno2](https://github.com/borisno2)! - Add the Session vocabulary: one answer, per list and context, for what a session may be told ahead of any request (ADR-0084)
+
+  A context core built carries an internal `_sessionVocabulary(listKey)` member. It answers each field's read, create and update as `'allow'`, `'deny'` or `'row-dependent'`, each list operation by the engine's own rule (no rule, `null` and `undefined` deny; `true` or a filter allows), and whether each field is filterable and sortable. System fields (`id`, and automatic `createdAt`/`updatedAt`) have entries too, readable and never writable. A computed field and a relationship side that does not own the foreign key are never writable, and a hook-only field's writes stay denied under sudo. On a singleton list, `delete` is denied for every session, sudo included, and no field is filterable or sortable. A rule that throws, or a field rule that returns a filter, answers deny for that one question and is logged, so one broken rule never takes the rest of the list with it. Each context resolves with its own session and connection, once per list, and keeps the answer for its life: a write's transaction-bound hook context and its `afterTransaction` context each have their own, and a `resolveOutput` hook shares the answer of the read that ran it:
+
+  ```ts
+  import { engineContextOf } from '@opensaas/stack-core'
+
+  const vocabulary = await engineContextOf(context)._sessionVocabulary?.('Post')
+  vocabulary?.operations.update // 'allow' | 'deny' | 'row-dependent'
+  vocabulary?.fields.get('title') // { read, create, update, filterable, sortable, relationship }
+  ```
+
+- [#2469](https://github.com/OpenSaasAU/stack/pull/2469) [`2f48eab`](https://github.com/OpenSaasAU/stack/commit/2f48eab7d64911588624fe7e66741c0c0ba540a9) Thanks [@borisno2](https://github.com/borisno2)! - Add `@opensaas/stack-core/db-client`, the server-only subpath for `resolveRuntimeConnection`, and deprecate `@opensaas/stack-core/client`
+
+  `/client` sat beside `/client-safe` and read as browser-safe, but it reaches `pg`. `opensaas generate` now emits the new subpath in `.opensaas/context.ts`. `/client` still resolves to the same bindings, marked `@deprecated`, and is removed at the next major.
+
+  Migration — regenerate (`pnpm generate`) and update any hand-written import:
+
+  ```typescript
+  // Before
+  import { resolveRuntimeConnection } from '@opensaas/stack-core/client'
+
+  // After
+  import { resolveRuntimeConnection } from '@opensaas/stack-core/db-client'
+  ```
+
+- [#2462](https://github.com/OpenSaasAU/stack/pull/2462) [`5621a97`](https://github.com/OpenSaasAU/stack/commit/5621a977d4d13104c72d5166301ab8a3d2c535e7) Thanks [@relationship({](https://github.com/relationship({), [@relationship({](https://github.com/relationship({)! - `opensaas generate` refuses a computed (virtual) or multi-column field keyed like another field's foreign-key or part column
+
+  Such a field used to be accepted and then win every name lookup, so the foreign-key or part column it shadowed could not be named in `where`, `orderBy` or `select`. Generate, `deriveContract` and the List member resolver now refuse it with the same message, naming the list, both fields and the fix. A stored field keyed like another field's part column, already refused, now gets the same named message (reason `part-column-collision`):
+
+  ```
+  List "Post": fields.authorId collides with the foreign-key column "authorId" that fields.author derives for its relationship. Rename fields.authorId, or remove it and read the key through fields.author.
+  ```
+
+  Migration: rename the virtual or multi-column field.
+
+  ```ts
+  // Before: refused by generate
+  Post: list({
+    fields: {
+   ref: 'Author' }),
+      authorId: virtual({ type: 'string', hooks: { resolveOutput: () => '' } }),
+    },
+  })
+
+  // After
+  Post: list({
+    fields: {
+   ref: 'Author' }),
+      authorLabel: virtual({ type: 'string', hooks: { resolveOutput: () => '' } }),
+    },
+  })
+  ```
+
+- [#2482](https://github.com/OpenSaasAU/stack/pull/2482) [`bab30df`](https://github.com/OpenSaasAU/stack/commit/bab30dfe01663f03ba49717d5c3d688ef0792f42) Thanks [@borisno2](https://github.com/borisno2)! - Require `assembleColumns` on every multi-column field
+
+  A field whose `getContractField` returns `{ kind: 'columns' }` must now supply `assembleColumns`. Without it the field had no value under its own key, so `.select()` returned nothing for it, a `needs` entry naming it gave the hook nothing, and MCP advertised a field it never returned. `opensaas generate` now refuses such a config, and so does building a context over it; each names the list, the field and the member. Generate reports:
+
+  ```
+  Profile.avatar (type "avatar") is missing assembleColumns()
+  ```
+
+  and context construction throws:
+
+  ```
+  Field "Profile.avatar" (type "avatar") is not self-contained: it does not declare assembleColumns(). ...
+  ```
+
+  Migration: supply `assembleColumns` on any `kind: 'columns'` field.
+
+  ```typescript
+  import type { BaseFieldConfig, TypeInfo } from '@opensaas/stack-core/extend'
+  import { z } from 'zod'
+
+  const avatar: BaseFieldConfig<TypeInfo> = {
+    type: 'avatar',
+    outputType: '{ filename: string; filesize: number } | null',
+    getZodSchema: () => z.object({ filename: z.string(), filesize: z.number() }).nullable(),
+    getContractField: () => ({
+      kind: 'columns',
+      columns: [
+        { name: 'avatar_filename', type: { pack: 'pg', type: 'text' }, nullable: true },
+        { name: 'avatar_filesize', type: { pack: 'pg', type: 'int' }, nullable: true },
+      ],
+    }),
+    assembleColumns: (_fieldName, row) =>
+      row.avatar_filename === null
+        ? null
+        : { filename: row.avatar_filename, filesize: row.avatar_filesize },
+    splitColumns: (_fieldName, value) => {
+      const parts = typeof value === 'object' && value !== null ? value : {}
+      return {
+        avatar_filename: 'filename' in parts ? parts.filename : null,
+        avatar_filesize: 'filesize' in parts ? parts.filesize : null,
+      }
+    },
+  }
+  ```
+
+  `image()`/`file()` in multi-column mode and `embedding()` already supply it.
+
+- [#2561](https://github.com/OpenSaasAU/stack/pull/2561) [`df9191f`](https://github.com/OpenSaasAU/stack/commit/df9191f4b8f9810cc25280a822b8786d03cca3cd) Thanks [@borisno2](https://github.com/borisno2)! - Call procedures from the browser with a typed client.
+
+  `createProcedureClient` from the new `@opensaas/stack-core/procedures/client` entry calls the HTTP host with the name, the input and the result inferred from your registry. Give it the registry's **type**: the import is erased, so the entry is safe in a `'use client'` module and no server code reaches the bundle.
+
+  Declare the registry with `satisfies`, which keeps each procedure's own type:
+
+  ```typescript
+  // lib/procedures.ts
+  import type { ProcedureRegistry } from '@opensaas/stack-core/procedures'
+  import type { Context } from '@/.opensaas/types'
+
+  export const procedures = { createPost, bookSlot } satisfies ProcedureRegistry<Context>
+  ```
+
+  ```typescript
+  // components/book.ts
+  'use client'
+
+  import { createProcedureClient } from '@opensaas/stack-core/procedures/client'
+  import type { procedures } from '@/lib/procedures'
+
+  const call = createProcedureClient<typeof procedures>()
+
+  export async function book(slotId: string): Promise<string> {
+    const result = await call('bookSlot', { slotId })
+    if (result.success) return `Booked ${result.data.bookingId}`
+    switch (result.error.code) {
+      case 'SLOT_FULL':
+        return 'That slot is full'
+      case 'transport':
+        return 'Could not reach the server'
+      default:
+        return result.error.message
+    }
+  }
+  ```
+
+  An unknown procedure name or a renamed input field is a compile error (and a registry type that admits any name, an annotated one or a missing type argument, leaves no name callable), and `error.code` is the union of the reserved codes, the codes that procedure declares and `'transport'`. A call never throws: a request the client did not send (an input JSON cannot carry, or a name no host serves), a request that was never answered, a refusal from the host before the pipeline ran (404, 405, 413, 415) and a response that is not a procedure result all resolve to `{ success: false, error: { code: 'transport', reason, status?, message } }` with `reason` `'unsent'`, `'network'`, `'refused'` or `'malformed'`. The client never retries, `RETRY` included, sends no `Authorization` header, and sends the input as given: leaving it out sends an empty body, which is allowed only where the input schema accepts `undefined`. Options are `baseUrl` (default `/api/procedures`), `credentials` (default `'same-origin'`) and `fetch`. A host on the page's own origin needs nothing more. A host on another origin also needs the application to answer the CORS preflight and add the CORS headers itself, since the host sends none. See ADR-0086.
+
+- [#2552](https://github.com/OpenSaasAU/stack/pull/2552) [`6e9c64f`](https://github.com/OpenSaasAU/stack/commit/6e9c64f6afa74705ac5f5a34a5d13829ff4ba4ac) Thanks [@borisno2](https://github.com/borisno2)! - Refuse unsafe procedure definitions when the host is created.
+
+  `createProcedureHandler` now throws `ProcedureHostError`, naming the procedure, the offending part and the fix, for:
+
+  - an `input` or `output` schema that does not convert to JSON Schema on its own side (dates, bigints, output transforms, `z.undefined()`, `z.void()`)
+  - the open-ended shapes Zod provides, at any depth: `z.any()`, `z.unknown()`, `z.json()`, a loose object, a `z.looseRecord` or a `z.record` of `any`/`unknown`; and an output object with a `.catchall()`. A hand-written schema that accepts as much is not recognised
+  - `z.file()`, which a JSON body cannot carry
+  - a `config` option that is not a resolved config, such as an un-awaited promise
+  - a name matching the reserved `list_<list>_<operation>` pattern of generated MCP tools
+  - a name a list custom tool or a plugin-registered MCP tool already carries, when the host is given the config
+
+  ```typescript
+  // app/api/procedures/[name]/route.ts
+  import { createProcedureHandler } from '@opensaas/stack-core/procedures'
+  import config from '@/opensaas.config'
+  import { getContext } from '@/.opensaas/context'
+  import { procedures } from '@/lib/procedures'
+  import { getSession } from '@/lib/auth'
+
+  export const POST = createProcedureHandler({
+    procedures,
+    config: await config, // optional: adds the custom and plugin tool name check
+    getContext,
+    getSession: (request) => getSession(request.headers),
+    allowedOrigins: ['http://localhost:3000'],
+  })
+  ```
+
+  A procedure that takes no input uses `z.object({}).optional()`, one that returns nothing uses `z.null()`, and a date travels as `z.iso.datetime()`. The checks are also exported for other hosts: `assertProcedureRegistry`, `assertProcedureSchemas` and `assertProcedureNamesAvailable`.
+
+### Patch Changes
+
+- [#2488](https://github.com/OpenSaasAU/stack/pull/2488) [`ae613f9`](https://github.com/OpenSaasAU/stack/commit/ae613f9fce8b76eaeb93354e527ad041504cb965) Thanks [@borisno2](https://github.com/borisno2)! - `tx.advisoryLock()` now poisons its transaction when the lock statement fails, so a caught failure still rolls back with the original cause.
+
+- [#2522](https://github.com/OpenSaasAU/stack/pull/2522) [`7cb1192`](https://github.com/OpenSaasAU/stack/commit/7cb1192bc538049ec8f3cd91233a89daf9baafdf) Thanks [@borisno2](https://github.com/borisno2)! - Fix `bigInt` writes given a number or numeric string failing with a raw encode error; validation's coerced bigint now reaches the write.
+
+- [#2471](https://github.com/OpenSaasAU/stack/pull/2471) [`4b768f2`](https://github.com/OpenSaasAU/stack/commit/4b768f232d8fed6af88b292e469e05ffb5203983) Thanks [@borisno2](https://github.com/borisno2)! - Internal restructuring: every write return now goes through Field Visibility's read funnel and carries the visible-row brand.
+
+- [#2451](https://github.com/OpenSaasAU/stack/pull/2451) [`28ff344`](https://github.com/OpenSaasAU/stack/commit/28ff34407741a466cafd21048a8e385b7800652e) Thanks [@borisno2](https://github.com/borisno2)! - Contract derivation, the constraint map and generate-time field-name validation read names and foreign-key ownership from the List member table; the contract is unchanged.
+  A `db.indexes`/`db.foreignKeys` entry naming a field with a `computed` descriptor is now refused by name at generate.
+
+- [#2490](https://github.com/OpenSaasAU/stack/pull/2490) [`05e83be`](https://github.com/OpenSaasAU/stack/commit/05e83bed1ce8abc38675036b5eea7da32e97dcbb) Thanks [@borisno2](https://github.com/borisno2)! - The Filter builder reads numeric dates in the viewer's locale order, and a date-only `lte`/range end on a timestamp covers its whole UTC day.
+
+- [#2511](https://github.com/OpenSaasAU/stack/pull/2511) [`c97bea7`](https://github.com/OpenSaasAU/stack/commit/c97bea7e07a22467c1d348b45f7b5295a204a147) Thanks [@borisno2](https://github.com/borisno2)! - A declared field named `constructor`, `toString` or `hasOwnProperty` no longer breaks its list, `__proto__` is refused at generate, a foreign-key/part-column collision names a remedy that works, and a singleton's MCP `query` refuses a `where`.
+
+- [#2528](https://github.com/OpenSaasAU/stack/pull/2528) [`0fe5094`](https://github.com/OpenSaasAU/stack/commit/0fe5094a919b42fb256722ec111b6d5d3d30c885) Thanks [@borisno2](https://github.com/borisno2)! - Fix admin list filters that made the read throw: integer and bigInt values outside the column range and NUL bytes now match nothing, a search too long for the where limit raises `FilterTooLongError`, and the list error panel offers "Clear filters" when the request carried a search.
+
+- [#2543](https://github.com/OpenSaasAU/stack/pull/2543) [`ba3e7ae`](https://github.com/OpenSaasAU/stack/commit/ba3e7ae4127ceea26f1bc8699c385da1412c444c) Thanks [@borisno2](https://github.com/borisno2)! - A field's `afterOperation` hook now runs on create and update only when the field is in the write, matching `beforeOperation`. Delete still runs every field's hook, and `afterTransaction` stays ungated.
+
+- [#2480](https://github.com/OpenSaasAU/stack/pull/2480) [`846f622`](https://github.com/OpenSaasAU/stack/commit/846f622c7e2f080c1d746f7ccd284fba214f5b6a) Thanks [@borisno2](https://github.com/borisno2)! - Fix part columns of a multi-column field without `assembleColumns` reaching a session the field's own `read` rule denies.
+
+- [#2523](https://github.com/OpenSaasAU/stack/pull/2523) [`e790bf1`](https://github.com/OpenSaasAU/stack/commit/e790bf10fe4853fa65df5bf76ec2a4ae6bfda649) Thanks [@borisno2](https://github.com/borisno2)! - `pnpm generate` now refuses configs that fail at apply: a `db.foreignKeys` entry referencing a partial unique, repeating another entry's columns, or pairing mismatched column types; constraint names over 63 bytes; and an index name shared across lists or equal to a table name.
+
+- [#2529](https://github.com/OpenSaasAU/stack/pull/2529) [`2867a27`](https://github.com/OpenSaasAU/stack/commit/2867a279c54d2bea13b3cccdddea7630dc403426) Thanks [@borisno2](https://github.com/borisno2)! - The admin hides nav entries and dashboard cards for lists the session cannot query, and an item page renders read-only with no Save or Delete when a filter-returning `update`/`delete` rule does not match the row. The session vocabulary now answers `'row-dependent'` for a filter-returning `update` or `delete` rule.
+
+- [#2521](https://github.com/OpenSaasAU/stack/pull/2521) [`db8a224`](https://github.com/OpenSaasAU/stack/commit/db8a224028dcd92dc878c27f81df508069360d79) Thanks [@borisno2](https://github.com/borisno2)! - Fix a write through a leaked transaction context firing `beforeTransaction` but never `afterTransaction`; a flush enqueued after the registry drained now runs immediately with the rolled-back outcome.
+
+- [#2474](https://github.com/OpenSaasAU/stack/pull/2474) [`9774d08`](https://github.com/OpenSaasAU/stack/commit/9774d082befd990e392748487bab65fbd916c27c) Thanks [@borisno2](https://github.com/borisno2)! - Internal restructuring: Field Visibility gains a single traversal for reads and write returns with no relation nodes, behind an internal switch that defaults to the existing walks.
+
+- [#2494](https://github.com/OpenSaasAU/stack/pull/2494) [`5501533`](https://github.com/OpenSaasAU/stack/commit/5501533d6a6bd03e22fd8b6bcba95193ce0cf5fa) Thanks [@borisno2](https://github.com/borisno2)! - MCP: write schemas omit relations into lists whose read tool is off, a non-string tool name returns `-32602`, and `ping` answers an empty result.
+
+- [#2514](https://github.com/OpenSaasAU/stack/pull/2514) [`f188f16`](https://github.com/OpenSaasAU/stack/commit/f188f16f01c73358e6bd79587ff5f9a8ba8a7c64) Thanks [@borisno2](https://github.com/borisno2)! - MCP per-list scopes now apply through relations (`fields`, `where`, `orderBy`, `connect`), and `create`/`update` return only the `id` to a token without the list's read scope or read tool.
+
+- [#2518](https://github.com/OpenSaasAU/stack/pull/2518) [`dd3a77f`](https://github.com/OpenSaasAU/stack/commit/dd3a77f35ceff097fe397a56ce43839a58af2cc5) Thanks [@borisno2](https://github.com/borisno2)! - MCP `where`: a throwing `query` rule on an unnamed list no longer fails the query, `__proto__` is refused like on `context.db`, and `in`/`notIn` length and over-deep `AND` get the named cap refusal first.
+
+- [#2475](https://github.com/OpenSaasAU/stack/pull/2475) [`756558e`](https://github.com/OpenSaasAU/stack/commit/756558eee7b8723827ff8770f0b346b43b4bd895) Thanks [@borisno2](https://github.com/borisno2)! - Internal restructuring: Field Visibility's single traversal now also handles reads with plain includes, behind the same internal switch, which still defaults to the existing walks.
+
+- [#2470](https://github.com/OpenSaasAU/stack/pull/2470) [`df46667`](https://github.com/OpenSaasAU/stack/commit/df466677dd0d9a1b3de7cda12cd3901e656b8b3a) Thanks [@borisno2](https://github.com/borisno2)! - Internal restructuring: Field Visibility's tests now run through the secured surface, and its field-strip step drops an unused depth parameter.
+
+- [#2468](https://github.com/OpenSaasAU/stack/pull/2468) [`94e8358`](https://github.com/OpenSaasAU/stack/commit/94e8358c069e34b96ee2f75e9581029572abbe59) Thanks [@borisno2](https://github.com/borisno2)! - Cover the delete path's Session vocabulary clear with a test.
+
+- [#2444](https://github.com/OpenSaasAU/stack/pull/2444) [`6840f89`](https://github.com/OpenSaasAU/stack/commit/6840f89e366f6e52bbe0612628169db6f83fd566) Thanks [@borisno2](https://github.com/borisno2)! - Add an internal List member resolver that answers, once per list, what each usable name on a list is. No call site uses it yet.
+
+- [#2426](https://github.com/OpenSaasAU/stack/pull/2426) [`a4dcb7e`](https://github.com/OpenSaasAU/stack/commit/a4dcb7e45a3aadab0251121d566520cee027b654) Thanks [@borisno2](https://github.com/borisno2)! - Fix the session vocabulary keeping stale answers: a successful write or committed transaction clears it, `rawOpensaasContext` keeps nothing, and a `resolveOutput` hook no longer waits on its own pending answer.
+
+- [#2447](https://github.com/OpenSaasAU/stack/pull/2447) [`dff4310`](https://github.com/OpenSaasAU/stack/commit/dff4310b1cbf901f9ba401b85f33b0200fd81179) Thanks [@borisno2](https://github.com/borisno2)! - MCP asks the List member resolver which names a `where`, `orderBy`, write `data` and singleton read accept, and refuses a config `generate` refuses when its handlers are created.
+
+- [#2466](https://github.com/OpenSaasAU/stack/pull/2466) [`5bd3fc6`](https://github.com/OpenSaasAU/stack/commit/5bd3fc6cd474acc1fea2cffa94d85209ddc913a6) Thanks [@borisno2](https://github.com/borisno2)! - A failed declared-rows fetch for a caller-shaped include now poisons its transaction owner, as every other engine read does.
+
+- [#2424](https://github.com/OpenSaasAU/stack/pull/2424) [`565c4ca`](https://github.com/OpenSaasAU/stack/commit/565c4ca5de288b8c54cf2e3b5c811b44e913bf47) Thanks [@borisno2](https://github.com/borisno2)! - The engine context answers whether a singleton's row is stored, so `serializeItemForForm` can read a singleton without triggering `get()`'s auto-create.
+
+- [#2478](https://github.com/OpenSaasAU/stack/pull/2478) [`1b45d87`](https://github.com/OpenSaasAU/stack/commit/1b45d877684393fb2dd61ac53ac3e4176fb5b322) Thanks [@borisno2](https://github.com/borisno2)! - Internal restructuring: Field Visibility has one implementation, its single traversal; the old walks, the switch between them and the comparison harness are deleted.
+
+- [#2541](https://github.com/OpenSaasAU/stack/pull/2541) [`514a492`](https://github.com/OpenSaasAU/stack/commit/514a492e1d6c4f6c9f926f800c000e79a498f02c) Thanks [@borisno2](https://github.com/borisno2)! - `create`/`update` now throw `ValidationError` when `data` isn't an object, and a list `resolveInput` returning a non-object is rejected instead of silently dropping the payload.
+
+- [#2472](https://github.com/OpenSaasAU/stack/pull/2472) [`5850dd6`](https://github.com/OpenSaasAU/stack/commit/5850dd64bbbda381027f344044ebc803cac76958) Thanks [@borisno2](https://github.com/borisno2)! - Internal restructuring: Field Visibility is one module, driven by the resolved read plan alone, and no longer imports the context module.
+
+- [#2530](https://github.com/OpenSaasAU/stack/pull/2530) [`999eeae`](https://github.com/OpenSaasAU/stack/commit/999eeaeb595196b96f3068303812db790af9c370) Thanks [@borisno2](https://github.com/borisno2)! - Fix a concurrent first `tx.db.<Singleton>.get()` in two transactions aborting the loser's transaction: the auto-create now takes a transaction-scoped advisory lock and re-reads first.
+
+- [#2463](https://github.com/OpenSaasAU/stack/pull/2463) [`a66e95e`](https://github.com/OpenSaasAU/stack/commit/a66e95e1fdbf6fe902b70b3ecd346084647e70cf) Thanks [@borisno2](https://github.com/borisno2)! - The dependency table, synthetic back-relation lookup, multi-column read assembly and singleton checks read from the List member table, so generated contracts and tables are unchanged.
+  A multi-column field is now assembled from its `columns` descriptor even without `getColumnNames`, and Field Visibility always resolves the list it reads, so a denied multi-column field's raw part columns never pass through.
+
+- [#2448](https://github.com/OpenSaasAU/stack/pull/2448) [`b3120a1`](https://github.com/OpenSaasAU/stack/commit/b3120a1d6cc843ae53a7865a5d7e8696a3b3c935) Thanks [@borisno2](https://github.com/borisno2)! - Fix `select()` silently dropping a foreign key the list does not own ([#2388](https://github.com/OpenSaasAU/stack/issues/2388)), `distinct`/`distinctOn` refusing one it does own ([#2389](https://github.com/OpenSaasAU/stack/issues/2389)), and an undeclared `createdAt`/`updatedAt` on a list without timestamps being treated as a system field instead of an unknown name ([#2390](https://github.com/OpenSaasAU/stack/issues/2390)).
+
+- [#2476](https://github.com/OpenSaasAU/stack/pull/2476) [`d417e3a`](https://github.com/OpenSaasAU/stack/commit/d417e3a4a1fef505587b6f83edcc6568e9db82e7) Thanks [@borisno2](https://github.com/borisno2)! - refactor(core): the single Field Visibility traversal handles reductions, caller-shaped declared relations and row-lock re-reads, with no hand-off to the old walks ([#2410](https://github.com/OpenSaasAU/stack/issues/2410))
+
 ## 0.44.0-alpha.6
 
 ### Minor Changes
